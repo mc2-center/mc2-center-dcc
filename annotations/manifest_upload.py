@@ -64,7 +64,8 @@ def edit_manifest(file_path, col_dict):
             df[columnName] = df[columnName].astype(str)
             df[columnName] = df[columnName].str.split(', ')
         else:
-            df[columnName] = df[columnName].map(col_dict)
+            for k, v in col_dict.items():
+                df[columnName] = df[columnName].astype(col_dict[columnName])
 
     return df
 
