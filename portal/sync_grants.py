@@ -1,8 +1,8 @@
 """Add Grants to the Cancer Complexity Knowledge Portal (CCKP).
 
-This script will iterate through a grants fileview and create a new
-Synapse Project for each new grant not currently in a Grants table.
-Metadata of new grants will also be added to the Grants table.
+This script will sync over new grants and its annotations to the
+Grants portal table. A Synapse Project with pre-filled Wikis and
+Folders will also be created for each new grant found.
 
 author: verena.chung
 """
@@ -13,7 +13,6 @@ import getpass
 
 import synapseclient
 from synapseclient import Table, Project, Wiki, Folder
-import pandas as pd
 
 
 def login():
@@ -40,10 +39,12 @@ def get_args():
     parser = argparse.ArgumentParser(description="Add new grants to the CCKP")
     parser.add_argument("-m", "--manifest",
                         type=str, default="syn32134242",
-                        help="Synapse ID to grants manifest fileview. (Default: syn32134242)")
-    parser.add_argument("-t", "--grants_table",
+                        help=("Synapse ID to the manifest table/fileview."
+                              "(Default: syn32134242)"))
+    parser.add_argument("-t", "--portal_table",
                         type=str, default="syn21918972",
-                        help="Add grants to this specified table. (Default: syn21918972)")
+                        help=("Add grants to this specified table. "
+                              "(Default: syn21918972)"))
     return parser.parse_args()
 
 
@@ -51,11 +52,11 @@ def create_wiki_pages(syn, project_id, grant_info):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant_info["GrantConsortiumName"]
-    grant_type = grant_info["GrantType"]
-    title = grant_info["GrantInstitutionAlias"]
-    institutions = grant_info["GrantInstitutionName"]
-    desc = grant_info["GrantAbstract"] or ""
+    consortium = grant_info['GrantConsortiumName']
+    grant_type = grant_info['GrantType']
+    title = grant_info['GrantInstitutionAlias']
+    institutions = grant_info['GrantInstitutionName']
+    desc = grant_info['GrantAbstract'] or ""
 
     content = f"""### The {consortium} {grant_type} Research Project \@ {title}
 
@@ -73,14 +74,14 @@ def create_wiki_pages(syn, project_id, grant_info):
         "&url=https%3A%2F%2Fwww%2Esynapse%2Eorg%2F%23%21Synapse%3Asyn7080714%2F}"
         "<-"
     )
-    main_wiki = Wiki(title=grant_info["GrantName"],
+    main_wiki = Wiki(title=grant_info['GrantName'],
                      owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
     pis = [pi.lstrip(" ").rstrip(" ")
            for pi
-           in grant_info["GrantInvestigator"].split(",")]
+           in grant_info['GrantInvestigator'].split(",")]
     pi_markdown = "* " + "\n* ".join(pis)
     pi_wiki = Wiki(title="Project Investigators", owner=project_id,
                    markdown=pi_markdown, parentWikiId=main_wiki.id)
@@ -119,7 +120,7 @@ def create_grant_projects(syn, grants):
         df: grants information (including their new Project IDs)
     """
     for _, row in grants.iterrows():
-        name = syn_prettify(row["GrantName"])
+        name = syn_prettify(row['GrantName'])
         try:
             project = Project(name)
             project = syn.store(project)
@@ -130,7 +131,7 @@ def create_grant_projects(syn, grants):
             )
 
             # Update grants table with new synId
-            grants.at[_, "GrantId"] = project.id
+            grants.at[_, 'GrantId'] = project.id
 
             # Update `GrantId` annotation for ent.
             # annots = syn.get_annotations(row['id'])
@@ -141,13 +142,13 @@ def create_grant_projects(syn, grants):
             create_folders(syn, project.id)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
-            grants.at[_, "GrantId"] = ""
+            grants.at[_, 'GrantId'] = ""
 
     return grants
 
 
-def upload_metadata(syn, grants, table):
-    """Add grants metadata to the Synapse table.
+def sync_table(syn, grants, table):
+    """Add grants annotations to the Synapse table.
 
     Assumptions:
         `grants` matches the same schema as `table`
@@ -164,11 +165,13 @@ def upload_metadata(syn, grants, table):
 
     # Convert columns into STRINGLIST.
     grants.loc[:, 'GrantThemeName'] = grants.GrantThemeName.str.split(", ")
-    grants.loc[:, 'GrantInstitutionName'] = grants.GrantInstitutionName.str.split(", ")
-    grants.loc[:, 'GrantInstitutionAlias'] = grants.GrantInstitutionAlias.str.split(", ")
+    grants.loc[:, 'GrantInstitutionName'] = grants.GrantInstitutionName.str.split(
+        ", ")
+    grants.loc[:, 'GrantInstitutionAlias'] = grants.GrantInstitutionAlias.str.split(
+        ", ")
 
     new_rows = grants.values.tolist()
-    table = syn.store(Table(schema, new_rows))
+    syn.store(Table(schema, new_rows))
 
 
 def main():
@@ -178,7 +181,7 @@ def main():
 
     manifest = syn.tableQuery(f"SELECT * FROM {args.manifest}").asDataFrame()
     curr_grants = (
-        syn.tableQuery(f"SELECT grantNumber FROM {args.grants_table}")
+        syn.tableQuery(f"SELECT grantNumber FROM {args.portal_table}")
         .asDataFrame()
         .grantNumber
         .to_list()
@@ -186,14 +189,12 @@ def main():
 
     # Only add grants not currently in the Grants table.
     new_grants = manifest[~manifest.GrantNumber.isin(curr_grants)]
-
     if new_grants.empty:
         print("No new grants found!")
     else:
         print(f"{len(new_grants)} new grants found!\nAdding new grants...")
         added_grants = create_grant_projects(syn, new_grants)
-        upload_metadata(syn, added_grants, args.grants_table)
-
+        sync_table(syn, added_grants, args.portal_table)
     print("DONE ✓")
 
 
