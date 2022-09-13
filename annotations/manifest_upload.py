@@ -29,8 +29,8 @@ def get_args():
     return parser.parse_args()
 
 
-# Get Schema for table and create dictionary
-def get_schema(syn, table_id):
+# Create dictionary of column data types
+def col_data_type_dict(syn, table_id):
 
     cols = syn.getTableColumns(table_id)
 
@@ -46,26 +46,35 @@ def get_schema(syn, table_id):
         'INTEGER': int,
         'LARGETEXT': str,
         'STRING_LIST': list,
-        'DOUBLE': str,
+        'DOUBLE': float,
         'LINK': str
     }
-    col_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
+    col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
-    return (col_dict)
+    return (col_types_dict)
 
 
 # Edit manifest to accomadate table schema
-def edit_manifest(file_path, col_dict):
+def edit_manifest(file_path, col_types_dict):
 
     df = pd.read_csv(file_path, index_col=False).fillna("")
 
+    # Fix column names to match table schema names
+    col_name_dict = {}
+    for column in df.columns:
+        col_name_dict[column] = column[0].lower() + column[1:].replace(" ", "")
+    for k, v in col_name_dict.items():
+        df.rename(columns={k: v}, inplace=True)
+
+    # Adjust data types to match table schema
     for columnName in df:
-        if col_dict[columnName] == list:
+        if col_types_dict[columnName] == list:
             df[columnName] = df[columnName].astype(str)
             df[columnName] = df[columnName].str.split(', ')
         else:
-            for k, v in col_dict.items():
-                df[columnName] = df[columnName].astype(col_dict[columnName])
+            for k, v in col_types_dict.items():
+                df[columnName] = df[columnName].astype(
+                    col_types_dict[columnName])
 
     return df
 
@@ -88,8 +97,8 @@ def main():
 
         syn = login()
         args = get_args()
-        column_dictionary = get_schema(syn, args.table_id)
-        edited_manifest = edit_manifest(args.file, column_dictionary)
+        data_type_dict = col_data_type_dict(syn, args.table_id)
+        edited_manifest = edit_manifest(args.file, data_type_dict)
 
         manifest_upload(syn, args.table_id, edited_manifest)
 
