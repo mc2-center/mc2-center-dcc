@@ -46,7 +46,7 @@ def col_data_type_dict(syn, table_id):
         'INTEGER': int,
         'LARGETEXT': str,
         'STRING_LIST': list,
-        'DOUBLE': str,
+        'DOUBLE': float,
         'LINK': str
     }
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
