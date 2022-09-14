@@ -46,6 +46,7 @@ def get_args():
                         type=str, default="syn21897968",
                         help=("Add datasets to this specified "
                               "table. (Default: syn21897968)"))
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
@@ -86,6 +87,7 @@ def add_missing_info(syn, datasets, grants, pubs):
                               ["publicationTitle"].values[0])
         datasets.at[_, "pub"] = pub_titles
     return datasets
+
 
 def sync_table(syn, datasets, table):
     """Add dataset annotations to the Synapse table."""
@@ -134,21 +136,26 @@ def main():
         .query("_merge=='both'")
     )
     if new_datasets.empty:
-        print("No new publications found!")
+        print("No new datasets found!")
     else:
-        print(f"{len(new_datasets)} new publications found!\n"
-              "Adding new publications...")
-        grants = (
-            syn.tableQuery("SELECT grantNumber, grantName FROM syn21918972")
-            .asDataFrame()
-        )
-        pubs = (
-            syn.tableQuery(
-                "SELECT pubMedId, publicationTitle FROM syn21868591")
-            .asDataFrame()
-        )
-        new_datasets = add_missing_info(syn, new_datasets, grants, pubs)
-        sync_table(syn, new_datasets, args.portal_table)
+        print(f"{len(new_datasets)} new datasets found!\n")
+        if args.dryrun:
+            print(u"\u26A0", "WARNING:",
+                  "dryrun is enabled (no updates will be done)\n")
+        else:
+            print("Adding new datasets...")
+            grants = (
+                syn.tableQuery(
+                    "SELECT grantId, grantNumber, grantName FROM syn21918972")
+                .asDataFrame()
+            )
+            pubs = (
+                syn.tableQuery(
+                    "SELECT pubMedId, publicationTitle FROM syn21868591")
+                .asDataFrame()
+            )
+            new_datasets = add_missing_info(syn, new_datasets, grants, pubs)
+            sync_table(syn, new_datasets, args.portal_table)
     print("DONE ✓")
 
 
