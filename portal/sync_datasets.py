@@ -11,6 +11,7 @@ import os
 import argparse
 import getpass
 
+import re
 import synapseclient
 from synapseclient import Table, Folder
 import pandas as pd
@@ -106,6 +107,11 @@ def sync_table(syn, datasets, table):
     syn.store(Table(schema, new_rows))
 
 
+def sort_and_stringify_col(col):
+    """Sort list col then join together as comma-sep string."""
+    return col.apply(lambda x: ", ".join(map(str, sorted(x))))
+
+
 def main():
     """Main function."""
     syn = login()
@@ -116,13 +122,15 @@ def main():
         .asDataFrame()
         .fillna("")
     )
+    manifest["grantNumber"] = sort_and_stringify_col(
+        manifest["datasetGrantNumber"])
     curr_datasets = (
         syn.tableQuery(
             f"SELECT datasetAlias, grantNumber FROM {args.portal_table}")
         .asDataFrame()
-        .pubMedId
-        .to_list()
     )
+    curr_datasets["grantNumber"] = sort_and_stringify_col(
+        curr_datasets["grantNumber"])
 
     # Only add datasets not currently in the Publications table.
     new_datasets = (
@@ -133,7 +141,7 @@ def main():
             left_on=["datasetAlias", "grantNumber"],
             right_on=["datasetAlias", "grantNumber"],
             indicator=True)
-        .query("_merge=='both'")
+        .query("_merge=='left_only'")
     )
     if new_datasets.empty:
         print("No new datasets found!")
