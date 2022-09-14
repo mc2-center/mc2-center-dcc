@@ -43,6 +43,7 @@ def get_args():
                         type=str, default="syn21868591",
                         help=("Add publications to this specified "
                               "table. (Default: syn21868591)"))
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
@@ -112,14 +113,18 @@ def main():
     if new_pubs.empty:
         print("No new publications found!")
     else:
-        print(f"{len(new_pubs)} new publications found!\n"
-              "Adding new publications...")
-        grants = (
-            syn.tableQuery("SELECT grantNumber, grantName FROM syn21918972")
-            .asDataFrame()
-        )
-        new_pubs = add_missing_info(new_pubs, grants)
-        sync_table(syn, new_pubs, args.portal_table)
+        print(f"{len(new_pubs)} new publications found!\n")
+        if args.dryrun:
+            print(u"\u26A0", "WARNING:",
+                  "dryrun is enabled (no updates will be done)\n")
+        else:
+            print("Adding new publications...")
+            grants = (
+                syn.tableQuery("SELECT grantNumber, grantName FROM syn21918972")
+                .asDataFrame()
+            )
+            new_pubs = add_missing_info(new_pubs, grants)
+            sync_table(syn, new_pubs, args.portal_table)
     print("DONE ✓")
 
 

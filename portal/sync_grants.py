@@ -45,6 +45,7 @@ def get_args():
                         type=str, default="syn21918972",
                         help=("Add grants to this specified table. "
                               "(Default: syn21918972)"))
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
@@ -192,9 +193,14 @@ def main():
     if new_grants.empty:
         print("No new grants found!")
     else:
-        print(f"{len(new_grants)} new grants found!\nAdding new grants...")
-        added_grants = create_grant_projects(syn, new_grants)
-        sync_table(syn, added_grants, args.portal_table)
+        print(f"{len(new_grants)} new grants found!\n")
+        if args.dryrun:
+            print(u"\u26A0", "WARNING:",
+                  "dryrun is enabled (no updates will be done)\n")
+        else:
+            print("Adding new grants...")
+            added_grants = create_grant_projects(syn, new_grants)
+            sync_table(syn, added_grants, args.portal_table)
     print("DONE ✓")
 
 

@@ -43,6 +43,7 @@ def get_args():
                         type=str, default="syn26127427",
                         help=("Add tools to this specified "
                               "table. (Default: syn26127427)"))
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
@@ -102,10 +103,14 @@ def main():
     if new_tools.empty:
         print("No new tools found!")
     else:
-        print(f"{len(new_tools)} new tools found!\n"
-              "Adding new tools...")
-        new_tools = add_missing_info(new_tools)
-        sync_table(syn, new_tools, args.portal_table)
+        print(f"{len(new_tools)} new tools found!\n")
+        if args.dryrun:
+            print(u"\u26A0", "WARNING:",
+                  "dryrun is enabled (no updates will be done)\n")
+        else:
+            print("Adding new tools...")
+            new_tools = add_missing_info(new_tools)
+            sync_table(syn, new_tools, args.portal_table)
     print("DONE ✓")
 
 
