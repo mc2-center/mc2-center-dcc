@@ -48,10 +48,12 @@ def get_args():
                               "table. (Default: syn21897968)"))
     return parser.parse_args()
 
+
 def create_folder(syn, name, parent):
     folder = Folder(name, parent=parent)
     folder = syn.store(folder)
     return folder.id
+
 
 def add_missing_info(syn, datasets, grants, pubs):
     """Add missing information into table before syncing.
@@ -59,25 +61,30 @@ def add_missing_info(syn, datasets, grants, pubs):
     Returns:
         datasets: Data frame
     """
-    datasets['Link'] = [
+    datasets['link'] = [
         "".join(["[", d_id, "](", url, ")"])
         for d_id, url
-        in zip(datasets['Dataset Alias'], datasets['Dataset Url'])
+        in zip(datasets['datasetAlias'], datasets['datasetUrl'])
     ]
     for _, row in datasets.iterrows():
-        grant_proj = grants[grants.grantNumber == row['Dataset Grant Number'][0]]['grantId'].values[0]
-        folder_id = create_folder(syn, row['Dataset Alias'], grant_proj)
-        datasets.at[_, 'Id'] = folder_id
+        if re.search(r"^syn\d+$", row['datasetAlias']):
+            folder_id = row['datasetAlias']
+        else:
+            grant_proj = grants[grants.grantNumber ==
+                                row['datasetGrantNumber'][0]]['grantId'].values[0]
+            folder_id = ""
+            folder_id = create_folder(syn, row['datasetAlias'], grant_proj)
+        datasets.at[_, 'id'] = folder_id
         grant_names = []
-        for g in row['Publication Grant Number']:
+        for g in row['datasetGrantNumber']:
             grant_names.append(grants[grants.grantNumber == g]
                                ['grantName'].values[0])
         datasets.at[_, 'GrantName'] = grant_names
         pub_titles = []
-        for p in row["Dataset Pubmed Id"]:
+        for p in row["datasetPubmedId"]:
             pub_titles.append(pubs[pubs.pubMedId == int(p)]
                               ["publicationTitle"].values[0])
-        datasets.at[_, "Pub"] = pub_titles
+        datasets.at[_, "pub"] = pub_titles
     return datasets
 
 def sync_table(syn, datasets, table):
@@ -86,10 +93,10 @@ def sync_table(syn, datasets, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'Id', 'Dataset Name', 'Dataset Alias', 'Dataset Description',
-        'Dataset Design', 'Dataset Assay', 'Dataset Species', 'Dataset Tissue',
-        'Dataset Tumor Type', 'Dataset Theme Name', 'Dataset Consortium Name',
-        'Dataset Grant Number', 'GrantName', 'Dataset Pubmed Id', 'Pub', 'Link'
+        'id', 'datasetName', 'datasetAlias', 'datasetDescription',
+        'datasetDesign', 'datasetAssay', 'datasetSpecies', 'datasetTissue',
+        'datasetTumorType', 'datasetThemeName', 'datasetConsortiumName',
+        'datasetGrantNumber', 'GrantName', 'datasetPubmedId', 'pub', 'link'
     ]
     datasets = datasets[col_order]
 
@@ -121,7 +128,7 @@ def main():
             manifest,
             curr_datasets,
             how="left",
-            left_on=["Dataset Alias", "grantNumber"],
+            left_on=["datasetAlias", "grantNumber"],
             right_on=["datasetAlias", "grantNumber"],
             indicator=True)
         .query("_merge=='both'")
