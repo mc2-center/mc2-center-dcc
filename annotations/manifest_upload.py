@@ -71,7 +71,6 @@ def edit_manifest(file_path, col_types_dict):
     # Adjust data types to match table schema
     for columnName in df:
         if col_types_dict[columnName] == list:
-            #df[columnName] = df[columnName].astype(str)
             df[columnName] = df[columnName].str.split(', ')
         else:
             for k, v in col_types_dict.items():
