@@ -47,7 +47,9 @@ def col_data_type_dict(syn, table_id):
         'LARGETEXT': str,
         'STRING_LIST': list,
         'DOUBLE': float,
-        'LINK': str
+        'LINK': str,
+        'USERID': str,
+        'BOOLEAN': bool
     }
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
@@ -75,6 +77,9 @@ def edit_manifest(file_path, col_types_dict):
             for k, v in col_types_dict.items():
                 df[columnName] = df[columnName].astype(
                     col_types_dict[columnName])
+            # For columns with USERID as datatype, remove .0 tacked on in data type conversion.
+            if col_types_dict[columnName] == str:
+                df[columnName] = df[columnName].str.rstrip('.0')
 
     return df
 
