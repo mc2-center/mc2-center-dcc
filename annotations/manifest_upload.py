@@ -47,7 +47,9 @@ def col_data_type_dict(syn, table_id):
         'LARGETEXT': str,
         'STRING_LIST': list,
         'DOUBLE': float,
-        'LINK': str
+        'LINK': str,
+        'USERID': str,
+        'BOOLEAN': bool
     }
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
@@ -69,12 +71,14 @@ def edit_manifest(file_path, col_types_dict):
     # Adjust data types to match table schema
     for columnName in df:
         if col_types_dict[columnName] == list:
-            df[columnName] = df[columnName].astype(str)
             df[columnName] = df[columnName].str.split(', ')
         else:
             for k, v in col_types_dict.items():
                 df[columnName] = df[columnName].astype(
                     col_types_dict[columnName])
+            # For columns with USERID as datatype, remove .0 tacked on in data type conversion.
+            if col_types_dict[columnName] == str:
+                df[columnName] = df[columnName].str.rstrip('.0')
 
     return df
 
@@ -106,7 +110,8 @@ def main():
         print("\n\nPlease validate first, then rerun this script to upload!")
 
     else:
-        print("\n\nNot a valid input, try running again.")
+        print("\n\nNot a valid input!")
+        main()
 
 
 if __name__ == "__main__":
