@@ -53,17 +53,17 @@ def add_missing_info(pubs, grants):
     Returns:
         pubs: Data frame
     """
-    pubs['Link'] = [
+    pubs.loc[:, 'Link'] = [
         "".join(["[PMID:", str(pmid), "](", url, ")"])
         for pmid, url
-        in zip(pubs['Pubmed Id'], pubs['Pubmed Url'])
+        in zip(pubs.pubmedId, pubs.pubmedUrl)
     ]
     for i, row in pubs.iterrows():
         grant_names = []
-        for g in row['Publication Grant Number']:
+        for g in row.publicationGrantNumber:
             grant_names.append(
                 grants[grants.grantNumber == g]['grantName'].values[0])
-        pubs.at[i, 'GrantName'] = grant_names
+        pubs.at[i, 'grantName'] = grant_names
     return pubs
 
 
@@ -73,18 +73,18 @@ def sync_table(syn, pubs, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'Publication Doi', 'Publication Journal', 'Pubmed Id', 'Pubmed Url',
-        'Link', 'Publication Title', 'Publication Year', 'Publication Keywords',
-        'Publication Authors', 'Publication Assay', 'Publication Tumor Type',
-        'Publication Tissue', 'Publication Theme Name', 'Publication Consortium Name',
-        'Publication Grant Number', 'GrantName', 'Publication Dataset Alias'
+        'publicationDoi', 'publicationJournal', 'pubmedId', 'pubmedUrl',
+        'Link', 'publicationTitle', 'publicationYear', 'publicationKeywords',
+        'publicationAuthors', 'publicationAssay', 'publicationTumorType',
+        'publicationTissue', 'publicationThemeName', 'publicationConsortiumName',
+        'publicationGrantNumber', 'grantName', 'publicationDatasetAlias'
     ]
     pubs = pubs[col_order]
 
     # Convert list column into string to match with table schema.
-    pubs['Publication Dataset Alias'] = (
-        pubs['Publication Dataset Alias']
-        .apply(lambda x: ", ".join(map(str, x)))
+    pubs.loc[:, 'publicationDatasetAlias'] = (
+        pubs.publicationDatasetAlias
+        .str.join(", ")
     )
 
     new_rows = pubs.values.tolist()
@@ -109,7 +109,7 @@ def main():
     )
 
     # Only add pubs not currently in the Publications table.
-    new_pubs = manifest[~manifest['Pubmed Id'].isin(curr_pubs)]
+    new_pubs = manifest[~manifest.pubmedId.isin(curr_pubs)]
     if new_pubs.empty:
         print("No new publications found!")
     else:
@@ -120,11 +120,12 @@ def main():
         else:
             print("Adding new publications...")
             grants = (
-                syn.tableQuery("SELECT grantNumber, grantName FROM syn21918972")
+                syn.tableQuery(
+                    "SELECT grantNumber, grantName FROM syn21918972")
                 .asDataFrame()
             )
-            new_pubs = add_missing_info(new_pubs, grants)
-            sync_table(syn, new_pubs, args.portal_table)
+            new_pubs = add_missing_info(new_pubs.copy(), grants)
+            sync_table(syn, new_pubs.copy(), args.portal_table)
     print("DONE ✓")
 
 

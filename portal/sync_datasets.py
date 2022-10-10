@@ -97,9 +97,10 @@ def sync_table(syn, datasets, table):
     # Reorder columns to match the table order.
     col_order = [
         'id', 'datasetName', 'datasetAlias', 'datasetDescription',
-        'datasetDesign', 'datasetAssay', 'datasetSpecies', 'datasetTissue',
-        'datasetTumorType', 'datasetThemeName', 'datasetConsortiumName',
-        'datasetGrantNumber', 'GrantName', 'datasetPubmedId', 'pub', 'link'
+        'datasetDesign', 'datasetFileFormats', 'datasetAssay',
+        'datasetSpecies', 'datasetTissue', 'datasetTumorType',
+        'datasetThemeName', 'datasetConsortiumName', 'datasetGrantNumber',
+        'GrantName', 'datasetPubmedId', 'pub', 'link'
     ]
     datasets = datasets[col_order]
 

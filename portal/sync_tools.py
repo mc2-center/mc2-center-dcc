@@ -53,7 +53,7 @@ def add_missing_info(tools):
     Returns:
         tools: Data frame
     """
-    tools['Link'] = "[Link](" + tools['Tool Homepage'] + ")"
+    tools['Link'] = "[Link](" + tools.toolHomepage + ")"
     tools['PortalDisplay'] = "true"
     return tools
 
@@ -64,16 +64,16 @@ def sync_table(syn, tools, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'Tool Name', 'Tool Description', 'Tool Homepage', 'Tool Version',
-        'Tool Grant Number', 'Tool Consortium Name', 'Tool Pubmed Id',
-        'Tool Operation', 'Tool Input Data', 'Tool Output Data',
-        'Tool Input Format', 'Tool Output Format', 'Tool Function Note',
-        'Tool Cmd', 'Tool Type', 'Tool Topic', 'Tool Operating System',
-        'Tool Language', 'Tool License', 'Tool Cost', 'Tool Accessibility',
-        'Tool Download Url', 'Link', 'Tool Download Type', 'Tool Download Note',
-        'Tool Download Version', 'Tool Documentation Url',
-        'Tool Documentation Type', 'Tool Documentation Note', 'Tool Link Url',
-        'Tool Link Type', 'Tool Link Note', 'PortalDisplay'
+        'toolName', 'toolDescription', 'toolHomepage', 'toolVersion',
+        'toolGrantNumber', 'toolConsortiumName', 'toolPubmedId',
+        'toolOperation', 'toolInputData', 'toolOutputData',
+        'toolInputFormat', 'toolOutputFormat', 'toolFunctionNote',
+        'toolCmd', 'toolType', 'toolTopic', 'toolOperatingSystem',
+        'toolLanguage', 'toolLicense', 'toolCost', 'toolAccessibility',
+        'toolDownloadUrl', 'Link', 'toolDownloadType', 'toolDownloadNote',
+        'toolDownloadVersion', 'toolDocumentationUrl',
+        'toolDocumentationType', 'toolDocumentationNote', 'toolLinkUrl',
+        'toolLinkType', 'toolLinkNote', 'PortalDisplay'
     ]
     tools = tools[col_order]
 
@@ -99,7 +99,7 @@ def main():
     )
 
     # Only add tools not currently in the Tools table.
-    new_tools = manifest[~manifest['Tool Name'].isin(curr_tools)]
+    new_tools = manifest[~manifest.toolName.isin(curr_tools)]
     if new_tools.empty:
         print("No new tools found!")
     else:
@@ -109,7 +109,7 @@ def main():
                   "dryrun is enabled (no updates will be done)\n")
         else:
             print("Adding new tools...")
-            new_tools = add_missing_info(new_tools)
+            new_tools = add_missing_info(new_tools.copy())
             sync_table(syn, new_tools, args.portal_table)
     print("DONE ✓")
 
