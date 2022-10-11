@@ -1,7 +1,7 @@
 """Add People to the Cancer Complexity Knowledge Portal (CCKP).
 
 This script will "sync" the person manifest table to the People
-portal table, by first truncating then 
+portal table, by first truncating the table, then re-adding the rows.
 
 author: verena.chung
 """
