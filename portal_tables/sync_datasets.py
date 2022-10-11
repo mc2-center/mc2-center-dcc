@@ -133,7 +133,8 @@ def main():
     curr_datasets["grantNumber"] = sort_and_stringify_col(
         curr_datasets["grantNumber"])
 
-    # Only add datasets not currently in the Publications table.
+    # Only add datasets not currently in the Publications table, using
+    # dataset alias + grant number to determine uniqueness.
     new_datasets = (
         pd.merge(
             manifest,
