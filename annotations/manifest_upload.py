@@ -78,7 +78,7 @@ def edit_manifest(file_path, col_types_dict):
                 df[columnName] = df[columnName].astype(
                     col_types_dict[columnName])
             # For columns with USERID as datatype, remove .0 tacked on in data type conversion.
-            if col_types_dict[columnName] == str:
+            if col_types_dict.get(columnName) == 'USERID':
                 df[columnName] = df[columnName].str.rstrip('.0')
 
     return df
@@ -86,7 +86,7 @@ def edit_manifest(file_path, col_types_dict):
 
 def manifest_upload(syn, table_id, df):
 
-    syn.store(Table(table_id, df))
+    # syn.store(Table(table_id, df))
 
     print("\nManifest uploaded to table")
 
