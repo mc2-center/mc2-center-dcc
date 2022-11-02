@@ -86,7 +86,7 @@ def edit_manifest(file_path, col_types_dict):
 
 def manifest_upload(syn, table_id, df):
 
-    # syn.store(Table(table_id, df))
+    syn.store(Table(table_id, df))
 
     print("\nManifest uploaded to table")
 
