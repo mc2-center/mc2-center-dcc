@@ -11,16 +11,15 @@ import argparse
 
 import synapseclient
 from synapseclient import Table, Project, Wiki, Folder
-import utils
 
 
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description="Add new grants to the CCKP")
     parser.add_argument("-m", "--manifest",
-                        type=str, default="syn32134242",
+                        type=str, default="syn35242677",
                         help=("Synapse ID to the manifest table/fileview."
-                              "(Default: syn32134242)"))
+                              "(Default: syn35242677)"))
     parser.add_argument("-t", "--portal_table",
                         type=str, default="syn21918972",
                         help=("Add grants to this specified table. "
@@ -33,11 +32,11 @@ def create_wiki_pages(syn, project_id, grant_info):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant_info['GrantConsortiumName']
-    grant_type = grant_info['GrantType']
-    title = grant_info['GrantInstitutionAlias']
-    institutions = grant_info['GrantInstitutionName']
-    desc = grant_info['GrantAbstract'] or ""
+    consortium = grant_info['grantConsortiumName']
+    grant_type = grant_info['grantType']
+    title = grant_info['grantInstitutionAlias']
+    institutions = grant_info['grantInstitutionName']
+    desc = grant_info['grantAbstract'] or ""
 
     content = f"""### The {consortium} {grant_type} Research Project \@ {title}
 
@@ -51,18 +50,18 @@ def create_wiki_pages(syn, project_id, grant_info):
     content += (
         "->"
         "${buttonlink?text="
-        "Back to CSBC PS%2DON Data Coordinating Center"
+        "Back to Multi-Consortia Coordinating (MC2) Center"
         "&url=https%3A%2F%2Fwww%2Esynapse%2Eorg%2F%23%21Synapse%3Asyn7080714%2F}"
         "<-"
     )
-    main_wiki = Wiki(title=grant_info['GrantName'],
+    main_wiki = Wiki(title=grant_info['grantName'],
                      owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
     pis = [pi.lstrip(" ").rstrip(" ")
            for pi
-           in grant_info['GrantInvestigator'].split(",")]
+           in grant_info['grantInvestigator'].split(",")]
     pi_markdown = "* " + "\n* ".join(pis)
     pi_wiki = Wiki(title="Project Investigators", owner=project_id,
                    markdown=pi_markdown, parentWikiId=main_wiki.id)
@@ -101,7 +100,7 @@ def create_grant_projects(syn, grants):
         df: grants information (including their new Project IDs)
     """
     for _, row in grants.iterrows():
-        name = syn_prettify(row['GrantName'])
+        name = syn_prettify(row['grantName'])
         try:
             project = Project(name)
             project = syn.store(project)
@@ -112,18 +111,13 @@ def create_grant_projects(syn, grants):
             )
 
             # Update grants table with new synId
-            grants.at[_, 'GrantId'] = project.id
-
-            # Update `GrantId` annotation for ent.
-            # annots = syn.get_annotations(row['id'])
-            # annots['GrantId'] = project.id
-            # syn.set_annotations(annots)
+            grants.at[_, 'grantId'] = project.id
 
             create_wiki_pages(syn, project.id, row)
             create_folders(syn, project.id)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
-            grants.at[_, 'GrantId'] = ""
+            grants.at[_, 'grantId'] = ""
 
     return grants
 
@@ -138,17 +132,17 @@ def sync_table(syn, grants, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'GrantId', 'GrantName', 'GrantNumber', 'GrantAbstract', 'GrantType',
-        'GrantThemeName', 'GrantInstitutionAlias', 'GrantInstitutionName',
-        'GrantInvestigator', 'GrantConsortiumName'
+        'grantId', 'grantName', 'grantNumber', 'grantAbstract', 'grantType',
+        'grantThemeName', 'grantInstitutionAlias', 'grantInstitutionName',
+        'grantInvestigator', 'grantConsortiumName'
     ]
     grants = grants[col_order]
 
     # Convert columns into STRINGLIST.
-    grants.loc[:, 'GrantThemeName'] = grants.GrantThemeName.str.split(", ")
-    grants.loc[:, 'GrantInstitutionName'] = grants.GrantInstitutionName.str.split(
+    grants.loc[:, 'grantThemeName'] = grants.grantThemeName.str.split(", ")
+    grants.loc[:, 'grantInstitutionName'] = grants.grantInstitutionName.str.split(
         ", ")
-    grants.loc[:, 'GrantInstitutionAlias'] = grants.GrantInstitutionAlias.str.split(
+    grants.loc[:, 'grantInstitutionAlias'] = grants.grantInstitutionAlias.str.split(
         ", ")
 
     new_rows = grants.values.tolist()
@@ -157,7 +151,8 @@ def sync_table(syn, grants, table):
 
 def main():
     """Main function."""
-    syn = utils.syn_login()
+    syn = synapseclient.Synapse()
+    syn.login(silent=True)
     args = get_args()
 
     manifest = syn.tableQuery(f"SELECT * FROM {args.manifest}").asDataFrame()
@@ -169,7 +164,7 @@ def main():
     )
 
     # Only add grants not currently in the Grants table.
-    new_grants = manifest[~manifest.GrantNumber.isin(curr_grants)]
+    new_grants = manifest[~manifest.grantNumber.isin(curr_grants)]
     if new_grants.empty:
         print("No new grants found!")
     else:

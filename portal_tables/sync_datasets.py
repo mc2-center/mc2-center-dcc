@@ -47,6 +47,7 @@ def add_missing_info(syn, datasets, grants, pubs):
         for d_id, url
         in zip(datasets['datasetAlias'], datasets['datasetUrl'])
     ]
+    datasets['grantName'] = ""
     for _, row in datasets.iterrows():
         if re.search(r"^syn\d+$", row['datasetAlias']):
             folder_id = row['datasetAlias']
@@ -60,7 +61,7 @@ def add_missing_info(syn, datasets, grants, pubs):
         for g in row['datasetGrantNumber']:
             grant_names.append(grants[grants.grantNumber == g]
                                ['grantName'].values[0])
-        datasets.at[_, 'GrantName'] = grant_names
+        datasets.at[_, 'grantName'] = grant_names
         pub_titles = []
         for p in row["datasetPubmedId"]:
             pub_titles.append(pubs[pubs.pubMedId == int(p)]
@@ -79,7 +80,7 @@ def sync_table(syn, datasets, table):
         'datasetDesign', 'datasetFileFormats', 'datasetAssay',
         'datasetSpecies', 'datasetTissue', 'datasetTumorType',
         'datasetThemeName', 'datasetConsortiumName', 'datasetGrantNumber',
-        'GrantName', 'datasetPubmedId', 'pub', 'link'
+        'grantName', 'datasetPubmedId', 'pub', 'link'
     ]
     datasets = datasets[col_order]
 
