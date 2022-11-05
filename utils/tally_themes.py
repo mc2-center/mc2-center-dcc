@@ -22,6 +22,7 @@ CONSORTIUM_CTS = "syn21641485"
 CON_THEME_CTS = "syn21649281"
 THEME_CTS = "syn21639584"
 
+
 def tally_by_consortium(grants):
     """Portal - Consortium Counts (syn21641485)"""
     return (
@@ -53,6 +54,19 @@ def tally_by_theme_consortium(grants, themes):
     return res[~res['theme'].isin(['Computational Resource'])]
 
 
+def add_missing_themes(themes, df, label):
+    """Add missing themes from `themes` into `df` with count = 0."""
+    missing_themes = themes[~themes.index.isin(df.index)].index.tolist()
+    for theme in missing_themes:
+        new_row = pd.DataFrame(
+            [[0, label]],
+            columns=['totalCount', 'groupBy'],
+            index=[theme]
+        )
+        df = pd.concat([df, new_row])
+    return df
+
+
 def tally_by_group(syn, grants, themes):
     """Portal - Theme Counts (syn21639584)"""
 
@@ -67,6 +81,7 @@ def tally_by_group(syn, grants, themes):
         .rename(columns={'pubMedId': "totalCount"})
         .assign(groupBy="publications")
     )
+    theme_pubs = add_missing_themes(themes, theme_pubs, 'publications')
 
     # get theme counts in datasets
     datasets = syn.tableQuery(
@@ -79,6 +94,7 @@ def tally_by_group(syn, grants, themes):
         .rename(columns={'pubMedId': "totalCount"})
         .assign(groupBy="datasets")
     )
+    theme_datasets = add_missing_themes(themes, theme_datasets, 'datasets')
 
     # get theme counts in tools
     tools = syn.tableQuery(
@@ -94,6 +110,7 @@ def tally_by_group(syn, grants, themes):
         .rename(columns={'toolName': "totalCount"})
         .assign(groupBy="tools")
     )
+    theme_tools = add_missing_themes(themes, theme_tools, 'tools')
 
     # concat results together
     res = (
