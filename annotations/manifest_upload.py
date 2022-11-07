@@ -74,7 +74,8 @@ def edit_manifest(file_path, col_types_dict):
             df[columnName] = df[columnName].astype(str)
             df[columnName] = df[columnName].str.split(', ')
         else:
-            for k, v in col_types_dict.items():
+            df[columnName] = df[columnName].astype(
+                col_types_dict[columnName])
                 df[columnName] = df[columnName].astype(
                     col_types_dict[columnName])
             # For columns with USERID as datatype, remove .0 tacked on in data type conversion.
