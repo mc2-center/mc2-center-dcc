@@ -3,7 +3,6 @@ from synapseclient import Table
 import argparse
 import pandas as pd
 import requests
-import json
 
 
 ### Login to Synapse ###
