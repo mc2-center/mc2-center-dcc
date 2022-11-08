@@ -1,8 +1,8 @@
 import synapseclient
 from synapseclient import Table
 import argparse
-import pandas as pd
 import requests
+from time import sleep
 
 
 ### Login to Synapse ###
@@ -30,8 +30,6 @@ def get_df(syn, publications_table_id):
     pubs_query = (f"SELECT pubMedId, abstract FROM {publications_table_id}")
     pubs_df = syn.tableQuery(pubs_query).asDataFrame().fillna("")
 
-    pmid_list = pubs_df['pubMedId'].tolist()
-
     return pubs_df
 
 
@@ -56,6 +54,8 @@ def get_abstracts(pmid_list, pubs_df):
 
         # Add abstracts to publications data frame
         pubs_df.loc[pubs_df['pubMedId'] == pmid, 'abstract'] = abstract
+
+        sleep(0.4)
 
         return (pubs_df)
 
