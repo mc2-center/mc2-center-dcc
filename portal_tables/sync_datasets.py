@@ -3,8 +3,6 @@
 This script will sync over new datasets and its annotations to the
 Datasets portal table. A Synapse Folder will also be created for each
 new dataset in its respective grant Project.
-
-author: verena.chung
 """
 
 import argparse

@@ -2,8 +2,6 @@
 
 This script will sync over new tools and its annotations to the
 Tools portal table.
-
-author: verena.chung
 """
 
 import argparse

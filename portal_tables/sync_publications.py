@@ -2,8 +2,6 @@
 
 This script will sync over new publications and its annotations to the
 Publications portal table.
-
-author: verena.chung
 """
 
 import argparse

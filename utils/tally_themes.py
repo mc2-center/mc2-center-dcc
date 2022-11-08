@@ -2,8 +2,6 @@
 
 This script will get a count of themes across the grants and
 consortiums in the CCKP. (Based on James' `nbs/portal_summary.Rmd`)
-
-author: verena.chung
 """
 import os
 

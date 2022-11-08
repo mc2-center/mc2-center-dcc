@@ -2,8 +2,6 @@
 
 This script will ensure the Publications portal table includes
 the latest datasets information.
-
-author: verena.chung
 """
 
 import argparse

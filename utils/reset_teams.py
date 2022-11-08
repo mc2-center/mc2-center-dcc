@@ -7,8 +7,6 @@ ID (-t), with the exception of:
   * Ashley Clayton (ashley.clayton, 3408068)
   * Amber Nelson (ambernelson, 3419821)
   * Verena Chung (vchung, 3393723)
-
-author: verena.chung
 """
 
 import os

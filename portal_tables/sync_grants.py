@@ -3,8 +3,6 @@
 This script will sync over new grants and its annotations to the
 Grants portal table. A Synapse Project with pre-filled Wikis and
 Folders will also be created for each new grant found.
-
-author: verena.chung
 """
 
 import argparse
