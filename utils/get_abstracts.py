@@ -61,7 +61,6 @@ def get_abstracts(pmid_list, pubs_df):
         print(f'Getting {counter} of {total_count} total abstracts...')
 
         sleep(0.34)
-    pubs_df.to_csv("pubs_abstracts.csv", index=False)
 
     return (pubs_df)
 
