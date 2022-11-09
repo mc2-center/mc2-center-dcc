@@ -52,6 +52,9 @@ def cv_df(cv_table, syn):
         f"SELECT attribute, preferredTerm, nonpreferredTerms FROM {cv_table}")
     cv_df = syn.tableQuery(cv_query).asDataFrame().fillna("")
 
+    # Delete rows that have empty nonpreferredTerms.
+    cv_df = cv_df[cv_df.astype(str)['nonpreferredTerms'] != "['']"]
+
     return cv_df
 
 
@@ -78,29 +81,32 @@ def edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict):
                 if type(column_value) == list:
                     for term in column_value:
                         # Iterate through corresponding column/attribute dictionary values to match terms.
-                        for key, value in column_dict.items():
-                            for item in value:
-                                # If the terms match and the nonpreferred term is not the same as the preferred term (need to fix this in the CV)
-                                if term == item and term != key:
-                                    # Replace nonpreferred term with preferred term in annotation (if a list)
-                                    updated_column_value = list(
-                                        map(lambda x: x.replace(term, key),
-                                            column_value))
-                                    # Update term in annotations data frame
-                                    annots_df.at[i, v] = updated_column_value
-                                    print(
-                                        f'\n\nNonpreferred term caught: "{term}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: {column_value}\nUpdated full annotation: {updated_column_value}'
-                                    )
+                        if column_dict is not None:
+                            for key, value in column_dict.items():
+                                for item in value:
+                                    # If the terms match and the nonpreferred term is not the same as the preferred term (need to fix this in the CV)
+                                    if term == item and term != key:
+                                        # Replace nonpreferred term with preferred term in annotation (if a list)
+                                        updated_column_value = list(
+                                            map(lambda x: x.replace(term, key),
+                                                column_value))
+                                        # Update term in annotations data frame
+                                        annots_df.at[i,
+                                                     v] = updated_column_value
+                                        print(
+                                            f'\n\nNonpreferred term caught: "{term}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: {column_value}\nUpdated full annotation: {updated_column_value}'
+                                        )
 
                 # If column type is not a list, replace annotation term with preferred term
                 else:
-                    for key, value in column_dict.items():
-                        for item in value:
-                            if column_value == item and item != key:
-                                annots_df.at[i, v] = key
-                                print(
-                                    f'\n\nNonpreferred term caught: "{item}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: "{column_value}"\nUpdated full annotation: "{key}"'
-                                )
+                    if column_dict is not None:
+                        for key, value in column_dict.items():
+                            for item in value:
+                                if column_value == item and item != key:
+                                    annots_df.at[i, v] = key
+                                    print(
+                                        f'\n\nNonpreferred term caught: "{item}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: "{column_value}"\nUpdated full annotation: "{key}"'
+                                    )
     return annots_df
 
 
