@@ -43,6 +43,9 @@ def get_pmids(pubs_df):
 
 def get_abstracts(pmid_list, pubs_df):
 
+    total_count = len(pmid_list)
+    counter = 0
+
     for pmid in pmid_list:
 
         endpoint = f"https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/pubtator?pmids={pmid}&concepts=none"
@@ -54,10 +57,13 @@ def get_abstracts(pmid_list, pubs_df):
 
         # Add abstracts to publications data frame
         pubs_df.loc[pubs_df['pubMedId'] == pmid, 'abstract'] = abstract
+        counter += 1
+        print(f'Getting {counter} of {total_count} total abstracts...')
 
-        sleep(0.4)
+        sleep(0.34)
+    pubs_df.to_csv("pubs_abstracts.csv", index=False)
 
-        return (pubs_df)
+    return (pubs_df)
 
 
 def store_edited_publications(syn, table_id, pubs_df):
