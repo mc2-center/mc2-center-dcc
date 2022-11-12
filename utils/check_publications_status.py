@@ -9,20 +9,20 @@ publications.
 import os
 import argparse
 import requests
+import json
 from datetime import datetime
 
 import pandas as pd
 import synapseclient
 from synapseclient import File
-from bs4 import BeautifulSoup
 
 
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(
         description="Perform a status check of publications that were "
-                    "previously paywalled, indicated by 'Pending Annotation' "
-                    "values in certain columns.")
+                    "previously paywalled, indicated by 'Restricted' in"
+                    "the `accessibility` column.")
     parser.add_argument("-p", "--portal_table",
                         type=str, default="syn21868591",
                         help="Synapse ID of the publications table. "
@@ -31,12 +31,6 @@ def get_args():
                         type=str, default="pubMedId",
                         help="Column name for publication IDs. "
                               "(Default: `pubMedId`)")
-    parser.add_argument("-a", "--annotation_cols",
-                        type=str, nargs="+",
-                        default=["assay", "tissue", "tumorType"],
-                        help="Column(s) containing 'Pending Annotation' "
-                             "values (must be STRINGLIST type). (Default: "
-                             "`assay`, `tissue`, `tumorType`)")
     parser.add_argument("-f", "--folder_id",
                         type=str, default="syn44266568",
                         help="Syanpse ID of folder where results are uploaded "
@@ -49,36 +43,41 @@ def get_args():
     return parser.parse_args()
 
 
-def where_clause(cols):
-    """Return WHERE clause to be used in Synapse query."""
-    clause = f"{cols[0]} HAS ('Pending Annotation')"
-    for col in cols[1:]:
-        clause += f" OR {col} HAS ('Pending Annotation')"
-    return clause
-
-
 def status_check(syn, query, colname):
     """
     Check availability of publications and return df of open/accessible
     publications, their PMIDs, and current annotations on Synapse.
     """
     print("Checking for status updates...")
-    session = requests.Session()
-
+    df = syn.tableQuery(query).asDataFrame()
+    pending_pmids = df[colname].astype(str).tolist()
+    query = " OR ".join(pending_pmids)
+    pmc_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST"
+    data = {
+        'query': query,
+        'resultType': "core",
+        'format': "json",
+        'pageSize': 1_000
+    }
     ready_for_review = []
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST"
-    res = syn.tableQuery(query).asDataFrame()
-    pending_pmids = res[colname].tolist()
-    for pmid in pending_pmids:
-        data = {'query': pmid, 'resultType': "core"}
-        publication = BeautifulSoup(
-            session.post(url=url, data=data).content,
-            features="xml")
-        latest_availability = publication.find_all('availabilityCode')[-1].text
-        if latest_availability in ['F', 'OA']:
-            row = res[res[colname] == pmid]
-            ready_for_review.append(row)
+    session = requests.Session()
+    response = json.loads(session.post(url=pmc_url, data=data).content)
+    session.close()
 
+    # The following assumes we will always get a hit (which is probably
+    # correct), but if an error _IS_ encountered, add an if/else.
+    results = response.get('resultList').get('result')
+    for result in results:
+        pmid = result.get('pmid')
+        accessbility = [
+            code.get('availabilityCode') in ['F', 'OA', 'U']
+            for code
+            in result.get('fullTextUrlList').get('fullTextUrl')
+        ]
+        if any(accessbility) and pmid:
+            row = df[df[colname] == int(pmid)]
+            row.loc[row.index, 'accessibility'] = "Open Access"
+            ready_for_review.append(row)
     return pd.concat(ready_for_review)
 
 
@@ -99,9 +98,8 @@ def main():
     args = get_args()
 
     query = (
-        f"SELECT {args.colname}, {', '.join(args.annotation_cols)} "
-        f"FROM {args.portal_table} "
-        f"WHERE {where_clause(args.annotation_cols)}"
+        f"SELECT * FROM {args.portal_table} "
+        f"WHERE accessibility = 'Restricted'"
     )
     if args.dryrun:
         print(u"\u26A0", "WARNING:",
@@ -125,7 +123,7 @@ def main():
                 messageSubject="Publications Status Check Results",
                 messageBody="\n\n".join(message)
             )
-        print("DONE ✓")
+        print("-- DONE --")
 
 
 if __name__ == "__main__":
