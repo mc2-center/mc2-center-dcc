@@ -49,20 +49,25 @@ def status_check(syn, query, colname):
     publications, their PMIDs, and current annotations on Synapse.
     """
     print("Checking for status updates...")
-    session = requests.Session()
-
+    df = syn.tableQuery(query).asDataFrame()
+    pending_pmids = df[colname].astype(str).tolist()
+    query = " OR ".join(pending_pmids)
+    pmc_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST"
+    data = {
+        'query': query,
+        'resultType': "core",
+        'format': "json",
+        'pageSize': 1_000
+    }
     ready_for_review = []
-    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST"
-    res = syn.tableQuery(query).asDataFrame()
-    pending_pmids = res[colname].tolist()
-    for pmid in pending_pmids:
-        data = {'query': pmid, 'resultType': "core"}
-        publication = BeautifulSoup(
-            session.post(url=url, data=data).content,
-            features="xml")
-        latest_availability = publication.find_all('availabilityCode')[-1].text
-        if latest_availability in ['F', 'OA']:
-            row = res[res[colname] == pmid]
+    session = requests.Session()
+    response = json.loads(session.post(url=pmc_url, data=data).content)
+    session.close()
+
+    # The following assumes we will always get a hit (which is probably
+    # correct), but if an error _IS_ encountered, add an if/else.
+    results = response.get('resultList').get('result')
+    for result in results:
             ready_for_review.append(row)
 
     return pd.concat(ready_for_review)
