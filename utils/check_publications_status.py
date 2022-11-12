@@ -21,8 +21,8 @@ def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(
         description="Perform a status check of publications that were "
-                    "previously paywalled, indicated by 'Pending Annotation' "
-                    "values in certain columns.")
+                    "previously paywalled, indicated by 'isOpenAccess' "
+                    "= false.")
     parser.add_argument("-p", "--portal_table",
                         type=str, default="syn21868591",
                         help="Synapse ID of the publications table. "
@@ -99,9 +99,8 @@ def main():
     args = get_args()
 
     query = (
-        f"SELECT {args.colname}, {', '.join(args.annotation_cols)} "
-        f"FROM {args.portal_table} "
-        f"WHERE {where_clause(args.annotation_cols)}"
+        f"SELECT * FROM {args.portal_table} "
+        f"WHERE isOpenAccess = false"
     )
     if args.dryrun:
         print(u"\u26A0", "WARNING:",
