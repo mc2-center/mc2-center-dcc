@@ -9,20 +9,20 @@ publications.
 import os
 import argparse
 import requests
+import json
 from datetime import datetime
 
 import pandas as pd
 import synapseclient
 from synapseclient import File
-from bs4 import BeautifulSoup
 
 
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(
         description="Perform a status check of publications that were "
-                    "previously paywalled, indicated by 'isOpenAccess' "
-                    "= false.")
+                    "previously paywalled, indicated by 'Restricted' in"
+                    "the `accessibility` column.")
     parser.add_argument("-p", "--portal_table",
                         type=str, default="syn21868591",
                         help="Synapse ID of the publications table. "
@@ -68,8 +68,16 @@ def status_check(syn, query, colname):
     # correct), but if an error _IS_ encountered, add an if/else.
     results = response.get('resultList').get('result')
     for result in results:
+        pmid = result.get('pmid')
+        accessbility = [
+            code.get('availabilityCode') in ['F', 'OA', 'U']
+            for code
+            in result.get('fullTextUrlList').get('fullTextUrl')
+        ]
+        if any(accessbility) and pmid:
+            row = df[df[colname] == int(pmid)]
+            row.loc[row.index, 'accessibility'] = "Open Access"
             ready_for_review.append(row)
-
     return pd.concat(ready_for_review)
 
 
@@ -91,7 +99,7 @@ def main():
 
     query = (
         f"SELECT * FROM {args.portal_table} "
-        f"WHERE isOpenAccess = false"
+        f"WHERE accessibility = 'Restricted'"
     )
     if args.dryrun:
         print(u"\u26A0", "WARNING:",
@@ -115,7 +123,7 @@ def main():
                 messageSubject="Publications Status Check Results",
                 messageBody="\n\n".join(message)
             )
-        print("DONE ✓")
+        print("-- DONE --")
 
 
 if __name__ == "__main__":
