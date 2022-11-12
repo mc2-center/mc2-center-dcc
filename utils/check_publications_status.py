@@ -31,12 +31,6 @@ def get_args():
                         type=str, default="pubMedId",
                         help="Column name for publication IDs. "
                               "(Default: `pubMedId`)")
-    parser.add_argument("-a", "--annotation_cols",
-                        type=str, nargs="+",
-                        default=["assay", "tissue", "tumorType"],
-                        help="Column(s) containing 'Pending Annotation' "
-                             "values (must be STRINGLIST type). (Default: "
-                             "`assay`, `tissue`, `tumorType`)")
     parser.add_argument("-f", "--folder_id",
                         type=str, default="syn44266568",
                         help="Syanpse ID of folder where results are uploaded "
@@ -47,14 +41,6 @@ def get_args():
                         help="Prints query to be used in Synapse table; "
                         "status check will not be performed.")
     return parser.parse_args()
-
-
-def where_clause(cols):
-    """Return WHERE clause to be used in Synapse query."""
-    clause = f"{cols[0]} HAS ('Pending Annotation')"
-    for col in cols[1:]:
-        clause += f" OR {col} HAS ('Pending Annotation')"
-    return clause
 
 
 def status_check(syn, query, colname):
