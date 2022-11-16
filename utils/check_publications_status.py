@@ -35,9 +35,6 @@ def get_args():
                         "(Default: syn44266568)")
     parser.add_argument("--send_email", type=str, nargs="+",
                         help="Send email report to listed persons.")
-    parser.add_argument("--dryrun", action="store_true",
-                        help="Prints query to be used in Synapse table; "
-                        "status check will not be performed.")
     return parser.parse_args()
 
 
@@ -83,20 +80,20 @@ def main():
     )
     email = "sage-csbc-pson@sagebase.org"
 
-        if args.send_email:
-            message = (
-                "Hey team,",
-                f"{len(ready_for_review)} publications are now marked as "
-                "Free and/or Open Access. Find the results here: "
-                f"https://www.synapse.org/#!Synapse:{file_id}",
-                "Have fun! :)"
-            )
-            syn.sendMessage(
-                userIds=args.send_email,
-                messageSubject="Publications Status Check Results",
-                messageBody="\n\n".join(message)
-            )
-        print("-- DONE --")
+    if args.send_email:
+        message = (
+            "Hey data curators,",
+            f"{len(ready_for_review)} publications are now marked as "
+            "Free and/or Open Access. Find the results here: "
+            f"https://www.synapse.org/#!Synapse:{file_id}",
+            "Have fun! :)"
+        )
+        syn.sendMessage(
+            userIds=args.send_email,
+            messageSubject="Publications Status Check Results",
+            messageBody="\n\n".join(message)
+        )
+    print("-- DONE --")
 
 
 if __name__ == "__main__":
