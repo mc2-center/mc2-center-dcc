@@ -60,7 +60,6 @@ def status_check(syn, query, colname, email):
 
 def upload_results(syn, results, parent):
     """Upload results to Synapse as CSV file."""
-    print("Uploading results to Synapse...")
     output_file = f"status_check_{datetime.today().strftime('%Y-%m-%d')}.csv"
     results.to_csv(output_file, index=False)
     results_file = File(output_file, parent=parent)
@@ -79,6 +78,9 @@ def main():
         f"WHERE accessibility = 'Restricted'"
     )
     email = "sage-csbc-pson@sagebase.org"
+    ready_for_review = status_check(syn, query, args.colname, email)
+    file_id = upload_results(syn, ready_for_review, args.folder_id)
+    print(f"Results ID: {file_id}")
 
     if args.send_email:
         message = (
