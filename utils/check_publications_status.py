@@ -43,41 +43,23 @@ def get_args():
     return parser.parse_args()
 
 
-def status_check(syn, query, colname):
+def status_check(syn, query, colname, email):
     """
     Check availability of publications and return df of open/accessible
-    publications, their PMIDs, and current annotations on Synapse.
+    publications and their current annotations on the portal.
     """
-    print("Checking for status updates...")
     df = syn.tableQuery(query).asDataFrame()
-    pending_pmids = df[colname].astype(str).tolist()
-    query = " OR ".join(pending_pmids)
-    pmc_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST"
-    data = {
-        'query': query,
-        'resultType': "core",
-        'format': "json",
-        'pageSize': 1_000
-    }
-    ready_for_review = []
-    session = requests.Session()
-    response = json.loads(session.post(url=pmc_url, data=data).content)
-    session.close()
+    doi_list = df[~df[colname].isnull()]['doi']
 
-    # The following assumes we will always get a hit (which is probably
-    # correct), but if an error _IS_ encountered, add an if/else.
-    results = response.get('resultList').get('result')
-    for result in results:
-        pmid = result.get('pmid')
-        accessbility = [
-            code.get('availabilityCode') in ['F', 'OA', 'U']
-            for code
-            in result.get('fullTextUrlList').get('fullTextUrl')
-        ]
-        if any(accessbility) and pmid:
-            row = df[df[colname] == int(pmid)]
-            row.loc[row.index, 'accessibility'] = "Open Access"
-            ready_for_review.append(row)
+    ready_for_review = []
+    with requests.Session() as session:
+        for doi in doi_list:
+            url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
+            response = json.loads(session.get(url).content)
+            if response.get('is_oa'):
+                row = df[df[colname] == doi]
+                row.loc[row.index, 'accessibility'] = "Open Access"
+                ready_for_review.append(row)
     return pd.concat(ready_for_review)
 
 
@@ -101,14 +83,7 @@ def main():
         f"SELECT * FROM {args.portal_table} "
         f"WHERE accessibility = 'Restricted'"
     )
-    if args.dryrun:
-        print(u"\u26A0", "WARNING:",
-              "dryrun is enabled (no status check will be done)\n")
-        print(f"Query to be used:\n  {query}")
-    else:
-        ready_for_review = status_check(syn, query, args.colname)
-        file_id = upload_results(syn, ready_for_review, args.folder_id)
-        print(f"Results ID: {file_id}")
+    email = "sage-csbc-pson@sagebase.org"
 
         if args.send_email:
             message = (
