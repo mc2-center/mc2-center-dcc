@@ -1,16 +1,15 @@
 """Check Availability Status of Publications
 
-This script uses the Europe PMC Articles RESTful APIs
-(https://europepmc.org/RestfulWebService) to check for status updates of
-previously paywalled publications and return the PMIDs of now-available
-publications.
+This script uses the unpaywall APIs (https://unpaywall.org/products/api)
+to check for Open-Access statuses of previously paywalled publications
+and returns information of previously inaccessible publications as CSV.
 """
 
 import os
 import argparse
-import requests
 import json
 from datetime import datetime
+import requests
 
 import pandas as pd
 import synapseclient
@@ -28,9 +27,8 @@ def get_args():
                         help="Synapse ID of the publications table. "
                               "(Default: syn21868591)")
     parser.add_argument("-c", "--colname",
-                        type=str, default="pubMedId",
-                        help="Column name for publication IDs. "
-                              "(Default: `pubMedId`)")
+                        type=str, default="doi",
+                        help="Column name for DOIs. (Default: `doi`)")
     parser.add_argument("-f", "--folder_id",
                         type=str, default="syn44266568",
                         help="Syanpse ID of folder where results are uploaded "
