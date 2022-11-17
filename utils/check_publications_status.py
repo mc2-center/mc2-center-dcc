@@ -75,7 +75,7 @@ def main():
 
     query = (
         f"SELECT * FROM {args.portal_table} "
-        f"WHERE accessibility = 'Restricted'"
+        f"WHERE accessibility = 'Restricted Access'"
     )
     email = "sage-csbc-pson@sagebase.org"
     ready_for_review = status_check(syn, query, args.colname, email)
