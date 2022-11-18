@@ -20,8 +20,8 @@ def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(
         description="Perform a status check of publications that were "
-                    "previously paywalled, indicated by 'Restricted' in"
-                    "the `accessibility` column.")
+                    "previously paywalled, indicated by 'Restricted Access' "
+                    "in the `accessibility` column.")
     parser.add_argument("-p", "--portal_table",
                         type=str, default="syn21868591",
                         help="Synapse ID of the publications table. "
