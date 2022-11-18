@@ -77,7 +77,7 @@ def main():
         f"SELECT * FROM {args.portal_table} "
         f"WHERE accessibility = 'Restricted Access'"
     )
-    email = "sage-csbc-pson@sagebase.org"
+    email = "smc2center@sagebase.org"
     ready_for_review = status_check(syn, query, args.colname, email)
     file_id = upload_results(syn, ready_for_review, args.folder_id)
     print(f"Results ID: {file_id}")
