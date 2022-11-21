@@ -46,7 +46,7 @@ def get_annotations(table_id, updated_df, syn):
 
     pubmed_list = updated_df['Pubmed Id'].astype(str).tolist()
     pubmed_string = ', '.join(pubmed_list)
-    print(f'list of pumbmeds to be updated: {pubmed_string}')
+    print(f'list of pubmeds to be updated: {pubmed_string}')
 
     annots_query = syn.tableQuery(
         f"SELECT pubMedId, assay, tumorType, tissue, dataset, accessibility FROM {table_id} WHERE pubMedId IN ({pubmed_string})"
