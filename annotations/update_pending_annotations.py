@@ -53,8 +53,8 @@ def get_annotations(table_id, updated_df, syn):
     print(f'list of pubmeds to be updated: {pubmed_string}')
 
     annots_query = syn.tableQuery(
-        f"SELECT pubMedId, assay, tumorType, tissue, dataset, accessibility FROM {table_id} WHERE pubMedId IN ({pubmed_string})"
-    )
+        ("SELECT pubMedId, assay, tumorType, tissue, dataset, accessibility"
+         f" FROM {table_id} WHERE pubMedId IN ({pubmed_string})"))
 
     return annots_query
 
@@ -133,8 +133,8 @@ def manifest_upload(syn, table_id, final_df, annots_query):
 def main():
 
     choice = input(
-        "\n\nDid you validate the manifest using Schematic before running this script? Type 'y' for yes, 'n' for no"
-    )
+        "\n\nDid you validate the manifest using Schematic before running this script?"
+        " Type 'y' for yes, 'n' for no")
     if choice == 'y':
 
         syn = login()
