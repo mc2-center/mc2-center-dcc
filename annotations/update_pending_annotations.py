@@ -18,7 +18,7 @@ def get_args():
 
     parser = argparse.ArgumentParser(
         description=
-        'Get synapse table id of annotations to be editd and synapse table id of controlled vocabulary mappings'
+        'Get synapse table id of annotations to be edited and synapse table id of controlled vocabulary mappings'
     )
     parser.add_argument(
         '-t',
