@@ -1,11 +1,16 @@
+""" Update Restricted Publication Annotations 
+
+This script will update preivously 'Restricted' Publications
+with their updated annotations after they have become 'Open Access' """
+
 import synapseclient
 from synapseclient import Table, RowSet
 import argparse
 import pandas as pd
 from attribute_dictionary import PUBLICATION_DICT
+""" Login to Synapse """
 
 
-### Login to Synapse ###
 def login():
 
     syn = synapseclient.Synapse()
@@ -17,21 +22,20 @@ def login():
 def get_args():
 
     parser = argparse.ArgumentParser(
-        description=
-        'Get synapse table id of annotations to be editd and synapse table id of controlled vocabulary mappings'
-    )
+        description='Get synapse table id of annotations to be edited and '
+        'synapse table id of controlled vocabulary mappings')
     parser.add_argument(
         '-t',
         '--table_id',
         type=str,
         default='syn21868591',
-        help=
-        'Synapse table id where annotations will be updated. Probably the Publications Merged table.'
-    )
+        help='Synapse table id where annotations will be updated. '
+        'Probably the Publications Merged table.')
     parser.add_argument('-m',
                         '--manifest_path',
                         type=str,
                         help='Path where updated manifest is stored.')
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
@@ -46,7 +50,7 @@ def get_annotations(table_id, updated_df, syn):
 
     pubmed_list = updated_df['Pubmed Id'].astype(str).tolist()
     pubmed_string = ', '.join(pubmed_list)
-    print(f'list of pumbmeds to be updated: {pubmed_string}')
+    print(f'list of pubmeds to be updated: {pubmed_string}')
 
     annots_query = syn.tableQuery(
         f"SELECT pubMedId, assay, tumorType, tissue, dataset, accessibility FROM {table_id} WHERE pubMedId IN ({pubmed_string})"
@@ -55,20 +59,19 @@ def get_annotations(table_id, updated_df, syn):
     return annots_query
 
 
-def edit_annotations(updated_df, annots_query, syn, table_id):
+def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
 
     # Convert annotations to data frame
     annots_df = annots_query.asDataFrame().fillna("")
     # preserve original index
     index_rows = dict(zip(annots_df.pubMedId, annots_df.index))
 
-    # rename updated_df columns to match annots_df columns
-    updated_df.rename(columns=PUBLICATION_DICT, inplace=True)
-    updated_df.drop(['Component'], axis=1, inplace=True)
+    # rename updated_df columns to match annots_df column and set index to pubMedId
+    updated_df = updated_df.rename(columns=PUBLICATION_DICT).drop(
+        ['Component'], axis=1).set_index('pubMedId')
 
     # update annots_df to match updated_df
     final_df = annots_df.set_index('pubMedId')
-    updated_df = updated_df.set_index('pubMedId')
     final_df.update(updated_df)
     # resetting index so pubMedId can be used to map original index
     final_df.reset_index(inplace=True)
@@ -80,9 +83,9 @@ def edit_annotations(updated_df, annots_query, syn, table_id):
     cols = syn.getTableColumns(table_id)
     col_dict = {}
     for col in cols:
-        for k, v in col.items():
-            if k == 'name':
-                col_dict[v] = col['columnType']
+        col_name = col['name']
+        col_dict[col_name] = col['columnType']
+
     data_type_dict = {
         'STRING': str,
         'INTEGER': int,
@@ -93,6 +96,8 @@ def edit_annotations(updated_df, annots_query, syn, table_id):
         'USERID': str,
         'BOOLEAN': bool
     }
+
+    # Create a new dictionary with column names as keys anve values as data types
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
     # Fix data types in annots_df to match synapse table
@@ -104,10 +109,11 @@ def edit_annotations(updated_df, annots_query, syn, table_id):
                 final_df[columnName] = final_df[columnName].astype(
                     col_types_dict[columnName])
 
-    # Can uncomment and examine edited df as a csv before uplaoding.
-    # annots_df.to_csv('updated_annotations.csv', index=False)
+    if dryrun:
+        annots_df.to_csv('updated_annotations.csv', index=False)
 
-    return final_df
+    else:
+        return final_df
 
 
 def manifest_upload(syn, table_id, final_df, annots_query):
@@ -136,7 +142,7 @@ def main():
         update_df = get_updated_df(args.manifest_path)
         annots_results = get_annotations(args.table_id, update_df, syn)
         final_df = edit_annotations(update_df, annots_results, syn,
-                                    args.table_id)
+                                    args.table_id, args.dryrun)
 
         manifest_upload(syn, args.table_id, final_df, annots_results)
 
