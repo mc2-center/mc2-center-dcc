@@ -8,10 +8,10 @@ from synapseclient import Table, RowSet
 import argparse
 import pandas as pd
 from attribute_dictionary import PUBLICATION_DICT
-""" Login to Synapse """
 
 
 def login():
+    """ Login to Synapse """
 
     syn = synapseclient.Synapse()
     syn.login()
