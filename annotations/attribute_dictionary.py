@@ -33,3 +33,23 @@ ATTRIBUTE_DICT = {
     'Project Type': 'projectType',
     'Consortium Funding Agency': 'consortiumFundingAgency'
 }
+
+PUBLICATION_DICT = {
+    'Publication Doi': 'doi',
+    'Publication Journal': 'journal',
+    'Pubmed Id': 'pubMedId',
+    'Pubmed Url': 'pubMedUrl',
+    'Publication Title': 'publicationTitle',
+    'Publication Year': 'publicationYear',
+    'Publication Keywords': 'keywords',
+    'Publication Authors': 'authors',
+    'Publication Abstract': 'abstract',
+    'Publication Assay': 'assay',
+    'Publication Tumor Type': 'tumorType',
+    'Publication Tissue': 'tissue',
+    'Publication Theme Name': 'theme',
+    'Publication Consortium Name': 'consortium',
+    'Publication Grant Number': 'grantNumber',
+    'Publication Dataset Alias': 'dataset',
+    'Publication Accessibility': 'accessibility'
+}
