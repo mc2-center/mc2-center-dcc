@@ -76,7 +76,7 @@ def main():
     )
 
     # Only add tools not currently in the Tools table.
-    new_tools = manifest[~manifest.toolName.isin(curr_tools)]
+    new_tools = manifest[~manifest['toolName'].isin(curr_tools)]
     if new_tools.empty:
         print("No new tools found!")
     else:

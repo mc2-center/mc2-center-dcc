@@ -29,7 +29,7 @@ def get_args():
 
 def sync_table(datasets, pubs):
     """Add dataset IDs to publications table, then return."""
-    curr_dataset_pmids = set(datasets.pubMedId.to_list()) - {np.nan}
+    curr_dataset_pmids = set(datasets['pubMedId'].to_list()) - {np.nan}
 
     df = pubs.asDataFrame()
     for _, row in df.iterrows():

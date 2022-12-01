@@ -87,7 +87,7 @@ def main():
     )
 
     # Only add pubs not currently in the Publications table.
-    new_pubs = manifest[~manifest.pubmedId.isin(curr_pubs)]
+    new_pubs = manifest[~manifest['pubmedId'].isin(curr_pubs)]
     if new_pubs.empty:
         print("No new publications found!")
     else:
