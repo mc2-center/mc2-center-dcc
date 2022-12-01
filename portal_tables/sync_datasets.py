@@ -46,6 +46,7 @@ def add_missing_info(syn, datasets, grants, pubs):
         in zip(datasets['datasetAlias'], datasets['datasetUrl'])
     ]
     datasets['grantName'] = ""
+    datasets['pub'] = ""
     for _, row in datasets.iterrows():
         if re.search(r"^syn\d+$", row['datasetAlias']):
             folder_id = row['datasetAlias']

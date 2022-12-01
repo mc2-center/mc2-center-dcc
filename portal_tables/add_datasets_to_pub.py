@@ -63,7 +63,7 @@ def main():
         print(updated)
     else:
         syn.store(synapseclient.Table(
-            args.pubs_table, updated), etag=pubs.etag)
+            args.pubs_table, updated, etag=pubs.etag))
     print("DONE ✓")
 
 

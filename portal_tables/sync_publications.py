@@ -36,9 +36,10 @@ def add_missing_info(pubs, grants):
         for pmid, url
         in zip(pubs.pubmedId, pubs.pubmedUrl)
     ]
+    pubs['grantName'] = ""
     for i, row in pubs.iterrows():
         grant_names = []
-        for g in row.publicationGrantNumber:
+        for g in row['publicationGrantNumber']:
             grant_names.append(
                 grants[grants.grantNumber == g]['grantName'].values[0])
         pubs.at[i, 'grantName'] = grant_names
@@ -53,15 +54,16 @@ def sync_table(syn, pubs, table):
     col_order = [
         'publicationDoi', 'publicationJournal', 'pubmedId', 'pubmedUrl',
         'Link', 'publicationTitle', 'publicationYear', 'publicationKeywords',
-        'publicationAuthors', 'publicationAssay', 'publicationTumorType',
-        'publicationTissue', 'publicationThemeName', 'publicationConsortiumName',
-        'publicationGrantNumber', 'grantName', 'publicationDatasetAlias'
+        'publicationAuthors', 'publicationAbstract', 'publicationAssay', 
+        'publicationTumorType', 'publicationTissue', 'publicationThemeName',
+        'publicationConsortiumName', 'publicationGrantNumber', 'grantName',
+        'publicationDatasetAlias', 'publicationAccessibility'
     ]
     pubs = pubs[col_order]
 
     # Convert list column into string to match with table schema.
     pubs.loc[:, 'publicationDatasetAlias'] = (
-        pubs.publicationDatasetAlias
+        pubs['publicationDatasetAlias']
         .str.join(", ")
     )
 
