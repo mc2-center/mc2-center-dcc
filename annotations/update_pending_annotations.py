@@ -110,7 +110,7 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
                     col_types_dict[columnName])
 
     if dryrun:
-        annots_df.to_csv('updated_annotations.csv', index=False)
+        final_df.to_csv('updated_annotations.csv', index=False)
 
     else:
         return final_df
