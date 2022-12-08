@@ -2,14 +2,15 @@ import synapseclient
 from synapseclient import Table
 import argparse
 import pandas as pd
+"""Upload manifests to Admin Tables in Synapse"""
+""" This script uploads manifests to admin tables (before being added 
+to merged table). Run only after validating on Schematic. This script 
+is temporary, until Schematic bugs are fixed for manifest upload using
+the table feature"""
 
-# Script to upload manifests to table (before being added to merged table).
-# Run only after validating on Schematic. This script is temporary, until
-# Schematic bugs are fixed for manifest upload using the table feature.
 
-
-### Login to Synapse ###
 def login():
+    """Login to Synapse"""
 
     syn = synapseclient.Synapse()
     syn.login()
@@ -18,6 +19,7 @@ def login():
 
 
 def get_args():
+    """Set up command-line arguments"""
 
     parser = argparse.ArgumentParser(
         description='Get synapse project id, file path, and name of table')
@@ -29,8 +31,8 @@ def get_args():
     return parser.parse_args()
 
 
-# Create dictionary of column data types
 def col_data_type_dict(syn, table_id):
+    """Create dictionary of table column data types"""
 
     cols = syn.getTableColumns(table_id)
 
@@ -56,8 +58,8 @@ def col_data_type_dict(syn, table_id):
     return (col_types_dict)
 
 
-# Edit manifest to accomadate table schema
 def edit_manifest(file_path, col_types_dict):
+    """Edit manifest to accomadate table schema"""
 
     df = pd.read_csv(file_path, index_col=False).fillna("")
 
