@@ -65,7 +65,7 @@ def add_missing_themes(themes, df, label):
     return df
 
 
-def tally_by_group(syn, grants, themes):
+def tally_by_group(syn, themes):
     """Portal - Theme Counts (syn21639584)"""
 
     # get theme counts in publications
@@ -96,12 +96,9 @@ def tally_by_group(syn, grants, themes):
 
     # get theme counts in tools
     tools = syn.tableQuery(
-        f"SELECT toolName, grantNumber FROM {TOOLS}").asDataFrame()
+        f"SELECT toolName, theme FROM {TOOLS} WHERE portalDisplay = true").asDataFrame()
     theme_tools = (
         tools
-        .explode('grantNumber')
-        .set_index('grantNumber')
-        .join(grants[['grantNumber', 'theme']].set_index('grantNumber'))
         .explode('theme')
         .groupby('theme')
         .count()
@@ -150,7 +147,7 @@ def main():
 
     consortium_counts = tally_by_consortium(grants)
     theme_consortium_counts = tally_by_theme_consortium(grants, themes)
-    theme_counts = tally_by_group(syn, grants, themes)
+    theme_counts = tally_by_group(syn, themes)
 
     update_table(syn, CONSORTIUM_CTS, consortium_counts)
     update_table(syn, CON_THEME_CTS, theme_consortium_counts)
