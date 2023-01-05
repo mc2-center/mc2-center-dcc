@@ -101,13 +101,13 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
     # Fix data types in annots_df to match synapse table
-    for columnName in final_df:
-        if col_types_dict[columnName] == list:
-            final_df[columnName] = final_df[columnName].str.split(', ')
+    for column_name in final_df:
+        if col_types_dict[column_name] == list:
+            final_df[column_name] = final_df[column_name].str.split(', ')
         else:
             for k, v in col_types_dict.items():
-                final_df[columnName] = final_df[columnName].astype(
-                    col_types_dict[columnName])
+                final_df[column_name] = final_df[column_name].astype(
+                    col_types_dict[column_name])
 
     if dryrun:
         final_df.to_csv('updated_annotations.csv', index=False)
