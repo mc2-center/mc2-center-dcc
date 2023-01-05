@@ -70,8 +70,13 @@ def status_check(syn, query, colname, email, publication_dict):
     column_names = {value: key for key, value in publication_dict.items()}
     # Edit data frame to match data model
     ready_for_review = ready_for_review.rename(columns=column_names).drop(
-        ['pubMedLink', 'grantName'], axis=1)
+        ['pubMedLink', 'grantName', 'theme', 'consortium'], axis=1)
     ready_for_review['Component'] = 'PublicationView'
+    # Convert grant number from list type to string
+    ready_for_review['Publication Grant Number'] = [
+        ','.join(map(str, l))
+        for l in ready_for_review['Publication Grant Number']
+    ]
 
     return ready_for_review
 
