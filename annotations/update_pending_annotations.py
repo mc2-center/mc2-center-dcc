@@ -48,7 +48,7 @@ def get_updated_df(manifest):
 
 def get_annotations(table_id, updated_df, syn):
 
-    pubmed_list = updated_df['Pubmed Id'].astype(str).tolist()
+    pubmed_list = updated_df['pubMedId'].astype(str).tolist()
     pubmed_string = ', '.join(pubmed_list)
     print(f'list of pubmeds to be updated: {pubmed_string}')
 
@@ -67,8 +67,8 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     index_rows = dict(zip(annots_df.pubMedId, annots_df.index))
 
     # rename updated_df columns to match annots_df column and set index to pubMedId
-    updated_df = updated_df.rename(columns=PUBLICATION_DICT).drop(
-        ['Component'], axis=1).set_index('pubMedId')
+    updated_df = updated_df.rename(
+        columns=PUBLICATION_DICT).set_index('pubMedId')
 
     # update annots_df to match updated_df
     final_df = annots_df.set_index('pubMedId')
@@ -97,7 +97,7 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
         'BOOLEAN': bool
     }
 
-    # Create a new dictionary with column names as keys anve values as data types
+    # Create a new dictionary with column names as keys and values as data types
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
     # Fix data types in annots_df to match synapse table
@@ -105,9 +105,8 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
         if col_types_dict[columnName] == list:
             final_df[columnName] = final_df[columnName].str.split(', ')
         else:
-            for k, v in col_types_dict.items():
-                final_df[columnName] = final_df[columnName].astype(
-                    col_types_dict[columnName])
+            final_df[columnName] = final_df[columnName].astype(
+                col_types_dict[columnName])
 
     if dryrun:
         annots_df.to_csv('updated_annotations.csv', index=False)
@@ -134,6 +133,7 @@ def main():
 
     choice = input(
         "\n\nDid you validate the manifest using Schematic before running this script?"
+        " AND update the portal table-friendly manifest?"
         " Type 'y' for yes, 'n' for no")
     if choice == 'y':
 

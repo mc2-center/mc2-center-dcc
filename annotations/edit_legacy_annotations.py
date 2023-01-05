@@ -101,6 +101,7 @@ def edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict):
                                 print(
                                     f'\n\nNonpreferred term caught: "{item}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: "{column_value}"\nUpdated full annotation: "{key}"'
                                 )
+
     return annots_df
 
 

@@ -47,8 +47,6 @@ PUBLICATION_DICT = {
     'Publication Assay': 'assay',
     'Publication Tumor Type': 'tumorType',
     'Publication Tissue': 'tissue',
-    'Publication Theme Name': 'theme',
-    'Publication Consortium Name': 'consortium',
     'Publication Grant Number': 'grantNumber',
     'Publication Dataset Alias': 'dataset',
     'Publication Accessibility': 'accessibility'
