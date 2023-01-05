@@ -1,12 +1,14 @@
-import synapseclient
-from synapseclient import Table
-import argparse
-import pandas as pd
-"""Upload manifests to Admin Tables in Synapse"""
-""" This script uploads manifests to admin tables (before being added 
+"""Upload manifests to Admin Tables in Synapse
+
+This script uploads manifests to admin tables (before being added 
 to merged table). Run only after validating on Schematic. This script 
 is temporary, until Schematic bugs are fixed for manifest upload using
-the table feature"""
+the table feature
+"""
+import argparse
+import synapseclient
+from synapseclient import Table
+import pandas as pd
 
 
 def login():
