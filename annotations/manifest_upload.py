@@ -73,16 +73,18 @@ def edit_manifest(file_path, col_types_dict):
         df.rename(columns={k: v}, inplace=True)
 
     # Adjust data types to match table schema
-    for columnName in df:
-        if col_types_dict[columnName] == list:
-            df[columnName] = df[columnName].astype(str)
-            df[columnName] = df[columnName].str.split(', ')
+    for column_name in df:
+        if col_types_dict[column_name] == list:
+            df[column_name] = df[column_name].astype(str)
+            df[column_name] = df[column_name].str.split(', ')
         else:
-            df[columnName] = df[columnName].astype(col_types_dict[columnName])
-            df[columnName] = df[columnName].astype(col_types_dict[columnName])
-            # For columns with USERID as datatype, remove .0 tacked on in data type conversion.
-            if col_types_dict.get(columnName) == 'USERID':
-                df[columnName] = df[columnName].replace("\.0$", "")
+            df[column_name] = df[column_name].astype(col_types_dict[column_name])
+            df[column_name] = df[column_name].astype(col_types_dict[column_name])
+
+            # For columns with USERID as datatype, remove .0 tacked on in
+            # data type conversion.
+            if col_types_dict.get(column_name) == 'USERID':
+                df[column_name] = df[column_name].replace("\.0$", "")
 
     return df
 
