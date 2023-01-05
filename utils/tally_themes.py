@@ -39,7 +39,7 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
     query = f"SELECT {colname}, theme FROM {table_id}"
     if clause:
         query += " WHERE portalDisplay = true"
-    themes = (
+    return (
         syn.tableQuery(query)
         .asDataFrame()
         .explode('theme')
