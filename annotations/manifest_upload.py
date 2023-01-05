@@ -57,7 +57,7 @@ def col_data_type_dict(syn, table_id):
     }
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
-    return (col_types_dict)
+    return col_types_dict
 
 
 def edit_manifest(file_path, col_types_dict):
