@@ -1,11 +1,11 @@
 """ Update Restricted Publication Annotations 
 
 This script will update preivously 'Restricted' Publications
-with their updated annotations after they have become 'Open Access' """
-
+with their updated annotations after they have become 'Open Access'
+"""
+import argparse
 import synapseclient
 from synapseclient import Table, RowSet
-import argparse
 import pandas as pd
 from attribute_dictionary import PUBLICATION_DICT
 
