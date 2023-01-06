@@ -6,6 +6,7 @@ and returns information of previously inaccessible publications as CSV.
 """
 
 import os
+import sys
 import argparse
 import json
 from datetime import datetime
@@ -15,6 +16,8 @@ import pandas as pd
 import synapseclient
 from synapseclient import File
 
+sys.path.insert(0, './annotations')
+from attribute_dictionary import PUBLICATION_DICT
 
 def get_args():
     """Set up command-line interface and get arguments."""
@@ -38,7 +41,7 @@ def get_args():
     return parser.parse_args()
 
 
-def status_check(syn, query, colname, email):
+def status_check(syn, query, colname, email, publication_dict):
     """
     Check availability of publications and return df of open/accessible
     publications and their current annotations on the portal.
@@ -55,7 +58,30 @@ def status_check(syn, query, colname, email):
                 row = df[df[colname] == doi]
                 row.loc[row.index, 'accessibility'] = "Open Access"
                 ready_for_review.append(row)
-    return pd.concat(ready_for_review)
+    ready_for_review = pd.concat(ready_for_review)
+
+    # Switch column name dictionary key/value pairs
+    column_names = {
+        value: key
+        for key, value
+        in publication_dict.items()
+    }
+
+    # Edit data frame to match data model
+    ready_for_review = (
+        ready_for_review
+        .rename(columns=column_names)
+        .drop(['pubMedLink', 'grantName', 'theme', 'consortium'], axis=1)
+    )
+    ready_for_review['Component'] = 'PublicationView'
+
+    # Convert grant number from list type to string
+    ready_for_review['Publication Grant Number'] = [
+        ','.join(map(str, grant))
+        for grant
+        in ready_for_review['Publication Grant Number']
+    ]
+    return ready_for_review
 
 
 def upload_results(syn, results, parent):
@@ -77,8 +103,10 @@ def main():
         f"SELECT * FROM {args.portal_table} "
         f"WHERE accessibility = 'Restricted Access'"
     )
-    email = "smc2center@sagebase.org"
-    ready_for_review = status_check(syn, query, args.colname, email)
+    email = "mc2center@sagebase.org"
+    ready_for_review = status_check(syn, query, args.colname, email,
+                                    PUBLICATION_DICT)
+
     file_id = upload_results(syn, ready_for_review, args.folder_id)
     print(f"Results ID: {file_id}")
 

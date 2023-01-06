@@ -1,15 +1,18 @@
+"""Upload manifests to Admin Tables in Synapse
+
+This script uploads manifests to admin tables (before being added 
+to merged table). Run only after validating on Schematic. This script 
+is temporary, until Schematic bugs are fixed for manifest upload using
+the table feature
+"""
+import argparse
 import synapseclient
 from synapseclient import Table
-import argparse
 import pandas as pd
 
-# Script to upload manifests to table (before being added to merged table).
-# Run only after validating on Schematic. This script is temporary, until
-# Schematic bugs are fixed for manifest upload using the table feature.
 
-
-### Login to Synapse ###
 def login():
+    """Login to Synapse"""
 
     syn = synapseclient.Synapse()
     syn.login()
@@ -18,6 +21,7 @@ def login():
 
 
 def get_args():
+    """Set up command-line arguments"""
 
     parser = argparse.ArgumentParser(
         description='Get synapse project id, file path, and name of table')
@@ -29,8 +33,8 @@ def get_args():
     return parser.parse_args()
 
 
-# Create dictionary of column data types
 def col_data_type_dict(syn, table_id):
+    """Create dictionary of table column data types"""
 
     cols = syn.getTableColumns(table_id)
 
@@ -53,11 +57,11 @@ def col_data_type_dict(syn, table_id):
     }
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
-    return (col_types_dict)
+    return col_types_dict
 
 
-# Edit manifest to accomadate table schema
 def edit_manifest(file_path, col_types_dict):
+    """Edit manifest to accomadate table schema"""
 
     df = pd.read_csv(file_path, index_col=False).fillna("")
 
@@ -69,16 +73,18 @@ def edit_manifest(file_path, col_types_dict):
         df.rename(columns={k: v}, inplace=True)
 
     # Adjust data types to match table schema
-    for columnName in df:
-        if col_types_dict[columnName] == list:
-            df[columnName] = df[columnName].astype(str)
-            df[columnName] = df[columnName].str.split(', ')
+    for column_name in df:
+        if col_types_dict[column_name] == list:
+            df[column_name] = df[column_name].astype(str)
+            df[column_name] = df[column_name].str.split(', ')
         else:
-            df[columnName] = df[columnName].astype(col_types_dict[columnName])
-            df[columnName] = df[columnName].astype(col_types_dict[columnName])
-            # For columns with USERID as datatype, remove .0 tacked on in data type conversion.
-            if col_types_dict.get(columnName) == 'USERID':
-                df[columnName] = df[columnName].replace("\.0$", "")
+            df[column_name] = df[column_name].astype(col_types_dict[column_name])
+            df[column_name] = df[column_name].astype(col_types_dict[column_name])
+
+            # For columns with USERID as datatype, remove .0 tacked on in
+            # data type conversion.
+            if col_types_dict.get(column_name) == 'USERID':
+                df[column_name] = df[column_name].replace("\.0$", "")
 
     return df
 
