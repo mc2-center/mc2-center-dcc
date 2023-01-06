@@ -16,6 +16,8 @@ import pandas as pd
 import synapseclient
 from synapseclient import File
 
+sys.path.insert(0, './annotations')
+from attribute_dictionary import PUBLICATION_DICT
 
 def get_args():
     """Set up command-line interface and get arguments."""
@@ -94,8 +96,6 @@ def upload_results(syn, results, parent):
 
 def main():
     """Main function."""
-    sys.path.insert(0, './annotations')
-    from attribute_dictionary import PUBLICATION_DICT
     syn = synapseclient.login(silent=True)
     args = get_args()
 
