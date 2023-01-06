@@ -94,7 +94,7 @@ def upload_results(syn, results, parent):
 
 def main():
     """Main function."""
-    sys.path.insert(0, './../annotations')
+    sys.path.insert(0, './annotations')
     from attribute_dictionary import PUBLICATION_DICT
     syn = synapseclient.login(silent=True)
     args = get_args()
