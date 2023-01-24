@@ -35,8 +35,11 @@ def get_df(manifest_csv):
 def split_manifest(df, type, directory):
     """Split manifest into multiple manifests by grant number"""
     colname = f"{type.capitalize()} Grant Number"
+    
+    df[colname] = [x.replace(' ', '') for x in df[colname]]
+    
     df[colname] = df[colname].str.split(',')
-
+    
     grouped = df.explode(colname).groupby(colname)
     print(f"Found {len(grouped.groups)} grant numbers in table "
           "- splitting now...")
