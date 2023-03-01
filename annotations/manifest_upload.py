@@ -76,10 +76,11 @@ def edit_manifest(file_path, col_types_dict):
     for column_name in df:
         if col_types_dict[column_name] == list:
             df[column_name] = df[column_name].astype(str)
-            df[column_name] = df[column_name].str.split(', ')
+            df[column_name] = df[column_name].apply(
+                lambda x: [y.strip() for y in x.split(',')])
         else:
-            df[column_name] = df[column_name].astype(col_types_dict[column_name])
-            df[column_name] = df[column_name].astype(col_types_dict[column_name])
+            df[column_name] = df[column_name].astype(
+                col_types_dict[column_name])
 
             # For columns with USERID as datatype, remove .0 tacked on in
             # data type conversion.
