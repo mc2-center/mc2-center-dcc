@@ -14,7 +14,7 @@ def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description="Add new tools to the CCKP")
     parser.add_argument("-m", "--manifest",
-                        type=str, required=True,
+                        type=str, default="syn35558370",
                         help="Synapse ID to the manifest table/fileview.")
     parser.add_argument("-t", "--portal_table",
                         type=str, default="syn26127427",
@@ -24,7 +24,7 @@ def get_args():
     return parser.parse_args()
 
 
-def add_missing_info(tools):
+def add_missing_info(tools, grants):
     """Add missing information into table before syncing.
 
     Returns:
@@ -32,6 +32,13 @@ def add_missing_info(tools):
     """
     tools['Link'] = "[Link](" + tools.toolHomepage + ")"
     tools['PortalDisplay'] = "true"
+    tools['themes'] = ""
+    for _, row in tools.iterrows():
+        themes = set()
+        for g in row['toolGrantNumber']:
+            themes.update(grants[grants.grantNumber == g]
+                          ['theme'].values[0])
+        tools.at[_, 'themes'] = list(themes)
     return tools
 
 
@@ -42,7 +49,7 @@ def sync_table(syn, tools, table):
     # Reorder columns to match the table order.
     col_order = [
         'toolName', 'toolDescription', 'toolHomepage', 'toolVersion',
-        'toolGrantNumber', 'toolConsortiumName', 'toolPubmedId',
+        'toolGrantNumber', 'toolConsortiumName', 'themes', 'toolPubmedId',
         'toolOperation', 'toolInputData', 'toolOutputData',
         'toolInputFormat', 'toolOutputFormat', 'toolFunctionNote',
         'toolCmd', 'toolType', 'toolTopic', 'toolOperatingSystem',
@@ -84,9 +91,15 @@ def main():
         if args.dryrun:
             print(u"\u26A0", "WARNING:",
                   "dryrun is enabled (no updates will be done)\n")
+            print(new_tools)
         else:
             print("Adding new tools...")
-            new_tools = add_missing_info(new_tools.copy())
+            grants = (
+                syn.tableQuery(
+                    "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972")
+                .asDataFrame()
+            )
+            new_tools = add_missing_info(new_tools.copy(), grants)
             sync_table(syn, new_tools, args.portal_table)
     print("DONE ✓")
 

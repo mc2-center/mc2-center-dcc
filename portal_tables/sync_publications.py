@@ -15,7 +15,7 @@ def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description="Add new pubs to the CCKP")
     parser.add_argument("-m", "--manifest",
-                        type=str, required=True,
+                        type=str, default="syn35477535",
                         help="Synapse ID to the manifest table/fileview.")
     parser.add_argument("-t", "--portal_table",
                         type=str, default="syn21868591",
@@ -97,6 +97,7 @@ def main():
         if args.dryrun:
             print(u"\u26A0", "WARNING:",
                   "dryrun is enabled (no updates will be done)\n")
+            print(new_pubs)
         else:
             print("Adding new publications...")
             grants = (

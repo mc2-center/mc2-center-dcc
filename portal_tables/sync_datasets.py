@@ -18,7 +18,7 @@ def get_args():
     parser = argparse.ArgumentParser(
         description="Add new datasets to the CCKP")
     parser.add_argument("-m", "--manifest",
-                        type=str, required=True,
+                        type=str, default="syn35492812",
                         help="Synapse ID to the manifest table/fileview.")
     parser.add_argument("-t", "--portal_table",
                         type=str, default="syn21897968",
@@ -46,6 +46,8 @@ def add_missing_info(syn, datasets, grants, pubs):
         in zip(datasets['datasetAlias'], datasets['datasetUrl'])
     ]
     datasets['grantName'] = ""
+    datasets['themes'] = ""
+    datasets['consortia'] = ""
     datasets['pub'] = ""
     for _, row in datasets.iterrows():
         if re.search(r"^syn\d+$", row['datasetAlias']):
@@ -57,10 +59,18 @@ def add_missing_info(syn, datasets, grants, pubs):
             folder_id = create_folder(syn, row['datasetAlias'], grant_proj)
         datasets.at[_, 'id'] = folder_id
         grant_names = []
+        themes = set()
+        consortia = set()
         for g in row['datasetGrantNumber']:
             grant_names.append(grants[grants.grantNumber == g]
                                ['grantName'].values[0])
+            themes.update(grants[grants.grantNumber == g]
+                          ['theme'].values[0])
+            consortia.add(grants[grants.grantNumber == g]
+                          ['consortium'].values[0])
         datasets.at[_, 'grantName'] = grant_names
+        datasets.at[_, 'themes'] = list(themes)
+        datasets.at[_, 'consortia'] = list(consortia)
         pub_titles = []
         for p in row["datasetPubmedId"]:
             pub_titles.append(pubs[pubs.pubMedId == int(p)]
@@ -78,7 +88,7 @@ def sync_table(syn, datasets, table):
         'id', 'datasetName', 'datasetAlias', 'datasetDescription',
         'datasetDesign', 'datasetFileFormats', 'datasetAssay',
         'datasetSpecies', 'datasetTissue', 'datasetTumorType',
-        'datasetThemeName', 'datasetConsortiumName', 'datasetGrantNumber',
+        'themes', 'consortia', 'datasetGrantNumber',
         'grantName', 'datasetPubmedId', 'pub', 'link'
     ]
     datasets = datasets[col_order]
@@ -131,11 +141,12 @@ def main():
         if args.dryrun:
             print(u"\u26A0", "WARNING:",
                   "dryrun is enabled (no updates will be done)\n")
+            print(new_datasets)
         else:
             print("Adding new datasets...")
             grants = (
                 syn.tableQuery(
-                    "SELECT grantId, grantNumber, grantName FROM syn21918972")
+                    "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972")
                 .asDataFrame()
             )
             pubs = (
