@@ -26,12 +26,6 @@ def get_args():
     return parser.parse_args()
 
 
-def get_df(manifest_csv):
-    """Convert manifest to data frame."""
-    df = pd.read_csv(manifest_csv)
-    return (df)
-
-
 def split_manifest(df, manifest_type, directory):
     """Split manifest into multiple manifests by grant number"""
     colname = f"{manifest_type.capitalize()} Grant Number"
@@ -52,7 +46,7 @@ def main():
 
     args = get_args()
 
-    df = df = pd.read_csv(manifest_csv)
+    df = pd.read_csv(args.manifest)
 
     split_manifest(df, args.manifest_type, args.folder)
 
