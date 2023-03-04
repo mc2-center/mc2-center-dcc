@@ -8,6 +8,9 @@ author: brynn.zalmanek
 import os
 import argparse
 import pandas as pd
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.styles import Font
 
 
 def get_args():
@@ -26,7 +29,31 @@ def get_args():
     return parser.parse_args()
 
 
-def split_manifest(df, manifest_type, directory):
+def generate_manifest_as_excel(table, cv_terms, output):
+    """Generate manifest file (xlsx) with given publications data."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "manifest"
+    for r in dataframe_to_rows(table, index=False, header=True):
+        ws.append(r)
+
+    ws2 = wb.create_sheet("standard_terms")
+    for row in dataframe_to_rows(cv_terms, index=False, header=True):
+        ws2.append(row)
+
+    # Style the worksheet.
+    ft = Font(bold=True)
+    ws2["A1"].font = ft
+    ws2["B1"].font = ft
+    ws2["C1"].font = ft
+    ws2.column_dimensions['A'].width = 18
+    ws2.column_dimensions['B'].width = 60
+    ws2.column_dimensions['C'].width = 12
+    ws2.protection.sheet = True
+    wb.save(output)
+
+
+def split_manifest(df, manifest_type):
     """Split manifest into multiple manifests by grant number"""
     colname = f"{manifest_type.capitalize()} Grant Number"
 
@@ -35,10 +62,7 @@ def split_manifest(df, manifest_type, directory):
     grouped = df.explode(colname).groupby(colname)
     print(f"Found {len(grouped.groups)} grant numbers in table "
           "- splitting now...")
-
-    for grant_number in grouped.groups:
-        df = grouped.get_group(grant_number)
-        df.to_csv(f"{directory}/{grant_number}_{type}.csv", index=False)
+    return grouped
 
 
 def main():
@@ -50,6 +74,14 @@ def main():
 
     split_manifest(df, args.manifest_type, args.folder)
 
+    # Read in manifest then split by grant number.  For each grant, generate a new
+    # manifest as an Excel file.
+    manifest = pd.read_csv(args.manifest)
+    split_manifests = split_manifest(manifest, args.manifest_type)
+    for grant_number in split_manifests.groups:
+        df = split_manifests.get_group(grant_number)
+        path = os.path.join(
+            output_dir, f"{grant_number}_{args.manifest_type}.xlsx")
     print("manifests split!")
 
 
