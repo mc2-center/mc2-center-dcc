@@ -7,6 +7,8 @@ author: brynn.zalmanek
 
 import os
 import argparse
+
+import synapseclient
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -68,11 +70,19 @@ def split_manifest(df, manifest_type):
 def main():
     """Main function."""
 
+    syn = synapseclient.login()
     args = get_args()
 
-    df = pd.read_csv(args.manifest)
+    # Create output directory if it does not already exist.
+    output_dir = args.folder
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    split_manifest(df, args.manifest_type, args.folder)
+    # Get latest CV terms to save as "standard_terms".
+    query = ("SELECT attribute, preferredTerm FROM syn26433610 "
+             "WHERE attribute <> ''"
+             "ORDER BY attribute, preferredTerm")
+    cv_terms = syn.tableQuery(query).asDataFrame().fillna("").drop_duplicates()
 
     # Read in manifest then split by grant number.  For each grant, generate a new
     # manifest as an Excel file.
@@ -82,6 +92,7 @@ def main():
         df = split_manifests.get_group(grant_number)
         path = os.path.join(
             output_dir, f"{grant_number}_{args.manifest_type}.xlsx")
+        generate_manifest_as_excel(df, cv_terms, path)
     print("manifests split!")
 
 
