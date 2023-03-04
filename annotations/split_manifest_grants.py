@@ -1,6 +1,6 @@
 """Split Manifests CSV
 This script will split a manifest csv by grant number and output
-results into individual CSVs.
+results into individual Excel files.
 author: verena.chung
 author: brynn.zalmanek
 """
@@ -31,12 +31,12 @@ def get_args():
     return parser.parse_args()
 
 
-def generate_manifest_as_excel(table, cv_terms, output):
-    """Generate manifest file (xlsx) with given publications data."""
+def generate_manifest_as_excel(df, cv_terms, output):
+    """Generate manifest file (xlsx) with given df."""
     wb = Workbook()
     ws = wb.active
     ws.title = "manifest"
-    for r in dataframe_to_rows(table, index=False, header=True):
+    for r in dataframe_to_rows(df, index=False, header=True):
         ws.append(r)
 
     ws2 = wb.create_sheet("standard_terms")
@@ -56,7 +56,7 @@ def generate_manifest_as_excel(table, cv_terms, output):
 
 
 def split_manifest(df, manifest_type):
-    """Split manifest into multiple manifests by grant number"""
+    """Split manifest into multiple manifests by grant number."""
     colname = f"{manifest_type.capitalize()} Grant Number"
 
     df[colname] = df[colname].str.split(", ")
