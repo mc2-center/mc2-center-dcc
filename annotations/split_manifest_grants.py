@@ -77,11 +77,11 @@ def main():
         os.makedirs(output_dir)
 
     # Get latest CV terms to save as "standard_terms" - only keeping
-    # terms relevant to the manifest type.
+    # the terms relevant to the manifest type.
     manifest_type = args.manifest_type
-    annots = ['assay', 'tissue', 'tumorType']
+    annots = ["assay", "tissue", "tumorType"]
 
-    cv_file = 'https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv'
+    cv_file = "https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv"
     cv_terms = pd.read_csv(cv_file)
     cv_terms = cv_terms.loc[cv_terms['category'].str.contains(manifest_type) |
                             cv_terms['category'].isin(annots)]
