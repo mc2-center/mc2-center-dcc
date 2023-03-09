@@ -8,7 +8,6 @@ author: brynn.zalmanek
 import os
 import argparse
 
-import synapseclient
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -45,9 +44,9 @@ def generate_manifest_as_excel(df, cv_terms, output):
 
     # Style the worksheet.
     ft = Font(bold=True)
-    ws2["A1"].font = ft
-    ws2["B1"].font = ft
-    ws2["C1"].font = ft
+    ws2['A1'].font = ft
+    ws2['B1'].font = ft
+    ws2['C1'].font = ft
     ws2.column_dimensions['A'].width = 18
     ws2.column_dimensions['B'].width = 60
     ws2.column_dimensions['C'].width = 12
@@ -70,7 +69,6 @@ def split_manifest(df, manifest_type):
 def main():
     """Main function."""
 
-    syn = synapseclient.login()
     args = get_args()
 
     # Create output directory if it does not already exist.
@@ -78,20 +76,24 @@ def main():
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    # Get latest CV terms to save as "standard_terms".
-    query = ("SELECT attribute, preferredTerm FROM syn26433610 "
-             "WHERE attribute <> ''"
-             "ORDER BY attribute, preferredTerm")
-    cv_terms = syn.tableQuery(query).asDataFrame().fillna("").drop_duplicates()
+    # Get latest CV terms to save as "standard_terms" - only keeping
+    # terms relevant to the manifest type.
+    manifest_type = args.manifest_type
+    annots = ['assay', 'tissue', 'tumorType']
+
+    cv_file = 'https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv'
+    cv_terms = pd.read_csv(cv_file)
+    cv_terms = cv_terms.loc[cv_terms['category'].str.contains(manifest_type) |
+                            cv_terms['category'].isin(annots)]
 
     # Read in manifest then split by grant number.  For each grant, generate a new
     # manifest as an Excel file.
     manifest = pd.read_csv(args.manifest)
-    split_manifests = split_manifest(manifest, args.manifest_type)
+    split_manifests = split_manifest(manifest, manifest_type)
     for grant_number in split_manifests.groups:
         df = split_manifests.get_group(grant_number)
         path = os.path.join(
-            output_dir, f"{grant_number}_{args.manifest_type}.xlsx")
+            output_dir, f"{grant_number}_{manifest_type}.xlsx")
         generate_manifest_as_excel(df, cv_terms, path)
     print("manifests split!")
 
