@@ -33,7 +33,7 @@ def get_args():
     return parser.parse_args()
 
 
-def col_data_type_dict(syn, table_id):
+def column_dict(syn, table_id):
     """Create dictionary of table column data types"""
 
     cols = syn.getTableColumns(table_id)
@@ -43,6 +43,13 @@ def col_data_type_dict(syn, table_id):
         for k, v in col.items():
             if k == 'name':
                 col_dict[v] = col['columnType']
+
+    return (col_dict)
+
+
+def col_data_type_dict(syn, table_id):
+
+    col_dict = column_dict(syn, table_id)
 
     # create dictionary to map to python data types
     data_type_dict = {
@@ -60,7 +67,7 @@ def col_data_type_dict(syn, table_id):
     return col_types_dict
 
 
-def edit_manifest(file_path, col_types_dict):
+def edit_manifest(file_path, col_types_dict, col_dict):
     """Edit manifest to accomadate table schema"""
 
     df = pd.read_csv(file_path, index_col=False).fillna("")
@@ -84,8 +91,10 @@ def edit_manifest(file_path, col_types_dict):
 
             # For columns with USERID as datatype, remove .0 tacked on in
             # data type conversion.
-            if col_types_dict.get(column_name) == 'USERID':
-                df[column_name] = df[column_name].replace("\.0$", "")
+            if col_dict.get(column_name) == 'USERID':
+                df[column_name] = df[column_name].replace("\.0$",
+                                                          "",
+                                                          regex=True)
 
     return df
 
@@ -108,8 +117,10 @@ def main():
 
         syn = login()
         args = get_args()
+        column_dictionary = column_dict(syn, args.table_id)
         data_type_dict = col_data_type_dict(syn, args.table_id)
-        edited_manifest = edit_manifest(args.file, data_type_dict)
+        edited_manifest = edit_manifest(args.file, data_type_dict,
+                                        column_dictionary)
 
         manifest_upload(syn, args.table_id, edited_manifest)
 
