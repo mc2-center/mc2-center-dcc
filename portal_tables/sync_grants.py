@@ -8,7 +8,14 @@ Folders will also be created for each new grant found.
 import argparse
 
 import synapseclient
-from synapseclient import Table, Project, Wiki, Folder
+def _syn_prettify(name):
+    """Prettify a name that will conform to Synapse naming rules.
+
+    Names can only contain letters, numbers, spaces, underscores, hyphens,
+    periods, plus signs, apostrophes, and parentheses.
+    """
+    valid = {38: "and", 58: "-", 59: "-", 47: "_"}
+    return name.translate(valid)
 
 
 def get_args():
@@ -26,15 +33,15 @@ def get_args():
     return parser.parse_args()
 
 
-def create_wiki_pages(syn, project_id, grant_info):
+def create_wiki_pages(syn, project_id, grant):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant_info['grantConsortiumName']
-    grant_type = grant_info['grantType']
-    title = grant_info['grantInstitutionAlias']
-    institutions = grant_info['grantInstitutionName']
-    desc = grant_info['grantAbstract'] or ""
+    consortium = grant["grantConsortiumName"]
+    grant_type = grant["grantType"]
+    title = grant["grantInstitutionAlias"]
+    institutions = grant["grantInstitutionName"]
+    desc = grant["grantAbstract"] or ""
 
     content = f"""### The {consortium} {grant_type} Research Project \@ {title}
 
@@ -52,17 +59,18 @@ def create_wiki_pages(syn, project_id, grant_info):
         "&url=https%3A%2F%2Fwww%2Esynapse%2Eorg%2F%23%21Synapse%3Asyn7080714%2F}"
         "<-"
     )
-    main_wiki = Wiki(title=grant_info['grantName'],
-                     owner=project_id, markdown=content)
+    main_wiki = Wiki(title=grant["grantName"], owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
-    pis = [pi.lstrip(" ").rstrip(" ")
-           for pi
-           in grant_info['grantInvestigator'].split(",")]
+    pis = [pi.strip(" ") for pi in grant["grantInvestigator"].split(",")]
     pi_markdown = "* " + "\n* ".join(pis)
-    pi_wiki = Wiki(title="Project Investigators", owner=project_id,
-                   markdown=pi_markdown, parentWikiId=main_wiki.id)
+    pi_wiki = Wiki(
+        title="Project Investigators",
+        owner=project_id,
+        markdown=pi_markdown,
+        parentWikiId=main_wiki.id,
+    )
     pi_wiki = syn.store(pi_wiki)
 
 
@@ -75,10 +83,8 @@ def create_folders(syn, project_id):
         - datasets
         - tools
     """
-    syn.store(Folder("projects", parent=project_id))
-    syn.store(Folder("publications", parent=project_id))
-    syn.store(Folder("datasets", parent=project_id))
-    syn.store(Folder("tools", parent=project_id))
+    for name in ["projects", "publications", "datasets", "tools"]:
+        syn.store(Folder(name, parent=project_id))
 
 
 def syn_prettify(name):
@@ -98,7 +104,7 @@ def create_grant_projects(syn, grants):
         df: grants information (including their new Project IDs)
     """
     for _, row in grants.iterrows():
-        name = syn_prettify(row['grantName'])
+        name = _syn_prettify(row["grantName"])
         try:
             project = Project(name)
             project = syn.store(project)
@@ -115,7 +121,7 @@ def create_grant_projects(syn, grants):
             create_folders(syn, project.id)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
-            grants.at[_, 'grantId'] = ""
+            grants.at[_, "grantId"] = ""
 
     return grants
 
@@ -130,18 +136,29 @@ def sync_table(syn, grants, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'grantId', 'grantName', 'grantNumber', 'grantAbstract', 'grantType',
-        'grantThemeName', 'grantInstitutionAlias', 'grantInstitutionName',
-        'grantInvestigator', 'grantConsortiumName'
+        "grantId",
+        "grantName",
+        "grantNumber",
+        "grantAbstract",
+        "grantType",
+        "grantThemeName",
+        "grantInstitutionAlias",
+        "grantInstitutionName",
+        "grantInvestigator",
+        "grantConsortiumName",
     ]
     grants = grants[col_order]
 
     # Convert columns into STRINGLIST.
-    grants.loc[:, 'grantThemeName'] = grants.grantThemeName.str.split(", ")
-    grants.loc[:, 'grantInstitutionName'] = grants.grantInstitutionName.str.split(
-        ", ")
-    grants.loc[:, 'grantInstitutionAlias'] = grants.grantInstitutionAlias.str.split(
-        ", ")
+    grants.loc[:, "grantThemeName"] = grants.grantThemeName.str.split(", ")
+    grants.loc[:, "grantInstitutionName"] = (
+        grants["grantInstitutionName"]
+        .str
+        .split(", "))
+    grants.loc[:, "grantInstitutionAlias"] = (
+        grants["grantInstitutionAlias"]
+        .str
+        .split(", "))
 
     new_rows = grants.values.tolist()
     syn.store(Table(schema, new_rows))
@@ -170,6 +187,7 @@ def main():
         if args.dryrun:
             print(u"\u26A0", "WARNING:",
                   "dryrun is enabled (no updates will be done)\n")
+            print(new_grants)
         else:
             print("Adding new grants...")
             added_grants = create_grant_projects(syn, new_grants)
