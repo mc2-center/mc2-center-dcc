@@ -227,7 +227,7 @@ def main():
     else:
         print(f"{len(new_grants)} new grants found!\n")
         if args.dryrun:
-            print(u"\u26A0", "WARNING:",
+            print("\u26A0", "WARNING:",
                   "dryrun is enabled (no updates will be done)\n")
             print(new_grants)
         else:
