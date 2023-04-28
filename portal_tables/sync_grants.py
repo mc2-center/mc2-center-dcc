@@ -151,9 +151,9 @@ def create_grant_projects(syn, grants):
             project = Project(name)
             project = syn.store(project)
             syn.setPermissions(
-                project.id, principalId=3450948,
-                accessType=['CREATE', 'READ', 'UPDATE', 'DELETE', 'DOWNLOAD',
-                            'CHANGE_PERMISSIONS', 'CHANGE_SETTINGS', 'MODERATE'],
+                project.id,
+                principalId=3450948,
+                accessType=PERMISSIONS.get("admin")
             )
 
             # Update grants table with new synId
