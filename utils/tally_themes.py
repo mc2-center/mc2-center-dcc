@@ -51,6 +51,7 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
 
 def tally_by_consortium(grants):
     """Portal - Consortium Counts (syn21641485)"""
+    grants['consortium'] = grants['consortium'].str.join(", ")
     return (
         grants[['grantId', 'consortium']]
         .groupby('consortium')
