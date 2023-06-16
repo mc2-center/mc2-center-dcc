@@ -1,0 +1,653 @@
+valid_value,category
+10-cell RNA Sequencing,assay
+10x Multiome,assay
+Visium Spatial Gene Expression,assay
+16S Ribosomal Gene Sequencing Assay,assay
+3' RNA-seq,assay
+3C,assay
+3C-qPCR,assay
+3D Bioprinting,assay
+3D Cell Culture,assay
+4C,assay
+5C,assay
+ATAC-Seq,assay
+ATP Bioluminescence Assay,assay
+Affinity Purification Mass Spectrometry,assay
+Allograft,assay
+Amplicon Sequencing,assay
+Antitumor Drug Screening Assay,assay
+Angiogenesis Assay,assay
+Apoptosis Assay,assay
+Atomic Absorption Spectrophotometry,assay
+Atomic Absorption Spectroscopy,assay
+Atomic Force Microscopy,assay
+Autoradiography,assay
+Barcode-Seq,assay
+Bicinchoninic Acid Assay,assay
+Binding Assay,assay
+Bioelectrochemical Analysis,assay
+Bio-Layer Interferometry,assay
+Bioluminescence Imaging,assay
+Bisulfite Sequencing,assay
+Brightfield Microscopy,assay
+Brillouin Microscopy,assay
+CASFISH,assay
+Chimeric Antigen Receptor T-Cell Therapy,assay
+CITE-seq,assay
+Clinical Trial,assay
+CLIP-qPCR,assay
+CRISPR,assay
+CUT&RUN,assay
+CUT&Tag-Sequencing,assay
+Cell Adhesion Assay,assay
+Cell Cycle Assay,assay
+Cell Proliferation Assay,assay
+Cell Viability Assay,assay
+Cell-spreading Assay,assay
+CellTiter-Glo Luminescent Cell Viability Assay,assay
+Cerenkov Luminescence Imaging,assay
+ChIA-PET,assay
+ChIP-PCR,assay
+ChIP-Seq,assay
+ChIP-qPCR assay,assay
+Chemiluminescent Assay,assay
+Chemotaxis Assay,assay
+Circular Dichroism Spectroscopy,assay
+Clonality Analysis,assay
+Co-Immunoprecipitation,assay
+Co-culture Assay,assay
+Collision-Induced Dissociation,assay
+Colorimetric Cell Viability Assay,assay
+Computational Modeling,assay
+Computational Tool,assay
+Comparative Genomic Hybridization,assay
+Computed Tomography,assay
+Confocal Microscopy,assay
+Confocal Reflectance Quantitative Phase Microscopy,assay
+Cross-Linking Immunoprecipitation High-throughput Sequencing,assay
+Cross-Linking Mass Spectrometry,assay
+Cryo-Electron Microscopy,assay
+Cryo-Electron Tomography,assay
+Cyclic Immunofluorescence,assay
+Cytochemical Stain,assay
+Cytokine Expression Profile,assay
+Cytometric Bead Array Assay,assay
+Cytotoxicity Assay,assay
+Data Integration,assay
+DBiT-Seq,assay
+DNA Gene-Expression Microarray,assay
+DNA Methylation Array,assay
+DNA Sequencing,assay
+DNase-Seq,assay
+DRIP-seq,assay
+Dark Field Microscopy,assay
+Deep Mutational Scanning,assay
+Desorption Electrospray Ionization,assay
+Dideoxy Chain Termination DNA Sequencing,assay
+Differential Interference Contrast Microscopy,assay
+Differential Scanning Fluorimetry,assay
+Diffusion Weighted Imaging,assay
+Direct Long-Read RNA Sequencing,assay
+Drop-Seq,assay
+Droplet Digital PCR,assay
+Dual-Luciferase Reporter Assay,assay
+Dye Endocytosis Assay,assay
+Dynamic Contrast-Enhanced Magnetic Resonance Imaging,assay
+Dynamic Force Spectroscopy,assay
+Dynamic Light Scattering,assay
+Dynamic Susceptibility Contrast-Enhanced Magnetic Resonance Imaging,assay
+ELISA,assay
+Efferocytosis Assay,assay
+Electron Diffraction,assay
+Electron Microscopy,assay
+Electron Paramagnetic Resonance Spectroscopy,assay
+Electrophoretic Mobility Shift Assay,assay
+Electrospray Ionization Time-of-Flight Mass Spectrometry,assay
+Endotoxin Assay,assay
+Energy-Dispersive X-Ray Spectroscopy,assay
+Enzyme Activity Assay,assay
+Enzyme-Linked Immunospot Assay,assay
+Epidemiological Method,assay
+FAIRE-Seq,assay
+Field-Emission Scanning Electron Microscopy,assay
+FISH,assay
+Flow Cytometry,assay
+Fluorescence Activated Cell Sorting,assay
+Fluorescence Correlation Spectroscopy,assay
+Fluorescence Imaging,assay
+Fluorescence Lifetime Imaging Microscopy,assay
+Fluorescence Microscopy,assay
+Fluorescence Recovery After Photo-Bleaching,assay
+Fluorescent Antibody Procedure,assay
+Fluorescent Cell Barcoding,assay
+Fluorescent In Situ Sequencing,assay
+Focused Ion Beam Scanning Electron Microscopy,assay
+Forster resonance energy transfer,assay
+Fourier Transform Ion Cyclotron Resonance Mass Spectrometry,assay
+Fourier-Transform Infrared Spectroscopy,assay
+Gas Chromatography Mass Spectrometry,assay
+Gelatin Zymography,assay
+Genotyping,assay
+Global Chromatin Profiling,assay
+Global Run-On Sequencing,assay
+Graphite Furnace Atomic Absorption Spectrometry,assay
+HL-Chip,assay
+HPLC-MSMS,assay
+Hematoxylin and Eosin Staining Method,assay
+Hi-C,assay
+HiChIP,assay
+High Throughput Screening,assay
+High-Content Screen,assay
+Hydrogels,assay
+Hydrophilic Interaction Chromatography,assay
+Image Cytometry,assay
+Imaging,assay
+Immobilized Metal Affinity Chromatography,assay
+ImmunoFISH,assay
+Immunoassay,assay
+Immunocytochemistry,assay
+Immunohistochemistry Staining Method,assay
+Immunoprecipitation,assay
+In Situ Hybridization,assay
+In Vitro Cell Killing Assay,assay
+In Vitro Model,assay
+In Vitro Selection,assay
+In Vitro Translation,assay
+In Vivo Bioluminescence,assay
+In-Cell Western Assay,assay
+Inductively-Coupled Plasma Mass Spectrometry,assay
+Interference Reflection Microscopy,assay
+Intravital Microscopy,assay
+Invasion Assay,assay
+Karyotyping,assay
+Knife-Edge Scanning Microscopy,assay
+L1000 mRNA Profiling Assay,assay
+Lattice Light Sheet Microscopy,assay
+Label-free Protein Quantification by LC/MS,assay
+Liquid Chromatography Mass Spectrometry,assay
+Liquid Chromatography/Tandem Mass Spectrometry,assay
+Low-Vacuum Scanning Electron Microscopy,assay
+Luciferase Reporter Assay,assay
+Luminescent Cell Viability Assay,assay
+MALDI-TOF Mass Spectrometry,assay
+MEMA Cell Growth Assay,assay
+MNase-Seq,assay
+MULTI-Seq,assay
+MULTI-seq,assay
+Macrophage Polarization Assay,assay
+Magnetic Resonance Imaging,assay
+Magnetic Tweezers,assay
+Magnetic Twisting Cytometry,assay
+Magnetically Activated Cell Sorting,assay
+Mammosphere Formation Assay,assay
+Mass Cytometry,assay
+Mass Spectrometry,assay
+Mathematical Modeling,assay
+MeDIP,assay
+MeRIP-Seq,assay
+Metabolite Profiling Assay,assay
+Methyl Binding Domain Sequencing,assay
+Methylation-Specific PCR,assay
+Micro-computed Tomography,assay
+MicroRNA Expression Array,assay
+MicroRNA Sequencing,assay
+Microcontact Printing,assay
+Microfluidics,assay
+Micropipette Adhesion Assay,assay
+Micropipette Aspiration,assay
+Microscopy,assay
+Migration Assay,assay
+Mint-ChIP,assay
+Modeling,assay
+Molecular Simulations,assay
+Monolayer Stress Microscopy,assay
+Multi-Angle Light Scattering,assay
+Multi-Isotope Mass Spectrometry,assay
+Multiparametric Magnetic Resonance Imaging,assay
+Multiphoton Microscopy,assay
+Multiplexed Error-Robust Fluorescence In Situ Hybridization,assay
+Multiplexed Immunofluorescence,assay
+Multiplexed Immunohistochemistry,assay
+Multiplexed Ion Beam Imaging,assay
+Murine Model,assay
+Nano-hmC-Seal,assay
+NanoString Digital Spatial Profiling,assay
+Nanopatterning,assay
+Nanopore Sequencing,assay
+Nanowire,assay
+Nested PCR,assay
+Next Generation Sequencing,assay
+Nm-seq,assay
+Not Applicable,assay
+Nuclear Magnetic Resonance,assay
+Optical Coherence Tomography,assay
+Optical Emission Spectroscopy,assay
+Optical Mapping,assay
+Optical Stretcher,assay
+Optical Tweezers,assay
+Optogenetic Assay,assay
+Organoid,assay
+PCR,assay
+PET-CT,assay
+Paraquat Survival Assay,assay
+Partial Wave Spectroscopy,assay
+Patient Derived Xenograft,assay
+Pending Annotation,assay
+Permeability Assay,assay
+Phagocytosis Assay,assay
+Photoacoustic Imaging,assay
+Photolithography,assay
+Plasmid Construction,assay
+PlateSeq,assay
+Point Accumulation for Imaging in Nanoscale Topography,assay
+Positron Emission Tomography,assay
+Precision Run-On Sequencing,assay
+Proteomics Assay,assay
+Proximity Ligation Assay,assay
+Pull-Down Assay,assay
+QFISH,assay
+Quantitative Multiplex Immunofluorescence,assay
+Quantitative Point Accumulation for Imaging in Nanoscale Topography,assay
+Questionnaire,assay
+RAS Protein Family Activation Assay,assay
+Reporter Gene Assay,assay
+RIP,assay
+RIP-Seq,assay
+RNA Sequencing,assay
+RNAi Screen,assay
+RT-PCR,assay
+RT-qPCR,assay
+Raman Spectroscopy,assay
+Reduced Representation Bisulfite Sequencing,assay
+Reverse Phase Protein Array,assay
+Reverse-Phase High-Performance liquid Chromatography,assay
+Rheometry,assay
+Ribo-Seq,assay
+Ribosomal P Protein Antibody Measurement,assay
+Scanning Angle Interference Microscopy,assay
+Scanning Electron Microscopy,assay
+Second-Harmonic Imaging Microscopy,assay
+Shotgun Mass Spectrometry,assay
+Single Cell ATAC-Seq,assay
+Single Cell Cytokine Detection Chip Assay,assay
+Single Cell DNA Sequencing,assay
+Single Cell Gel Electrophoresis,assay
+Single Cell RNA-Sequencing,assay
+Single Molecule Forster Resonance Energy Transfer,assay
+Single Nucleotide Polymorphism Array,assay
+Single Nucleus RNA-Sequencing,assay
+Single-Cell BCR Sequencing,assay
+Single-Cell Barcode Chip,assay
+Single-Cell TCR Sequencing,assay
+Single-Molecule Localization Microscopy,assay
+Single-Molecule Tracking,assay
+Sirius Red Staining,assay
+Size Exclusion Chromatography,assay
+Small-Angle X-ray Scattering,assay
+Soft Agar Assay,assay
+Southern Blotting,assay
+Spectroscopy,assay
+Statistical Modeling,assay
+Stimulated Emission Depletion Microscopy,assay
+Stimulated Raman Scattering,assay
+Stochastic Optical Reconstruction Microscopy,assay
+Super-Resolution Microscopy,assay
+Surface Plasmon Resonance,assay
+Surveyor Nuclease Assay,assay
+Synaptophysin Staining Method,assay
+Synthesis,assay
+Synthetic Genetic Array,assay
+TAB-Seq,assay
+TCR Sequencing,assay
+TIRF Microscopy,assay
+TRAP Staining,assay
+TUNEL assay,assay
+Tandem Mass Spectrometry,assay
+Tandem Mass Tagging,assay
+Target Engagement Assay,assay
+Targeted Genome Sequencing,assay
+Targeted Therapy Agent,assay
+Targeted Transcriptome Sequencing,assay
+Thermal Shift Assay,assay
+Thin-Layer Chromatography,assay
+Tiling Array,assay
+Time Lapse Microscopy,assay
+Time-Correlated Single Photon Counting,assay
+Tissue Engineering,assay
+Tissue Microarray,assay
+Total Internal Reflection Fluorescence Microscopy,assay
+Traction Force Microscopy,assay
+Transmission Electron Microscopy,assay
+Transwell Assay,assay
+Trichrome Staining Method,assay
+UPLC-MSMS,assay
+UV Photocrosslinking,assay
+Unspecified,assay
+Ultrasound Imaging,assay
+Vibrational Spectroscopy,assay
+Virus Plaque Assay,assay
+Von Kossa Staining,assay
+Western Blotting,assay
+Whole Exome Sequencing,assay
+Whole Genome Bisulfite Sequencing,assay
+Whole Genome Sequencing,assay
+Widefield Fluorescence Microscopy,assay
+Wound-Healing Assay,assay
+X-Ray Crystallography,assay
+X-Ray Diffraction,assay
+X-Ray Micro-Computed Tomography,assay
+Xenograft,assay
+cDNA Array,assay
+eCLIP-Seq,assay
+mRNA Sequencing,assay
+qPCR,assay
+scCGI-seq,assay
+scNT-Seq,assay
+scSLAM-seq,assay
+seqFISH,assay
+shRNA,assay
+siRNA,assay
+smFISH,assay
+smRNA-seq,assay
+snRNA-seq,assay
+Isothermal Titration Calorimetry,assay
+Suspended Microchannel Resonator,assay
+Gonad,tissue
+Abdominal Esophagus,tissue
+Adipose Tissue,tissue
+Adrenal Gland,tissue
+Alveolus,tissue
+Aorta,tissue
+Artery,tissue
+Ascending Colon,tissue
+Bile Duct,tissue
+Bladder,tissue
+Blood,tissue
+Blood Vessel,tissue
+Bone,tissue
+Bone Marrow,tissue
+Brain,tissue
+Breast,tissue
+Caecum,tissue
+Cancer-Associated Fibroblast,tissue
+Cardia,tissue
+Cartilage,tissue
+Cervix Uteri,tissue
+Choroid,tissue
+Colon,tissue
+Connective and Soft Tissue,tissue
+Cornea,tissue
+Duodenum,tissue
+Ear,tissue
+Embryo,tissue
+Embryonic Heart,tissue
+Endocervix,tissue
+Endometrium,tissue
+Endothelium,tissue
+Epithelium,tissue
+Esophagus,tissue
+Eye,tissue
+Fallopian Tube,tissue
+Foreskin,tissue
+Frontal Lobe,tissue
+Gastroesophageal Junction,tissue
+Gastrointestinal Tract,tissue
+Genitourinary,tissue
+Hair Follicle,tissue
+Head and Neck,tissue
+Heart,tissue
+Heart Muscle,tissue
+Hematopoietic System,tissue
+Hippocampus,tissue
+Intestine,tissue
+Intra-Abdominal Lymph Nodes,tissue
+Intrathoracic Lymph Nodes,tissue
+Joint,tissue
+Kidney,tissue
+Larynx,tissue
+Ligament,tissue
+Liver,tissue
+Lung,tissue
+Lymph,tissue
+Lymph Node,tissue
+Lymph Nodes of Axilla or Arm,tissue
+Lymph Nodes of Inguinal Region or Leg,tissue
+Lymphatic System,tissue
+Lymphoid Tissue,tissue
+Main Bronchus,tissue
+Mammary Gland,tissue
+Meninges,tissue
+Mesenchyme,tissue
+Mucosa,tissue
+Muscle,tissue
+Nasal Cavity,tissue
+Nervous System,tissue
+Not Applicable,tissue
+Olfactory Mucosa,tissue
+Omentum,tissue
+Oral Cavity,tissue
+Oral Mucosa,tissue
+Ovary,tissue
+Pancreas,tissue
+Pelvic Lymph Nodes,tissue
+Pending Annotation,tissue
+Periodontal Ligament,tissue
+Peripheral Nerves,tissue
+Peritoneum,tissue
+Pharynx,tissue
+Pituitary Gland,tissue
+Placenta,tissue
+Pleura,tissue
+Prostate Gland,tissue
+Rectum,tissue
+Reproductive System,tissue
+Respiratory System,tissue
+Salivary Gland,tissue
+Sclera,tissue
+Sinonasal Tract,tissue
+Skin,tissue
+Small Intestine,tissue
+Spinal Cord,tissue
+Spleen,tissue
+Stomach,tissue
+Synovial Membrane,tissue
+Tendon,tissue
+Testis,tissue
+Thymus,tissue
+Thyroid Gland,tissue
+Tongue,tissue
+Tonsil,tissue
+Trachea,tissue
+Umbilical Cord,tissue
+Unspecified,tissue
+Uterus,tissue
+Vagina,tissue
+Vascular Endothelium,tissue
+Vein,tissue
+Vertebra,tissue
+Cutaneous Melanoma,tumorType
+Acinar Cell Carcinoma,tumorType
+Acute Lymphoblastic Leukemia,tumorType
+Acute Monocytic Leukemia,tumorType
+Acute Monocytic Leukemia,tumorType
+Acute Promyelocytic Leukemia,tumorType
+Adenocarcinoma,tumorType
+Angiosarcoma,tumorType
+Astrocytoma,tumorType
+Atypical Teratoid/Rhabdoid Tumor,tumorType
+B Acute Lymphoblastic Leukemia,tumorType
+B-Cell Non-Hodgkin Lymphoma,tumorType
+Barrett Esophagus,tumorType
+Basal Cell Neoplasm,tumorType
+Basal-Like Breast Carcinoma,tumorType
+Biliary Tract Carcinoma,tumorType
+Bladder Carcinoma,tumorType
+Bladder Neoplasm,tumorType
+Bone Neoplasm,tumorType
+Brain Neoplasm,tumorType
+Breast Adenocarcinoma,tumorType
+Breast Carcinoma,tumorType
+Breast Neoplasm,tumorType
+Carcinoma,tumorType
+Carcinoma In Situ,tumorType
+Castration-Resistant Prostate Carcinoma,tumorType
+Cellular Schwannoma,tumorType
+Central Nervous System Cavernous Hemangioma,tumorType
+Central Nervous System Neoplasm,tumorType
+Cerebellar Neoplasm,tumorType
+Cervical Carcinoma,tumorType
+Cervical Neoplasm,tumorType
+Cervical Small Cell Carcinoma,tumorType
+Cholangiocarcinoma,tumorType
+Chondroblastoma,tumorType
+Choriocarcinoma,tumorType
+Chronic Lymphocytic Leukemia,tumorType
+Chronic Myeloid Leukemia,tumorType
+Clear Cell Renal Cell Carcinoma,tumorType
+Colon Adenocarcinoma,tumorType
+Colon Carcinoma,tumorType
+Colorectal Adenocarcinoma,tumorType
+Colorectal Adenoma,tumorType
+Colorectal Carcinoma,tumorType
+Colorectal Neoplasm,tumorType
+Combined Hepatocellular Carcinoma and Cholangiocarcinoma,tumorType
+Craniopharyngioma,tumorType
+Cutaneous T Cell Lymphoma,tumorType
+Diffuse Large B-Cell Lymphoma,tumorType
+Ductal Breast Carcinoma In Situ,tumorType
+Dysembryoplastic Neuroepithelial Neoplasm,tumorType
+Endometrial Carcinoma,tumorType
+Endometrial Neoplasm,tumorType
+Ependymoma,tumorType
+Esophageal Adenocarcinoma,tumorType
+Esophageal Carcinoma,tumorType
+Esophageal Squamous Cell Carcinoma,tumorType
+Ewing Sarcoma,tumorType
+Extraventricular Neurocytoma,tumorType
+Fibroepithelial Polyp,tumorType
+Fibrolamellar Carcinoma,tumorType
+Fibrosarcoma,tumorType
+Follicular Lymphoma,tumorType
+Gallbladder Carcinoma,tumorType
+Gastric Adenocarcinoma,tumorType
+Gastric Carcinoma,tumorType
+Gastric Neoplasm,tumorType
+Gastroesophageal Adenocarcinoma,tumorType
+Gastroesophageal Junction Adenocarcinoma,tumorType
+Gastrointestinal Stromal Neoplasm,tumorType
+Giant Cell Tumor,tumorType
+Glioblastoma,tumorType
+Glioma,tumorType
+Head and Neck Carcinoma,tumorType
+Head and Neck Neoplasm,tumorType
+Head and Neck Squamous Cell Carcinoma,tumorType
+Hepatocellular Carcinoma,tumorType
+High Grade Ovarian Serous Adenocarcinoma,tumorType
+Histiocytic Sarcoma,tumorType
+Hodgkin Lymphoma,tumorType
+Intestinal Neoplasm,tumorType
+Intrahepatic Cholangiocarcinoma,tumorType
+Invasive Ductal Breast Carcinoma,tumorType
+Kaposi Sarcoma,tumorType
+Leiomyoma,tumorType
+Leukemia,tumorType
+Liver and Intrahepatic Bile Duct Carcinoma,tumorType
+Liver and Intrahepatic Bile Duct Neoplasm,tumorType
+Low Grade Glioma,tumorType
+Luminal A Breast Carcinoma,tumorType
+Lung Adenocarcinoma,tumorType
+Lung Carcinoma,tumorType
+Lung Neoplasm,tumorType
+Lung Non-Small Cell Carcinoma,tumorType
+Lung Small Cell Carcinoma,tumorType
+Lung Squamous Cell Carcinoma,tumorType
+Lymphoid Leukemia,tumorType
+Lymphoma,tumorType
+Malignant Brain Neoplasm,tumorType
+Malignant Digestive System Neoplasm,tumorType
+Malignant Genitourinary System Neoplasm,tumorType
+Malignant Glioma,tumorType
+Malignant Neoplasm,tumorType
+Malignant Ovarian Neoplasm,tumorType
+Malignant Pancreatic Neoplasm,tumorType
+Malignant Peripheral Nerve Sheath Tumor,tumorType
+Malignant Peritoneal Neoplasm,tumorType
+Malignant Skin Neoplasm,tumorType
+Mantle Cell Lymphoma,tumorType
+Marginal Zone Lymphoma,tumorType
+Medulloblastoma,tumorType
+Melanoma,tumorType
+Meningioma,tumorType
+Mesothelioma,tumorType
+Multiple Myeloma,tumorType
+Mycosis Fungoides,tumorType
+Myeloid Leukemia,tumorType
+Myeloid Neoplasm,tumorType
+Myeloproliferative Neoplasm,tumorType
+Myoepithelioma,tumorType
+Nasopharyngeal Carcinoma,tumorType
+Neuroblastoma,tumorType
+Neuroendocrine Neoplasm,tumorType
+Neuroepithelial Neoplasm,tumorType
+Neurofibroma,tumorType
+Non-Functioning Pituitary Gland Adenoma,tumorType
+Non-Hodgkin Lymphoma,tumorType
+Not Applicable,tumorType
+Oral Cavity Neoplasm,tumorType
+Oral Cavity Squamous Cell Carcinoma,tumorType
+Oropharyngeal Neoplasm,tumorType
+Osteosarcoma,tumorType
+Ovarian Adenosarcoma,tumorType
+Ovarian Carcinoma,tumorType
+Ovarian Neoplasm,tumorType
+Ovarian Serous Adenocarcinoma,tumorType
+Pan-cancer,tumorType
+Pancreatic Adenocarcinoma,tumorType
+Pancreatic Carcinoma,tumorType
+Pancreatic Ductal Adenocarcinoma,tumorType
+Pancreatic Neoplasm,tumorType
+Pancreatic Neuroendocrine Carcinoma,tumorType
+Pending Annotation,tumorType
+Penile Carcinoma,tumorType
+Pheochromocytoma,tumorType
+Pilocytic Astrocytoma,tumorType
+Pituitary Gland Adenoma,tumorType
+Plasmablastic Lymphoma,tumorType
+Plasmacytoma,tumorType
+Plexiform Schwannoma,tumorType
+Precursor B-cell lymphoblastic leukemia,tumorType
+Primary Central Nervous System Lymphoma,tumorType
+Primary Myelofibrosis,tumorType
+Prostate Adenocarcinoma,tumorType
+Prostate Carcinoma,tumorType
+Prostate Neoplasm,tumorType
+Rectal Adenocarcinoma,tumorType
+Renal Cell Carcinoma,tumorType
+Retinoblastoma,tumorType
+Rhabdomyosarcoma,tumorType
+Rosette-Forming Glioneuronal Tumor,tumorType
+Salivary Gland Adenoid Cystic Carcinoma,tumorType
+Sarcoma,tumorType
+Schwannoma,tumorType
+Serous Tubal Intraepithelial Carcinoma,tumorType
+Sinonasal Squamous Cell Carcinoma,tumorType
+Skin Carcinoma,tumorType
+Skin Neoplasm,tumorType
+Soft Tissue Sarcoma,tumorType
+Squamous Cell Carcinoma,tumorType
+Synovial Sarcoma,tumorType
+T Acute Lymphoblastic Leukemia,tumorType
+T-Cell Lymphoma,tumorType
+Teratoma,tumorType
+Testicular Embryonal Carcinoma,tumorType
+Thyroid Gland Anaplastic Carcinoma,tumorType
+Thyroid Gland Carcinoma,tumorType
+Thyroid Gland Noninvasive Follicular Neoplasm with Papillary-Like Nuclear Features,tumorType
+Triple-Negative Breast Carcinoma,tumorType
+Urothelial Carcinoma,tumorType
+Uterine Adenosarcoma,tumorType
+Uveal Melanoma,tumorType
+Uveal Neoplasm,tumorType
+Vascular Neoplasm,tumorType
+Open Access,publication_accessibility
+Restricted Access,publication_accessibility
