@@ -14,14 +14,23 @@ def submit_entry_worker(args):
     print(f"Submitting file: {df} with target ID: {target_id}")
     # Construct the subprocess command
     command = [
-        "schematic",
-        "model",
-        "submit",
-        "--mp",
-        df,
-        "-d",
-        target_id
-    ]
+            "schematic",
+            "model",
+            "-c",
+            "config.yml",
+            "submit",
+            "-mp",
+            df,
+            "-d",
+            target_id,
+            "-vc",
+            "publication",  # Replace with your actual value
+            "-dl",
+            "-mrt",
+            "table_and_file",
+            "-tm",
+            "upsert"
+        ]
 
     # Print the command
     print(" ".join(command))  
@@ -33,7 +42,7 @@ def main():
     )
     if choice == 'y':
         syn = login()
-        csv_file = 'input.csv'  # Replace with CSV file path
+        csv_file = '/Users/agopalan/mc2-center-dcc/annotations/input.csv'  # Replace with CSV file path
         df = pd.read_csv(csv_file)
 
         # Create a pool of worker processes
