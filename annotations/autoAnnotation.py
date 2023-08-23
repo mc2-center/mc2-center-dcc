@@ -2,14 +2,21 @@ import pandas as pd
 import numpy
 import scipy
 import csv
+import glob
 from pdfminer.high_level import extract_text
 
-def read_pdf():
-    #Function to parse pdf into a list of words 
-    text = extract_text("pdf1.pdf")
-    print(text)
+def read_pdf(filepath):
+    #Function to read all pdf files in a folder and parse them into a list of words
+    files = glob.glob(filepath)
+    
+    text_list = []
 
-    return text.split()
+    for f in files: 
+        text = extract_text("pdf1.pdf")
+        text = text.split()
+        text_list.append(text)
+
+    return text_list
 
 
 def create_dict():
@@ -20,6 +27,7 @@ def create_dict():
     assay = []
     tissue = []
     tumorType = []
+
     assay = df.where(df['category'] == 'assay')['valid_value'].dropna().tolist()
     tissue = df.where(df['category'] == 'tissue')['valid_value'].dropna().tolist()
     tumorType = df.where(df['category'] == 'tumorType')['valid_value'].dropna().tolist()
@@ -27,10 +35,14 @@ def create_dict():
     return assay, tissue, tumorType
 
 
-def annotate():
-text = read_pdf()
+#def annotate():
+path = r'./*.pdf'
+text = read_pdf(path)
 
 assay, tissue, tumorType = create_dict()
+
+
+#Matching specific terms in paper to existing list of standard terms 
 
 l = []
 for word in text: 
