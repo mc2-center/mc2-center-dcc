@@ -1,0 +1,55 @@
+{
+  "data_asset_type": null,
+  "expectation_suite_name": "Manifest_test_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "kwargs": {
+        "column": "Publication Doi",
+        "mostly": 1.0,
+        "result_format": "COMPLETE"
+      },
+      "meta": {
+        "notes": {
+          "content": "Expect column values to be Unique. **Markdown** `Supported`",
+          "format": "markdown"
+        },
+        "validation_rule": "unique"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "kwargs": {
+        "column": "Pubmed Id",
+        "mostly": 1.0,
+        "result_format": "COMPLETE"
+      },
+      "meta": {
+        "notes": {
+          "content": "Expect column values to be Unique. **Markdown** `Supported`",
+          "format": "markdown"
+        },
+        "validation_rule": "unique"
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "kwargs": {
+        "column": "PublicationView_id",
+        "mostly": 1.0,
+        "result_format": "COMPLETE"
+      },
+      "meta": {
+        "notes": {
+          "content": "Expect column values to be Unique. **Markdown** `Supported`",
+          "format": "markdown"
+        },
+        "validation_rule": "unique"
+      }
+    }
+  ],
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.15.50"
+  }
+}
