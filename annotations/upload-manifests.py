@@ -10,21 +10,22 @@ def login():
     return syn
 
 def submit_entry_worker(args):
-    df, target_id = args
-    print(f"Submitting file: {df} with target ID: {target_id}")
+    fp, target_id = args
+    print("##### ARGS #######", args)
+    print(f"Submitting file: {fp} with target ID: {target_id}")
     # Construct the subprocess command
     command = [
             "schematic",
             "model",
             "-c",
-            "config.yml",
+            "/Users/agopalan/schematic/config.yml",
             "submit",
             "-mp",
-            df,
+            fp,
             "-d",
             target_id,
             "-vc",
-            "publication",  # Replace with your actual value
+            "PublicationView",  
             "-dl",
             "-mrt",
             "table_and_file",
@@ -45,12 +46,12 @@ def main():
         csv_file = '/Users/agopalan/mc2-center-dcc/annotations/input.csv'  # Replace with CSV file path
         df = pd.read_csv(csv_file)
 
-        # Create a pool of worker processes
+        # Create a pool of worker processes, this parallelizes schematic submit commands for more efficient upload
         num_processes = multiprocessing.cpu_count()  # Number of CPU cores
         pool = multiprocessing.Pool(processes=num_processes)
 
         #  Arguments for the submit_entry_worker function
-        args_list = [(pd.read_csv(row['file_path'], index_col=False).fillna(""), row['target_id']) for _, row in df.iterrows()]
+        args_list = [(row['file_path'], row['target_id']) for _, row in df.iterrows()]        
 
         # Submit entries using multiprocessing
         pool.map(submit_entry_worker, args_list)
