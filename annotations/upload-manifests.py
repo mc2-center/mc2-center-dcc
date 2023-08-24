@@ -17,7 +17,7 @@ def submit_entry_worker(args):
             "schematic",
             "model",
             "-c",
-            "/Users/agopalan/schematic/config.yml",
+            "/Users/agopalan/schematic/config.yml", # Replace with link to your schematic config file
             "submit",
             "-mp",
             fp,
