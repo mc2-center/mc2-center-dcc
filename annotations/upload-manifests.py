@@ -11,7 +11,6 @@ def login():
 
 def submit_entry_worker(args):
     fp, target_id = args
-    print("##### ARGS #######", args)
     print(f"Submitting file: {fp} with target ID: {target_id}")
     # Construct the subprocess command
     command = [
