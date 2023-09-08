@@ -2,79 +2,97 @@ import pandas as pd
 import synapseclient
 import multiprocessing
 import subprocess
+import sys
 
+'''
+
+This script accepts a CSV file containing manifest file paths and their corresponding Synapse IDs for target folders. 
+It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
+
+'''
 def login():
     """Login to Synapse"""
     syn = synapseclient.Synapse()
     syn.login()
     return syn
 
+def validate_entry_worker(fp):
+    print(f"Validating file: {fp}")
+    validate_command = [
+        "schematic",
+        "model",
+        "-c",
+        "/Users/agopalan/schematic/config.yml",  # Replace with link to your schematic config file
+        "validate",
+        "-dt",
+        "PublicationView",
+        "-mp",
+        fp
+    ]
+    
+    print(f"Running validation command: {' '.join(validate_command)}")
+    try:
+        subprocess.run(validate_command, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT)
+        return fp  # Validation succeeded, return the filepath
+    except subprocess.CalledProcessError:
+        print(f"File with {fp} could not be validated and will not be submitted to Synapse.")
+        return None  # Validation failed
+
 def submit_entry_worker(args):
     fp, target_id = args
     print(f"Submitting file: {fp} with target ID: {target_id}")
-    # Construct the subprocess command
     command = [
-            "schematic",
-            "model",
-            "-c",
-            "/Users/agopalan/schematic/config.yml", # Replace with link to your schematic config file
-            "submit",
-            "-mp",
-            fp,
-            "-d",
-            target_id,
-            "-vc",
-            "PublicationView",  
-            "-dl",
-            "-mrt",
-            "table_and_file",
-            "-tm",
-            "upsert"
-        ]
+        "schematic",
+        "model",
+        "-c",
+        "/Users/agopalan/schematic/config.yml",  # Replace with link to your schematic config file
+        "submit",
+        "-mp",
+        fp,
+        "-d",
+        target_id,
+        "-dl",
+        "-mrt",
+        "table_and_file",
+        "-tm",
+        "upsert"
+    ]
 
-    # Print the command
-    print(" ".join(command))  
-    subprocess.run(command)
+    
+    cmd_line = " ".join(command)
+    print(cmd_line)
+    subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
 
 def main():
-    choice = input(
-        "\n\nDid you validate the manifest using Schematic before running this script? Type 'y' for yes, 'n' for no"
-    )
-    if choice == 'y':
-        syn = login()
-        csv_file = '/Users/agopalan/mc2-center-dcc/annotations/input.csv'  # Replace with CSV file path
-        df = pd.read_csv(csv_file)
+    
+    syn = login()
+    csv_file = '/Users/agopalan/mc2-center-dcc/annotations/input.csv'  # Replace with CSV file path
+    df = pd.read_csv(csv_file)
 
-        # Create a pool of worker processes, this parallelizes schematic submit commands for more efficient upload
-        num_processes = multiprocessing.cpu_count()  # Number of CPU cores
-        pool = multiprocessing.Pool(processes=num_processes)
+    num_processes = multiprocessing.cpu_count()  # Number of CPU cores
+    pool = multiprocessing.Pool(processes=num_processes)
 
-        #  Arguments for the submit_entry_worker function
-        args_list = [(row['file_path'], row['target_id']) for _, row in df.iterrows()]        
+    validation_args_list = df['file_path'].tolist()
 
-        # Submit entries using multiprocessing
-        pool.map(submit_entry_worker, args_list)
+    validated_files = pool.map(validate_entry_worker, validation_args_list)
 
-        # Close the pool of worker processes
-        pool.close()
-        pool.join()
+    pool.close()
+    pool.join()
 
-        '''
-        
-        #Un-parallelized code block
+    validated_files = [fp for fp in validated_files if fp is not None]
 
-        # Iterate over each row in the CSV
-        for index, row in df.iterrows():
-            file_path = row['file_path']  
-            target_id = row['target_id']  
-            
-            # Call the submission function with file_path and target_id
-            df = pd.read_csv(file_path, index_col=False).fillna("")
-            submit_entry(syn, df, target_id)
-        
+    submit_pool = multiprocessing.Pool(processes=num_processes)
 
-        '''
+    submit_args_list = [(fp, df.loc[i, 'target_id']) for i, fp in enumerate(validated_files)]
+
+    submit_pool.map(submit_entry_worker, submit_args_list)
+
+    submit_pool.close()
+    submit_pool.join()
 
 if __name__ == "__main__":
     main()
+
+
+
 
