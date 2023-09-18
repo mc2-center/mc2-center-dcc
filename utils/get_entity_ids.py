@@ -1,3 +1,7 @@
+"""
+Get synIDs for entities matching input name
+"""
+
 import synapseclient
 import argparse
 import pandas as pd
