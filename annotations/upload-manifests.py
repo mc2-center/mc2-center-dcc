@@ -25,6 +25,9 @@ def get_args():
     parser.add_argument("-c",
                         type=str,
                         help="path to a schematic config file")
+    parser.add_argument("-v",
+                        action="store_false",
+                        help="Boolean; if this flag is provided, invalid manifests will be submitted")
     return parser.parse_args()
 
 def login():
@@ -33,7 +36,7 @@ def login():
     syn.login()
     return syn
 
-def validate_entry_worker(fp, cf, mt):
+def validate_entry_worker(fp, cf, mt, valid_only):
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
         "schematic",
@@ -52,8 +55,11 @@ def validate_entry_worker(fp, cf, mt):
         subprocess.run(validate_command, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT)
         return fp  # Validation succeeded, return the filepath
     except subprocess.CalledProcessError:
-        print(f"File with {fp} could not be validated and will not be submitted to Synapse.")
-        return None  # Validation failed
+        print(f"File with {fp} could not be validated.") # Validation failed
+        if valid_only == True:
+            return None
+        elif valid_only == False:
+            return fp
 
 def submit_entry_worker(args, cf):
     fp, target_id = args
@@ -77,8 +83,11 @@ def submit_entry_worker(args, cf):
 
     
     cmd_line = " ".join(command)
+    
     print(cmd_line)
+    
     subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
+
 
 def main():
     
@@ -87,6 +96,7 @@ def main():
     csv_file = args.m
     config_file = args.c
     manifest_type = args.t
+    submit_valid = args.v
 
     df = pd.read_csv(csv_file)
     pd.set_option('display.max_colwidth', 90)
@@ -97,7 +107,7 @@ def main():
     validation_args_list = df['file_path'].tolist() # pull manifest paths from input CSV for validation
 
     validated_files = pool.map(partial(
-        validate_entry_worker, cf=config_file, mt=manifest_type), 
+        validate_entry_worker, cf=config_file, mt=manifest_type, valid_only=submit_valid), 
         validation_args_list)
 
     pool.close()
@@ -117,7 +127,7 @@ def main():
         submit_pool.map(partial(
             submit_entry_worker, cf=config_file), 
             submit_args_list)
-        
+
         submit_pool.close()
         submit_pool.join()
     
