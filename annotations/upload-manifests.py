@@ -3,6 +3,8 @@ import synapseclient
 import multiprocessing
 import subprocess
 import sys
+import argparse
+from functools import partial
 
 '''
 
@@ -10,42 +12,65 @@ This script accepts a CSV file containing manifest file paths and their correspo
 It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
 
 '''
+def get_args():
+    """Set up command-line interface and get arguments."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m",
+                        type=str,
+                        help="path to CSV containing file paths and target folder synIDs")
+    parser.add_argument("-t",
+                        type=str,
+                        choices=["PublicationView", "DatasetView", "ToolView", "EducationalResource"],
+                        help="type of manifest(s) being validated and uploaded")
+    parser.add_argument("-c",
+                        type=str,
+                        help="path to a schematic config file")
+    parser.add_argument("-v",
+                        action="store_false",
+                        help="Boolean; if this flag is provided, invalid manifests will be submitted")
+    return parser.parse_args()
+
 def login():
     """Login to Synapse"""
     syn = synapseclient.Synapse()
     syn.login()
     return syn
 
-def validate_entry_worker(fp):
-    print(f"Validating file: {fp}")
+
+def validate_entry_worker(args, cf, mt, valid_only):
+    fp, target_id = args  # Unpack the tuple
+    print(f"Validating file: {fp} of type {mt}")
     validate_command = [
         "schematic",
         "model",
         "-c",
-        "/Users/agopalan/schematic/config.yml",  # Replace with link to your schematic config file
+        cf,
         "validate",
         "-dt",
-        "PublicationView",
+        mt,
         "-mp",
         fp
     ]
-    
+
     print(f"Running validation command: {' '.join(validate_command)}")
     try:
         subprocess.run(validate_command, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT)
-        return fp  # Validation succeeded, return the filepath
+        return args  # Validation succeeded, return the tuple
     except subprocess.CalledProcessError:
-        print(f"File with {fp} could not be validated and will not be submitted to Synapse.")
-        return None  # Validation failed
+        print(f"File with {fp} could not be validated.")  # Validation failed
+        if valid_only:
+            return None
+        else:
+            return args  # Return the tuple
 
-def submit_entry_worker(args):
-    fp, target_id = args
+def submit_entry_worker(args, cf):
+    fp, target_id = args  # Unpack the tuple
     print(f"Submitting file: {fp} with target ID: {target_id}")
     command = [
         "schematic",
         "model",
         "-c",
-        "/Users/agopalan/schematic/config.yml",  # Replace with link to your schematic config file
+        cf,
         "submit",
         "-mp",
         fp,
@@ -58,23 +83,32 @@ def submit_entry_worker(args):
         "upsert"
     ]
 
-    
     cmd_line = " ".join(command)
+
     print(cmd_line)
+
     subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
 
 def main():
     
-    syn = login()
-    csv_file = '/Users/agopalan/mc2-center-dcc/annotations/input.csv'  # Replace with CSV file path
+    #syn = login()
+    args = get_args()
+    csv_file = args.m
+    config_file = args.c
+    manifest_type = args.t
+    submit_valid = args.v
+
     df = pd.read_csv(csv_file)
+    pd.set_option('display.max_colwidth', 90)
 
     num_processes = multiprocessing.cpu_count()  # Number of CPU cores
     pool = multiprocessing.Pool(processes=num_processes)
 
-    validation_args_list = df['file_path'].tolist()
+    validation_args_list = df['file_path'].tolist() # pull manifest paths from input CSV for validation
 
-    validated_files = pool.map(validate_entry_worker, validation_args_list)
+    validated_files = pool.map(partial(
+        validate_entry_worker, cf=config_file, mt=manifest_type, valid_only=submit_valid), 
+        validation_args_list)
 
     pool.close()
     pool.join()
@@ -84,14 +118,29 @@ def main():
     submit_pool = multiprocessing.Pool(processes=num_processes)
 
     submit_args_list = [(fp, df.loc[i, 'target_id']) for i, fp in enumerate(validated_files)]
+    print(pd.DataFrame(submit_args_list))
 
-    submit_pool.map(submit_entry_worker, submit_args_list)
+    choice = input(
+        "\n\nReview the printed list of arguments for errors in path and target matches. Type 'upload' to continue or 'end' if you see an error")
 
-    submit_pool.close()
-    submit_pool.join()
+    if choice == 'upload':
+        submit_pool.map(partial(
+            submit_entry_worker, cf=config_file),
+            submit_args_list)
+
+        submit_pool.close()
+        submit_pool.join()
+
+    elif choice == 'end':
+        print("\n\nManifests will NOT be uploaded. Exiting now.")
+        exit
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
 
