@@ -104,20 +104,21 @@ def main():
     num_processes = multiprocessing.cpu_count()  # Number of CPU cores
     pool = multiprocessing.Pool(processes=num_processes)
 
-    validation_args_list = df['file_path'].tolist() # pull manifest paths from input CSV for validation
+    validation_args_list = list(df.to_records(index=False))
 
     validated_files = pool.map(partial(
         validate_entry_worker, cf=config_file, mt=manifest_type, valid_only=submit_valid), 
         validation_args_list)
+    print("/n ####VALIDATED FILES##### /n", validated_files)
 
     pool.close()
     pool.join()
 
-    validated_files = [fp for fp in validated_files if fp is not None]
+    validated_files = [tup for tup in validated_files if tup is not None]
 
     submit_pool = multiprocessing.Pool(processes=num_processes)
 
-    submit_args_list = [(fp, df.loc[i, 'target_id']) for i, fp in enumerate(validated_files)]
+    submit_args_list = [tup for tup in validated_files]
     print(pd.DataFrame(submit_args_list))
 
     choice = input(
