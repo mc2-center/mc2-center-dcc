@@ -3,7 +3,7 @@ Create/store UNION tables from grant-specific metadata tables in
 Synapse.
 
 Inputs:
-- a list of synIDs for source tables to combine into UNION table
+- synID for source tableview, queried for table synIDs to combine into UNION table
 - synID for the project in which to store the UNION table
 - manifest type contained in source tables
 
@@ -11,10 +11,7 @@ Outputs:
 - a MaterializedViewSchema table, containing all entries from
 the tables provided as input
 
-TO-DO: 
-- add a Synapse tableQuery to get table ids from Synapse (after the 
-distributed tables are created/info is logged) and use as input for 
-'build_query' call in 'main'
+TO-DO:
 
 - include filtering in query, to combine entries for identical 
 publications across projects (?)
@@ -25,6 +22,7 @@ author: orion.banks
 import synapseclient
 from synapseclient import MaterializedViewSchema
 import argparse
+import pandas as pd
 
 ### Login to Synapse ###
 def login():
@@ -34,21 +32,31 @@ def login():
 
     return syn
 
-
 def get_args():
 	
 	parser = argparse.ArgumentParser(
         description='Create UNION tables from metadata stored in Synapse project tables')
-	parser.add_argument('-l',
-						nargs='+',
-                        help='Synapse table IDs to query.')
+	parser.add_argument('-s',
+						type=str,
+                        help='Synapse ID of entityview with table information to query.')
 	parser.add_argument('-t',
 						type=str,
                         help='Synapse ID of target project to store merged table.')
 	parser.add_argument('-n',
 						type=str,
-                        help='Name of metadata type being merged into table.')
+						choices=["PublicationView", "DatasetView", "ToolView", "EducationalResource"],
+                        help='Name of metadata component being merged into table.')
 	return parser.parse_args()
+
+def get_table_ids(syn, source_id, table_type, column_name):
+	
+	table_id_sheet = syn.tableQuery(f"SELECT {column_name} FROM {source_id} WHERE name='{table_type}'")
+
+	table_id_df = pd.DataFrame(table_id_sheet)
+
+	table_id_list = table_id_df[0].to_list()
+
+	return table_id_list
 
 def build_query(table_ids):
 	
@@ -67,11 +75,26 @@ def main():
 
 	syn = login()
 	args = get_args()
+	source, target, table_type = args.s, args.t, args.n
 
-	label = f"{args.n}_UNION"
-	table_query = build_query(args.l) 
+	if table_type in ["PublicationView", "DatasetView", "ToolView", "EducationalResource"]:
+		
+		label = f"{table_type}_UNION"
+
+		form_table_type = table_type.lower()
+
+		view_type = f"{form_table_type}_synapse_storage_manifest_table"
 	
-	table = MaterializedViewSchema(name=label, parent=args.t, definingSQL=table_query)
+	else:
+		print(f"{table_type} is not a valid table type. Please select a different component.")
+	
+	table_ids_from_view = get_table_ids(syn, source, view_type, "id")
+	print(table_ids_from_view)
+
+	table_query = build_query(table_ids_from_view) 
+	
+	table = MaterializedViewSchema(name=label, parent=target, definingSQL=table_query)
+
 	merged_table = syn.store(table)
 	
 if __name__ == "__main__":
