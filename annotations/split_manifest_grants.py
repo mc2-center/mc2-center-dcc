@@ -23,7 +23,7 @@ def get_args():
                         help="path of manifest to be split")
     parser.add_argument("manifest_type",
                         type=str,
-                        choices=["publication", "dataset", "tool", "project"],
+                        choices=["publication", "dataset", "tool", "project", "resource"],
                         help="type of manifest to split, e.g. publicaiton")
     parser.add_argument("folder",
                         type=str,
