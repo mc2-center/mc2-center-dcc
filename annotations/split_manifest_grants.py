@@ -1,6 +1,6 @@
 """Split Manifests CSV
 This script will split a manifest csv by grant number and output
-results into individual Excel files.
+results into individual Excel or CSV files.
 author: verena.chung
 author: brynn.zalmanek
 """
@@ -23,11 +23,24 @@ def get_args():
     parser.add_argument("manifest_type",
                         type=str,
                         choices=["publication", "dataset", "tool", "project"],
-                        help="type of manifest to split, e.g. publicaiton")
+                        help="type of manifest to split, e.g. publication")
     parser.add_argument("folder",
                         type=str,
                         help="folder path to save split manifests in")
+    parser.add_argument("--output-format",
+                        type=str,
+                        default="xlsx",
+                        choices=["xlsx", "csv"],
+                        help="output format for split manifests (xlsx or csv)")
     return parser.parse_args()
+
+
+def generate_manifest(df, cv_terms, output, output_format):
+    """Generate manifest file with given df."""
+    if output_format == "xlsx":
+        generate_manifest_as_excel(df, cv_terms, output)
+    elif output_format == "csv":
+        df.to_csv(output, index=False)
 
 
 def generate_manifest_as_excel(df, cv_terms, output):
@@ -86,16 +99,17 @@ def main():
     cv_terms = cv_terms.loc[cv_terms['category'].str.contains(manifest_type) |
                             cv_terms['category'].isin(annots)]
 
-    # Read in manifest then split by grant number.  For each grant, generate a new
-    # manifest as an Excel file.
+    # Read in manifest then split by grant number. For each grant, generate a new
+    # manifest in the specified format (XLSX or CSV).
     manifest = pd.read_csv(args.manifest)
     split_manifests = split_manifest(manifest, manifest_type)
     for grant_number in split_manifests.groups:
         df = split_manifests.get_group(grant_number)
+        file_extension = args.output_format
         path = os.path.join(
-            output_dir, f"{grant_number}_{manifest_type}.xlsx")
-        generate_manifest_as_excel(df, cv_terms, path)
-    print("manifests split!")
+            output_dir, f"{grant_number}_{manifest_type}.{file_extension}")
+        generate_manifest(df, cv_terms, path, args.output_format)
+    print("Manifests split!")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+Pubmed Id,Tool Homepage,Tool Grant Number,Tool Name,Tool Description,Tool Version,Tool Operation,Tool Input Data,Tool Output Data,Tool Input Format,Tool Output Format,Tool Function Note,Tool Cmd,Tool Type,Tool Topic,Tool Operating System,Tool Language,Tool License,Tool Cost,Tool Accessibility,Tool Download Url,Tool Download Type,Tool Download Note,Tool Download Version,Tool Documentation Url,Tool Documentation Type,Tool Documentation Note,Tool Link Url,Tool Link Type,Tool Link Note,Component,PublicationView_id
+36996248,https://gitlab.com/nastja/nastjapy,CA202123,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,36996248
+37200395,"github.com/montilab/{shine,shine-nf,bieulergy}",CA243004,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,37200395
+36689332, https://github.com/GliomaGenomics/GBMDeconvoluteR.,CA217450,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,36689332
+37164011,https://github.com/jianhuupenn/TESLA,CA264583,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,37164011
+37414767,https://github.com/cerdem12/MOBILE,CA209988,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,37414767
+31141423,https://bcrisktool.cancer.gov/,CA253553,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,31141423
+37142594,https://github.com/jyyulab/NetBID,CA264610,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,37142594
+37495577,https://github.com/MathOnco/VALIS,"CA193489, CA232382",,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,37495577
+36882166,https://www.ndexbio.org/index.html#/,CA274502,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,36882166
+29579153,https://bioconductor.org/packages/release/bioc/html/iterClust.html,,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,29579153
+33434495,https://bioconductor.org/packages/release/bioc/html/MOMA.html,,,,,,,,,,,,,,,,,,,,,,,,,,,,,ToolView,33434495

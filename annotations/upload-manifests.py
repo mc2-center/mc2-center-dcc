@@ -1,3 +1,4 @@
+''' This script takes an input of manifest paths and their target ids and validates and uploads files in parallel using schematic '''
 import pandas as pd
 import synapseclient
 import multiprocessing
@@ -6,12 +7,6 @@ import sys
 import argparse
 from functools import partial
 
-'''
-
-This script accepts a CSV file containing manifest file paths and their corresponding Synapse IDs for target folders. 
-It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
-
-'''
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
@@ -36,8 +31,8 @@ def login():
     syn.login()
     return syn
 
-
 def validate_entry_worker(args, cf, mt, valid_only):
+    print(f"Args received in validate_entry_worker: {args}")  # Add this line to print args
     fp, target_id = args  # Unpack the tuple
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
@@ -62,6 +57,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
             return None
         else:
             return args  # Return the tuple
+
 
 def submit_entry_worker(args, cf):
     fp, target_id = args  # Unpack the tuple
@@ -93,7 +89,7 @@ def main():
     
     #syn = login()
     args = get_args()
-    csv_file = args.m
+    csv_file = args.m if args.m else 'input.csv'
     config_file = args.c
     manifest_type = args.t
     submit_valid = args.v
@@ -138,6 +134,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 

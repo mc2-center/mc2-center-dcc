@@ -1,0 +1,6 @@
+Dataset Pubmed Id,Dataset Alias,Dataset Grant Number,Dataset Name,Dataset Description,Dataset Design,Dataset Species,Dataset Assay,Dataset Tumor Type,Dataset Tissue,Dataset Url,Dataset File Formats,Component,DatasetView_id,Id,entityId
+35865140,syn7248578,CA250044,Data driven and biophysical insights into the regulation of trafficking vesicles by extracellular matrix stiffness,"These studies provide physical characterization of 30 cell lines from the Physical Sciences Oncology Center (PS-OC) Network Bioresource Core Facility (PBCF). The goal of the studies are to asses the effect of cell line growth substrate on the physical properties of individual cells from the cell lines.
+","
+Atomic Force Microscopy (PSON0002) This study uses atomic force microscopy (AFM) to measure the the deflection of a cantilever upon contact with the cells. In this study, the test samples represent 30 cell lines grown on 7 different substrates. Measurements were done in triplicate. Control samples were not included in this study.
+
+Motility (PSON0003): This study uses images of cells collected usi(Read more on Pubmed)",Human,RNA Sequencing,Pan-cancer,Not Applicable,,,DatasetView,syn32698493,5a7782f6-961a-41c5-a15d-00caa9e91a03,syn52745347

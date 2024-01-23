@@ -1,0 +1,146 @@
+{
+  "evaluation_parameters": {},
+  "meta": {
+    "active_batch_definition": {
+      "batch_identifiers": {
+        "default_identifier_name": "manifestID"
+      },
+      "data_asset_name": "Manifest",
+      "data_connector_name": "default_runtime_data_connector_name",
+      "datasource_name": "example_datasource"
+    },
+    "batch_markers": {
+      "ge_load_time": "20231110T170943.029352Z",
+      "pandas_data_fingerprint": "08d8d1ebd219ebab28c285bd1b40b37a"
+    },
+    "batch_spec": {
+      "batch_data": "PandasDataFrame",
+      "data_asset_name": "Manifest"
+    },
+    "checkpoint_id": null,
+    "checkpoint_name": "manifest_checkpoint",
+    "expectation_suite_name": "Manifest_test_suite",
+    "great_expectations_version": "0.15.50",
+    "run_id": {
+      "run_name": null,
+      "run_time": "2023-11-10T11:09:43.027969+00:00"
+    },
+    "validation_id": null,
+    "validation_time": "20231110T170943.032344Z"
+  },
+  "results": [
+    {
+      "exception_info": {
+        "exception_message": "Error: The column \"PublicationView_id\" in BatchData does not exist.",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/execution_engine/execution_engine.py\", line 555, in _process_direct_and_bundled_metric_computation_configurations\n    ] = metric_computation_configuration.metric_fn(\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/expectations/metrics/metric_provider.py\", line 90, in inner_func\n    return metric_fn(*args, **kwargs)\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/expectations/metrics/map_metric_provider.py\", line 360, in inner_func\n    column_name = get_dbms_compatible_column_names(\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/expectations/metrics/util.py\", line 673, in get_dbms_compatible_column_names\n    _verify_column_names_exist_and_get_normalized_typed_column_names_map(\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/expectations/metrics/util.py\", line 752, in _verify_column_names_exist_and_get_normalized_typed_column_names_map\n    raise gx_exceptions.InvalidMetricAccessorDomainKwargsKeyError(\ngreat_expectations.exceptions.exceptions.InvalidMetricAccessorDomainKwargsKeyError: Error: The column \"PublicationView_id\" in BatchData does not exist.\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/validator/validation_graph.py\", line 276, in _resolve\n    self._execution_engine.resolve_metrics(\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/execution_engine/execution_engine.py\", line 290, in resolve_metrics\n    return self._process_direct_and_bundled_metric_computation_configurations(\n  File \"/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/execution_engine/execution_engine.py\", line 559, in _process_direct_and_bundled_metric_computation_configurations\n    raise gx_exceptions.MetricResolutionError(\ngreat_expectations.exceptions.exceptions.MetricResolutionError: Error: The column \"PublicationView_id\" in BatchData does not exist.\n",
+        "raised_exception": true
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_be_unique",
+        "kwargs": {
+          "batch_id": "bda1b8c8c8304d315cdf04babeb48c4c",
+          "column": "PublicationView_id",
+          "mostly": 1.0,
+          "result_format": "COMPLETE"
+        },
+        "meta": {
+          "notes": {
+            "content": "Expect column values to be Unique. **Markdown** `Supported`",
+            "format": "markdown"
+          },
+          "validation_rule": "unique"
+        }
+      },
+      "meta": {},
+      "result": {},
+      "success": false
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_be_unique",
+        "kwargs": {
+          "batch_id": "bda1b8c8c8304d315cdf04babeb48c4c",
+          "column": "Publication Doi",
+          "mostly": 1.0,
+          "result_format": "COMPLETE"
+        },
+        "meta": {
+          "notes": {
+            "content": "Expect column values to be Unique. **Markdown** `Supported`",
+            "format": "markdown"
+          },
+          "validation_rule": "unique"
+        }
+      },
+      "meta": {},
+      "result": {
+        "element_count": 1,
+        "missing_count": 0,
+        "missing_percent": 0.0,
+        "partial_unexpected_counts": [],
+        "partial_unexpected_index_list": [],
+        "partial_unexpected_list": [],
+        "unexpected_count": 0,
+        "unexpected_index_list": [],
+        "unexpected_index_query": [],
+        "unexpected_list": [],
+        "unexpected_percent": 0.0,
+        "unexpected_percent_nonmissing": 0.0,
+        "unexpected_percent_total": 0.0
+      },
+      "success": true
+    },
+    {
+      "exception_info": {
+        "exception_message": null,
+        "exception_traceback": null,
+        "raised_exception": false
+      },
+      "expectation_config": {
+        "expectation_type": "expect_column_values_to_be_unique",
+        "kwargs": {
+          "batch_id": "bda1b8c8c8304d315cdf04babeb48c4c",
+          "column": "Pubmed Id",
+          "mostly": 1.0,
+          "result_format": "COMPLETE"
+        },
+        "meta": {
+          "notes": {
+            "content": "Expect column values to be Unique. **Markdown** `Supported`",
+            "format": "markdown"
+          },
+          "validation_rule": "unique"
+        }
+      },
+      "meta": {},
+      "result": {
+        "element_count": 1,
+        "missing_count": 0,
+        "missing_percent": 0.0,
+        "partial_unexpected_counts": [],
+        "partial_unexpected_index_list": [],
+        "partial_unexpected_list": [],
+        "unexpected_count": 0,
+        "unexpected_index_list": [],
+        "unexpected_index_query": [],
+        "unexpected_list": [],
+        "unexpected_percent": 0.0,
+        "unexpected_percent_nonmissing": 0.0,
+        "unexpected_percent_total": 0.0
+      },
+      "success": true
+    }
+  ],
+  "statistics": {
+    "evaluated_expectations": 3,
+    "success_percent": 66.66666666666666,
+    "successful_expectations": 2,
+    "unsuccessful_expectations": 1
+  },
+  "success": false
+}
