@@ -1,6 +1,22 @@
+"""
+Create/store entityview, based on a list of SynIDs to include in scope.
+Can also be used to update the table scope
+
+Inputs:
+- space-separated list of project synIDs for scope
+- synID for the project in which to store the view table
+- entity type to show in view
+- name for the view
+
+Outputs:
+- an EntityViewSchema table stored in Synapse
+
+author: orion.banks
+"""
+
 import argparse
 import synapseclient
-from synapseclient import Project, File, Column, Table, EntityViewSchema, EntityViewType
+from synapseclient import EntityViewSchema, EntityViewType
 import argparse
 
 def get_args():
