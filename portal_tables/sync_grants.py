@@ -90,6 +90,7 @@ def main():
     args = get_args()
 
     manifest = syn.tableQuery(f"SELECT * FROM {args.manifest}").asDataFrame()
+    manifest.columns = manifest.columns.str.replace(" ", "")
     curr_grants = (
         syn.tableQuery(f"SELECT grantNumber FROM {args.portal_table}")
         .asDataFrame()
