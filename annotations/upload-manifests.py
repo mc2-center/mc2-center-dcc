@@ -36,9 +36,9 @@ def login():
     syn.login()
     return syn
 
-
 def validate_entry_worker(args, cf, mt, valid_only):
     fp, target_id = args  # Unpack the tuple
+    
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
         "schematic",
@@ -65,6 +65,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
 
 def submit_entry_worker(args, cf):
     fp, target_id = args  # Unpack the tuple
+
     print(f"Submitting file: {fp} with target ID: {target_id}")
     command = [
         "schematic",
@@ -82,7 +83,7 @@ def submit_entry_worker(args, cf):
         "-tm",
         "upsert"
     ]
-
+    
     cmd_line = " ".join(command)
 
     print(cmd_line)
@@ -109,6 +110,7 @@ def main():
     validated_files = pool.map(partial(
         validate_entry_worker, cf=config_file, mt=manifest_type, valid_only=submit_valid), 
         validation_args_list)
+  
     print("/n ####VALIDATED FILES##### /n", validated_files)
 
     pool.close()
@@ -138,11 +140,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
