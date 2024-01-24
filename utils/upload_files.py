@@ -1,6 +1,11 @@
 """upload_files.py
+
 This script will upload a batch of files to Synapse, based on a TSV-formatted manifest,
 provided at runtime.
+
+TSV should contain columns:
+'path' - path to file to be uploaded to Synapse
+'parent' - Synapse ID of folder or Synapse project where the file will be stored
 
 Usage:
 python upload_files.py -m <path to TSV manifest>
