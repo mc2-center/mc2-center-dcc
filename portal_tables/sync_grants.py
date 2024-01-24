@@ -69,15 +69,13 @@ def sync_table(syn, grants, table):
     grants = grants[col_order]
 
     # Convert columns into STRINGLIST.
-    grants.loc[:, "grantThemeName"] = grants.grantThemeName.str.split(", ")
-    grants.loc[:, "grantInstitutionName"] = (
-        grants["grantInstitutionName"]
-        .str
-        .split(", "))
-    grants.loc[:, "grantInstitutionAlias"] = (
-        grants["grantInstitutionAlias"]
-        .str
-        .split(", "))
+    for col in [
+        "GrantThemeName",
+        "GrantInstitutionAlias",
+        "GrantInstitutionName",
+        "GrantConsortiumName",
+    ]:
+        grants.loc[:, col] = grants[col].str.replace(", ", ",").str.split(",")
 
     new_rows = grants.values.tolist()
     syn.store(Table(schema, new_rows))
