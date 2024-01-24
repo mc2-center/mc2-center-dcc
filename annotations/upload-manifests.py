@@ -36,39 +36,42 @@ def login():
     syn.login()
     return syn
 
-def validate_entry_worker(fp, cf, mt, valid_only):
+def validate_entry_worker(args, cf, mt, valid_only):
+    fp, target_id = args  # Unpack the tuple
+    
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
         "schematic",
         "model",
         "-c",
-        cf,  
+        cf,
         "validate",
         "-dt",
         mt,
         "-mp",
         fp
     ]
-    
+
     print(f"Running validation command: {' '.join(validate_command)}")
     try:
         subprocess.run(validate_command, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT)
-        return fp  # Validation succeeded, return the filepath
+        return args  # Validation succeeded, return the tuple
     except subprocess.CalledProcessError:
-        print(f"File with {fp} could not be validated.") # Validation failed
-        if valid_only == True:
+        print(f"File with {fp} could not be validated.")  # Validation failed
+        if valid_only:
             return None
-        elif valid_only == False:
-            return fp
+        else:
+            return args  # Return the tuple
 
 def submit_entry_worker(args, cf):
-    fp, target_id = args
+    fp, target_id = args  # Unpack the tuple
+
     print(f"Submitting file: {fp} with target ID: {target_id}")
     command = [
         "schematic",
         "model",
         "-c",
-        cf,  
+        cf,
         "submit",
         "-mp",
         fp,
@@ -80,14 +83,12 @@ def submit_entry_worker(args, cf):
         "-tm",
         "upsert"
     ]
-
     
     cmd_line = " ".join(command)
-    
-    print(cmd_line)
-    
-    subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
 
+    print(cmd_line)
+
+    subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
 
 def main():
     
@@ -104,40 +105,38 @@ def main():
     num_processes = multiprocessing.cpu_count()  # Number of CPU cores
     pool = multiprocessing.Pool(processes=num_processes)
 
-    validation_args_list = df['file_path'].tolist() # pull manifest paths from input CSV for validation
+    validation_args_list = list(df.to_records(index=False))
 
     validated_files = pool.map(partial(
         validate_entry_worker, cf=config_file, mt=manifest_type, valid_only=submit_valid), 
         validation_args_list)
+  
+    print("/n ####VALIDATED FILES##### /n", validated_files)
 
     pool.close()
     pool.join()
 
-    validated_files = [fp for fp in validated_files if fp is not None]
+    validated_files = [tup for tup in validated_files if tup is not None]
 
     submit_pool = multiprocessing.Pool(processes=num_processes)
 
-    submit_args_list = [(fp, df.loc[i, 'target_id']) for i, fp in enumerate(validated_files)]
+    submit_args_list = [tup for tup in validated_files]
     print(pd.DataFrame(submit_args_list))
-    
+
     choice = input(
         "\n\nReview the printed list of arguments for errors in path and target matches. Type 'upload' to continue or 'end' if you see an error")
-    
+
     if choice == 'upload':
         submit_pool.map(partial(
-            submit_entry_worker, cf=config_file), 
+            submit_entry_worker, cf=config_file),
             submit_args_list)
 
         submit_pool.close()
         submit_pool.join()
-    
+
     elif choice == 'end':
         print("\n\nManifests will NOT be uploaded. Exiting now.")
         exit
-        
+
 if __name__ == "__main__":
     main()
-
-
-
-
