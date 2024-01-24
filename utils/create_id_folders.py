@@ -1,5 +1,8 @@
 """create_id_folders.py
 
+This script will:
+- create and delete folders in a designated Synapse project, returning the folder SynID
+- add folder Synapse IDs to the _id column in each manifest provided
 
 author: orion.banks
 """
