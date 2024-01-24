@@ -48,16 +48,23 @@ def sync_table(syn, grants, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        "grantId",
-        "grantName",
-        "grantNumber",
-        "grantAbstract",
-        "grantType",
-        "grantThemeName",
-        "grantInstitutionAlias",
-        "grantInstitutionName",
-        "grantInvestigator",
-        "grantConsortiumName",
+        "project_id",
+        "GrantView_id",
+        "GrantName",
+        "GrantNumber",
+        "GrantAbstract",
+        "GrantType",
+        "GrantThemeName",
+        "GrantInstitutionAlias",
+        "GrantInstitutionName",
+        "GrantInvestigator",
+        "GrantConsortiumName",
+        "GrantStartDate",
+        "NIHRePORTERLink",
+        "DurationofFunding",
+        "EmbargoEndDate",
+        "GrantSynapseTeam",
+        "GrantSynapseProject",
     ]
     grants = grants[col_order]
 
