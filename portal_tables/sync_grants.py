@@ -110,8 +110,9 @@ def main():
             print(new_grants)
         else:
             print("Adding new grants...")
-            added_grants = create_grant_projects(syn, new_grants)
-            sync_table(syn, added_grants, args.portal_table)
+            new_grants.loc[
+                :, "project_id"
+            ] = new_grants.GrantSynapseProject.str.extract(r":(syn\d*?)/wiki")
     print("DONE ✓")
 
 
