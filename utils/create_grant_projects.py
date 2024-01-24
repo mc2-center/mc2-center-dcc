@@ -8,7 +8,7 @@ team with "Can edit" permissions.
 import argparse
 
 import synapseclient
-from synapseclient import Table, Project, Wiki, Folder, Team
+from synapseclient import Project, Wiki, Folder, Team
 
 PERMISSIONS = {
     "view": ["READ"],
@@ -140,11 +140,7 @@ def create_team(syn, project_id, grant, access_type="edit"):
 
 
 def create_grant_projects(syn, grants):
-    """Create a new Synapse project for each grant and populate its Wiki.
-
-    Returns:
-        df: grants information (including their new Project IDs)
-    """
+    """Create a new Synapse project for each grant and populate its Wiki."""
     for _, row in grants.iterrows():
         name = _syn_prettify(row["grantName"])
         try:
@@ -156,16 +152,12 @@ def create_grant_projects(syn, grants):
                 accessType=PERMISSIONS.get("admin")
             )
 
-            # Update grants table with new synId
-            grants.at[_, 'grantId'] = project.id
-
             create_wiki_pages(syn, project.id, row)
             create_folders(syn, project.id)
             create_team(syn, project.id, row)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
-            grants.at[_, "grantId"] = ""
-    return grants
+
 
 
 def main():
