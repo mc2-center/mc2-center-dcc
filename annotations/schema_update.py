@@ -88,3 +88,9 @@ for my_table_synid in table_ids_list:
 # Print the total number of tables successfully modified
 print(f"Total number of tables successfully modified: {successful_table_modifications_count}")
 
+# Remove the 'grantID' column from the input file
+input_data = pd.read_csv(input_file_path)
+input_data = input_data.drop(columns=['grantId'])
+input_data.to_csv(input_file_path, index=False)
+
+print("The 'grantID' column has been deleted from the input file.")
