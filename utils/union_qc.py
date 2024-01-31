@@ -40,18 +40,26 @@ def get_args():
 	return parser.parse_args()
 
 
-def get_tables(syn, tableIdList):
+def get_tables(syn, tableIdList, mergeFlag):
 	
 	tables = []
 	names = []
 	
 	for tableId in tableIdList:
+		
 		table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame()
 		name = table.iat[1,0]
+		
 		manifestPath = Path(f"output/{name}.csv")
 		manifestPath.parent.mkdir(parents=True, exist_ok=True)
+		
 		table.to_csv(manifestPath, index=False, lineterminator='\n')
-		tables.append(manifestPath)
+		
+		if mergeFlag:
+			tables.append(table)
+		else:
+			tables.append(manifestPath)
+		
 		names.append(name)
 	
 	return list(zip(tables, names))
@@ -66,12 +74,70 @@ def combine_rows(args):
 	for table, name in newTables, newNames:
 		nameParts = [name, "id"]
 		grantParts = [name[:-4], "Grant Number"]
+		assayParts = [name[:-4], "Assay"]
+		tumorParts = [name[:-4], "Tumor Type"]
+		tissueParts = [name[:-4], "Tissue"]
+
+		componentColumn = "Component"
 		idColumn = "_".join(nameParts)
 		grantColumn = " ".join(grantParts)
-		mergedTable = table.groupby(idColumn, as_index=False).agg({grantColumn : ','.join}).reset_index()
+		assayColumn = " ".join(assayParts)
+		tumorColumn = " ".join(tumorParts)
+		tissueColumn = " ".join(tissueParts)
+
+		if name == "PublicationView":
+			
+			aliasColumn = "Pubmed Id"
+			table = table.astype(str)
+			
+			mapping = {
+				componentColumn : "first", 
+				idColumn : "first", 
+				grantColumn : ",".join, 
+				"Publication Doi" : "first", 
+				"Publication Journal" : "first",
+				"Pubmed Url" : "first",
+				"Publication Title" : "first",
+				"Publication Year" : "first",
+				"Publication Keywords" : "first",
+				"Publication Authors" : "first",
+				"Publication Abstract" : "first",
+				assayColumn : "first",
+				tumorColumn : "first",
+				tissueColumn : "first",
+				"Publication Accessibility" : "first",
+				"Publication Dataset Alias" : "first",
+				"entityId" : "first"
+				}
+
+
+		elif name == "DatasetView":
+			
+			aliasColumn = "Dataset Alias"
+			
+			mapping = {
+				componentColumn : "first", 
+				idColumn : "first", 
+				"Dataset Pubmed Id" : "first",
+				grantColumn : ",".join, 
+				"Dataset Name" : "first",
+				"Dataset Description" : "first",
+				"Dataset Design" : "first",
+				assayColumn : "first",
+				tumorColumn : "first",
+				tissueColumn : "first",
+				"Dataset Url" : "first",
+				"Dataset File Formats" : "first",
+				"entityId" : "first"
+				}
+
+		mergedTable = table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
+		
 		mergePath = Path(f"output/{name}_merged.csv")
 		mergePath.parent.mkdir(parents=True, exist_ok=True)
+		
 		mergedTable.to_csv(mergePath, index=False)
+		
 		groups.append(mergePath)
 		names.append(nameParts[0])
 		
@@ -125,9 +191,12 @@ def parse_out(args):
 	names, outs = args
 	
 	for name, out in names, outs:
+		
 		parsePath = Path(f"output/{name}_out.csv")
 		parsePath.parent.mkdir(parents=True, exist_ok=True)
+		
 		parsed = pd.read_table(out, sep="[", header=None)
+		
 		parsedOut = parsed.to_csv(parsePath, index=False, sep="\n", header=False, columns=None, quoting=None)
 
 
@@ -139,7 +208,7 @@ def main():
 	inputList, config, merge = args.l, args.c, args.m 
 
 	print("Accessing requested tables...")
-	newTables = get_tables(syn, inputList)
+	newTables = get_tables(syn, inputList, merge)
 	print("Table(s) downloaded from Synapse and converted to data frames!")
 	
 	if merge:
