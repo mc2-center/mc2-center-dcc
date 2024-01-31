@@ -149,7 +149,8 @@ def validate_tables(args, config):
 
 	validNames = []
 	validOuts = []
-	
+	validPaths = []
+
 	for path, name in paths, names:
 		
 		command = [
@@ -183,14 +184,19 @@ def validate_tables(args, config):
 		
 		validNames.append(name)
 		validOuts.append(commandOut)
-	
-	return list(zip(validNames, validOuts))
+		validPaths.append(path)
+
+	return list(zip(validNames, validOuts, validPaths))
 
 def parse_out(args):
 
-	names, outs = args
+	names, outs, paths = args
+
+	parsedNames = []
+	parsedOuts = []
+	parsedPaths = []
 	
-	for name, out in names, outs:
+	for name, out, path in names, outs, paths:
 		
 		parsePath = Path(f"output/{name}_out.csv")
 		parsePath.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +205,19 @@ def parse_out(args):
 		
 		parsedOut = parsed.to_csv(parsePath, index=False, sep="\n", header=False, columns=None, quoting=None)
 
+		parsedNames.append(name)
+		parsedOuts.append(out)
+		parsedPaths.append(path)
+	
+	return list(zip(parsedNames, parsedOut, parsedPaths))
+
+def upload_tables():
+
+	uploadTable = []
+
+	#subset the tables to include features only
+	#add column to represent validation/sync status
+	#upload to CCKP - Admin using base CSV name and date of upload as label
 
 def main():
 	
@@ -210,18 +229,27 @@ def main():
 	print("Accessing requested tables...")
 	newTables = get_tables(syn, inputList, merge)
 	print("Table(s) downloaded from Synapse and converted to data frames!")
+	print("Source table(s) converted to CSV and stored in local output folder!")
 	
 	if merge:
-		print("Merging rows with matching primary keys...")
+		print("Merging rows with matching identifier...")
 		newTables = combine_rows(newTables)
 		print("Matching rows merged!")
-
-	print("Converting dataframes to CSV and validating...")
-	checkTables = validate_tables(newTables, config)
-	print("Validation reports generated!")
+		print("Merged table(s) converted to CSV and stored in local output folder!")
+		
+		print("Validating merged manifest(s)...")
 	
-	print("Converting validation info to create reference table...")
+	else:
+		print("Validating unmerged manifest(s)...")
+
+	checkTables = validate_tables(newTables, config)
+	print("Validation logs stored in local output folder!")
+	
+	print("Converting validation logs to create reference table...")
 	validEntries = parse_out(checkTables)
+	print("Validation logs converted!")
+
+	#storedTables = upload_tables()
 
 
 if __name__ == "__main__":
