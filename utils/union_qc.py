@@ -77,70 +77,111 @@ def combine_rows(args):
 		componentColumn = "Component"
 		idColumn = "_".join(nameParts)
 
-		if name in ["PublicationView", "DatasetView"]:
+		if name in ["PublicationView", "DatasetView", "ToolView"]:
 			grantParts = [name[:-4], "Grant Number"]
-			assayParts = [name[:-4], "Assay"]
-			tumorParts = [name[:-4], "Tumor Type"]
-			tissueParts = [name[:-4], "Tissue"]
-
 			grantColumn = " ".join(grantParts)
-			assayColumn = " ".join(assayParts)
-			tumorColumn = " ".join(tumorParts)
-			tissueColumn = " ".join(tissueParts)
+			
+			if name in ["PublicationView", "DatasetView"]:
+				assayParts = [name[:-4], "Assay"]
+				tumorParts = [name[:-4], "Tumor Type"]
+				tissueParts = [name[:-4], "Tissue"]
 
-			if name == "PublicationView":
-			
-				aliasColumn = "Pubmed Id"
-				table = table.astype(str)
-			
-				mapping = {
-					componentColumn : "first", 
-					idColumn : "first", 
-					grantColumn : ",".join, 
-					"Publication Doi" : "first", 
-					"Publication Journal" : "first",
-					"Pubmed Url" : "first",
-					"Publication Title" : "first",
-					"Publication Year" : "first",
-					"Publication Keywords" : "first",
-					"Publication Authors" : "first",
-					"Publication Abstract" : "first",
-					assayColumn : "first",
-					tumorColumn : "first",
-					tissueColumn : "first",
-					"Publication Accessibility" : "first",
-					"Publication Dataset Alias" : "first",
-					"entityId" : ",".join
-					}
+				assayColumn = " ".join(assayParts)
+				tumorColumn = " ".join(tumorParts)
+				tissueColumn = " ".join(tissueParts)
 
-			elif name == "DatasetView":
+				if name == "PublicationView":
 			
-				aliasColumn = "Dataset Alias"
+					aliasColumn = "Pubmed Id"
+					table = table.astype(str)
 			
-				mapping = {
-					componentColumn : "first", 
-					idColumn : "first", 
-					"Dataset Pubmed Id" : "first",
-					grantColumn : ",".join, 
-					"Dataset Name" : "first",
-					"Dataset Description" : "first",
-					"Dataset Design" : "first",
-					assayColumn : "first",
-					"Dataset Species" : "first",
-					tumorColumn : "first",
-					tissueColumn : "first",
-					"Dataset Url" : "first",
-					"Dataset File Formats" : "first",
-					"entityId" : ",".join
-					}
+					mapping = {
+						componentColumn : "first", 
+						idColumn : ",".join, 
+						grantColumn : ",".join, 
+						"Publication Doi" : "first", 
+						"Publication Journal" : "first",
+						"Pubmed Url" : "first",
+						"Publication Title" : "first",
+						"Publication Year" : "first",
+						"Publication Keywords" : "first",
+						"Publication Authors" : "first",
+						"Publication Abstract" : "first",
+						assayColumn : "first",
+						tumorColumn : "first",
+						tissueColumn : "first",
+						"Publication Accessibility" : "first",
+						"Publication Dataset Alias" : "first",
+						"entityId" : ",".join
+						}
+
+				elif name == "DatasetView":
+			
+					aliasColumn = "Dataset Alias"
+			
+					mapping = {
+						componentColumn : "first", 
+						idColumn : ",".join, 
+						"Dataset Pubmed Id" : "first",
+						grantColumn : ",".join, 
+						"Dataset Name" : "first",
+						"Dataset Description" : "first",
+						"Dataset Design" : "first",
+						assayColumn : "first",
+						"Dataset Species" : "first",
+						tumorColumn : "first",
+						tissueColumn : "first",
+						"Dataset Url" : "first",
+						"Dataset File Formats" : "first",
+						"entityId" : ",".join
+						}
 		
-		if name == "EducationalResource":
+			elif name == "ToolView":
+			
+				aliasColumn = "Tool Name"
+			
+				mapping = {
+					componentColumn : "first", 
+					idColumn : ",".join, 
+					"Tool Pubmed Id" : "first",
+					grantColumn : ",".join,
+					"Tool Description" : "first",
+					"Tool Homepage" : "first",
+					"Tool Version" : "first",
+					"Tool Operation" : "first",
+					"Tool Input Data" : "first",
+					"Tool Output Data" : "first",
+					"Tool Input Format" : "first",
+					"Tool Output Format" : "first",
+					"Tool Function Note" : "first",
+					"Tool Cmd" : "first",
+					"Tool Type" : "first",
+					"Tool Topic" : "first",
+					"Tool Operating System" : "first",
+					"Tool Language" : "first",
+					"Tool License" : "first",
+					"Tool Cost" : "first",
+					"Tool Accessibility" : "first",
+					"Tool Download Url" : "first",
+					"Tool Download Type" : "first",
+					"Tool Download Note" : "first",
+					"Tool Download Version" : "first",
+					"Tool Documentation Url" : "first",
+					"Tool Documentation Type" : "first",
+					"Tool Documentation Note" : "first",
+					"Tool Link Url" : "first",
+					"Tool Link Type" : "first",
+					"Tool Link Note" : "first",
+					"entityId" : ",".join
+					}
+
+		elif name == "EducationalResource":
 
 			aliasColumn = "Resource Alias"
 			
 			mapping = {
 					componentColumn : "first", 
-					idColumn : "first", 
+					idColumn : ",".join, 
 					"Resource Title" : "first",
 					"Resource Link" : "first", 
 					"Resource Topic" : "first",
@@ -283,7 +324,6 @@ def main():
 	
 	print("Converting validation logs to create reference table...")
 	
-	#checkTables = build_test()
 	print(checkTables)
 	validEntries = parse_out(checkTables)
 	print("Validation logs converted!")
