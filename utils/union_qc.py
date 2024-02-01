@@ -42,46 +42,50 @@ def get_args():
 
 def get_tables(syn, tableIdList, mergeFlag):
 	
-	tables = []
+	tables = [] #set up lists to store info
 	names = []
 	
 	for tableId in tableIdList:
 		
-		table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame()
-		name = table.iat[1,0]
+		table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame() #pull table from Synapse
+		name = table.iat[1,0] #grab name of data type from table; assumes "Component" is first column in table
 		
-		manifestPath = Path(f"output/{name}.csv")
-		manifestPath.parent.mkdir(parents=True, exist_ok=True)
+		manifestPath = Path(f"output/{name}.csv") #build path to store table as CSV
+		manifestPath.parent.mkdir(parents=True, exist_ok=True) #create folder to store CSVs
 		
-		table.to_csv(manifestPath, index=False, lineterminator='\n')
+		table.to_csv(manifestPath, index=False, lineterminator='\n') #convert df to CSV
 		
 		if mergeFlag:
-			tables.append(table)
+			tables.append(table) #if merging, store the table for the next function
 		else:
-			tables.append(manifestPath)
+			tables.append(manifestPath) #if not merging, store the file path for the next function
 		
-		names.append(name)
+		names.append(name) #store the name for next functions
 	
 	return list(zip(tables, names))
 
 def combine_rows(args):
 	
-	newTables, newNames = zip(*args)
+	newTables, newNames = zip(*args) #unpack the input
 
 	groups = []
 	names = []
 	
 	for table, name in zip(newTables, newNames):
-		table = table.astype(str)
+		table = table.astype(str) #make everything strings so they can be joined as needed
 
-		nameParts = [name, "id"]
+		nameParts = [name, "id"] #define parts of component_id column name
 
 		componentColumn = "Component"
-		idColumn = "_".join(nameParts)
+		idColumn = "_".join(nameParts) #build component_id column name
 
 		if name in ["PublicationView", "DatasetView", "ToolView"]:
-			grantParts = [name[:-4], "Grant Number"]
-			grantColumn = " ".join(grantParts)
+			#define parts of column names with common formats between manifests
+			#build column names
+			#access mapping dictionaries associated with manifest types
+
+			grantParts = [name[:-4], "Grant Number"] 
+			grantColumn = " ".join(grantParts) 
 			
 			if name in ["PublicationView", "DatasetView"]:
 				assayParts = [name[:-4], "Assay"]
@@ -94,9 +98,9 @@ def combine_rows(args):
 
 				if name == "PublicationView":
 			
-					aliasColumn = "Pubmed Id"
+					aliasColumn = "Pubmed Id" #column to group entries by
 
-					mapping = {
+					mapping = { #defines how info in each column is handled by row merging function
 						componentColumn : "first", 
 						idColumn : ",".join, 
 						grantColumn : ",".join, 
@@ -207,8 +211,8 @@ def combine_rows(args):
 					"entityId" : ",".join
 					}
 
-		mergedTable = table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
-		mergedTable = mergedTable.iloc[:,1:-1]
+		mergedTable = table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index() #group rows by designated identifier and map attributes
+		mergedTable = mergedTable.iloc[:,1:-1] #remove unnecessary "id" column
 		
 		mergePath = Path(f"output/{name}_merged.csv")
 		mergePath.parent.mkdir(parents=True, exist_ok=True)
@@ -230,7 +234,7 @@ def validate_tables(args, config):
 
 	for path, name in zip(paths, names):
 		
-		command = [
+		command = [ #pass config, datatype, and CSV path(s) to schematic for validation
 			"schematic",
         	"model",
 			"-c",
@@ -249,7 +253,7 @@ def validate_tables(args, config):
 		errPath = Path(f"output/{name}_error.txt")
 		errPath.parent.mkdir(parents=True, exist_ok=True)
 
-		commandOut = open(outPath, "w")
+		commandOut = open(outPath, "w") #store logs from schematic validation
 		errOut = open(errPath, "w")
 		
 		process = subprocess.run(
@@ -278,9 +282,9 @@ def parse_out(args):
 		parsePath = Path(f"output/{name}_out.csv")
 		parsePath.parent.mkdir(parents=True, exist_ok=True)
 		
-		parsed = pd.read_table(out, sep="], ", header=None, engine="python")
+		parsed = pd.read_table(out, sep="], ", header=None, engine="python") #load output from schematic validation
 		
-		parsedOut = parsed.to_csv(parsePath, index=False, sep="\n", header=False, columns=None, quoting=None)
+		parsedOut = parsed.to_csv(parsePath, index=False, sep="\n", header=False, columns=None, quoting=None) #convert log to useable format
 
 		parsedNames.append(name)
 		parsedOuts.append(parsePath)
