@@ -12,6 +12,7 @@ author: orion.banks
 import synapseclient
 import argparse
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import subprocess
 import sys
@@ -292,14 +293,36 @@ def parse_out(args):
 	
 	return list(zip(parsedNames, parsedOuts, parsedPaths))
 
-def upload_tables(args):
+def trim_tables(args):
+
+	trimmedTables = []
 
 	names, outs, paths = zip(*args)
 	
-	uploadTable = []
+	for name, out, path in zip(names, outs, paths):
+		trimPath = Path(f"output/{name}_trimmed.csv")
+		trimPath.parent.mkdir(parents=True, exist_ok=True)
 
-	#subset the tables to include features only
-	#add column to represent validation/sync status
+		validationTable = pd.read_csv(out, header=None)
+		processedTable = pd.read_csv(path, header=0)
+		print(processedTable)
+
+		flaggedRows = validationTable.iloc[:,0].str.extract(r'(\d{1,5})', expand=False).astype(int)
+		flaggedRows = set(flaggedRows)
+		flaggedRows = list(flaggedRows)
+		flaggedRows = sorted(flaggedRows)
+
+		flaggedRows = [(x - 2) for x in flaggedRows]
+		print(flaggedRows)
+		
+		trimmedTable = processedTable.drop(flaggedRows, inplace=False)
+
+		trimmedTable.to_csv(trimPath, index=False, header=True)
+
+		trimmedTables.append(trimPath)
+	
+	return trimmedTables
+		
 	#upload to CCKP - Admin using base CSV name and date of upload as label
 	
 def main():
@@ -334,7 +357,12 @@ def main():
 	validEntries = parse_out(checkTables)
 	print("Validation logs converted!")
 
-	#storedTables = upload_tables(validEntries)
+	#validEntries = list(zip(
+	#	["DatasetView", "PublicationView", "ToolView"],
+	#	["output/DatasetView_out.csv", "output/PublicationView_out.csv", "output/ToolView_out.csv"],
+	#	["output/DatasetView_merged.csv", "output/PublicationView_merged.csv", "output/ToolView_merged.csv"]))
+
+	cleanTables = trim_tables(validEntries)
 
 
 if __name__ == "__main__":
