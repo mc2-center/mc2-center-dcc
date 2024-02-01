@@ -66,70 +66,104 @@ def get_tables(syn, tableIdList, mergeFlag):
 
 def combine_rows(args):
 	
-	newTables, newNames = args
+	newTables, newNames = zip(*args)
 
 	groups = []
 	names = []
 	
-	for table, name in newTables, newNames:
+	for table, name in zip(newTables, newNames):
 		nameParts = [name, "id"]
-		grantParts = [name[:-4], "Grant Number"]
-		assayParts = [name[:-4], "Assay"]
-		tumorParts = [name[:-4], "Tumor Type"]
-		tissueParts = [name[:-4], "Tissue"]
 
 		componentColumn = "Component"
 		idColumn = "_".join(nameParts)
-		grantColumn = " ".join(grantParts)
-		assayColumn = " ".join(assayParts)
-		tumorColumn = " ".join(tumorParts)
-		tissueColumn = " ".join(tissueParts)
 
-		if name == "PublicationView":
+		if name in ["PublicationView", "DatasetView"]:
+			grantParts = [name[:-4], "Grant Number"]
+			assayParts = [name[:-4], "Assay"]
+			tumorParts = [name[:-4], "Tumor Type"]
+			tissueParts = [name[:-4], "Tissue"]
+
+			grantColumn = " ".join(grantParts)
+			assayColumn = " ".join(assayParts)
+			tumorColumn = " ".join(tumorParts)
+			tissueColumn = " ".join(tissueParts)
+
+			if name == "PublicationView":
 			
-			aliasColumn = "Pubmed Id"
-			table = table.astype(str)
+				aliasColumn = "Pubmed Id"
+				table = table.astype(str)
+			
+				mapping = {
+					componentColumn : "first", 
+					idColumn : "first", 
+					grantColumn : ",".join, 
+					"Publication Doi" : "first", 
+					"Publication Journal" : "first",
+					"Pubmed Url" : "first",
+					"Publication Title" : "first",
+					"Publication Year" : "first",
+					"Publication Keywords" : "first",
+					"Publication Authors" : "first",
+					"Publication Abstract" : "first",
+					assayColumn : "first",
+					tumorColumn : "first",
+					tissueColumn : "first",
+					"Publication Accessibility" : "first",
+					"Publication Dataset Alias" : "first",
+					"entityId" : ",".join
+					}
+
+			elif name == "DatasetView":
+			
+				aliasColumn = "Dataset Alias"
+			
+				mapping = {
+					componentColumn : "first", 
+					idColumn : "first", 
+					"Dataset Pubmed Id" : "first",
+					grantColumn : ",".join, 
+					"Dataset Name" : "first",
+					"Dataset Description" : "first",
+					"Dataset Design" : "first",
+					assayColumn : "first",
+					"Dataset Species" : "first",
+					tumorColumn : "first",
+					tissueColumn : "first",
+					"Dataset Url" : "first",
+					"Dataset File Formats" : "first",
+					"entityId" : ",".join
+					}
+		
+		if name == "EducationalResource":
+
+			aliasColumn = "Resource Alias"
 			
 			mapping = {
-				componentColumn : "first", 
-				idColumn : "first", 
-				grantColumn : ",".join, 
-				"Publication Doi" : "first", 
-				"Publication Journal" : "first",
-				"Pubmed Url" : "first",
-				"Publication Title" : "first",
-				"Publication Year" : "first",
-				"Publication Keywords" : "first",
-				"Publication Authors" : "first",
-				"Publication Abstract" : "first",
-				assayColumn : "first",
-				tumorColumn : "first",
-				tissueColumn : "first",
-				"Publication Accessibility" : "first",
-				"Publication Dataset Alias" : "first",
-				"entityId" : "first"
-				}
-
-
-		elif name == "DatasetView":
-			
-			aliasColumn = "Dataset Alias"
-			
-			mapping = {
-				componentColumn : "first", 
-				idColumn : "first", 
-				"Dataset Pubmed Id" : "first",
-				grantColumn : ",".join, 
-				"Dataset Name" : "first",
-				"Dataset Description" : "first",
-				"Dataset Design" : "first",
-				assayColumn : "first",
-				tumorColumn : "first",
-				tissueColumn : "first",
-				"Dataset Url" : "first",
-				"Dataset File Formats" : "first",
-				"entityId" : "first"
-				}
+					componentColumn : "first", 
+					idColumn : "first", 
+					"Resource Title" : "first",
+					"Resource Link" : "first", 
+					"Resource Topic" : "first",
+					"Resource Activity Type" : "first",
+					"Resource Primary Format" : "first",
+					"Resource Intended Use" : "first",
+					"Resource Primary Audience" : "first",
+					"Resource Educational Level" : "first",
+					"Resource Description" : "first",
+					"Resource Origin Institution" : "first",
+					"Resource Language" : "first",
+					"Resource Contributors" : "first",
+					"Resource Grant Number" : ",".join,
+					"Resource Secondary Topic" : "first",
+					"Resource License" : "first",
+					"Resource Use Requirements" : "first",
+					"Resource Internal Identifier" : "first",
+					"Resource Media Accessibility" : "first",
+					"Resource Access Hazard" : "first",
+					"Resource Dataset Alias" : "first",
+					"Resource Tool Link" : "first",
+					"entityId" : ",".join
+					}
 
 		mergedTable = table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
 		
@@ -145,13 +179,13 @@ def combine_rows(args):
 
 def validate_tables(args, config):
 
-	paths, names = args
+	paths, names = zip(*args)
 
 	validNames = []
 	validOuts = []
 	validPaths = []
 
-	for path, name in paths, names:
+	for path, name in zip(paths, names):
 		
 		command = [
 			"schematic",
@@ -183,42 +217,44 @@ def validate_tables(args, config):
 			stderr=errOut)
 		
 		validNames.append(name)
-		validOuts.append(commandOut)
+		validOuts.append(outPath)
 		validPaths.append(path)
 
 	return list(zip(validNames, validOuts, validPaths))
 
 def parse_out(args):
 
-	names, outs, paths = args
+	names, outs, paths = zip(*args)
 
 	parsedNames = []
 	parsedOuts = []
 	parsedPaths = []
 	
-	for name, out, path in names, outs, paths:
+	for name, out, path in zip(names, outs, paths):
 		
 		parsePath = Path(f"output/{name}_out.csv")
 		parsePath.parent.mkdir(parents=True, exist_ok=True)
 		
-		parsed = pd.read_table(out, sep="[", header=None)
+		parsed = pd.read_table(out, sep="], ", header=None, engine="python")
 		
 		parsedOut = parsed.to_csv(parsePath, index=False, sep="\n", header=False, columns=None, quoting=None)
 
 		parsedNames.append(name)
-		parsedOuts.append(out)
+		parsedOuts.append(parsePath)
 		parsedPaths.append(path)
 	
-	return list(zip(parsedNames, parsedOut, parsedPaths))
+	return list(zip(parsedNames, parsedOuts, parsedPaths))
 
-def upload_tables():
+def upload_tables(args):
 
+	names, outs, paths = zip(*args)
+	
 	uploadTable = []
 
 	#subset the tables to include features only
 	#add column to represent validation/sync status
 	#upload to CCKP - Admin using base CSV name and date of upload as label
-
+	
 def main():
 	
 	syn = login()
@@ -246,10 +282,13 @@ def main():
 	print("Validation logs stored in local output folder!")
 	
 	print("Converting validation logs to create reference table...")
+	
+	#checkTables = build_test()
+	print(checkTables)
 	validEntries = parse_out(checkTables)
 	print("Validation logs converted!")
 
-	#storedTables = upload_tables()
+	#storedTables = upload_tables(validEntries)
 
 
 if __name__ == "__main__":
