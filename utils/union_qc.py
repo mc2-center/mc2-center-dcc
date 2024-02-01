@@ -72,6 +72,8 @@ def combine_rows(args):
 	names = []
 	
 	for table, name in zip(newTables, newNames):
+		table = table.astype(str)
+
 		nameParts = [name, "id"]
 
 		componentColumn = "Component"
@@ -93,8 +95,7 @@ def combine_rows(args):
 				if name == "PublicationView":
 			
 					aliasColumn = "Pubmed Id"
-					table = table.astype(str)
-			
+
 					mapping = {
 						componentColumn : "first", 
 						idColumn : ",".join, 
@@ -207,6 +208,7 @@ def combine_rows(args):
 					}
 
 		mergedTable = table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
+		mergedTable = mergedTable.iloc[:,1:-1]
 		
 		mergePath = Path(f"output/{name}_merged.csv")
 		mergePath.parent.mkdir(parents=True, exist_ok=True)
