@@ -48,7 +48,7 @@ def get_tables(syn, tableIdList, mergeFlag):
 	
 	for tableId in tableIdList:
 		
-		table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame() #pull table from Synapse
+		table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame().fillna("") #pull table from Synapse
 		name = table.iat[1,0] #grab name of data type from table; assumes "Component" is first column in table
 		
 		manifestPath = Path(f"output/{name}.csv") #build path to store table as CSV
