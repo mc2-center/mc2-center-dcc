@@ -213,7 +213,7 @@ def combine_rows(args):
 					}
 
 		mergedTable = table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index() #group rows by designated identifier and map attributes
-		mergedTable = mergedTable.iloc[:,1:-1] #remove unnecessary "id" column
+		mergedTable = mergedTable.iloc[:,1:] #remove unnecessary "id" column
 		
 		mergePath = Path(f"output/{name}_merged.csv")
 		mergePath.parent.mkdir(parents=True, exist_ok=True)
