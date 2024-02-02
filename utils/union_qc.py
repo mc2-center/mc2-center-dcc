@@ -12,10 +12,8 @@ author: orion.banks
 import synapseclient
 import argparse
 import pandas as pd
-import numpy as np
 from pathlib import Path
 import subprocess
-import sys
 
 ### Login to Synapse ###
 def login():
