@@ -20,8 +20,7 @@ import sys
 ### Login to Synapse ###
 def login():
 
-    syn = synapseclient.Synapse()
-    syn.login()
+    syn = synapseclient.login()
 
     return syn
 
