@@ -14,6 +14,7 @@ import argparse
 import pandas as pd
 from pathlib import Path
 import subprocess
+import re
 
 ### Login to Synapse ###
 def login():
@@ -32,9 +33,20 @@ def get_args():
                         help='Synapse table IDs to query.')
 	parser.add_argument('-c',
                         help='path to schematic config.yml')
+	parser.add_argument('-bl',
+					 	required=False,
+						default=None,
+                        help='path to CSV with row numbers to trim from manifest. Numbers should be provided on separate rows.')
+	parser.add_argument('-tp',
+					 	required=False,
+						default=None,
+                        help='path to manifest CSV to trim.')
 	parser.add_argument('-m',
 						action='store_true',
-                        help='Boolean; if flag is provided, manifest rows will be merged by primary key.')
+                        help='Boolean; if flag is provided, manifest rows will be merged by model-specific key.')
+	parser.add_argument('-t',
+						action='store_true',
+                        help='Boolean; if flag is provided, manifest rows with errors will be trimmed.')
 	return parser.parse_args()
 
 
@@ -243,7 +255,7 @@ def validate_tables(args, config):
 			"-mp",
 			str(path)]
 
-		print(f"Validating manifest at: {str(path)}...")
+		print(f"\n\nValidating manifest at: {str(path)}...")
 
 		outPath = Path(f"output/{name}_out.txt")
 		outPath.parent.mkdir(parents=True, exist_ok=True)
@@ -277,7 +289,7 @@ def parse_out(args):
 	
 	for name, out, path in zip(names, outs, paths):
 		
-		parsePath = Path(f"output/{name}_out.csv")
+		parsePath = Path(f"output/{name}_trim_config.csv")
 		parsePath.parent.mkdir(parents=True, exist_ok=True)
 		
 		parsed = pd.read_table(out, sep="], ", header=None, engine="python") #load output from schematic validation
@@ -324,43 +336,83 @@ def trim_tables(args):
 	
 def main():
 	
-	syn = login()
-	
 	args = get_args()
-	inputList, config, merge = args.l, args.c, args.m 
-
-	print("Accessing requested tables...")
-	newTables = get_tables(syn, inputList, merge)
-	print("Table(s) downloaded from Synapse and converted to data frames!")
-	print("Source table(s) converted to CSV and stored in local output folder!")
 	
-	if merge:
-		print("Merging rows with matching identifier...")
-		newTables = combine_rows(newTables)
-		print("Matching rows merged!")
-		print("Merged table(s) converted to CSV and stored in local output folder!")
+	inputList, config, trimList, trimManifest, merge, trim = args.l, args.c, args.bl, args.tp, args.m, args.t
+
+	if trimList is None:
+		print("Accessing requested tables...")
 		
-		print("Validating merged manifest(s)...")
+		syn = login()
+		
+		newTables = get_tables(syn, inputList, merge)
+		print("\n\nTable(s) downloaded from Synapse and stored as CSVs in output folder!")
+
+		if merge:
+			print("\n\nMerging rows with matching identifier...")
+		
+			newTables = combine_rows(newTables)
+		
+			print("\n\nMatching rows merged!")
+			print("\n\nMerged table(s) converted to CSV and stored in local output folder!")
+		
+			print("\n\nValidating merged manifest(s)...")
 	
-	else:
-		print("Validating unmerged manifest(s)...")
+		else:
+			print("\n\nValidating unmerged manifest(s)...")
 
-	checkTables = validate_tables(newTables, config)
-	print("Validation logs stored in local output folder!")
+		checkTables = validate_tables(newTables, config)
+		print("\n\nValidation logs stored in local output folder!")
 	
-	print("Converting validation logs to create reference table...")
+		print("\n\nConverting validation logs to create reference tables...")
 	
-	print(checkTables)
-	validEntries = parse_out(checkTables)
-	print("Validation logs converted!")
+		print(checkTables)
+		
+		validEntries = parse_out(checkTables)
+		print("\n\nValidation logs parsed and saved as CSVs!")
 
-	#validEntries = list(zip(
-	#	["DatasetView", "PublicationView", "ToolView"],
-	#	["output/DatasetView_out.csv", "output/PublicationView_out.csv", "output/ToolView_out.csv"],
-	#	["output/DatasetView_merged.csv", "output/PublicationView_merged.csv", "output/ToolView_merged.csv"]))
+		if trim:
+			print("\n\nTrimming invalid entries from manifests...")
+			cleanTables = trim_tables(validEntries)
+			print("\n\nInvalid entries trimmed!")
 
-	cleanTables = trim_tables(validEntries)
+		else:
+			print("\n\nNo trimming performed. Manifests may contain invalid entries.")
 
+	if trimList is not None:
+
+		if trimManifest is not None:
+			
+
+			names, outs, paths = [], [], []
+
+			name = re.search('\/(\w*)(_trim_config)', str(trimList))
+			
+			if name is None:
+				print("\n\nPlease provide a trim config that uses the expected naming convention.")
+				exit
+			
+			else:
+				print(f"\n\nThe file {str(trimManifest)} will be trimmed based on {str(trimList)}")
+				
+				names.append(name[1])
+
+				out = str(trimList)
+				outs.append(out)
+			
+				path = str(trimManifest)
+				paths.append(path)
+
+				validEntries = list(zip(names, outs, paths))
+
+				print("\n\nTrimming invalid entries from manifests...")
+				cleanTables = trim_tables(validEntries)
+				print("\n\nInvalid entries trimmed!")				
+
+		elif trimManifest is None:
+			print(f"\n\nNo manifest provided. Please designate a manifest to trim.")
+
+		
 
 if __name__ == "__main__":
     main()
