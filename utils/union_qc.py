@@ -338,16 +338,36 @@ def main():
 	
 	args = get_args()
 	
-	inputList, config, trimList, trimManifest, merge, trim = args.l, args.c, args.bl, args.tp, args.m, args.t
+	inputList, config, trimList, inputManifest, merge, trim = args.l, args.c, args.bl, args.tp, args.m, args.t
 
 	if trimList is None:
-		print("Accessing requested tables...")
-		
-		syn = login()
-		
-		newTables = get_tables(syn, inputList, merge)
-		print("\n\nTable(s) downloaded from Synapse and stored as CSVs in output folder!")
 
+		if inputManifest is None:
+			print("Accessing requested tables...")
+		
+			syn = login()
+		
+			newTables = get_tables(syn, inputList, merge)
+			print("\n\nTable(s) downloaded from Synapse and stored as CSVs in output folder!")
+
+		elif inputManifest is not None:
+
+			tables, newNames = [], []
+
+			table = pd.read_csv(inputManifest, header=0)
+			name = table.loc[:,'Component'].iat[1]
+
+			if merge:
+				tables.append(table)
+			
+			else:
+				tables.append(inputManifest)
+			
+			newNames.append(name)
+
+			newTables = list(zip(tables,newNames))
+			print(f"\n\nReading provided table at {inputManifest} of type {name}.")
+		
 		if merge:
 			print("\n\nMerging rows with matching identifier...")
 		
@@ -381,9 +401,8 @@ def main():
 
 	if trimList is not None:
 
-		if trimManifest is not None:
+		if inputManifest is not None:
 			
-
 			names, outs, paths = [], [], []
 
 			name = re.search('\/(\w*)(_trim_config)', str(trimList))
@@ -393,14 +412,14 @@ def main():
 				exit
 			
 			else:
-				print(f"\n\nThe file {str(trimManifest)} will be trimmed based on {str(trimList)}")
+				print(f"\n\nThe file {str(inputManifest)} will be trimmed based on {str(trimList)}")
 				
 				names.append(name[1])
 
 				out = str(trimList)
 				outs.append(out)
 			
-				path = str(trimManifest)
+				path = str(inputManifest)
 				paths.append(path)
 
 				validEntries = list(zip(names, outs, paths))
@@ -409,7 +428,7 @@ def main():
 				cleanTables = trim_tables(validEntries)
 				print("\n\nInvalid entries trimmed!")				
 
-		elif trimManifest is None:
+		elif inputManifest is None:
 			print(f"\n\nNo manifest provided. Please designate a manifest to trim.")
 
 		
