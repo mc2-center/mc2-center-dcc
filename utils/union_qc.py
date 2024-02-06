@@ -4,7 +4,10 @@ union_qc.py
 Submits a query to get all information from a Synapse table
 Validates table entries against a schematic data model
 Returns row identifer and validation state
-Stores a table in Synapse with id and validation info
+Trims invalid entries using schematic error log
+
+Custom trim config can be provided at run time
+CSV can be passed at run time for validation, merging, and trimming
 
 author: orion.banks
 """
