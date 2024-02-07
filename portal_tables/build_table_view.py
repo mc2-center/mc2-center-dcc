@@ -1,6 +1,5 @@
 """
 Create/store entityview, based on a list of SynIDs to include in scope.
-Can also be used to update the table scope
 
 Inputs:
 - space-separated list of project synIDs for scope
@@ -10,6 +9,7 @@ Inputs:
 
 Outputs:
 - an EntityViewSchema table stored in Synapse
+- if table exists, scope will be updated and table will be regenerated in-place
 
 author: orion.banks
 """

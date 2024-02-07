@@ -10,11 +10,7 @@ Inputs:
 Outputs:
 - a MaterializedViewSchema table, containing all entries from
 the tables provided as input
-
-TO-DO:
-
-- include filtering in query, to combine entries for identical 
-publications across projects (?)
+- if table already exists, scope will be updated and table will be regenerated in-place
 
 author: orion.banks
 """
