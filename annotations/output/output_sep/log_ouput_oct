@@ -1,0 +1,951 @@
+Script started on Thu Dec  7 15:03:12 2023
+Restored session: Thu Dec  7 15:02:30 EST 2023
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations/output/output_sep[0m[27m[24m[J(base) agopalan@w218 output_sep % [K[?2004hsschr emat     s  cconda activat e schematic[?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations/output/output_sep[0m[27m[24m[J(schematic) agopalan@w218 output_sep % [K[?2004hconda activate schematic[24Dexit                    [20D python3 upload-manifests.py -m oct_filepaths.csv -t PublicationView -c /Users/agopalan/schematic/config.yml[K[?2004l
+python3: can't open file '/Users/agopalan/mc2-center-dcc/annotations/output/output_sep/upload-manifests.py': [Errno 2] No such file or directory
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations/output/output_sep[0m[27m[24m[J(schematic) agopalan@w218 output_sep % [K[?2004hccd [?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan[0m[27m[24m[J(schematic) agopalan@w218 ~ % [K[?2004hccd mc2-center-dcc/annotations[?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations[0m[27m[24m[J(schematic) agopalan@w218 annotations % [K[?2004hcd mc2-center-dcc/annotations[26D                          [26D python3 upload-manifests.py -m oct_filepaths.csv -t PublicationView -c /Users/agopalan/schematic/config.yml[K[?2004l
+Args received in validate_entry_worker: ('./output/output_oct/CA264620_publication.csv', 'syn32698497')
+Validating file: ./output/output_oct/CA264620_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA264620_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA210173_publication.csv', 'syn32698222')
+Validating file: ./output/output_oct/CA210173_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA210173_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA193461_publication.csv', 'syn32698203')
+Validating file: ./output/output_oct/CA193461_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA193461_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA217514_publication.csv', 'syn35270557')
+Validating file: ./output/output_oct/CA217514_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA217514_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA209975_publication.csv', 'syn32698159')
+Validating file: ./output/output_oct/CA209975_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA209975_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA217376_publication.csv', 'syn32698091')
+Validating file: ./output/output_oct/CA217376_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA217376_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA217378_publication.csv', 'syn32698086')
+Validating file: ./output/output_oct/CA217378_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA217378_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA243072_publication.csv', 'syn32698423')
+Validating file: ./output/output_oct/CA243072_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA243072_publication.csv
+Starting schematic...
+Starting schematic...
+Starting schematic...
+Starting schematic...
+Starting schematic...
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+Could not find local context root directory
+Could not find local context root directory
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpycfq6h2p' for ephemeral docs site
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpl7phrrs_' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpvrzxqw_a' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpb55cs443' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpoaad5pkh' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmphd_x5w2l' for ephemeral docs site
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpmfa5xxyx' for ephemeral docs site
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpcgivoagx' for ephemeral docs site
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 8, in <module>
+    sys.exit(main())
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/core.py", line 1157, in __call__
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+    return self.main(*args, **kwargs)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/core.py", line 1078, in main
+    rv = self.invoke(ctx)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/core.py", line 1688, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/core.py", line 1688, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/core.py", line 1434, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/core.py", line 783, in invoke
+    return __callback(*args, **kwargs)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/click/decorators.py", line 45, in new_func
+    return f(get_current_context().obj, *args, **kwargs)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/commands.py", line 206, in validate_manifest
+    errors, warnings = metadata_model.validateModelManifest(
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/metadata.py", line 254, in validateModelManifest
+    errors, warnings, manifest = validate_all(self, errors, warnings, manifest, manifestPath, self.sg, jsonSchema, restrict_rules, project_scope)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/validate_manifest.py", line 261, in validate_all
+    manifest, vmr_errors, vmr_warnings = vm.validate_manifest_rules(manifest, sg, restrict_rules, project_scope)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/validate_manifest.py", line 139, in validate_manifest_rules
+    ge_helpers.build_expectation_suite()
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/GE_Helpers.py", line 313, in build_expectation_suite
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+    self.context.build_data_docs(resource_identifiers=[suite_identifier])
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/usage_statistics/usage_statistics.py", line 318, in usage_statistics_wrapped_method
+    result = func(*args, **kwargs)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py", line 5249, in build_data_docs
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+    return self._build_data_docs(
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py", line 5296, in _build_data_docs
+    index_page_resource_identifier_tuple = site_builder.build(
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/render/renderer/site_builder.py", line 310, in build
+    site_section_builder.build(resource_identifiers=resource_identifiers)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/render/renderer/site_builder.py", line 440, in build
+    resource = ExpectationSuite(
+TypeError: great_expectations.core.expectation_suite.ExpectationSuite() argument after ** must be a mapping, not NoneType
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+	3 expectation(s) included in expectation_suite.
+	3 expectation(s) included in expectation_suite.
+	3 expectation(s) included in expectation_suite.
+	3 expectation(s) included in expectation_suite.
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 571.08it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 214.32it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 904.92it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 112.92it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 166.30it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 112.79it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 167.22it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 126.75it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 213.49it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 128.23it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 139.37it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 206.06it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 123.60it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 152.96it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 251.42it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 277.22it/s]Calculating Metrics:   8%|████▌                                                  | 2/24 [00:00<00:00, 83.73it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 228.55it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 146.73it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 249.67it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 334.78it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 114.78it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 548.52it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 531.35it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 530.83it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 530.13it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 295.89it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 555.60it/s]Calculating Metrics:  12%|██████▉                                                | 3/24 [00:00<00:00, 91.10it/s]Calculating Metrics:   8%|████▌                                                  | 2/24 [00:00<00:00, 84.62it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 125.70it/s]Calculating Metrics:   8%|████▌                                                  | 2/24 [00:00<00:00, 87.32it/s]
+Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 106.19it/s]Calculating Metrics:   8%|████▌                                                  | 2/24 [00:00<00:00, 72.01it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 107.30it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 295.13it/s]Calculating Metrics:  12%|██████▉                                                | 3/24 [00:00<00:00, 92.79it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 429.82it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 429.10it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 428.61it/s]
+Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 264.94it/s]Calculating Metrics: 100%|██████████████████�Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 626.45it/s]�██████████████████████████████████| 24/24 [00:00<00:00, 542.35it/s]Calculating Metrics:   8%|████▌                                                  | 2/24 [00:00<00:00, 42.45it/s]Calculating Metrics:  12%|██████▉                                                | 3/24 [00:00<00:00, 58.52it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 603.94it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 603.25it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 602.39it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 471.91it/s]
+Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 470.89it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 260.04it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 470.26it/s]
+Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 193.60it/s]Calculating Metrics:  12%|██████▉                                                | 3/24 [00:00<00:00, 53.27it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 160.61it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 153.15it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 202.78it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 144.46it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 388.00it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 378.88it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 359.91it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 372.51it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 362.16it/s]
+Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 352.29it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 352.02it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 351.68it/s]
+Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 432.74it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 419.87it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 419.36it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 418.88it/s]
+
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+File with ./output/output_oct/CA243072_publication.csv could not be validated.
+Args received in validate_entry_worker: ('./output/output_oct/CA224012_publication.csv', 'syn35270567')
+Validating file: ./output/output_oct/CA224012_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA224012_publication.csv
+[31merror: [0mFor the attribute 'Publication Assay', on row 2, 'Clinical Trial' is not one of ['Gas Chromatography Mass Spectrometry', 'Autoradiography', 'In Situ Hybridization', 'Alcian Blue Staining Method', 'Single-Cell Barcode Chip', 'Affinity Purification Mass Spectrometry', 'Second-Harmonic Imaging Microscopy', 'Differential Scanning Fluorimetry', 'Single Cell DNA Sequencing', 'Molecular Simulations', 'Brillouin Microscopy', 'ELISA', 'Intravital Microscopy', 'Structural Variant Analysis', 'Tiling Array', 'Collision-Induced Dissociation', 'PET-CT', 'Ma.
+[['2', 'Publication Assay', "'Clinical Trial' is not one of ['Gas Chromatography Mass Spectrometry', 'Autoradiography', 'In Situ Hybridization', 'Alcian Blue Staining Method', 'Single-Cell Barcode Chip', 'Affinity Purification Mass Spectrometry', 'Second-Harmonic Imaging Microscopy', 'Differential Scanning Fluorimetry', 'Single Cell DNA Sequencing', 'Molecular Simulations', 'Brillouin Microscopy', 'ELISA', 'Intravital Microscopy', 'Structural Variant Analysis', 'Tiling Array', 'Collision-Induced Dissociation', 'PET-CT', 'Ma", 'Clinical Trial']]
+Args received in validate_entry_worker: ('./output/output_oct/CA193489_publication.csv', 'syn32698198')
+Validating file: ./output/output_oct/CA193489_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA193489_publication.csv
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpipaf8j16' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Args received in validate_entry_worker: ('./output/output_oct/CA217377_publication.csv', 'syn32698266')
+Validating file: ./output/output_oct/CA217377_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA217377_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA268084_publication.csv', 'syn52499923')
+Validating file: ./output/output_oct/CA268084_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA268084_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA249799_publication.csv', 'syn35270472')
+Validating file: ./output/output_oct/CA249799_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA249799_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA253472_publication.csv', 'syn32698457')
+Validating file: ./output/output_oct/CA253472_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA253472_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA232137_publication.csv', 'syn32698071')
+Validating file: ./output/output_oct/CA232137_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA232137_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA210180_publication.csv', 'syn32698217')
+Validating file: ./output/output_oct/CA210180_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA210180_publication.csv
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▍                                                | 2/24 [00:00<00:00, 1204.74it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 316.50it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 464.11it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 195.48it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 453.97it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 373.61it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 828.55it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 788.17it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 786.62it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 784.90it/s]
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpkf3mq02x' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpgns6xdnn' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpcurulbvk' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmp7ozlzt01' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpy9p74gxb' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmpwgl074ly' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmphrxuyn7t' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▍                                                | 2/24 [00:00<00:00, 1443.08it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 330.74it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 485.43it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 284.17it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 705.27it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 553.34it/s]Calculating Metrics: 100%|████████████████████████████████████████████████████| 24/24 [00:00<00:00, 1173.08it/s]Calculating Metrics: 100%|████████████████████████████████████████████████████| 24/24 [00:00<00:00, 1097.24it/s]Calculating Metrics: 100%|████████████████████████████████████████████████████| 24/24 [00:00<00:00, 1094.94it/s]Calculating Metrics: 100%|████████████████████████████████████████████████████| 24/24 [00:00<00:00, 1092.24it/s]
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▍                                                | 2/24 [00:00<00:00, 1393.92it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 327.03it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 463.54it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 161.35it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 427.86it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 366.51it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 836.47it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 793.91it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 792.58it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 791.07it/s]
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 451.27it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 188.55it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 221.47it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 166.97it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 445.92it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 380.36it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 860.18it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 818.63it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 817.41it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 815.74it/s]
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▍                                                | 2/24 [00:00<00:00, 1522.99it/s][33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 154.20it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 227.91it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 125.77it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 340.78it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 300.45it/s]	3 expectation(s) included in expectation_suite.
+Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 700.51it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 672.53it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 671.67it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 670.41it/s]
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▍                                                | 2/24 [00:00<00:00, 1978.45it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 354.16it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 519.18it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 210.42it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 541.51it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 359.44it/s][33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 814.43it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 776.29it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 775.04it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 773.29it/s]
+	3 expectation(s) included in expectation_suite.
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:1768: DeprecationWarning: A Checkpoint named manifest_checkpoint already exists.; using add_checkpoint to overwrite an existing value is deprecated as of v0.15.50 and will be removed in v0.18. Please use add_or_update_checkpoint instead.
+[33mwarning: [0m  warnings.warn(
+	3 expectation(s) included in expectation_suite.
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▍                                                | 2/24 [00:00<00:00, 1073.95it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 294.80it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 433.76it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 253.06it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 616.69it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 496.09it/s]Calculating Metrics: 100%|████████████████████████████████████████████████████| 24/24 [00:00<00:00, 1062.50it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 953.40it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 948.58it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 933.27it/s]
+Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   0%|                                                               | 0/24 [00:00<?, ?it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 909.93it/s]Calculating Metrics:   8%|████▌                                                 | 2/24 [00:00<00:00, 169.29it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 249.77it/s]Calculating Metrics:  12%|██████▊                                               | 3/24 [00:00<00:00, 184.20it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 488.90it/s]Calculating Metrics:  38%|████████████████████▎                                 | 9/24 [00:00<00:00, 411.86it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 731.67it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 689.42it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 687.52it/s]Calculating Metrics: 100%|█████████████████████████████████████████████████████| 24/24 [00:00<00:00, 686.23it/s]
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Args received in validate_entry_worker: ('./output/output_oct/CA274492_publication.csv', 'syn43447140')
+Validating file: ./output/output_oct/CA274492_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA274492_publication.csv
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+Args received in validate_entry_worker: ('./output/output_oct/CA261701_publication.csv', 'syn35270546')
+Validating file: ./output/output_oct/CA261701_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA261701_publication.csv
+Starting schematic...
+The jsonld argument is being taken from configuration file, i.e., /Users/agopalan/data-models/mc2.model.jsonld.
+Args received in validate_entry_worker: ('./output/output_oct/CA214282_publication.csv', 'syn32698029')
+Validating file: ./output/output_oct/CA214282_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA214282_publication.csv
+Your manifest has been validated successfully. There are no errors in your manifest, and it can be submitted without any modifications.
+JSON schema successfully generated from schema.org schema!
+The JSON schema file can be inspected by setting the following nested key in the configuration: (model > input > log_location).
+JSON schema file log stored as /Users/agopalan/data-models/mc2.PublicationView.schema.json
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/dtypes/cast.py:1641: DeprecationWarning: np.find_common_type is deprecated.  Please use `np.result_type` or `np.promote_types`.
+[33mwarning: [0mSee https://numpy.org/devdocs/release/1.25.0-notes.html and the docs for more information.  (Deprecated NumPy 1.25)
+[33mwarning: [0m  return np.find_common_type(types, [])
+Could not find local context root directory
+Created temporary directory '/var/folders/6l/l6z73tk15hq9g7m53_2xzxhw0000gq/T/tmp6ozfrpk3' for ephemeral docs site
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+Could not find local context root directory
+EphemeralDataContext has not implemented `_load_zep_config()` returning empty `GxConfig`
+Loading 'datasources' ->
+{}
+Loaded 'datasources' ->
+{}
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:2705: DeprecationWarning: create_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use add_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+[33mwarning: [0m/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py:417: DeprecationWarning: save_expectation_suite is deprecated as of v0.15.48 and will be removed in v0.18. Please use update_expectation_suite or add_or_update_expectation_suite instead.
+[33mwarning: [0m  warnings.warn(
+Args received in validate_entry_worker: ('./output/output_oct/CA217450_publication.csv', 'syn32698096')
+Validating file: ./output/output_oct/CA217450_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA217450_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA193417_publication.csv', 'syn32698194')
+Validating file: ./output/output_oct/CA193417_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA193417_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA220378_publication.csv', 'syn32698058')
+Validating file: ./output/output_oct/CA220378_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA220378_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA256054_publication.csv', 'syn35270510')
+Validating file: ./output/output_oct/CA256054_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA256054_publication.csv
+Args received in validate_entry_worker: ('./output/output_oct/CA225566_publication.csv', 'syn32698345')
+Validating file: ./output/output_oct/CA225566_publication.csv of type PublicationView
+Running validation command: schematic model -c /Users/agopalan/schematic/config.yml validate -dt PublicationView -mp ./output/output_oct/CA225566_publication.csv
+^CTraceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.__main__ import main
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__main__.py", line 7, in <module>
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.__main__ import main
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__main__.py", line 10, in <module>
+Traceback (most recent call last):
+  File "/Users/agopalan/mc2-center-dcc/annotations/upload-manifests.py", line 135, in <module>
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.__main__ import main
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__init__.py", line 9, in <module>
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.__main__ import main
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__init__.py", line 8, in <module>
+    from schematic.manifest.commands import (
+    from schematic.utils.google_api_utils import download_creds_file
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/utils/google_api_utils.py", line 5, in <module>
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/manifest/__init__.py", line 1, in <module>
+    from schematic.loader import LOADER
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/loader.py", line 7, in <module>
+    main()
+  File "/Users/agopalan/mc2-center-dcc/annotations/upload-manifests.py", line 104, in main
+    from schematic.models.commands import model as model_cli  # submit manifest commands
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/__init__.py", line 1, in <module>
+    validated_files = pool.map(partial(
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/multiprocessing/pool.py", line 367, in map
+    from schematic.manifest.generator import ManifestGenerator
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/manifest/generator.py", line 4, in <module>
+    import pygsheets as ps
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/__init__.py", line 14, in <module>
+    from pkg_resources import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 3249, in <module>
+    from schematic.models.metadata import MetadataModel
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/metadata.py", line 29, in <module>
+    from openpyxl.styles import Font, Alignment, PatternFill
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/openpyxl/__init__.py", line 7, in <module>
+    from pygsheets.authorization import authorize
+    from schematic.models.validate_manifest import validate_all
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/authorization.py", line 11, in <module>
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/validate_manifest.py", line 24, in <module>
+    from openpyxl.workbook import Workbook
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/openpyxl/workbook/__init__.py", line 4, in <module>
+    from pygsheets.client import Client
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/client.py", line 8, in <module>
+    return self._map_async(func, iterable, mapstar, chunksize).get()
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/multiprocessing/pool.py", line 768, in get
+    from .workbook import Workbook
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/openpyxl/workbook/workbook.py", line 17, in <module>
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.models.GE_Helpers import GreatExpectationsHelpers
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/GE_Helpers.py", line 19, in <module>
+    from schematic.__main__ import main
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__main__.py", line 10, in <module>
+    import great_expectations as ge
+    from schematic.models.commands import model as model_cli  # submit manifest commands
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/__init__.py", line 1, in <module>
+    from schematic.models.metadata import MetadataModel
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/metadata.py", line 29, in <module>
+    from pygsheets.drive import DriveAPIWrapper
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/drive.py", line 1, in <module>
+    from openpyxl.writer.excel import save_workbook
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/openpyxl/writer/excel.py", line 22, in <module>
+    from schematic.models.validate_manifest import validate_all
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/validate_manifest.py", line 24, in <module>
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/__init__.py", line 6, in <module>
+    from schematic.models.GE_Helpers import GreatExpectationsHelpers
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/models/GE_Helpers.py", line 19, in <module>
+    import great_expectations as ge
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/__init__.py", line 6, in <module>
+    from openpyxl.drawing.spreadsheet_drawing import SpreadsheetDrawing
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/openpyxl/drawing/spreadsheet_drawing.py", line 37, in <module>
+    self.wait(timeout)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/multiprocessing/pool.py", line 765, in wait
+    from great_expectations.data_context.migrator.cloud_migrator import CloudMigrator
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/__init__.py", line 1, in <module>
+    def _initialize_master_working_set():
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 3223, in _call_aside
+    from great_expectations.data_context.migrator.cloud_migrator import CloudMigrator
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/__init__.py", line 1, in <module>
+    from pygsheets.spreadsheet import Spreadsheet
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/spreadsheet.py", line 14, in <module>
+    self._event.wait(timeout)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/threading.py", line 607, in wait
+    from great_expectations.data_context.data_context import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/__init__.py", line 1, in <module>
+    from .connector import Shape
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+    from great_expectations.data_context.data_context import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/__init__.py", line 1, in <module>
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 674, in _load_unlocked
+  File "<frozen importlib._bootstrap>", line 577, in module_from_spec
+  File "<frozen importlib._bootstrap>", line 556, in _init_module_attrs
+  File "<frozen importlib._bootstrap>", line 397, in cached
+  File "<frozen importlib._bootstrap_external>", line 513, in _get_cached
+  File "<frozen importlib._bootstrap_external>", line 406, in cache_from_source
+  File "<frozen importlib._bootstrap_external>", line 134, in _path_split
+  File "<frozen importlib._bootstrap_external>", line 134, in <genexpr>
+    from great_expectations.data_context.data_context.abstract_data_context import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py", line 38, in <module>
+KeyboardInterrupt
+    from pygsheets.worksheet import Worksheet
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/worksheet.py", line 25, in <module>
+    f(*args, **kwargs)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 3261, in _initialize_master_working_set
+    from great_expectations.core import ExpectationSuite
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/__init__.py", line 3, in <module>
+    from great_expectations.data_context.data_context.abstract_data_context import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/data_context/abstract_data_context.py", line 70, in <module>
+    from great_expectations.data_context.config_validator.yaml_config_validator import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/config_validator/yaml_config_validator.py", line 22, in <module>
+    import pandas as pd
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/__init__.py", line 48, in <module>
+    signaled = self._cond.wait(timeout)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/threading.py", line 320, in wait
+    from .domain import Domain
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/domain.py", line 8, in <module>
+    waiter.acquire()
+KeyboardInterrupt
+    from great_expectations.checkpoint import Checkpoint, SimpleCheckpoint
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/checkpoint/__init__.py", line 2, in <module>
+    working_set = WorkingSet._build_master()
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 608, in _build_master
+    ws = cls()
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 601, in __init__
+    self.add_entry(entry)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 657, in add_entry
+    from pandas.core.api import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/api.py", line 27, in <module>
+    from .actions import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/checkpoint/actions.py", line 41, in <module>
+    for dist in find_distributions(entry, True):
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 2093, in find_on_path
+    from great_expectations.core.id_dict import IDDict
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/id_dict.py", line 5, in <module>
+    from great_expectations.data_context.store.metric_store import MetricStore
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/store/__init__.py", line 30, in <module>
+    from great_expectations.core.util import convert_to_json_serializable
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/util.py", line 32, in <module>
+    from pandas.core.arrays import Categorical
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/arrays/__init__.py", line 12, in <module>
+    for dist in factory(fullpath):
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pkg_resources/__init__.py", line 2151, in distributions_from_metadata
+    from .profiler_store import ProfilerStore  # isort:skip
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/data_context/store/profiler_store.py", line 12, in <module>
+    from IPython import get_ipython
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/IPython/__init__.py", line 54, in <module>
+    from pandas.core.arrays.interval import IntervalArray
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/arrays/interval.py", line 208, in <module>
+    from great_expectations.rule_based_profiler.config import RuleBasedProfilerConfig
+    if len(os.listdir(path)) == 0:
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/rule_based_profiler/__init__.py", line 1, in <module>
+KeyboardInterrupt
+    from .terminal.embed import embed
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/IPython/terminal/embed.py", line 16, in <module>
+    class IntervalArray(IntervalMixin, ExtensionArray):
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/core/arrays/interval.py", line 568, in IntervalArray
+    from .rule_based_profiler_result import RuleBasedProfilerResult  # isort:skip
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/rule_based_profiler/rule_based_profiler_result.py", line 13, in <module>
+    def from_tuples(
+    from IPython.terminal.interactiveshell import TerminalInteractiveShell
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/IPython/terminal/interactiveshell.py", line 31, in <module>
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pandas/util/_decorators.py", line 508, in __call__
+    from great_expectations.core.usage_statistics.usage_statistics import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/usage_statistics/usage_statistics.py", line 24, in <module>
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/__init__.py", line 25, in <module>
+    from great_expectations.core.usage_statistics.anonymizers.anonymizer import Anonymizer
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/usage_statistics/anonymizers/anonymizer.py", line 4, in <module>
+    from .application import Application
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/application/__init__.py", line 3, in <module>
+    def __call__(self, func: T) -> T:
+KeyboardInterrupt
+    from great_expectations.core.usage_statistics.anonymizers.base import BaseAnonymizer
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/usage_statistics/anonymizers/base.py", line 14, in <module>
+    from .application import Application
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/application/application.py", line 54, in <module>
+    class BaseAnonymizer(ABC):
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/usage_statistics/anonymizers/base.py", line 19, in BaseAnonymizer
+    CORE_GX_EXPECTATION_TYPES = aggregate_all_core_expectation_types()
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/core/usage_statistics/util.py", line 42, in aggregate_all_core_expectation_types
+    from prompt_toolkit.key_binding.defaults import load_key_bindings
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/key_binding/defaults.py", line 10, in <module>
+    from prompt_toolkit.key_binding.bindings.basic import load_basic_bindings
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/key_binding/bindings/basic.py", line 17, in <module>
+    from great_expectations.dataset.dataset import Dataset
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/dataset/__init__.py", line 3, in <module>
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.__main__ import main
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__init__.py", line 9, in <module>
+    from .named_commands import get_by_name
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/key_binding/bindings/named_commands.py", line 15, in <module>
+    from schematic.utils.google_api_utils import download_creds_file
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/utils/google_api_utils.py", line 5, in <module>
+    import pygsheets as ps
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/__init__.py", line 14, in <module>
+    from pygsheets.authorization import authorize
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/authorization.py", line 6, in <module>    from prompt_toolkit.layout.controls import BufferControl
+    from .dataset import Dataset
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/layout/__init__.py", line 49, in <module>
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/great_expectations/dataset/dataset.py", line 12, in <module>
+    from .containers import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/layout/containers.py", line 34, in <module>
+    from .controls import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/prompt_toolkit/layout/controls.py", line 32, in <module>
+    from scipy import stats
+  File "<frozen importlib._bootstrap>", line 1075, in _handle_fromlist
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/__init__.py", line 189, in __getattr__
+    from .processors import (
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 879, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1012, in get_code
+  File "<frozen importlib._bootstrap_external>", line 672, in _compile_bytecode
+KeyboardInterrupt
+    return _importlib.import_module(f'scipy.{name}')
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/stats/__init__.py", line 608, in <module>
+    from ._stats_py import *
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/stats/_stats_py.py", line 39, in <module>
+    from scipy.spatial.distance import cdist
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/spatial/__init__.py", line 110, in <module>
+    from ._kdtree import *
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/spatial/_kdtree.py", line 4, in <module>
+    from ._ckdtree import cKDTree, cKDTreeNode
+  File "_ckdtree.pyx", line 12, in init scipy.spatial._ckdtree
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/sparse/__init__.py", line 287, in <module>
+    from . import csgraph
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/scipy/sparse/csgraph/__init__.py", line 196, in <module>
+    from ._matching import (
+  File "<frozen importlib._bootstrap>", line 404, in parent
+KeyboardInterrupt
+Traceback (most recent call last):
+  File "/Users/agopalan/anaconda3/envs/schematic/bin/schematic", line 5, in <module>
+    from schematic.__main__ import main
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/__init__.py", line 9, in <module>
+    from schematic.utils.google_api_utils import download_creds_file
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/schematic/utils/google_api_utils.py", line 5, in <module>
+    import pygsheets as ps
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/__init__.py", line 14, in <module>
+    from pygsheets.authorization import authorize
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/pygsheets/authorization.py", line 6, in <module>
+    from google.oauth2 import service_account
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/oauth2/service_account.py", line 77, in <module>
+    from google.auth import _service_account_info
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/_service_account_info.py", line 22, in <module>
+    from google.auth import crypt
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/crypt/__init__.py", line 43, in <module>
+    from google.auth.crypt import rsa
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/crypt/rsa.py", line 20, in <module>
+    from google.auth.crypt import _cryptography_rsa
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/crypt/_cryptography_rsa.py", line 33, in <module>
+    _BACKEND = backends.default_backend()
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/hazmat/backends/__init__.py", line 11, in default_backend
+    from cryptography.hazmat.backends.openssl.backend import backend
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/hazmat/backends/openssl/__init__.py", line 7, in <module>
+    from cryptography.hazmat.backends.openssl.backend import backend
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/hazmat/backends/openssl/backend.py", line 27, in <module>
+    from cryptography.hazmat.bindings.openssl import binding
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1002, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 945, in _find_spec
+  File "<frozen importlib._bootstrap_external>", line 1439, in find_spec
+  File "<frozen importlib._bootstrap_external>", line 1411, in _get_spec
+  File "<frozen importlib._bootstrap_external>", line 1548, in find_spec
+  File "<frozen importlib._bootstrap_external>", line 1591, in _fill_cache
+KeyboardInterrupt
+
+    from google.oauth2 import service_account
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/oauth2/service_account.py", line 77, in <module>
+    from google.auth import _service_account_info
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/_service_account_info.py", line 22, in <module>
+    from google.auth import crypt
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/crypt/__init__.py", line 43, in <module>
+    from google.auth.crypt import rsa
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/crypt/rsa.py", line 20, in <module>
+    from google.auth.crypt import _cryptography_rsa
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/google/auth/crypt/_cryptography_rsa.py", line 27, in <module>
+    import cryptography.x509
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/x509/__init__.py", line 8, in <module>
+    from cryptography.x509.base import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/x509/base.py", line 30, in <module>
+    from cryptography.x509.extensions import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/x509/extensions.py", line 26, in <module>
+    from cryptography.x509.general_name import (
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/x509/general_name.py", line 12, in <module>
+    from cryptography.x509.name import Name
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/x509/name.py", line 362, in <module>
+    class _RFC4514NameParser:
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/site-packages/cryptography/x509/name.py", line 375, in _RFC4514NameParser
+    _STRING_RE = re.compile(
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/re.py", line 251, in compile
+    return _compile(pattern, flags)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/re.py", line 303, in _compile
+    p = sre_compile.compile(pattern, flags)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 792, in compile
+    code = _code(p, flags)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 631, in _code
+    _compile(code, p.data, flags)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 172, in _compile
+    _compile(code, av[2], flags)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 184, in _compile
+    _compile(code, p, _combine_flags(flags, add_flags, del_flags))
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 184, in _compile
+    _compile(code, p, _combine_flags(flags, add_flags, del_flags))
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 225, in _compile
+    _compile(code, av, flags)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 136, in _compile
+    charset, hascased = _optimize_charset(av, iscased, tolower, fixes)
+  File "/Users/agopalan/anaconda3/envs/schematic/lib/python3.10/sre_compile.py", line 328, in _optimize_charset
+    charmap[i] = 1
+KeyboardInterrupt
+
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations[0m[27m[24m[J(schematic) agopalan@w218 annotations % [K[?2004h
+Aborted!
+[?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations[0m[27m[24m[J(schematic) agopalan@w218 annotations % [K[?2004h[?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations[0m[27m[24m[J(schematic) agopalan@w218 annotations % [K[?2004hccd output/oc utput_od ct[?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations/output/output_oct[0m[27m[24m[J(schematic) agopalan@w218 output_oct % [K[?2004hppython3 add_cols.py[?2004l
+Processing completed.
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan/mc2-center-dcc/annotations/output/output_oct[0m[27m[24m[J(schematic) agopalan@w218 output_oct % [K[?2004hccd [?2004l
+[1m[7m%[27m[1m[0m                                                                                                                ]7;file://w218.nyc.rr.com/Users/agopalan[0m[27m[24m[J(schematic) agopalan@w218 ~ % [K[?2004hccd mc2-ce      c  eexit[?2004l
+
+Saving session...
+...saving history...truncating history files...
+...completed.
+
+Script done on Thu Dec  7 15:04:25 2023

@@ -1,3 +1,13 @@
+'''
+upload-manifests.py
+
+This script accepts a CSV file containing manifest file paths and their corresponding Synapse IDs for target folders. 
+It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
+
+author: aditi.gopalan
+author: orion.banks
+
+'''
 import pandas as pd
 import synapseclient
 import multiprocessing
@@ -6,12 +16,6 @@ import sys
 import argparse
 from functools import partial
 
-'''
-
-This script accepts a CSV file containing manifest file paths and their corresponding Synapse IDs for target folders. 
-It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
-
-'''
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
@@ -37,8 +41,8 @@ def login():
     return syn
 
 def validate_entry_worker(args, cf, mt, valid_only):
+    print(f"Args received in validate_entry_worker: {args}")  # Add this line to print args
     fp, target_id = args  # Unpack the tuple
-    
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
         "schematic",
@@ -63,9 +67,9 @@ def validate_entry_worker(args, cf, mt, valid_only):
         else:
             return args  # Return the tuple
 
+
 def submit_entry_worker(args, cf):
     fp, target_id = args  # Unpack the tuple
-
     print(f"Submitting file: {fp} with target ID: {target_id}")
     command = [
         "schematic",
@@ -83,7 +87,6 @@ def submit_entry_worker(args, cf):
         "-tm",
         "upsert"
     ]
-    
     cmd_line = " ".join(command)
 
     print(cmd_line)
@@ -94,7 +97,7 @@ def main():
     
     #syn = login()
     args = get_args()
-    csv_file = args.m
+    csv_file = args.m if args.m else 'input.csv'
     config_file = args.c
     manifest_type = args.t
     submit_valid = args.v
@@ -110,7 +113,6 @@ def main():
     validated_files = pool.map(partial(
         validate_entry_worker, cf=config_file, mt=manifest_type, valid_only=submit_valid), 
         validation_args_list)
-  
     print("/n ####VALIDATED FILES##### /n", validated_files)
 
     pool.close()
