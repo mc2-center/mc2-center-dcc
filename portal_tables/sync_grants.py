@@ -112,7 +112,7 @@ def main():
             print("Adding new grants...")
             new_grants.loc[
                 :, "project_id"
-            ] = new_grants.GrantSynapseProject.str.extract(r":(syn\d*?)/wiki")
+            ] = new_grants.GrantSynapseProject.str.extract(r":(syn\d*)/?")
             sync_table(syn, new_grants, args.portal_table)
     print("DONE ✓")
 
