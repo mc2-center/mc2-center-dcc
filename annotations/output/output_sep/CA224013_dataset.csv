@@ -1,5 +1,0 @@
-Dataset Pubmed Id,Dataset Alias,Dataset Grant Number,Dataset Name,Dataset Description,Dataset Design,Dataset Species,Dataset Assay,Dataset Tumor Type,Dataset Tissue,Dataset Url,Dataset File Formats,Component,DatasetView_id,Id,entityId
-36907523,GSE202534,CA224013,Anoikis resistance drives transcriptional plasticity in pancreatic cancer,"Acquired anoikis resistance mediates enhancer-driven subtype plasticity in pancreatic cancer [ATAC-Seq]
-Acquired anoikis resistance mediates enhancer-driven subtype plasticity in pancreatic cancer [ChIP-Seq]
-Acquired anoikis resistance mediates enhancer-driven subtype plasticity in pancreatic cancer [RNA-seq]","Expression profiling by high throughput sequencing
-Genome binding/occupancy profiling by high throughput sequencing","Human, Mouse","Cell Culture, Plasmid Construction, RT-PCR, ChIP-Seq, ATAC-Seq, RNA Sequencing",Pancreatic Ductal Adenocarcinoma,Pancreas,,,DatasetView,syn32698100,10b4d187-6385-403d-a5c0-e86dd691f515,syn52745309
