@@ -8,13 +8,13 @@ conda activate schematic
 if [ $? -eq 0 ]; then
     # Run python3 split_manifest_grants.py
     echo "Splitting manifests..."
-    python3 split_manifest_grants.py manifest_sep.csv publication ./output/output_sep --output-format csv
+    python3 split_manifest_grants.py manifest_sep.csv publication ./output/output_sep --csv
 
     # Check if split_manifest_grants.py was successful
     if [ $? -eq 0 ]; then
         # Run python3 script_name.py
         echo "Generating file paths..."
-        python3 script_name.py ./output/output_june june_filepaths.csv CCKP_backpopulation_id_validation.csv publication
+        python3 gen-mp-csv.py ./output/output_june june_filepaths.csv CCKP_backpopulation_id_validation.csv publication
 
         # Check if script_name.py was successful
         if [ $? -eq 0 ]; then
