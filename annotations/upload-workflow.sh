@@ -14,7 +14,7 @@ if [ $? -eq 0 ]; then
     if [ $? -eq 0 ]; then
         # Run python3 script_name.py
         echo "Generating file paths..."
-        python3 gen-mp-csv.py ./output/output_june june_filepaths.csv CCKP_backpopulation_id_validation.csv publication
+        python3 gen-mp-csv.py ./output/output_june june_filepaths.csv publication
 
         # Check if script_name.py was successful
         if [ $? -eq 0 ]; then
