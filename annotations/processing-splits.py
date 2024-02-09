@@ -1,3 +1,12 @@
+'''
+processing-splits.py
+
+Runs the Python script `processing-splits.py` to process split files from the specified output folder. 
+Adds missing columns required to match the schema, truncates any columns with 400+ words, and adds "Read more on Pubmed"
+
+author: aditi.gopalan
+
+'''
 import os
 import pandas as pd
 import sys
