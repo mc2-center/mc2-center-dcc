@@ -1,4 +1,6 @@
 #!/bin/bash
+#Outlines workflow for curation processing and upload 
+#author: aditi.gopalan
 
 # Activate the Conda environment
 echo "Activating conda environment: schematic"
