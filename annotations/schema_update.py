@@ -1,5 +1,12 @@
-''' This script takes the projectID (grantId) for respective manifests and gets the corresponding tableIds. 
-Using the tableIds, it updates the schema for specific cols in the table'''
+''' 
+schema_update.py 
+
+This script takes the projectID (grantId) for respective manifests and gets the corresponding tableIds. 
+Using the tableIds, it updates the schema for specific cols in the table
+
+author: aditi.gopalan
+author: thomas.yu
+'''
 import synapseclient
 import pandas as pd
 import sys
