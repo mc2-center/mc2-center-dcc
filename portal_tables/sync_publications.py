@@ -87,12 +87,6 @@ def sync_table(syn, pubs, table, dryrun):
     ]
     pubs = pubs[col_order]
 
-    # Convert list column into string to match with table schema.
-    #pubs.loc[:, 'Publication Dataset Alias'] = (
-    #    pubs['Publication Dataset Alias']
-    #    .str.join(", ")
-    #)
-
     if dryrun:
         print(u"\u26A0", "WARNING:",
             "dryrun is enabled (no updates will be done)\n")
