@@ -62,7 +62,7 @@ def add_folders(syn, path_name_target):
 
 		folder = Folder(n, parent = t)
 		folder = syn.store(folder)
-		id = syn.findEntityId(name = n, parent = t)
+		id = folder.id
 		info = (p, n, id)
 		path_name_id.append(info)
 		syn.delete(id)
