@@ -25,6 +25,10 @@ def get_args():
                         help=("Path at which to store the final CSV. "
                               "Defaults to './final_table.csv'"))
     parser.add_argument("--dryrun", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="If this flag is provided, manifest, database, and new_table will "
+                        "be printed to the command line."
+                        )
     return parser.parse_args()
 
 
@@ -87,16 +91,16 @@ def sync_table(syn, pubs, table, dryrun):
     ]
     pubs = pubs[col_order]
 
-    if dryrun:
-        print(u"\u26A0", "WARNING:",
-            "dryrun is enabled (no updates will be done)\n")
-
-    else:
-        print("Synchronizing publications staging database to production database...\n", pubs)
+    if dryrun is False:
+        print("Synchronizing publications staging database to production database...\n")
         table_rows = pubs.values.tolist()
         syn.store(Table(schema, table_rows))
 
+    else:
+        None
+    
     return pubs
+    
 
 def main():
     """Main function."""
@@ -121,7 +125,8 @@ def main():
         header=0).fillna("")
     )
 
-    print("\n\nCSV downloaded from Synapse:\n", manifest)
+    if args.verbose:
+        print("\n\nCSV downloaded from Synapse:\n", manifest)
 
     grants = (
         syn.tableQuery(
@@ -129,17 +134,20 @@ def main():
             .asDataFrame()
     )
     
-    print("\n\nProcessing publications staging database...")
+    print("\nProcessing publications staging database...")
         
     database = add_missing_info(manifest.copy(), grants, new_cols)
-    print("\n\nTable with all requested columns added:\n", database)
+    if args.verbose:
+        print("\n\nTable with all requested columns added:\n", database)
 
     new_table = sync_table(syn, database.copy(), args.portal_table, args.dryrun)
-    print("\n\nReordered final table - to be synced to database:\n", new_table)
+    if args.verbose:
+        print("\n\nReordered final table - to be synced to database:\n", new_table)
 
     new_table.to_csv(args.table_path, index=False)
-    print(f"Copy of final table stored at: {args.table_path}")
-    print("DONE ✓")
+    print(f"\nCopy of final table stored at: {args.table_path}")
+    
+    print("\nDONE ✓")
         
 if __name__ == "__main__":
     main()
