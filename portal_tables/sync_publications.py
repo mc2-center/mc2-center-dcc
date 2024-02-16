@@ -64,7 +64,7 @@ def add_missing_info(pubs, grants, new_cols):
                     print(f"No match found for grant number: {g}")
                     continue
             
-            clean_values = ', '.join(list((dict.fromkeys(extracted))))
+            clean_values = list((dict.fromkeys(extracted)))
 
             pubs.at[i, col] = clean_values
     
