@@ -95,9 +95,6 @@ def sync_table(syn, pubs, table, dryrun):
         print("Synchronizing publications staging database to production database...\n")
         table_rows = pubs.values.tolist()
         syn.store(Table(schema, table_rows))
-
-    else:
-        None
     
     return pubs
     
