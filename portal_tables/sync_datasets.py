@@ -29,6 +29,7 @@ def get_args():
 
 
 def create_folder(syn, name, parent):
+    name = name.replace("/", "-")
     folder = Folder(name, parent=parent)
     folder = syn.store(folder)
     return folder.id
@@ -66,7 +67,7 @@ def add_missing_info(syn, datasets, grants, pubs):
                                ['grantName'].values[0])
             themes.update(grants[grants.grantNumber == g]
                           ['theme'].values[0])
-            consortia.add(grants[grants.grantNumber == g]
+            consortia.update(grants[grants.grantNumber == g]
                           ['consortium'].values[0])
         datasets.at[_, 'grantName'] = grant_names
         datasets.at[_, 'themes'] = list(themes)

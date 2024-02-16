@@ -53,8 +53,12 @@ def add_missing_info(people, grants):
         tools: Data frame
     """
     # First, convert profile IDs to int (User column type is stored as a float).
-    people.synapseProfileId = people.synapseProfileId.fillna(0).astype(int)
+    people.synapseProfileId = (
+        people.synapseProfileId
+        .astype(str)
+        .replace(r"\.0$", "", regex=True))
 
+    people['grantName'] = ""
     for _, row in people.iterrows():
         # Link markdown to Synapse profile.
         if row.synapseProfileId != "":
@@ -64,10 +68,10 @@ def add_missing_info(people, grants):
         # Grant names.
         grant_names = []
         if row.personGrantNumber != ["Affiliated/Non-Grant Associated"]:
-            for g in row['Publication Grant Number']:
+            for g in row['personGrantNumber']:
                 grant_names.append(
                     grants[grants.grantNumber == g]['grantName'].values[0])
-        people.at[_, 'GrantName'] = grant_names
+        people.at[_, 'grantName'] = grant_names
     return people
 
 
@@ -128,7 +132,7 @@ def main():
                 .asDataFrame()
             )
             manifest = add_missing_info(manifest, grants)
-            update_table(syn, manifest, args.portal_table)
+            update_table(syn, args.portal_table, manifest)
     print("DONE ✓")
 
 

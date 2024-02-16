@@ -33,12 +33,16 @@ def add_missing_info(tools, grants):
     tools['Link'] = "[Link](" + tools.toolHomepage + ")"
     tools['PortalDisplay'] = "true"
     tools['themes'] = ""
+    tools['consortium'] = ""
     for _, row in tools.iterrows():
         themes = set()
+        consortium = set()
         for g in row['toolGrantNumber']:
             themes.update(grants[grants.grantNumber == g]
                           ['theme'].values[0])
+            consortium.update(grants[grants.grantNumber == g]['consortium'].values[0])
         tools.at[_, 'themes'] = list(themes)
+        tools.at[_, 'consortium'] = list(consortium)
     return tools
 
 
@@ -49,7 +53,7 @@ def sync_table(syn, tools, table):
     # Reorder columns to match the table order.
     col_order = [
         'toolName', 'toolDescription', 'toolHomepage', 'toolVersion',
-        'toolGrantNumber', 'toolConsortiumName', 'themes', 'toolPubmedId',
+        'toolGrantNumber', 'consortium', 'themes', 'toolPubmedId',
         'toolOperation', 'toolInputData', 'toolOutputData',
         'toolInputFormat', 'toolOutputFormat', 'toolFunctionNote',
         'toolCmd', 'toolType', 'toolTopic', 'toolOperatingSystem',
