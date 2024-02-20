@@ -47,13 +47,6 @@ def get_args():
     return parser.parse_args()
 
 
-# def create_folder(syn, name, parent):
-#     name = name.replace("/", "-")
-#     folder = Folder(name, parent=parent)
-#     folder = syn.store(folder)
-#     return folder.id
-
-
 def sort_and_stringify_col(col):
     """Sort list col then join together as comma-separated string."""
     # Check column by looking at first row; if str, convert to list first.
@@ -82,15 +75,6 @@ def add_missing_info(datasets, grants, pubs):
     datasets["consortia"] = ""
     datasets["pub"] = ""
     for _, row in datasets.iterrows():
-        # if re.search(r"^syn\d+$", row["datasetAlias"]):
-        #     folder_id = row["datasetAlias"]
-        # else:
-        #     grant_proj = grants[grants.grantNumber == row["datasetGrantNumber"][0]][
-        #         "grantId"
-        #     ].values[0]
-        #     folder_id = ""
-        #     folder_id = create_folder(syn, row["datasetAlias"], grant_proj)
-        # datasets.at[_, "id"] = folder_id
         grant_names = []
         themes = set()
         consortia = set()
