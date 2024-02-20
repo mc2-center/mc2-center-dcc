@@ -60,10 +60,9 @@ def add_missing_info(syn, datasets, grants, pubs):
     Returns:
         datasets: Data frame
     """
-    datasets['link'] = [
-        "".join(["[", d_id, "](", url, ")"])
-        for d_id, url
-        in zip(datasets['datasetAlias'], datasets['datasetUrl'])
+    datasets["link"] = [
+        "".join(["[", d_id, "](", url, ")"]) if url else ""
+        for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
     datasets['grantName'] = ""
     datasets['themes'] = ""
@@ -105,11 +104,23 @@ def sync_table(syn, datasets, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'id', 'datasetName', 'datasetAlias', 'datasetDescription',
-        'datasetDesign', 'datasetFileFormats', 'datasetAssay',
-        'datasetSpecies', 'datasetTissue', 'datasetTumorType',
-        'themes', 'consortia', 'datasetGrantNumber',
-        'grantName', 'datasetPubmedId', 'pub', 'link'
+        "DatasetView_id",
+        "DatasetName",
+        "DatasetAlias",
+        "DatasetDescription",
+        "DatasetDesign",
+        "DatasetFileFormats",
+        "DatasetAssay",
+        "DatasetSpecies",
+        "DatasetTissue",
+        "DatasetTumorType",
+        "themes",
+        "consortia",
+        "DatasetGrantNumber",
+        "grantName",
+        "DatasetPubmedId",
+        "pub",
+        "link",
     ]
     datasets = datasets[col_order]
 
@@ -130,56 +141,55 @@ def main():
     syn = utils.syn_login()
     args = get_args()
 
-    manifest = (
-        syn.tableQuery(f"SELECT * FROM {args.manifest}")
-        .asDataFrame()
-        .fillna("")
-    )
-    manifest["grantNumber"] = sort_and_stringify_col(
-        manifest["datasetGrantNumber"])
-    curr_datasets = (
-        syn.tableQuery(
-            f"SELECT datasetAlias, grantNumber FROM {args.portal_table}")
-        .asDataFrame()
-    )
-    curr_datasets["grantNumber"] = sort_and_stringify_col(
-        curr_datasets["grantNumber"])
+    if args.dryrun:
+        print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    # Only add datasets not currently in the Publications table, using
+    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest.columns = manifest.columns.str.replace(" ", "")
+    manifest["grantNumber"] = sort_and_stringify_col(manifest["DatasetGrantNumber"])
+    if args.verbose:
+        print("Preview of manifest CSV:\n" + "=" * 72)
+        print(manifest)
+        print()
+
+    curr_datasets = syn.tableQuery(
+        f"SELECT datasetAlias, grantNumber FROM {args.portal_table_id}"
+    ).asDataFrame()
+    curr_datasets["grantNumber"] = sort_and_stringify_col(curr_datasets["grantNumber"])
+
+    # Only add datasets not currently in the Datasets table, using
     # dataset alias + grant number to determine uniqueness.
-    new_datasets = (
-        pd.merge(
-            manifest,
-            curr_datasets,
-            how="left",
-            left_on=["datasetAlias", "grantNumber"],
-            right_on=["datasetAlias", "grantNumber"],
-            indicator=True)
-        .query("_merge=='left_only'")
-    )
+    new_datasets = pd.merge(
+        manifest,
+        curr_datasets,
+        how="left",
+        left_on=["DatasetAlias", "DatasetGrantNumber"],
+        right_on=["datasetAlias", "grantNumber"],
+        indicator=True,
+    ).query("_merge=='left_only'")
     if new_datasets.empty:
-        print("No new datasets found!")
+        print("🚫 No new datasets found!")
     else:
-        print(f"{len(new_datasets)} new datasets found!\n")
-        if args.dryrun:
-            print(u"\u26A0", "WARNING:",
-                  "dryrun is enabled (no updates will be done)\n")
+        print(f"🆕 {len(new_datasets)} new datasets found!\n")
+
+        if args.verbose:
+            print("Dataset(s) to be synced (raw):\n" + "=" * 72)
             print(new_datasets)
-        else:
+
+        if not args.dryrun:
             print("Adding new datasets...")
-            grants = (
-                syn.tableQuery(
-                    "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972")
-                .asDataFrame()
-            )
-            pubs = (
-                syn.tableQuery(
-                    "SELECT pubMedId, publicationTitle FROM syn21868591")
-                .asDataFrame()
-            )
-            new_datasets = add_missing_info(syn, new_datasets, grants, pubs)
-            sync_table(syn, new_datasets, args.portal_table)
-    print("DONE ✓")
+            grants = syn.tableQuery(
+                "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
+            ).asDataFrame()
+            pubs = syn.tableQuery(
+                "SELECT pubMedId, publicationTitle FROM syn21868591"
+            ).asDataFrame()
+
+            new_datasets = add_missing_info(new_datasets, grants, pubs)
+            if args.verbose:
+                print("Dataset(s) to be synced (clean):\n" + "=" * 72)
+                print(new_datasets)
+            sync_table(syn, new_datasets, args.portal_table_id)
 
 
 if __name__ == "__main__":
