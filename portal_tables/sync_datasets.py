@@ -64,10 +64,10 @@ def add_missing_info(datasets, grants, pubs):
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
-    datasets['grantName'] = ""
-    datasets['themes'] = ""
-    datasets['consortia'] = ""
-    datasets['pub'] = ""
+    datasets["grantName"] = ""
+    datasets["themes"] = ""
+    datasets["consortia"] = ""
+    datasets["pub"] = ""
     for _, row in datasets.iterrows():
         # if re.search(r"^syn\d+$", row["datasetAlias"]):
         #     folder_id = row["datasetAlias"]
@@ -81,20 +81,28 @@ def add_missing_info(datasets, grants, pubs):
         grant_names = []
         themes = set()
         consortia = set()
-        for g in row['datasetGrantNumber']:
-            grant_names.append(grants[grants.grantNumber == g]
-                               ['grantName'].values[0])
-            themes.update(grants[grants.grantNumber == g]
-                          ['theme'].values[0])
-            consortia.update(grants[grants.grantNumber == g]
-                          ['consortium'].values[0])
-        datasets.at[_, 'grantName'] = grant_names
-        datasets.at[_, 'themes'] = list(themes)
-        datasets.at[_, 'consortia'] = list(consortia)
+        for g in row["DatasetGrantNumber"].split(","):
+            if g != "Affiliated/Non-Grant Associated":
+                grant_names.append(
+                    grants[grants.grantNumber == g]["grantName"].values[0]
+                )
+                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
+                consortia.update(
+                    grants[grants.grantNumber == g]["consortium"].values[0]
+                )
+        datasets.at[_, "grantName"] = grant_names
+        datasets.at[_, "themes"] = list(themes)
+        datasets.at[_, "consortia"] = list(consortia)
+
         pub_titles = []
-        for p in row["datasetPubmedId"]:
-            pub_titles.append(pubs[pubs.pubMedId == int(p)]
-                              ["publicationTitle"].values[0])
+        for p in row["DatasetPubmedId"].split(","):
+            p = p.strip()  # remove leading/trailing whitespace, if any
+            try:
+                pub_titles.append(
+                    pubs[pubs.pubMedId == int(p)]["publicationTitle"].values[0]
+                )
+            except (ValueError, IndexError):
+                pass  # PMID not yet annotated or found in portal table
         datasets.at[_, "pub"] = pub_titles
     return datasets
 
