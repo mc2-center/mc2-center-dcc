@@ -8,7 +8,7 @@ new dataset in its respective grant Project.
 import argparse
 
 # import re
-from synapseclient import Table #, Folder
+from synapseclient import Table  # , Folder
 import pandas as pd
 import utils
 
@@ -52,6 +52,19 @@ def get_args():
 #     folder = Folder(name, parent=parent)
 #     folder = syn.store(folder)
 #     return folder.id
+
+
+def sort_and_stringify_col(col):
+    """Sort list col then join together as comma-separated string."""
+    # Check column by looking at first row; if str, convert to list first.
+    if isinstance(col.iloc[0], str):
+        col = col.str.replace(", ", ",").str.split(",")
+    return col.apply(lambda x: ",".join(map(str, sorted(x))))
+
+
+def convert_to_stringlist(col):
+    """Convert a string column to a list."""
+    return col.str.replace(", ", ",").str.split(",")
 
 
 def add_missing_info(datasets, grants, pubs):
@@ -99,7 +112,9 @@ def add_missing_info(datasets, grants, pubs):
             p = p.strip()  # remove leading/trailing whitespace, if any
             try:
                 pub_titles.append(
-                    pubs[pubs.pubMedId == int(p)]["publicationTitle"].values[0]
+                    pubs[pubs.pubMedId == int(p)]["publicationTitle"]
+                    .values[0]
+                    .replace("\xa0", " ")
                 )
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
@@ -107,9 +122,21 @@ def add_missing_info(datasets, grants, pubs):
     return datasets
 
 
-def sync_table(syn, datasets, table):
-    """Add dataset annotations to the Synapse table."""
-    schema = syn.get(table)
+def clean_table(datasets):
+    """Clean up the table one final time."""
+
+    # Convert string columns to string-list.
+    for col in [
+        "DatasetView_id",
+        "DatasetFileFormats",
+        "DatasetAssay",
+        "DatasetSpecies",
+        "DatasetTissue",
+        "DatasetTumorType",
+        "DatasetGrantNumber",
+        "DatasetPubmedId",
+    ]:
+        datasets[col] = convert_to_stringlist(datasets[col])
 
     # Reorder columns to match the table order.
     col_order = [
@@ -131,18 +158,8 @@ def sync_table(syn, datasets, table):
         "pub",
         "link",
     ]
-    datasets = datasets[col_order]
-
-    new_rows = datasets.values.tolist()
-    syn.store(Table(schema, new_rows))
-
-
-def sort_and_stringify_col(col):
-    """Sort list col then join together as comma-separated string."""
-    # Check column by looking at first row; if str, convert to list first.
-    if isinstance(col.iloc[0], str):
-        col = col.str.replace(", ", ",").str.split(",")
-    return col.apply(lambda x: ",".join(map(str, sorted(x))))
+    datasets = datasets[col_order].explode("DatasetView_id")
+    return datasets
 
 
 def main():
@@ -164,7 +181,12 @@ def main():
     curr_datasets = syn.tableQuery(
         f"SELECT datasetAlias, grantNumber FROM {args.portal_table_id}"
     ).asDataFrame()
-    curr_datasets["grantNumber"] = sort_and_stringify_col(curr_datasets["grantNumber"])
+    try:
+        curr_datasets["grantNumber"] = sort_and_stringify_col(
+            curr_datasets["grantNumber"]
+        )
+    except IndexError:
+        pass  # Destination table is empty.
 
     # Only add datasets not currently in the Datasets table, using
     # dataset alias + grant number to determine uniqueness.
@@ -181,28 +203,28 @@ def main():
     else:
         print(f"🆕 {len(new_datasets)} new datasets found!\n")
 
+        print("Processing dataset staging database...")
+        grants = syn.tableQuery(
+            "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
+        ).asDataFrame()
+        pubs = syn.tableQuery(
+            "SELECT pubMedId, publicationTitle FROM syn21868591"
+        ).asDataFrame()
+
+        new_datasets = add_missing_info(new_datasets, grants, pubs)
+        new_datasets = clean_table(new_datasets)
         if args.verbose:
-            print("Dataset(s) to be synced (raw):\n" + "=" * 72)
+            print("\nDataset(s) to be synced:\n" + "=" * 72)
             print(new_datasets)
 
         if not args.dryrun:
-            print("Adding new datasets...")
-            grants = syn.tableQuery(
-                "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
-            ).asDataFrame()
-            pubs = syn.tableQuery(
-                "SELECT pubMedId, publicationTitle FROM syn21868591"
-            ).asDataFrame()
+            schema = syn.get(args.portal_table_id)
+            new_rows = new_datasets.values.tolist()
+            syn.store(Table(schema, new_rows))
 
-            new_datasets = add_missing_info(new_datasets, grants, pubs)
-            if args.verbose:
-                print("Dataset(s) to be synced (clean):\n" + "=" * 72)
-                print(new_datasets)
-            sync_table(syn, new_datasets, args.portal_table_id)
-
-            print(f"Saving copy of final table to: {args.output_csv}...")
-            new_datasets.to_csv(args.output_csv, index=False)
-            print("\n\nDONE ✅")
+        print(f"\nSaving copy of final table to: {args.output_csv}...")
+        new_datasets.to_csv(args.output_csv, index=False)
+        print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":
