@@ -183,7 +183,7 @@ def main():
         indicator=True,
     ).query("_merge=='left_only'")
     if new_datasets.empty:
-        print("🚫 No new datasets found!")
+        print("🚫 No new datasets found! Nothing to sync.")
     else:
         print(f"🆕 {len(new_datasets)} new datasets found!\n")
 
