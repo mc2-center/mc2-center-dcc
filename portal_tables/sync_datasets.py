@@ -158,7 +158,7 @@ def clean_table(datasets):
         "pub",
         "link",
     ]
-    datasets = datasets[col_order].explode("DatasetView_id")
+    datasets = datasets[col_order].explode("DatasetView_id")  # FIXME?
     return datasets
 
 
@@ -189,7 +189,7 @@ def main():
         pass  # Destination table is empty.
 
     # Only add datasets not currently in the Datasets table, using
-    # dataset alias + grant number to determine uniqueness.
+    # dataset alias + grant number to determine uniqueness. - FIXME?
     new_datasets = pd.merge(
         manifest,
         curr_datasets,
