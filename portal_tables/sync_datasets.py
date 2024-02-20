@@ -200,6 +200,10 @@ def main():
                 print(new_datasets)
             sync_table(syn, new_datasets, args.portal_table_id)
 
+            print(f"Saving copy of final table to: {args.output_csv}...")
+            new_datasets.to_csv(args.output_csv, index=False)
+            print("\n\nDONE ✅")
+
 
 if __name__ == "__main__":
     main()
