@@ -10,25 +10,41 @@ import pandas as pd
 import re
 import utils
 
+
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description="Add new pubs to the CCKP")
-    parser.add_argument("-m", "--manifest",
-                        type=str, default="syn53478776",
-                        help="Synapse ID to the staging version of publication database CSV.")
-    parser.add_argument("-t", "--portal_table",
-                        type=str, default="syn21868591",
-                        help=("Add publications to this specified "
-                              "table. (Default: syn21868591)"))
-    parser.add_argument("-p", "--table_path",
-                        type=str, default="./final_table.csv",
-                        help=("Path at which to store the final CSV. "
-                              "Defaults to './final_table.csv'"))
+    parser.add_argument(
+        "-m",
+        "--manifest",
+        type=str,
+        default="syn53478776",
+        help="Synapse ID to the staging version of publication database CSV.",
+    )
+    parser.add_argument(
+        "-t",
+        "--portal_table",
+        type=str,
+        default="syn21868591",
+        help=("Add publications to this specified " "table. (Default: syn21868591)"),
+    )
+    parser.add_argument(
+        "-p",
+        "--table_path",
+        type=str,
+        default="./final_table.csv",
+        help=(
+            "Path at which to store the final CSV. " "Defaults to './final_table.csv'"
+        ),
+    )
     parser.add_argument("--dryrun", action="store_true")
-    parser.add_argument("-v", "--verbose", action="store_true",
-                        help="If this flag is provided, manifest, database, and new_table will "
-                        "be printed to the command line."
-                        )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="If this flag is provided, manifest, database, and new_table will "
+        "be printed to the command line.",
+    )
     return parser.parse_args()
 
 
@@ -38,15 +54,14 @@ def add_missing_info(pubs, grants, new_cols):
     Returns:
         pubs: Data frame
     """
-    pubs.loc[:, 'Link'] = [
+    pubs.loc[:, "Link"] = [
         "".join(["[PMID:", str(pmid), "](", url, ")"])
-        for pmid, url
-        in zip(pubs['Pubmed Id'], pubs['Pubmed Url'])
+        for pmid, url in zip(pubs["Pubmed Id"], pubs["Pubmed Url"])
     ]
-    
-    pattern = re.compile("(\')([\s\w/-]+)(\')")
-    
-    for col in new_cols: 
+
+    pattern = re.compile("(')([\s\w/-]+)(')")
+
+    for col in new_cols:
         pubs[col] = ""
         for row in pubs.itertuples():
             i = row[0]
@@ -55,10 +70,10 @@ def add_missing_info(pubs, grants, new_cols):
             for g in n:
                 if len(grants[grants.grantNumber == g][col].values) > 0:
                     values = str(grants[grants.grantNumber == g][col].values[0])
-                    
-                    if col == 'grantName':
+
+                    if col == "grantName":
                         extracted.append(values)
-                    
+
                     else:
                         matches = pattern.findall(values)
                         for m in matches:
@@ -67,11 +82,11 @@ def add_missing_info(pubs, grants, new_cols):
                 else:
                     print(f"No match found for grant number: {g}")
                     continue
-            
+
             clean_values = list(dict.fromkeys(extracted))
 
             pubs.at[i, col] = clean_values
-    
+
     return pubs
 
 
@@ -81,13 +96,26 @@ def sync_table(syn, pubs, table, dryrun):
 
     # Reorder columns to match the table order.
     col_order = [
-        'Publication Doi', 'Publication Journal', 'Pubmed Id', 'Pubmed Url',
-        'Link', 'Publication Title', 'Publication Year', 'Publication Keywords',
-        'Publication Authors', 'Publication Abstract', 'Publication Assay', 
-        'Publication Tumor Type', 'Publication Tissue', 'theme',
-        'consortium', 'Publication Grant Number', 'grantName',
-        'Publication Dataset Alias', 'Publication Accessibility',
-        'entityId'
+        "Publication Doi",
+        "Publication Journal",
+        "Pubmed Id",
+        "Pubmed Url",
+        "Link",
+        "Publication Title",
+        "Publication Year",
+        "Publication Keywords",
+        "Publication Authors",
+        "Publication Abstract",
+        "Publication Assay",
+        "Publication Tumor Type",
+        "Publication Tissue",
+        "theme",
+        "consortium",
+        "Publication Grant Number",
+        "grantName",
+        "Publication Dataset Alias",
+        "Publication Accessibility",
+        "entityId",
     ]
     pubs = pubs[col_order]
 
@@ -95,44 +123,34 @@ def sync_table(syn, pubs, table, dryrun):
         print("Synchronizing publications staging database to production database...\n")
         table_rows = pubs.values.tolist()
         syn.store(Table(schema, table_rows))
-    
+
     return pubs
-    
+
 
 def main():
     """Main function."""
     syn = utils.syn_login()
     args = get_args()
 
-    new_cols = [
-        'theme',
-        'consortium',
-        'grantName'
-    ]
+    new_cols = ["theme", "consortium", "grantName"]
 
     if args.dryrun:
         print(
-        "Inputs will be processed and provided for review", 
-        "\n\nDatabase will NOT be updated."
-    )
-    
-    manifest = (
-        pd.read_csv(
-        syn.get(args.manifest).path,
-        header=0).fillna("")
-    )
+            "Inputs will be processed and provided for review",
+            "\n\nDatabase will NOT be updated.",
+        )
+
+    manifest = pd.read_csv(syn.get(args.manifest).path, header=0).fillna("")
 
     if args.verbose:
         print("\n\nCSV downloaded from Synapse:\n", manifest)
 
-    grants = (
-        syn.tableQuery(
-            f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972")
-            .asDataFrame()
-    )
-    
+    grants = syn.tableQuery(
+        f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972"
+    ).asDataFrame()
+
     print("\nProcessing publications staging database...")
-        
+
     database = add_missing_info(manifest.copy(), grants, new_cols)
     if args.verbose:
         print("\n\nTable with all requested columns added:\n", database)
@@ -143,8 +161,9 @@ def main():
 
     new_table.to_csv(args.table_path, index=False)
     print(f"\nCopy of final table stored at: {args.table_path}")
-    
+
     print("\nDONE ✓")
-        
+
+
 if __name__ == "__main__":
     main()
