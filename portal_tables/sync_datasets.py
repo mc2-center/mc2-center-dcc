@@ -118,8 +118,11 @@ def sync_table(syn, datasets, table):
 
 
 def sort_and_stringify_col(col):
-    """Sort list col then join together as comma-sep string."""
-    return col.apply(lambda x: ", ".join(map(str, sorted(x))))
+    """Sort list col then join together as comma-separated string."""
+    # Check column by looking at first row; if str, convert to list first.
+    if isinstance(col.iloc[0], str):
+        col = col.str.replace(", ", ",").str.split(",")
+    return col.apply(lambda x: ",".join(map(str, sorted(x))))
 
 
 def main():
