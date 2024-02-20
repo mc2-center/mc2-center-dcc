@@ -7,8 +7,8 @@ new dataset in its respective grant Project.
 
 import argparse
 
-import re
-from synapseclient import Table, Folder
+# import re
+from synapseclient import Table #, Folder
 import pandas as pd
 import utils
 
@@ -47,14 +47,14 @@ def get_args():
     return parser.parse_args()
 
 
-def create_folder(syn, name, parent):
-    name = name.replace("/", "-")
-    folder = Folder(name, parent=parent)
-    folder = syn.store(folder)
-    return folder.id
+# def create_folder(syn, name, parent):
+#     name = name.replace("/", "-")
+#     folder = Folder(name, parent=parent)
+#     folder = syn.store(folder)
+#     return folder.id
 
 
-def add_missing_info(syn, datasets, grants, pubs):
+def add_missing_info(datasets, grants, pubs):
     """Add missing information into table before syncing.
 
     Returns:
@@ -69,14 +69,15 @@ def add_missing_info(syn, datasets, grants, pubs):
     datasets['consortia'] = ""
     datasets['pub'] = ""
     for _, row in datasets.iterrows():
-        if re.search(r"^syn\d+$", row['datasetAlias']):
-            folder_id = row['datasetAlias']
-        else:
-            grant_proj = grants[grants.grantNumber ==
-                                row['datasetGrantNumber'][0]]['grantId'].values[0]
-            folder_id = ""
-            folder_id = create_folder(syn, row['datasetAlias'], grant_proj)
-        datasets.at[_, 'id'] = folder_id
+        # if re.search(r"^syn\d+$", row["datasetAlias"]):
+        #     folder_id = row["datasetAlias"]
+        # else:
+        #     grant_proj = grants[grants.grantNumber == row["datasetGrantNumber"][0]][
+        #         "grantId"
+        #     ].values[0]
+        #     folder_id = ""
+        #     folder_id = create_folder(syn, row["datasetAlias"], grant_proj)
+        # datasets.at[_, "id"] = folder_id
         grant_names = []
         themes = set()
         consortia = set()
