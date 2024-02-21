@@ -148,38 +148,7 @@ def main():
         print(manifest)
         print()
 
-    curr_datasets = syn.tableQuery(
-        f"SELECT datasetAlias, grantNumber FROM {args.portal_table_id}"
-    ).asDataFrame()
-    try:
-        curr_datasets["grantNumber"] = sort_and_stringify_col(
-            curr_datasets["grantNumber"]
-        )
-    except IndexError:
-        pass  # Destination table is empty.
-
-    # Only add datasets not currently in the Datasets table, using
-    # dataset alias + grant number to determine uniqueness. - FIXME?
-    new_datasets = pd.merge(
-        manifest,
-        curr_datasets,
-        how="left",
-        left_on=["DatasetAlias", "DatasetGrantNumber"],
-        right_on=["datasetAlias", "grantNumber"],
-        indicator=True,
-    ).query("_merge=='left_only'")
-    if new_datasets.empty:
-        print("🚫 No new datasets found! Nothing to sync.")
-    else:
-        print(f"🆕 {len(new_datasets)} new datasets found!\n")
-
-        print("Processing dataset staging database...")
-        grants = syn.tableQuery(
-            "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
-        ).asDataFrame()
-        pubs = syn.tableQuery(
-            "SELECT pubMedId, publicationTitle FROM syn21868591"
-        ).asDataFrame()
+    print("Processing dataset staging database...")
 
         new_datasets = add_missing_info(new_datasets, grants, pubs)
         new_datasets = clean_table(new_datasets)
