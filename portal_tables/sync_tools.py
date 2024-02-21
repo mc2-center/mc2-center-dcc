@@ -12,15 +12,35 @@ import utils
 
 def get_args():
     """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Add new tools to the CCKP")
-    parser.add_argument("-m", "--manifest",
-                        type=str, default="syn35558370",
-                        help="Synapse ID to the manifest table/fileview.")
-    parser.add_argument("-t", "--portal_table",
-                        type=str, default="syn26127427",
-                        help=("Add tools to this specified "
-                              "table. (Default: syn26127427)"))
+    parser = argparse.ArgumentParser(description="Update Tools Merged table for the CCKP")
+    parser.add_argument(
+        "-m",
+        "--manifest_id",
+        type=str,
+        default="syn53479671",
+        help="Synapse ID to the manifest CSV file.",
+    )
+    parser.add_argument(
+        "-t",
+        "--portal_table_id",
+        type=str,
+        default="syn26127427",
+        help="Add tools to this specified table. (Default: syn26127427)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_csv",
+        type=str,
+        default="./final_tools_table.csv",
+        help="Filepath to output CSV.",
+    )
     parser.add_argument("--dryrun", action="store_true")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Output all logs and interim tables.",
+    )
     return parser.parse_args()
 
 
