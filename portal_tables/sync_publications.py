@@ -24,7 +24,7 @@ def get_args():
     )
     parser.add_argument(
         "-t",
-        "--portal_table",
+        "--portal_table_id",
         type=str,
         default="syn21868591",
         help=("Add publications to this specified " "table. (Default: syn21868591)"),
@@ -33,7 +33,7 @@ def get_args():
         "-p",
         "--table_path",
         type=str,
-        default="./final_table.csv",
+        default="./final_publication_table.csv",
         help=(
             "Path at which to store the final CSV. " "Defaults to './final_table.csv'"
         ),
