@@ -49,19 +49,16 @@ def get_args():
     return parser.parse_args()
 
 
-def add_missing_info(pubs, grants, new_cols):
-    """Add missing information into table before syncing.
-
-    Returns:
-        pubs: Data frame
-    """
+def add_missing_info(
+    pubs: pd.DataFrame, grants: pd.DataFrame, new_cols: List[str]
+) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
     pubs.loc[:, "Link"] = [
         "".join(["[PMID:", str(pmid), "](", url, ")"])
         for pmid, url in zip(pubs["Pubmed Id"], pubs["Pubmed Url"])
     ]
 
-    pattern = re.compile("(')([\s\w/-]+)(')")
-
+    pattern = re.compile(r"(')([\s\w/-]+)(')")
     for col in new_cols:
         pubs[col] = ""
         for row in pubs.itertuples():
@@ -74,31 +71,21 @@ def add_missing_info(pubs, grants, new_cols):
 
                     if col == "grantName":
                         extracted.append(values)
-
                     else:
                         matches = pattern.findall(values)
                         for m in matches:
                             extracted.append(m[1])
-
                 else:
                     print(f"No match found for grant number: {g}")
                     continue
 
             clean_values = list(dict.fromkeys(extracted))
-
             pubs.at[i, col] = clean_values
-
     return pubs
 
 
-def convert_to_stringlist(col):
-    """Convert a string column to a list."""
-    return col.str.replace(", ", ",").str.split(",")
-
-
-def sync_table(syn, pubs, table, dryrun):
-    """Add pubs annotations to the Synapse table."""
-    schema = syn.get(table)
+def clean_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean up the table one final time."""
 
     # Convert string columns to string-list.
     for col in [
@@ -107,7 +94,7 @@ def sync_table(syn, pubs, table, dryrun):
         "Publication Tissue",
         "Publication Grant Number",
     ]:
-        pubs[col] = convert_to_stringlist(pubs[col])
+        df[col] = utils.convert_to_stringlist(df[col])
 
     # Reorder columns to match the table order.
     col_order = [
@@ -132,14 +119,7 @@ def sync_table(syn, pubs, table, dryrun):
         "Publication Accessibility",
         "entityId",
     ]
-    pubs = pubs[col_order]
-
-    if not dryrun:
-        print("Synchronizing publications staging database to production database...\n")
-        table_rows = pubs.values.tolist()
-        syn.store(Table(schema, table_rows))
-
-    return pubs
+    return df[col_order]
 
 
 def main():
