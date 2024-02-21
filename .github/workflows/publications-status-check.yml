@@ -14,7 +14,7 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.8'
+        python-version: '3.10'
 
     - name: Install dependencies
       run: |
@@ -23,6 +23,6 @@ jobs:
 
     - name: Check availability of publications
       run: |
-        python utils/check_publications_status.py --send_email 3393723 3422264
+        python utils/check_publications_status.py --send_email 3393723 3408068 3458480
       env: 
         SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}

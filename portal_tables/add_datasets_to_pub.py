@@ -29,7 +29,7 @@ def get_args():
 
 def sync_table(datasets, pubs):
     """Add dataset IDs to publications table, then return."""
-    curr_dataset_pmids = set(datasets.pubMedId.to_list()) - {np.nan}
+    curr_dataset_pmids = set(datasets['pubMedId'].to_list()) - {np.nan}
 
     df = pubs.asDataFrame()
     for _, row in df.iterrows():
@@ -63,7 +63,7 @@ def main():
         print(updated)
     else:
         syn.store(synapseclient.Table(
-            args.pubs_table, updated), etag=pubs.etag)
+            args.pubs_table, updated, etag=pubs.etag))
     print("DONE ✓")
 
 
