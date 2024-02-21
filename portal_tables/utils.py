@@ -48,7 +48,7 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
         - sync over rows from the latest manifest
     """
 
-    today = datetime.today().strftime('%Y-%m-%d')
+    today = datetime.today().strftime("%Y-%m-%d")
     print(f"Creating new table version with label: {today}...")
     syn.create_snapshot_version(table_id, label=today)
 
