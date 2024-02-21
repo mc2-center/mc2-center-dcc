@@ -3,7 +3,6 @@
 This script will remove all team members from a given Synapse team
 ID (-t), with the exception of:
 
-  * Julie Bletz (jbletz, 3361792)
   * Ashley Clayton (ashley.clayton, 3408068)
   * Amber Nelson (ambernelson, 3419821)
   * Verena Chung (vchung, 3393723)
@@ -26,8 +25,8 @@ def get_args():
 def truncate_members(syn, team_id):
     """Remove all non-manager Synapse users from given team."""
 
-    # Synapse user IDs for Julie, Amber, Ashley, and Verena - DO NOT REMOVE FROM TEAM!
-    manager_ids = ["3361792", "3408068", "3419821", "3393723"]
+    # Synapse user IDs for Amber, Ashley, and Verena - DO NOT REMOVE FROM TEAM!
+    manager_ids = ["3408068", "3419821", "3393723"]
 
     count = 0
     team_members = [m.get('member') for m in syn.getTeamMembers(team_id)]
