@@ -102,6 +102,10 @@ def clean_table(datasets):
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
+    # We only need one synID for the portal table. See
+    # https://github.com/mc2-center/mc2-center-dcc/pull/41#issuecomment-1955119623
+    # for more context.
+    df["DatasetView_id"] = df["DatasetView_id"].str[0]
 
     # Reorder columns to match the table order.
     col_order = [
@@ -123,8 +127,7 @@ def clean_table(datasets):
         "pub",
         "link",
     ]
-    datasets = datasets[col_order].explode("DatasetView_id")  # FIXME?
-    return datasets
+    return df[col_order]
 
 
 def main():
