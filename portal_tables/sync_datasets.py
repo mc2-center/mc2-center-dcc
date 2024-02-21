@@ -7,8 +7,6 @@ new dataset in its respective grant Project.
 
 import argparse
 
-# import re
-from synapseclient import Table  # , Folder
 import pandas as pd
 import utils
 
@@ -47,25 +45,7 @@ def get_args():
     return parser.parse_args()
 
 
-def sort_and_stringify_col(col):
-    """Sort list col then join together as comma-separated string."""
-    # Check column by looking at first row; if str, convert to list first.
-    if isinstance(col.iloc[0], str):
-        col = col.str.replace(", ", ",").str.split(",")
-    return col.apply(lambda x: ",".join(map(str, sorted(x))))
-
-
-def convert_to_stringlist(col):
-    """Convert a string column to a list."""
-    return col.str.replace(", ", ",").str.split(",")
-
-
-def add_missing_info(datasets, grants, pubs):
-    """Add missing information into table before syncing.
-
-    Returns:
-        datasets: Data frame
-    """
+def add_missing_info(
     datasets["link"] = [
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
@@ -120,7 +100,8 @@ def clean_table(datasets):
         "DatasetGrantNumber",
         "DatasetPubmedId",
     ]:
-        datasets[col] = convert_to_stringlist(datasets[col])
+        df[col] = utils.convert_to_stringlist(df[col])
+
 
     # Reorder columns to match the table order.
     col_order = [
@@ -156,7 +137,9 @@ def main():
 
     manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
-    manifest["grantNumber"] = sort_and_stringify_col(manifest["DatasetGrantNumber"])
+    manifest["grantNumber"] = utils.sort_and_stringify_col(
+        manifest["DatasetGrantNumber"]
+    )
     if args.verbose:
         print("Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
@@ -201,10 +184,8 @@ def main():
             print("\nDataset(s) to be synced:\n" + "=" * 72)
             print(new_datasets)
 
-        if not args.dryrun:
-            schema = syn.get(args.portal_table_id)
-            new_rows = new_datasets.values.tolist()
-            syn.store(Table(schema, new_rows))
+    if not args.dryrun:
+        utils.update_table(syn, args.portal_table_id, final_database)
 
         print(f"\nSaving copy of final table to: {args.output_csv}...")
         new_datasets.to_csv(args.output_csv, index=False)
