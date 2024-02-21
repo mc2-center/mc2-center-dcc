@@ -4,10 +4,11 @@ This script will sync over new publications and its annotations to the
 Publications portal table.
 """
 
-import argparse
-from synapseclient import Table
-import pandas as pd
 import re
+import argparse
+from typing import List
+
+import pandas as pd
 import utils
 
 
