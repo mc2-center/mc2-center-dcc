@@ -1,11 +1,10 @@
-import os
-import getpass
+from getpass import getpass
 
 import synapseclient
 import pandas as pd
 
 
-def syn_login():
+def syn_login() -> synapseclient.Synapse:
     """Log into Synapse. If env variables not found, prompt user.
 
     Returns:
@@ -16,11 +15,13 @@ def syn_login():
             authToken=os.getenv('SYNAPSE_AUTH_TOKEN'),
             silent=True)
     except synapseclient.core.exceptions.SynapseNoCredentialsError:
-        print("Credentials not found; please manually provide your",
-              "Synapse username and password.")
-        username = input("Synapse username: ")
-        password = getpass.getpass("Synapse password: ")
-        syn = synapseclient.login(username, password, silent=True)
+        print(
+            "Credentials not found; please manually provide your",
+            "Synapse Personal Access Token (PAT). You can generate"
+            "one at https://www.synapse.org/#!PersonalAccessTokens:0",
+        )
+        pat = getpass("Your Synapse PAT: ")
+        syn = synapseclient.login(authToken=pat, silent=True)
     return syn
 
 
