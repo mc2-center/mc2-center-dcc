@@ -136,28 +136,30 @@ def main():
         )
 
     manifest = pd.read_csv(syn.get(args.manifest).path, header=0).fillna("")
-
     if args.verbose:
-        print("\n\nCSV downloaded from Synapse:\n", manifest)
+        print("🔍 Preview of manifest CSV:\n" + "=" * 72)
+        print(manifest)
+        print()
 
+    print("\nProcessing publications staging database...")
     grants = syn.tableQuery(
         f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972"
     ).asDataFrame()
 
-    print("\nProcessing publications staging database...")
-
-    database = add_missing_info(manifest.copy(), grants, new_cols)
+    database = add_missing_info(manifest, grants, new_cols)
+    final_database = clean_table(database)
     if args.verbose:
-        print("\n\nTable with all requested columns added:\n", database)
+        print("\n🔍 Publication(s) to be synced:\n" + "=" * 72)
+        print(final_database)
+        print()
 
-    new_table = sync_table(syn, database.copy(), args.portal_table, args.dryrun)
-    if args.verbose:
-        print("\n\nReordered final table - to be synced to database:\n", new_table)
+    if not args.dryrun:
+        utils.update_table(syn, args.portal_table_id, final_database)
+        print()
 
-    new_table.to_csv(args.table_path, index=False)
-    print(f"\nCopy of final table stored at: {args.table_path}")
-
-    print("\nDONE ✓")
+    print(f"📄 Saving copy of final table to: {args.table_path}...")
+    final_database.to_csv(args.table_path, index=False)
+    print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":
