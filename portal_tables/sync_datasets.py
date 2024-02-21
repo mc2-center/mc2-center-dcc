@@ -167,8 +167,9 @@ def main():
 
     if not args.dryrun:
         utils.update_table(syn, args.portal_table_id, final_database)
+        print()
 
-    print(f"Saving copy of final table to: {args.output_csv}...")
+    print(f"📄 Saving copy of final table to: {args.output_csv}...")
     final_database.to_csv(args.output_csv, index=False)
     print("\n\nDONE ✅")
 

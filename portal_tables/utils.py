@@ -40,6 +40,8 @@ def convert_to_stringlist(col: pd.Series) -> pd.Series:
 
 def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) -> None:
     """Truncate table then add rows from latest manifest."""
+
+    print("Syncing table with latest data...\n")
     current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
     syn.delete(current_rows)
     new_rows = df.values.tolist()
