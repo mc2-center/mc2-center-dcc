@@ -46,6 +46,9 @@ def get_args():
 
 
 def add_missing_info(
+    datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
+) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
     datasets["link"] = [
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
@@ -70,10 +73,9 @@ def add_missing_info(
         datasets.at[_, "grantName"] = grant_names
         datasets.at[_, "themes"] = list(themes)
         datasets.at[_, "consortia"] = list(consortia)
-
         pub_titles = []
         for p in row["DatasetPubmedId"].split(","):
-            p = p.strip()  # remove leading/trailing whitespace, if any
+            p = p.strip()  # Remove leading/trailing whitespace, if any
             try:
                 pub_titles.append(
                     pubs[pubs.pubMedId == int(p)]["publicationTitle"]
@@ -86,7 +88,7 @@ def add_missing_info(
     return datasets
 
 
-def clean_table(datasets):
+def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
     # Convert string columns to string-list.
@@ -144,24 +146,31 @@ def main():
         manifest["DatasetGrantNumber"]
     )
     if args.verbose:
-        print("Preview of manifest CSV:\n" + "=" * 72)
+        print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
         print()
 
     print("Processing dataset staging database...")
+    grants = syn.tableQuery(
+        "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
+    ).asDataFrame()
+    pubs = syn.tableQuery(
+        "SELECT pubMedId, publicationTitle FROM syn21868591"
+    ).asDataFrame()
 
-        new_datasets = add_missing_info(new_datasets, grants, pubs)
-        new_datasets = clean_table(new_datasets)
-        if args.verbose:
-            print("\nDataset(s) to be synced:\n" + "=" * 72)
-            print(new_datasets)
+    database = add_missing_info(manifest, grants, pubs)
+    final_database = clean_table(database)
+    if args.verbose:
+        print("\n🔍 Dataset(s) to be synced:\n" + "=" * 72)
+        print(final_database)
+        print()
 
     if not args.dryrun:
         utils.update_table(syn, args.portal_table_id, final_database)
 
-        print(f"\nSaving copy of final table to: {args.output_csv}...")
-        new_datasets.to_csv(args.output_csv, index=False)
-        print("\n\nDONE ✅")
+    print(f"Saving copy of final table to: {args.output_csv}...")
+    final_database.to_csv(args.output_csv, index=False)
+    print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":
