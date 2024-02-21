@@ -90,9 +90,23 @@ def add_missing_info(pubs, grants, new_cols):
     return pubs
 
 
+def convert_to_stringlist(col):
+    """Convert a string column to a list."""
+    return col.str.replace(", ", ",").str.split(",")
+
+
 def sync_table(syn, pubs, table, dryrun):
     """Add pubs annotations to the Synapse table."""
     schema = syn.get(table)
+
+    # Convert string columns to string-list.
+    for col in [
+        "Publication Assay",
+        "Publication Tumor Type",
+        "Publication Tissue",
+        "Publication Grant Number",
+    ]:
+        pubs[col] = convert_to_stringlist(pubs[col])
 
     # Reorder columns to match the table order.
     col_order = [
