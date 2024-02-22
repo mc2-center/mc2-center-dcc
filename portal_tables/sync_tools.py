@@ -51,14 +51,14 @@ def add_missing_info(tools, grants):
     Returns:
         tools: Data frame
     """
-    tools['Link'] = "[Link](" + tools.toolHomepage + ")"
+    tools['Link'] = "[Link](" + tools.ToolHomepage + ")"
     tools['PortalDisplay'] = "true"
-    tools['theme'] = ""
+    tools['themes'] = ""
     tools['consortium'] = ""
     for _, row in tools.iterrows():
         themes = set()
         consortium = set()
-        for g in row['toolGrantNumber']:
+        for g in row['ToolGrantNumber']:
             themes.update(grants[grants.grantNumber == g]
                           ['theme'].values[0])
             consortium.update(grants[grants.grantNumber == g]['consortium'].values[0])
@@ -66,6 +66,47 @@ def add_missing_info(tools, grants):
         tools.at[_, 'consortium'] = list(consortium)
     return tools
 
+
+def clean_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean up the table one final time."""
+
+    # Convert string columns to string-list.
+    for col in [
+        "ToolView_id",
+        "ToolGrantNumber",
+        "ToolOperation",
+        'ToolInputData', 
+        'ToolOutputData',
+        'ToolInputFormat', 
+        'ToolOutputFormat',
+        'ToolType',
+        'ToolTopic',
+        'ToolOperatingSystem',
+        'ToolLanguage',
+        'ToolDownloadType',
+        'ToolDocumentationType'
+    ]:
+        df[col] = utils.convert_to_stringlist(df[col])
+
+    # We only need one synID for the portal table. See
+    # https://github.com/mc2-center/mc2-center-dcc/pull/41#issuecomment-1955119623
+    # for more context.
+    df["ToolView_id"] = df["ToolView_id"].str[0]
+
+    # Reorder columns to match the table order.
+    col_order = [
+        "ToolView_id", 'ToolName', 'ToolDescription', 'ToolHomepage', 'ToolVersion',
+        'ToolGrantNumber', 'consortium', 'themes', 'ToolPubmedId',
+        'ToolOperation', 'ToolInputData', 'ToolOutputData',
+        'ToolInputFormat', 'ToolOutputFormat', 'ToolFunctionNote',
+        'ToolCmd', 'ToolType', 'ToolTopic', 'ToolOperatingSystem',
+        'ToolLanguage', 'ToolLicense', 'ToolCost', 'ToolAccessibility',
+        'ToolDownloadUrl', 'Link', 'ToolDownloadType', 'ToolDownloadNote',
+        'ToolDownloadVersion', 'ToolDocumentationUrl',
+        'ToolDocumentationType', 'ToolDocumentationNote', 'ToolLinkUrl',
+        'ToolLinkType', 'ToolLinkNote', 'PortalDisplay'
+    ]
+    return df[col_order]
 
 def sync_table(syn, tools, table):
     """Add tools annotations to the Synapse table."""
@@ -101,7 +142,8 @@ def main():
     manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     manifest["grantNumber"] = utils.sort_and_stringify_col(
-        manifest["DatasetGrantNumber"]
+        manifest["ToolGrantNumber"]
+    )
 
     curr_tools = (
         syn.tableQuery(f"SELECT toolName FROM {args.portal_table}")
