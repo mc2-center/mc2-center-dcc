@@ -15,16 +15,19 @@ def add_missing_info(people: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame
     people["synapseProfileId"] = (
         people["synapseProfileId"].astype(str).replace(r"\.0$", "", regex=True)
     )
-
+    people["link"] = people["synapseProfileId"].apply(
+        lambda x: (
+            "".join([
+                "[Synapse Profile](https://www.synapse.org/#!Profile:",
+                str(int(float(x))),
+                ")",
+            ])
+            if x
+            else ""
+        )
+    )
     people["grantName"] = ""
     for _, row in people.iterrows():
-        # Link markdown to Synapse profile.
-        if row["synapseProfileId"] != "":
-            people.at[_, "Link"] = (
-                "[Synapse Profile](https://www.synapse.org/#!Profile:"
-                + str(int(float(row["synapseProfileId"])))
-                + ")"
-            )
         grant_names = []
         for g in row["personGrantNumber"]:
             if g != "Affiliated/Non-Grant Associated":
@@ -49,7 +52,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "alternativeNames",
         "email",
         "synapseProfileId",
-        "Link",
+        "link",
         "url",
         "orcidId",
         "lastKnownInstitution",
