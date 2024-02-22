@@ -30,11 +30,7 @@ CONFIG = {
 
 
 def syn_login() -> synapseclient.Synapse:
-    """Log into Synapse. If env variables not found, prompt user.
-
-    Returns:
-        syn: Synapse object
-    """
+    """Log into Synapse. If env variables not found, prompt user."""
     try:
         syn = synapseclient.login(silent=True)
     except synapseclient.core.exceptions.SynapseNoCredentialsError:
@@ -85,6 +81,7 @@ def get_args(resource: str) -> argparse.Namespace:
     return parser.parse_args()
 
 
+# TODO: check if we still need this function?
 def sort_and_stringify_col(col: pd.Series) -> str:
     """Sort list col then join together as comma-separated string."""
     # Check column by looking at first row; if str, convert to list first.
