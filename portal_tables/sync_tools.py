@@ -121,34 +121,30 @@ def main():
     manifest["grantNumber"] = utils.sort_and_stringify_col(
         manifest["ToolGrantNumber"]
     )
+    
+    if args.verbose:
+        print("🔍 Preview of manifest CSV:\n" + "=" * 72)
+        print(manifest)
+        print()
 
-    curr_tools = (
-        syn.tableQuery(f"SELECT toolName FROM {args.portal_table}")
-        .asDataFrame()
-        .toolName
-        .to_list()
-    )
+    print("Processing dataset staging database...")
+    grants = syn.tableQuery(
+        "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
+    ).asDataFrame()
+    database = add_missing_info(manifest, grants)
+    final_database = clean_table(database)
+    if args.verbose:
+        print("\n🔍 Dataset(s) to be synced:\n" + "=" * 72)
+        print(final_database)
+        print()
 
-    # Only add tools not currently in the Tools table.
-    new_tools = manifest[~manifest['toolName'].isin(curr_tools)]
-    if new_tools.empty:
-        print("No new tools found!")
-    else:
-        print(f"{len(new_tools)} new tools found!\n")
-        if args.dryrun:
-            print(u"\u26A0", "WARNING:",
-                  "dryrun is enabled (no updates will be done)\n")
-            print(new_tools)
-        else:
-            print("Adding new tools...")
-            grants = (
-                syn.tableQuery(
-                    "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972")
-                .asDataFrame()
-            )
-            new_tools = add_missing_info(new_tools.copy(), grants)
-            sync_table(syn, new_tools, args.portal_table)
-    print("DONE ✓")
+    if not args.dryrun:
+        utils.update_table(syn, args.portal_table_id, final_database)
+        print()
+
+    print(f"📄 Saving copy of final table to: {args.output_csv}...")
+    final_database.to_csv(args.output_csv, index=False)
+    print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":
