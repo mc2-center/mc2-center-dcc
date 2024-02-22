@@ -3,6 +3,7 @@ from datetime import datetime
 
 import synapseclient
 import pandas as pd
+import os
 
 
 def syn_login() -> synapseclient.Synapse:
