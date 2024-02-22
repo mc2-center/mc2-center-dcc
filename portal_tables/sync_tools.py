@@ -13,7 +13,9 @@ import utils
 
 def get_args():
     """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Update Tools Merged table for the CCKP")
+    parser = argparse.ArgumentParser(
+        description="Update Tools Merged table for the CCKP"
+    )
     parser.add_argument(
         "-m",
         "--manifest_id",
@@ -51,20 +53,21 @@ def add_missing_info(tools, grants):
     Returns:
         tools: Data frame
     """
-    tools['Link'] = "[Link](" + tools.ToolHomepage + ")"
-    tools['PortalDisplay'] = "true"
-    tools['themes'] = ""
-    tools['consortium'] = ""
+    tools["Link"] = "[Link](" + tools.ToolHomepage + ")"
+    tools["PortalDisplay"] = "true"
+    tools["themes"] = ""
+    tools["consortium"] = ""
     for _, row in tools.iterrows():
         themes = set()
         consortium = set()
-        for g in row['ToolGrantNumber'].split(","):
+        for g in row["ToolGrantNumber"].split(","):
             if g != "Affiliated/Non-Grant Associated":
-                themes.update(grants[grants.grantNumber == g]
-                          ['theme'].values[0])
-                consortium.update(grants[grants.grantNumber == g]['consortium'].values[0])
-        tools.at[_, 'themes'] = list(themes)
-        tools.at[_, 'consortium'] = list(consortium)
+                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
+                consortium.update(
+                    grants[grants.grantNumber == g]["consortium"].values[0]
+                )
+        tools.at[_, "themes"] = list(themes)
+        tools.at[_, "consortium"] = list(consortium)
     return tools
 
 
@@ -76,16 +79,16 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolView_id",
         "ToolGrantNumber",
         "ToolOperation",
-        'ToolInputData', 
-        'ToolOutputData',
-        'ToolInputFormat', 
-        'ToolOutputFormat',
-        'ToolType',
-        'ToolTopic',
-        'ToolOperatingSystem',
-        'ToolLanguage',
-        'ToolDownloadType',
-        'ToolDocumentationType'
+        "ToolInputData",
+        "ToolOutputData",
+        "ToolInputFormat",
+        "ToolOutputFormat",
+        "ToolType",
+        "ToolTopic",
+        "ToolOperatingSystem",
+        "ToolLanguage",
+        "ToolDownloadType",
+        "ToolDocumentationType",
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
@@ -96,18 +99,44 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
 
     # Reorder columns to match the table order.
     col_order = [
-        "ToolView_id", 'ToolName', 'ToolDescription', 'ToolHomepage', 'ToolVersion',
-        'ToolGrantNumber', 'consortium', 'themes', 'ToolPubmedId',
-        'ToolOperation', 'ToolInputData', 'ToolOutputData',
-        'ToolInputFormat', 'ToolOutputFormat', 'ToolFunctionNote',
-        'ToolCmd', 'ToolType', 'ToolTopic', 'ToolOperatingSystem',
-        'ToolLanguage', 'ToolLicense', 'ToolCost', 'ToolAccessibility',
-        'ToolDownloadUrl', 'Link', 'ToolDownloadType', 'ToolDownloadNote',
-        'ToolDownloadVersion', 'ToolDocumentationUrl',
-        'ToolDocumentationType', 'ToolDocumentationNote', 'ToolLinkUrl',
-        'ToolLinkType', 'ToolLinkNote', 'PortalDisplay'
+        "ToolView_id",
+        "ToolName",
+        "ToolDescription",
+        "ToolHomepage",
+        "ToolVersion",
+        "ToolGrantNumber",
+        "consortium",
+        "themes",
+        "ToolPubmedId",
+        "ToolOperation",
+        "ToolInputData",
+        "ToolOutputData",
+        "ToolInputFormat",
+        "ToolOutputFormat",
+        "ToolFunctionNote",
+        "ToolCmd",
+        "ToolType",
+        "ToolTopic",
+        "ToolOperatingSystem",
+        "ToolLanguage",
+        "ToolLicense",
+        "ToolCost",
+        "ToolAccessibility",
+        "ToolDownloadUrl",
+        "Link",
+        "ToolDownloadType",
+        "ToolDownloadNote",
+        "ToolDownloadVersion",
+        "ToolDocumentationUrl",
+        "ToolDocumentationType",
+        "ToolDocumentationNote",
+        "ToolLinkUrl",
+        "ToolLinkType",
+        "ToolLinkNote",
+        "PortalDisplay",
     ]
     return df[col_order]
+
 
 def main():
     """Main function."""
@@ -116,13 +145,11 @@ def main():
 
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
-        
+
     manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
-    manifest["grantNumber"] = utils.sort_and_stringify_col(
-        manifest["ToolGrantNumber"]
-    )
-    
+    manifest["grantNumber"] = utils.sort_and_stringify_col(manifest["ToolGrantNumber"])
+
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
