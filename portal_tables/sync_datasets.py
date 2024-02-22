@@ -105,9 +105,6 @@ def main():
 
     manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
-    manifest["grantNumber"] = utils.sort_and_stringify_col(
-        manifest["DatasetGrantNumber"]
-    )
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
