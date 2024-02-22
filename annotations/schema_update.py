@@ -6,6 +6,7 @@ Using the tableIds, it updates the schema for specific cols in the table
 
 author: aditi.gopalan
 author: thomas.yu
+author: orion.banks
 '''
 import synapseclient
 import pandas as pd
