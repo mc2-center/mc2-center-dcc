@@ -26,6 +26,10 @@ CONFIG = {
         "manifest": "syn38301033",
         "portal_table": "syn28073190"
     },
+    "grant": {
+        "manifest": "syn53259587",
+        "portal_table": "syn21918972"
+    },
 }
 
 
