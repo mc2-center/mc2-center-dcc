@@ -11,21 +11,12 @@ import pandas as pd
 
 # Manifest and portal table synIDs of each resource type.
 CONFIG = {
-    "publication": {
-        "manifest": "syn53478776",
-        "portal_table": "syn21868591",
-    },
-    "dataset": {
-        "manifest": "syn53478774",
-        "portal_table": "syn21897968",
-    },
-    "tool": {
-        "manifest": "syn53479671",
-        "portal_table": "syn26127427",
-    },
+    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591"},
+    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968"},
+    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427"},
     "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
     "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
-    "education": {"manifest": "syn53651540", "portal_table": "syn51497305"}
+    "education": {"manifest": "syn53651540", "portal_table": "syn51497305"},
 }
 
 

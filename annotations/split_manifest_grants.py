@@ -97,10 +97,10 @@ def main():
     # manifest as an Excel file.
     manifest = pd.read_csv(args.manifest)
     split_manifests = split_manifest(manifest, manifest_type)
-    
+
     if manifest_type == "resource":
         manifest_type = "education"
-    
+
     for grant_number in split_manifests.groups:
         df = split_manifests.get_group(grant_number)
         grant_number = grant_number.translate(str.maketrans("", "", "[]:/!@#$<> "))

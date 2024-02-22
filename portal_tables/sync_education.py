@@ -7,6 +7,7 @@ table, by first truncating the table, then re-adding the rows.
 import pandas as pd
 import utils
 
+
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
@@ -24,7 +25,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceGrantNumber",
         "ResourceSecondaryTopic",
         "ResourceMediaAccessibility",
-        "ResourceAccessHazard"
+        "ResourceAccessHazard",
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
@@ -52,7 +53,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceMediaAccessibility",
         "ResourceAccessHazard",
         "ResourceDatasetAlias",
-        "ResourceToolLink"
+        "ResourceToolLink",
     ]
     return df[col_order]
 
@@ -73,7 +74,7 @@ def main():
         print()
 
     print("Processing educational resource staging database...")
-    
+
     final_database = clean_table(manifest)
     if args.verbose:
         print("\n🔍 Tool(s) to be synced:\n" + "=" * 72)
