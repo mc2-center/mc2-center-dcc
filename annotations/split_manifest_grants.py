@@ -97,8 +97,13 @@ def main():
     # manifest as an Excel file.
     manifest = pd.read_csv(args.manifest)
     split_manifests = split_manifest(manifest, manifest_type)
+    
+    if manifest_type == "resource":
+        manifest_type = "education"
+    
     for grant_number in split_manifests.groups:
         df = split_manifests.get_group(grant_number)
+        grant_number = grant_number.translate(str.maketrans("", "", "[]:/!@#$<> "))
         if args.csv:
             path = os.path.join(output_dir, f"{grant_number}_{manifest_type}.csv")
             df.to_csv(path, index=False)
