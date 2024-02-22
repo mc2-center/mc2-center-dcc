@@ -1,8 +1,7 @@
 """Add Datasets to the Cancer Complexity Knowledge Portal (CCKP).
 
-This script will sync over new datasets and its annotations to the
-Datasets portal table. A Synapse Folder will also be created for each
-new dataset in its respective grant Project.
+This script will "sync" the dataset manifest table to the Dataset
+portal table, by first truncating the table, then re-adding the rows.
 """
 import pandas as pd
 import utils

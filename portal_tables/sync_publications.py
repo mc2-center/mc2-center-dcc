@@ -1,7 +1,7 @@
 """Add Publications to the Cancer Complexity Knowledge Portal (CCKP).
 
-This script will sync over new publications and its annotations to the
-Publications portal table.
+This script will "sync" the publication manifest table to the Publications
+portal table, by first truncating the table, then re-adding the rows.
 """
 import re
 from typing import List
