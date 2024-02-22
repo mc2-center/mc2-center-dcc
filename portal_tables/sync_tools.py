@@ -58,10 +58,11 @@ def add_missing_info(tools, grants):
     for _, row in tools.iterrows():
         themes = set()
         consortium = set()
-        for g in row['ToolGrantNumber']:
-            themes.update(grants[grants.grantNumber == g]
+        for g in row['ToolGrantNumber'].split(","):
+            if g != "Affiliated/Non-Grant Associated":
+                themes.update(grants[grants.grantNumber == g]
                           ['theme'].values[0])
-            consortium.update(grants[grants.grantNumber == g]['consortium'].values[0])
+                consortium.update(grants[grants.grantNumber == g]['consortium'].values[0])
         tools.at[_, 'themes'] = list(themes)
         tools.at[_, 'consortium'] = list(consortium)
     return tools
@@ -127,14 +128,14 @@ def main():
         print(manifest)
         print()
 
-    print("Processing dataset staging database...")
+    print("Processing tool staging database...")
     grants = syn.tableQuery(
         "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
     ).asDataFrame()
     database = add_missing_info(manifest, grants)
     final_database = clean_table(database)
     if args.verbose:
-        print("\n🔍 Dataset(s) to be synced:\n" + "=" * 72)
+        print("\n🔍 Tool(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
