@@ -1,7 +1,7 @@
 """Add Tools to the Cancer Complexity Knowledge Portal (CCKP).
 
-This script will sync over new tools and its annotations to the
-Tools portal table.
+This script will "sync" the tool manifest table to the Tool portal
+table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
@@ -103,7 +103,7 @@ def main():
         print(manifest)
         print()
 
-    print("Processing dataset staging database...")
+    print("Processing tool staging database...")
     grants = syn.tableQuery(
         "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
     ).asDataFrame()
