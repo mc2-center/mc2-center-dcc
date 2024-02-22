@@ -108,29 +108,6 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     ]
     return df[col_order]
 
-def sync_table(syn, tools, table):
-    """Add tools annotations to the Synapse table."""
-    schema = syn.get(table)
-
-    # Reorder columns to match the table order.
-    col_order = [
-        'ToolName', 'ToolDescription', 'ToolHomepage', 'ToolVersion',
-        'ToolGrantNumber', 'consortium', 'themes', 'ToolPubmedId',
-        'ToolOperation', 'ToolInputData', 'ToolOutputData',
-        'ToolInputFormat', 'ToolOutputFormat', 'ToolFunctionNote',
-        'ToolCmd', 'ToolType', 'ToolTopic', 'ToolOperatingSystem',
-        'ToolLanguage', 'ToolLicense', 'ToolCost', 'ToolAccessibility',
-        'ToolDownloadUrl', 'Link', 'ToolDownloadType', 'ToolDownloadNote',
-        'ToolDownloadVersion', 'ToolDocumentationUrl',
-        'ToolDocumentationType', 'ToolDocumentationNote', 'ToolLinkUrl',
-        'ToolLinkType', 'ToolLinkNote', 'PortalDisplay'
-    ]
-    tools = tools[col_order]
-
-    new_rows = tools.values.tolist()
-    syn.store(Table(schema, new_rows))
-
-
 def main():
     """Main function."""
     syn = utils.syn_login()
