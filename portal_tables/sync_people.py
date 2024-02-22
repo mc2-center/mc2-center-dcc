@@ -26,7 +26,7 @@ def add_missing_info(people: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame
                 + ")"
             )
         grant_names = []
-        for g in row["personGrantNumber"].split(","):
+        for g in row["personGrantNumber"]:
             if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
                     grants[grants.grantNumber == g]["grantName"].values[0]
@@ -72,6 +72,7 @@ def main():
     syn = utils.syn_login()
     args = utils.get_args("people")
 
+    # TODO: update to pd.read_csv once csv manifest is available.
     manifest = (
         syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
     )
