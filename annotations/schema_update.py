@@ -38,7 +38,7 @@ print(table_ids_list)
 # Updating schema for all the tables in the list
 # Columns to modify
 columns_to_modify = ["Component", f"{entity_type} Keywords", f"{entity_type} Abstract", f"{entity_type} Authors", f"{entity_type} Assay", f"{entity_type} Tumor Type", 
-                     f"{entity_type} Tissue", f"{entity_type} Dataset Alias", f"{entity_type} Title"]
+                     f"{entity_type} Tissue", f"{entity_type} Dataset Alias", f"{entity_type} Title", f"{entity_type} Download Type", f"{entity_type} Documentation Type"]
 
 # Initialize counter
 successful_table_modifications_count = 0
