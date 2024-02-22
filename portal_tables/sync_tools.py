@@ -9,39 +9,83 @@ import utils
 
 
 def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
+    tools["link"] = "[Link](" + tools["ToolHomepage"] + ")"
+    tools["portalDisplay"] = "true"
+    tools["themes"] = ""
+    tools["consortium"] = ""
     for _, row in tools.iterrows():
         themes = set()
         consortium = set()
-        for g in row['toolGrantNumber']:
-            themes.update(grants[grants.grantNumber == g]
-                          ['theme'].values[0])
-            consortium.update(grants[grants.grantNumber == g]['consortium'].values[0])
-        tools.at[_, 'themes'] = list(themes)
-        tools.at[_, 'consortium'] = list(consortium)
+        for g in row["ToolGrantNumber"].split(","):
+            if g not in ["", "Affiliated/Non-Grant Associated"]:
+                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
+                consortium.update(
+                    grants[grants.grantNumber == g]["consortium"].values[0]
+                )
+        tools.at[_, "themes"] = list(themes)
+        tools.at[_, "consortium"] = list(consortium)
     return tools
 
 
-def sync_table(syn, tools, table):
-    """Add tools annotations to the Synapse table."""
-    schema = syn.get(table)
+def clean_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean up the table one final time."""
+
+    # Convert string columns to string-list.
+    for col in [
+        "ToolGrantNumber",
+        "ToolOperation",
+        "ToolInputData",
+        "ToolOutputData",
+        "ToolInputFormat",
+        "ToolOutputFormat",
+        "ToolType",
+        "ToolTopic",
+        "ToolOperatingSystem",
+        "ToolLanguage",
+        "ToolDownloadType",
+        "ToolDocumentationType",
+    ]:
+        df[col] = utils.convert_to_stringlist(df[col])
 
     # Reorder columns to match the table order.
     col_order = [
-        'toolName', 'toolDescription', 'toolHomepage', 'toolVersion',
-        'toolGrantNumber', 'consortium', 'themes', 'toolPubmedId',
-        'toolOperation', 'toolInputData', 'toolOutputData',
-        'toolInputFormat', 'toolOutputFormat', 'toolFunctionNote',
-        'toolCmd', 'toolType', 'toolTopic', 'toolOperatingSystem',
-        'toolLanguage', 'toolLicense', 'toolCost', 'toolAccessibility',
-        'toolDownloadUrl', 'Link', 'toolDownloadType', 'toolDownloadNote',
-        'toolDownloadVersion', 'toolDocumentationUrl',
-        'toolDocumentationType', 'toolDocumentationNote', 'toolLinkUrl',
-        'toolLinkType', 'toolLinkNote', 'PortalDisplay'
+        "ToolName",
+        "ToolDescription",
+        "ToolHomepage",
+        "ToolVersion",
+        "ToolGrantNumber",
+        "consortium",
+        "themes",
+        "ToolPubmedId",
+        "ToolOperation",
+        "ToolInputData",
+        "ToolOutputData",
+        "ToolInputFormat",
+        "ToolOutputFormat",
+        "ToolFunctionNote",
+        "ToolCmd",
+        "ToolType",
+        "ToolTopic",
+        "ToolOperatingSystem",
+        "ToolLanguage",
+        "ToolLicense",
+        "ToolCost",
+        "ToolAccessibility",
+        "ToolDownloadUrl",
+        "link",
+        "ToolDownloadType",
+        "ToolDownloadNote",
+        "ToolDownloadVersion",
+        "ToolDocumentationUrl",
+        "ToolDocumentationType",
+        "ToolDocumentationNote",
+        "ToolLinkUrl",
+        "ToolLinkType",
+        "ToolLinkNote",
+        "portalDisplay",
     ]
-    tools = tools[col_order]
-
-    new_rows = tools.values.tolist()
-    syn.store(Table(schema, new_rows))
+    return df[col_order]
 
 
 def main():
