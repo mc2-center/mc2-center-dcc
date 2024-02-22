@@ -4,45 +4,8 @@ This script will sync over new datasets and its annotations to the
 Datasets portal table. A Synapse Folder will also be created for each
 new dataset in its respective grant Project.
 """
-
-import argparse
-
 import pandas as pd
 import utils
-
-
-def get_args():
-    """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Add new datasets to the CCKP")
-    parser.add_argument(
-        "-m",
-        "--manifest_id",
-        type=str,
-        default="syn53478774",
-        help="Synapse ID to the manifest CSV file.",
-    )
-    parser.add_argument(
-        "-t",
-        "--portal_table_id",
-        type=str,
-        default="syn21897968",
-        help="Add datasets to this specified table. (Default: syn21897968)",
-    )
-    parser.add_argument(
-        "-o",
-        "--output_csv",
-        type=str,
-        default="./final_dataset_table.csv",
-        help="Filepath to output CSV.",
-    )
-    parser.add_argument("--dryrun", action="store_true")
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Output all logs and interim tables.",
-    )
-    return parser.parse_args()
 
 
 def add_missing_info(
@@ -135,7 +98,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     """Main function."""
     syn = utils.syn_login()
-    args = get_args()
+    args = utils.get_args("dataset")
 
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")

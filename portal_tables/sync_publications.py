@@ -3,57 +3,18 @@
 This script will sync over new publications and its annotations to the
 Publications portal table.
 """
-
 import re
-import argparse
 from typing import List
 
 import pandas as pd
 import utils
 
 
-def get_args():
-    """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Add new pubs to the CCKP")
-    parser.add_argument(
-        "-m",
-        "--manifest",
-        type=str,
-        default="syn53478776",
-        help="Synapse ID to the staging version of publication database CSV.",
-    )
-    parser.add_argument(
-        "-t",
-        "--portal_table_id",
-        type=str,
-        default="syn21868591",
-        help=("Add publications to this specified " "table. (Default: syn21868591)"),
-    )
-    parser.add_argument(
-        "-p",
-        "--table_path",
-        type=str,
-        default="./final_publication_table.csv",
-        help=(
-            "Path at which to store the final CSV. " "Defaults to './final_table.csv'"
-        ),
-    )
-    parser.add_argument("--dryrun", action="store_true")
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="If this flag is provided, manifest, database, and new_table will "
-        "be printed to the command line.",
-    )
-    return parser.parse_args()
-
-
 def add_missing_info(
     pubs: pd.DataFrame, grants: pd.DataFrame, new_cols: List[str]
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
-    pubs.loc[:, "Link"] = [
+    pubs["link"] = [
         "".join(["[PMID:", str(pmid), "](", url, ")"])
         for pmid, url in zip(pubs["Pubmed Id"], pubs["Pubmed Url"])
     ]
@@ -102,7 +63,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "Publication Journal",
         "Pubmed Id",
         "Pubmed Url",
-        "Link",
+        "link",
         "Publication Title",
         "Publication Year",
         "Publication Keywords",
@@ -125,7 +86,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
 def main():
     """Main function."""
     syn = utils.syn_login()
-    args = get_args()
+    args = utils.get_args("publication")
 
     new_cols = ["theme", "consortium", "grantName"]
 

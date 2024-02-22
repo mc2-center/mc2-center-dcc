@@ -1,8 +1,30 @@
+import argparse
 from getpass import getpass
 from datetime import datetime
 
 import synapseclient
 import pandas as pd
+
+
+# Manifest and portal table synIDs of each resource type.
+CONFIG = {
+    "publication": {
+        "manifest": "syn53478776",
+        "portal_table": "syn21868591",
+    },
+    "dataset": {
+        "manifest": "syn53478774",
+        "portal_table": "syn21897968",
+    },
+    "tool": {
+        "manifest": "syn53479671",
+        "portal_table": "syn26127427",
+    },
+    "people": {
+        "manifest": "syn38301033",
+        "portal_table": "syn28073190"
+    },
+}
 
 
 def syn_login() -> synapseclient.Synapse:
@@ -12,18 +34,53 @@ def syn_login() -> synapseclient.Synapse:
         syn: Synapse object
     """
     try:
-        syn = synapseclient.login(
-            authToken=os.getenv('SYNAPSE_AUTH_TOKEN'),
-            silent=True)
+        syn = synapseclient.login(silent=True)
     except synapseclient.core.exceptions.SynapseNoCredentialsError:
         print(
-            "Credentials not found; please manually provide your",
+            ".synapseConfig not found; please manually provide your",
             "Synapse Personal Access Token (PAT). You can generate"
             "one at https://www.synapse.org/#!PersonalAccessTokens:0",
         )
         pat = getpass("Your Synapse PAT: ")
         syn = synapseclient.login(authToken=pat, silent=True)
     return syn
+
+
+def get_args(resource: str) -> argparse.Namespace:
+    """Set up command-line interface and get arguments."""
+    parser = argparse.ArgumentParser(description=f"Sync {resource} to the CCKP")
+    parser.add_argument(
+        "-m",
+        "--manifest_id",
+        type=str,
+        default=CONFIG.get(resource).get("manifest"),
+        help="Synapse ID of the manifest CSV file.",
+    )
+    parser.add_argument(
+        "-t",
+        "--portal_table_id",
+        type=str,
+        default=CONFIG.get(resource).get("portal_table"),
+        help=(
+            f"Sync to this specified table. (Default: "
+            f"{CONFIG.get(resource).get('portal_table')})"
+        ),
+    )
+    parser.add_argument(
+        "-o",
+        "--output_csv",
+        type=str,
+        default=f"./final_{resource}_table.csv",
+        help="Filepath to output CSV.",
+    )
+    parser.add_argument("--dryrun", action="store_true")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Output all logs and interim tables.",
+    )
+    return parser.parse_args()
 
 
 def sort_and_stringify_col(col: pd.Series) -> str:
