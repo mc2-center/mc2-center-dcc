@@ -1,4 +1,5 @@
 """Shared functions used by syncing scripts"""
+
 import os
 import argparse
 from getpass import getpass
@@ -22,14 +23,8 @@ CONFIG = {
         "manifest": "syn53479671",
         "portal_table": "syn26127427",
     },
-    "people": {
-        "manifest": "syn38301033",
-        "portal_table": "syn28073190"
-    },
-    "grant": {
-        "manifest": "syn53259587",
-        "portal_table": "syn21918972"
-    },
+    "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
+    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
 }
 
 

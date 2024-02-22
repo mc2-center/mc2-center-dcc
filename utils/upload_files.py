@@ -17,23 +17,30 @@ import synapseclient
 import synapseutils
 import argparse
 
+
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m",
-						type=str,
-                        help="path to manifest listing file paths and target folders in tsv format")
+    parser.add_argument(
+        "-m",
+        type=str,
+        help="path to manifest listing file paths and target folders in tsv format",
+    )
     return parser.parse_args()
 
+
 def main():
-	
-	syn = synapseclient.login() #you can pass your username and password directly to this function
 
-	args = get_args()
+    syn = (
+        synapseclient.login()
+    )  # you can pass your username and password directly to this function
 
-	manifest = args.m #assign path to manifest file from command line input
+    args = get_args()
 
-	upload = synapseutils.syncToSynapse(syn, manifestFile=manifest)
+    manifest = args.m  # assign path to manifest file from command line input
+
+    upload = synapseutils.syncToSynapse(syn, manifestFile=manifest)
+
 
 if __name__ == "__main__":
     main()

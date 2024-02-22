@@ -1,4 +1,4 @@
-''' 
+""" 
 schema_update.py 
 
 This script takes the projectID (grantId) for respective manifests and gets the corresponding tableIds. 
@@ -7,7 +7,8 @@ Using the tableIds, it updates the schema for specific cols in the table
 author: aditi.gopalan
 author: thomas.yu
 author: orion.banks
-'''
+"""
+
 import synapseclient
 import pandas as pd
 import sys
@@ -27,10 +28,14 @@ table_ids_list = []
 
 for grantId in grantId_list:
     try:
-        table_id = [x for x in syn.getChildren(grantId, includeTypes=["table"]) if x.get('name').startswith(entity_type.lower())][0].get('id')
+        table_id = [
+            x
+            for x in syn.getChildren(grantId, includeTypes=["table"])
+            if x.get("name").startswith(entity_type.lower())
+        ][0].get("id")
     except IndexError:
         table_id = ""
-    
+
     table_ids_list.append(table_id)
 
 print(len(table_ids_list))
@@ -38,8 +43,19 @@ print(table_ids_list)
 
 # Updating schema for all the tables in the list
 # Columns to modify
-columns_to_modify = ["Component", f"{entity_type} Keywords", f"{entity_type} Abstract", f"{entity_type} Authors", f"{entity_type} Assay", f"{entity_type} Tumor Type", 
-                     f"{entity_type} Tissue", f"{entity_type} Dataset Alias", f"{entity_type} Title", f"{entity_type} Download Type", f"{entity_type} Documentation Type"]
+columns_to_modify = [
+    "Component",
+    f"{entity_type} Keywords",
+    f"{entity_type} Abstract",
+    f"{entity_type} Authors",
+    f"{entity_type} Assay",
+    f"{entity_type} Tumor Type",
+    f"{entity_type} Tissue",
+    f"{entity_type} Dataset Alias",
+    f"{entity_type} Title",
+    f"{entity_type} Download Type",
+    f"{entity_type} Documentation Type",
+]
 
 # Initialize counter
 successful_table_modifications_count = 0
@@ -54,14 +70,24 @@ for my_table_synid in table_ids_list:
         # Modify specified columns
         for column_name in columns_to_modify:
             # Find the column to modify
-            column_to_modify = next((col for col in my_columns if col.name == column_name), None)
+            column_to_modify = next(
+                (col for col in my_columns if col.name == column_name), None
+            )
 
             if column_to_modify:
                 # Set columnType and maximumSize accordingly
                 if column_name == f"{entity_type} Abstract":
-                    new_column = syn.store(synapseclient.Column(name=column_name, columnType="LARGETEXT", maximumSize=500))
+                    new_column = syn.store(
+                        synapseclient.Column(
+                            name=column_name, columnType="LARGETEXT", maximumSize=500
+                        )
+                    )
                 else:
-                    new_column = syn.store(synapseclient.Column(name=column_name, columnType="STRING", maximumSize=500))
+                    new_column = syn.store(
+                        synapseclient.Column(
+                            name=column_name, columnType="STRING", maximumSize=500
+                        )
+                    )
 
                 # Define the change
                 changes = {
@@ -71,13 +97,21 @@ for my_table_synid in table_ids_list:
                         {
                             "concreteType": "org.sagebionetworks.repo.model.table.TableSchemaChangeRequest",
                             "entityId": my_table_synid,
-                            "changes": [{"oldColumnId": column_to_modify.id, "newColumnId": new_column.id}],
+                            "changes": [
+                                {
+                                    "oldColumnId": column_to_modify.id,
+                                    "newColumnId": new_column.id,
+                                }
+                            ],
                         }
                     ],
                 }
 
                 # Wait for asynchronous update
-                syn._waitForAsync(uri=f"/entity/{my_table_synid}/table/transaction/async", request=changes)
+                syn._waitForAsync(
+                    uri=f"/entity/{my_table_synid}/table/transaction/async",
+                    request=changes,
+                )
 
         print(f"Columns modified successfully for table ID: {my_table_synid}")
 
@@ -94,11 +128,13 @@ for my_table_synid in table_ids_list:
         continue  # Continue to the next table ID even if an error occurs
 
 # Print the total number of tables successfully modified
-print(f"Total number of tables successfully modified: {successful_table_modifications_count}")
+print(
+    f"Total number of tables successfully modified: {successful_table_modifications_count}"
+)
 
 # Remove the 'grantID' column from the input file
 input_data = pd.read_csv(input_file_path)
-input_data = input_data.drop(columns=['grantId'])
+input_data = input_data.drop(columns=["grantId"])
 input_data.to_csv(input_file_path, index=False)
 
 print("The 'grantID' column has been deleted from the input file.")

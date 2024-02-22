@@ -17,11 +17,13 @@ def add_missing_info(people: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame
     )
     people["link"] = people["synapseProfileId"].apply(
         lambda x: (
-            "".join([
-                "[Synapse Profile](https://www.synapse.org/#!Profile:",
-                str(int(float(x))),
-                ")",
-            ])
+            "".join(
+                [
+                    "[Synapse Profile](https://www.synapse.org/#!Profile:",
+                    str(int(float(x))),
+                    ")",
+                ]
+            )
             if x
             else ""
         )

@@ -10,10 +10,11 @@ import utils
 
 def add_missing_info(grants: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
-    grants.loc[:, "project_id"] = (
-        grants["GrantSynapseProject"].str.extract(r":(syn\d*)/?")
+    grants.loc[:, "project_id"] = grants["GrantSynapseProject"].str.extract(
+        r":(syn\d*)/?"
     )
     return grants
+
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
@@ -59,13 +60,15 @@ def main():
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
     # TODO: update to pd.read_csv once csv manifest is available.
-    manifest = syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
+    manifest = (
+        syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
+    )
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
         print()
-    
+
     print("Processing grant staging database...")
     database = add_missing_info(manifest)
     final_database = clean_table(database)

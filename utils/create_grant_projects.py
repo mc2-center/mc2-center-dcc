@@ -52,14 +52,20 @@ def _join_listlike_col(col, join_by="_", delim=","):
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description="Add new grants to the CCKP")
-    parser.add_argument("-m", "--manifest",
-                        type=str, default="syn35242677",
-                        help=("Synapse ID to the manifest table/fileview."
-                              "(Default: syn35242677)"))
-    parser.add_argument("-t", "--portal_table",
-                        type=str, default="syn21918972",
-                        help=("Add grants to this specified table. "
-                              "(Default: syn21918972)"))
+    parser.add_argument(
+        "-m",
+        "--manifest",
+        type=str,
+        default="syn35242677",
+        help=("Synapse ID to the manifest table/fileview." "(Default: syn35242677)"),
+    )
+    parser.add_argument(
+        "-t",
+        "--portal_table",
+        type=str,
+        default="syn21918972",
+        help=("Add grants to this specified table. " "(Default: syn21918972)"),
+    )
     parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
@@ -128,9 +134,7 @@ def create_team(syn, project_id, grant, access_type="edit"):
         new_team = Team(name=team_name, canPublicJoin=False)
         new_team = syn.store(new_team)
         syn.setPermissions(
-            project_id,
-            principalId=new_team.id,
-            accessType=PERMISSIONS.get(access_type)
+            project_id, principalId=new_team.id, accessType=PERMISSIONS.get(access_type)
         )
     except ValueError as err:
         if err.__context__.response.status_code == 409:
@@ -147,9 +151,7 @@ def create_grant_projects(syn, grants):
             project = Project(name)
             project = syn.store(project)
             syn.setPermissions(
-                project.id,
-                principalId=3450948,
-                accessType=PERMISSIONS.get("admin")
+                project.id, principalId=3450948, accessType=PERMISSIONS.get("admin")
             )
 
             create_wiki_pages(syn, project.id, row)
@@ -157,7 +159,6 @@ def create_grant_projects(syn, grants):
             create_team(syn, project.id, row)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
-
 
 
 def main():
@@ -170,8 +171,7 @@ def main():
     curr_grants = (
         syn.tableQuery(f"SELECT grantNumber FROM {args.portal_table}")
         .asDataFrame()
-        .grantNumber
-        .to_list()
+        .grantNumber.to_list()
     )
 
     # Only add grants not currently in the Grants table.
@@ -181,8 +181,7 @@ def main():
     else:
         print(f"{len(new_grants)} new grants found!\n")
         if args.dryrun:
-            print("\u26A0", "WARNING:",
-                  "dryrun is enabled (no updates will be done)\n")
+            print("\u26A0", "WARNING:", "dryrun is enabled (no updates will be done)\n")
             print(new_grants)
         else:
             print("Adding new grants...")

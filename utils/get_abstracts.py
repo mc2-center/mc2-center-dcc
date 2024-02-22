@@ -16,18 +16,17 @@ def login():
 
 def get_args():
 
-    parser = argparse.ArgumentParser(
-        description='Get synapse publications table id')
-    parser.add_argument('table_id',
-                        type=str,
-                        help='Synapse table id to upload manifest to.')
+    parser = argparse.ArgumentParser(description="Get synapse publications table id")
+    parser.add_argument(
+        "table_id", type=str, help="Synapse table id to upload manifest to."
+    )
 
     return parser.parse_args()
 
 
 def get_df(syn, publications_table_id):
 
-    pubs_query = (f"SELECT pubMedId, abstract FROM {publications_table_id}")
+    pubs_query = f"SELECT pubMedId, abstract FROM {publications_table_id}"
     pubs_df = syn.tableQuery(pubs_query).asDataFrame().fillna("")
 
     return pubs_df
@@ -36,9 +35,9 @@ def get_df(syn, publications_table_id):
 def get_pmids(pubs_df):
 
     # Convert column of pubmedIds to a list
-    pmid_list = pubs_df['pubMedId'].tolist()
+    pmid_list = pubs_df["pubMedId"].tolist()
 
-    return (pmid_list)
+    return pmid_list
 
 
 def get_abstracts(pmid_list, pubs_df):
@@ -52,17 +51,17 @@ def get_abstracts(pmid_list, pubs_df):
         response = requests.get(endpoint)
         response_string = response.text
         # Parse text to extract only the abstract
-        index = response_string.find('|a|') + 3
+        index = response_string.find("|a|") + 3
         abstract = response_string[index:]
 
         # Add abstracts to publications data frame
-        pubs_df.loc[pubs_df['pubMedId'] == pmid, 'abstract'] = abstract
+        pubs_df.loc[pubs_df["pubMedId"] == pmid, "abstract"] = abstract
         counter += 1
-        print(f'Getting {counter} of {total_count} total abstracts...')
+        print(f"Getting {counter} of {total_count} total abstracts...")
 
         sleep(0.34)
 
-    return (pubs_df)
+    return pubs_df
 
 
 def store_edited_publications(syn, table_id, pubs_df):

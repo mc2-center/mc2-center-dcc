@@ -3,6 +3,7 @@
 This script will "sync" the dataset manifest table to the Dataset
 portal table, by first truncating the table, then re-adding the rows.
 """
+
 import pandas as pd
 import utils
 
