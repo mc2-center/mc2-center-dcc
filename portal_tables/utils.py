@@ -1,3 +1,5 @@
+"""Shared functions used by syncing scripts"""
+import os
 import argparse
 from getpass import getpass
 from datetime import datetime

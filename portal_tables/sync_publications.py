@@ -96,7 +96,7 @@ def main():
             "\n\nDatabase will NOT be updated.",
         )
 
-    manifest = pd.read_csv(syn.get(args.manifest).path, header=0).fillna("")
+    manifest = pd.read_csv(syn.get(args.manifest_id).path, header=0).fillna("")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
@@ -118,8 +118,8 @@ def main():
         utils.update_table(syn, args.portal_table_id, final_database)
         print()
 
-    print(f"📄 Saving copy of final table to: {args.table_path}...")
-    final_database.to_csv(args.table_path, index=False)
+    print(f"📄 Saving copy of final table to: {args.output_csv}...")
+    final_database.to_csv(args.output_csv, index=False)
     print("\n\nDONE ✅")
 
 
