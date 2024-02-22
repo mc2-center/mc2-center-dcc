@@ -17,11 +17,13 @@ def add_missing_info(people: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame
     )
     people["link"] = people["synapseProfileId"].apply(
         lambda x: (
-            "".join([
-                "[Synapse Profile](https://www.synapse.org/#!Profile:",
-                str(int(float(x))),
-                ")",
-            ])
+            "".join(
+                [
+                    "[Synapse Profile](https://www.synapse.org/#!Profile:",
+                    str(int(float(x))),
+                    ")",
+                ]
+            )
             if x
             else ""
         )
@@ -42,9 +44,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
     # Convert stringlist to string (temporary workaround).
-    df["personPublications"] = df["personPublications"].str.join(", ")
-    df["personDatasets"] = df["personDatasets"].str.join(", ")
-    df["personTools"] = df["personTools"].str.join(", ")
+    for col in ["personPublications", "personDatasets", "personTools"]:
+        df[col] = df[col].str.join(", ")
 
     # Reorder columns to match the table order.
     col_order = [
