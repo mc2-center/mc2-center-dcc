@@ -58,6 +58,8 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
+    # TODO: update to pd.read_csv once csv manifest is available.
+    manifest = syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
