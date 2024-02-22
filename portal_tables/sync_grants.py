@@ -66,11 +66,11 @@ def main():
         print(manifest)
         print()
     
-    print("Processing dataset staging database...")
+    print("Processing grant staging database...")
     database = add_missing_info(manifest)
     final_database = clean_table(database)
     if args.verbose:
-        print("\n🔍 Dataset(s) to be synced:\n" + "=" * 72)
+        print("\n🔍 Grant(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
