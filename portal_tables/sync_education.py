@@ -77,7 +77,7 @@ def main():
 
     final_database = clean_table(manifest)
     if args.verbose:
-        print("\n🔍 Tool(s) to be synced:\n" + "=" * 72)
+        print("\n🔍 Educational resource(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
