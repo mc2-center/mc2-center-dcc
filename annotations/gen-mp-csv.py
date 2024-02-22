@@ -86,18 +86,20 @@ def write_file_paths_to_csv(file_paths, output_file, file_suffix, grant_folder_r
             csv_writer.writerow([file_path, folder_id, grant_id])  
 
 def main(folder_path, output_csv_file, data_type):
+    grant_id_column_name = "grantId"
+
     if data_type == "publications":
         file_suffix = "_publication.csv"
         folder_id_column_name = "folderIdPublication"
-        grant_id_column_name = "grantIdPublication"
+        
     elif data_type == "datasets":
         file_suffix = "_dataset.csv"
         folder_id_column_name = "folderIdDatasets"
-        grant_id_column_name = "grantIdDatasets"
+        
     elif data_type == "tools":
         file_suffix = "_tool.csv"
         folder_id_column_name = "folderIdTools"
-        grant_id_column_name = "grantIdTools"
+        
     else:
         print("Invalid data type. Please provide one of 'publications', 'datasets', or 'tools'.")
         return
