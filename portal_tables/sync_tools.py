@@ -4,36 +4,11 @@ This script will sync over new tools and its annotations to the
 Tools portal table.
 """
 
-import argparse
-
-from synapseclient import Table
+import pandas as pd
 import utils
 
 
-def get_args():
-    """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Add new tools to the CCKP")
-    parser.add_argument("-m", "--manifest",
-                        type=str, default="syn35558370",
-                        help="Synapse ID to the manifest table/fileview.")
-    parser.add_argument("-t", "--portal_table",
-                        type=str, default="syn26127427",
-                        help=("Add tools to this specified "
-                              "table. (Default: syn26127427)"))
-    parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
-
-
-def add_missing_info(tools, grants):
-    """Add missing information into table before syncing.
-
-    Returns:
-        tools: Data frame
-    """
-    tools['Link'] = "[Link](" + tools.toolHomepage + ")"
-    tools['PortalDisplay'] = "true"
-    tools['themes'] = ""
-    tools['consortium'] = ""
+def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     for _, row in tools.iterrows():
         themes = set()
         consortium = set()
