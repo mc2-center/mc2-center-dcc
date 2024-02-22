@@ -6,6 +6,7 @@ Tools portal table.
 
 import argparse
 
+import pandas as pd
 from synapseclient import Table
 import utils
 
@@ -52,7 +53,7 @@ def add_missing_info(tools, grants):
     """
     tools['Link'] = "[Link](" + tools.toolHomepage + ")"
     tools['PortalDisplay'] = "true"
-    tools['themes'] = ""
+    tools['theme'] = ""
     tools['consortium'] = ""
     for _, row in tools.iterrows():
         themes = set()
@@ -72,16 +73,16 @@ def sync_table(syn, tools, table):
 
     # Reorder columns to match the table order.
     col_order = [
-        'toolName', 'toolDescription', 'toolHomepage', 'toolVersion',
-        'toolGrantNumber', 'consortium', 'themes', 'toolPubmedId',
-        'toolOperation', 'toolInputData', 'toolOutputData',
-        'toolInputFormat', 'toolOutputFormat', 'toolFunctionNote',
-        'toolCmd', 'toolType', 'toolTopic', 'toolOperatingSystem',
-        'toolLanguage', 'toolLicense', 'toolCost', 'toolAccessibility',
-        'toolDownloadUrl', 'Link', 'toolDownloadType', 'toolDownloadNote',
-        'toolDownloadVersion', 'toolDocumentationUrl',
-        'toolDocumentationType', 'toolDocumentationNote', 'toolLinkUrl',
-        'toolLinkType', 'toolLinkNote', 'PortalDisplay'
+        'ToolName', 'ToolDescription', 'ToolHomepage', 'ToolVersion',
+        'ToolGrantNumber', 'consortium', 'themes', 'ToolPubmedId',
+        'ToolOperation', 'ToolInputData', 'ToolOutputData',
+        'ToolInputFormat', 'ToolOutputFormat', 'ToolFunctionNote',
+        'ToolCmd', 'ToolType', 'ToolTopic', 'ToolOperatingSystem',
+        'ToolLanguage', 'ToolLicense', 'ToolCost', 'ToolAccessibility',
+        'ToolDownloadUrl', 'Link', 'ToolDownloadType', 'ToolDownloadNote',
+        'ToolDownloadVersion', 'ToolDocumentationUrl',
+        'ToolDocumentationType', 'ToolDocumentationNote', 'ToolLinkUrl',
+        'ToolLinkType', 'ToolLinkNote', 'PortalDisplay'
     ]
     tools = tools[col_order]
 
@@ -94,11 +95,14 @@ def main():
     syn = utils.syn_login()
     args = get_args()
 
-    manifest = (
-        syn.tableQuery(f"SELECT * FROM {args.manifest}")
-        .asDataFrame()
-        .fillna("")
-    )
+    if args.dryrun:
+        print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
+        
+    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest.columns = manifest.columns.str.replace(" ", "")
+    manifest["grantNumber"] = utils.sort_and_stringify_col(
+        manifest["DatasetGrantNumber"]
+
     curr_tools = (
         syn.tableQuery(f"SELECT toolName FROM {args.portal_table}")
         .asDataFrame()
