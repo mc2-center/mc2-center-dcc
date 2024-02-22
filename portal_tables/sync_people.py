@@ -4,136 +4,102 @@ This script will "sync" the person manifest table to the People
 portal table, by first truncating the table, then re-adding the rows.
 """
 
-import os
-import argparse
-import getpass
-
-import synapseclient
-from synapseclient import Table
+import pandas as pd
+import utils
 
 
-def login():
-    """Log into Synapse. If env variables not found, prompt user.
+def add_missing_info(people: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
 
-    Returns:
-        syn: Synapse object
-    """
-    try:
-        syn = synapseclient.login(
-            authToken=os.getenv('SYNAPSE_AUTH_TOKEN'),
-            silent=True)
-    except synapseclient.core.exceptions.SynapseNoCredentialsError:
-        print("Credentials not found; please manually provide your",
-              "Synapse username and password.")
-        username = input("Synapse username: ")
-        password = getpass.getpass("Synapse password: ")
-        syn = synapseclient.login(username, password, silent=True)
-    return syn
+    # Convert profile IDs to int (User column type is stored as a float).
+    people["synapseProfileId"] = (
+        people["synapseProfileId"].astype(str).replace(r"\.0$", "", regex=True)
+    )
 
-
-def get_args():
-    """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Add new tools to the CCKP")
-    parser.add_argument("-m", "--manifest",
-                        type=str, default="syn38301033",
-                        help=("Synapse ID to the manifest table/fileview."
-                              " (Default: syn38301033"))
-    parser.add_argument("-t", "--portal_table",
-                        type=str, default="syn28073190",
-                        help=("Add people to this specified table."
-                              " (Default: syn28073190)"))
-    parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
-
-
-def add_missing_info(people, grants):
-    """Add missing information into table before syncing.
-
-    Returns:
-        tools: Data frame
-    """
-    # First, convert profile IDs to int (User column type is stored as a float).
-    people.synapseProfileId = (
-        people.synapseProfileId
-        .astype(str)
-        .replace(r"\.0$", "", regex=True))
-
-    people['grantName'] = ""
+    people["grantName"] = ""
     for _, row in people.iterrows():
         # Link markdown to Synapse profile.
-        if row.synapseProfileId != "":
-            people.at[_, 'Link'] = "[Synapse Profile](https://www.synapse.org/#!Profile:" + \
-                str(int(float(row['synapseProfileId']))) + ")"
-
-        # Grant names.
+        if row["synapseProfileId"] != "":
+            people.at[_, "Link"] = (
+                "[Synapse Profile](https://www.synapse.org/#!Profile:"
+                + str(int(float(row["synapseProfileId"])))
+                + ")"
+            )
         grant_names = []
-        if row.personGrantNumber != ["Affiliated/Non-Grant Associated"]:
-            for g in row['personGrantNumber']:
+        for g in row["personGrantNumber"].split(","):
+            if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
-                    grants[grants.grantNumber == g]['grantName'].values[0])
-        people.at[_, 'grantName'] = grant_names
+                    grants[grants.grantNumber == g]["grantName"].values[0]
+                )
+        people.at[_, "grantName"] = grant_names
     return people
 
 
-def update_table(syn, table_id, people):
-    """Truncate table then add rows from latest manifest."""
-    current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
-    syn.delete(current_rows)
+def clean_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean up the table one final time."""
 
     # Convert stringlist to string (temporary workaround).
-    people.personPublications = people.personPublications.str.join(", ")
-    people.personDatasets = people.personDatasets.str.join(", ")
-    people.personTools = people.personTools.str.join(", ")
+    df["personPublications"] = df["personPublications"].str.join(", ")
+    df["personDatasets"] = df["personDatasets"].str.join(", ")
+    df["personTools"] = df["personTools"].str.join(", ")
 
     # Reorder columns to match the table order.
     col_order = [
-        'name', 'alternativeNames', 'email', 'synapseProfileId', 'Link', 'url',
-        'orcidId', 'lastKnownInstitution', 'grantName', 'personGrantNumber',
-        'personConsortiumName', 'workingGroupParticipation', 'chairRoles',
-        'personPublications', 'personDatasets', 'personTools',
-        'consentForPortalDisplay', 'portalDisplay'
+        "name",
+        "alternativeNames",
+        "email",
+        "synapseProfileId",
+        "Link",
+        "url",
+        "orcidId",
+        "lastKnownInstitution",
+        "grantName",
+        "personGrantNumber",
+        "personConsortiumName",
+        "workingGroupParticipation",
+        "chairRoles",
+        "personPublications",
+        "personDatasets",
+        "personTools",
+        "consentForPortalDisplay",
+        "portalDisplay",
     ]
-    people = people[col_order]
-    new_rows = people.values.tolist()
-    syn.store(Table(table_id, new_rows))
+    return df[col_order]
 
 
 def main():
     """Main function."""
-    syn = login()
-    args = get_args()
+    syn = utils.syn_login()
+    args = utils.get_args("people")
 
     manifest = (
-        syn.tableQuery(f"SELECT * FROM {args.manifest}")
-        .asDataFrame()
-        .fillna("")
+        syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
     )
-    curr_people = (
-        syn.tableQuery(f"SELECT name FROM {args.portal_table}")
-        .asDataFrame()
-        .name
-        .to_list()
-    )
+    manifest.columns = manifest.columns.str.replace(" ", "")
+    if args.verbose:
+        print("🔍 Preview of manifest CSV:\n" + "=" * 72)
+        print(manifest)
+        print()
 
-    # Only sync if new persons are found.
-    new_persons = manifest[~manifest.name.isin(curr_people)]
-    if new_persons.empty:
-        print("No new persons found!")
-    else:
-        print(f"{len(new_persons)} new persons found!\n")
-        if args.dryrun:
-            print(u"\u26A0", "WARNING:",
-                  "dryrun is enabled (no updates will be done)\n")
-        else:
-            print("Syncing over people...")
-            grants = (
-                syn.tableQuery(
-                    "SELECT grantNumber, grantName FROM syn21918972")
-                .asDataFrame()
-            )
-            manifest = add_missing_info(manifest, grants)
-            update_table(syn, args.portal_table, manifest)
-    print("DONE ✓")
+    print("Processing people staging database...")
+    grants = syn.tableQuery(
+        "SELECT grantNumber, grantName FROM syn21918972"
+    ).asDataFrame()
+
+    database = add_missing_info(manifest, grants)
+    final_database = clean_table(database)
+    if args.verbose:
+        print("\n🔍 People to be synced:\n" + "=" * 72)
+        print(final_database)
+        print()
+
+    if not args.dryrun:
+        utils.update_table(syn, args.portal_table_id, final_database)
+        print()
+
+    print(f"📄 Saving copy of final table to: {args.output_csv}...")
+    final_database.to_csv(args.output_csv, index=False)
+    print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":
