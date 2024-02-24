@@ -1,0 +1,31 @@
+name: Sync manifests to portal tables
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal_tables
+    steps:
+    - uses: actions/checkout@v4.1.1
+
+    - name: Setup Python
+      uses: actions/setup-python@v5.0.0
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install synapseclient pandas
+
+    - name: Sync to portal
+      run: |
+        python sync_publications.py --noprint
+        python sync_datasets.py --noprint
+        python sync_tools.py --noprint
+      env: 
+        SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}

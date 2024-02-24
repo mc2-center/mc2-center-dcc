@@ -69,6 +69,12 @@ def get_args(resource: str) -> argparse.Namespace:
         action="store_true",
         help="Output all logs and interim tables.",
     )
+    parser.add_argument(
+        "-np",
+        "--noprint",
+        action="store_true",
+        help="Do not output CSV file.",
+    )
     return parser.parse_args()
 
 
