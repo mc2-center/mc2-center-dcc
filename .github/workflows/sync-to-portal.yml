@@ -6,9 +6,9 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: portal_tables
+    # defaults:
+    #   run:
+    #     working-directory: portal_tables
     steps:
     - uses: actions/checkout@v4.1.1
 
@@ -24,8 +24,8 @@ jobs:
 
     - name: Sync to portal
       run: |
-        python sync_publications.py --noprint
-        python sync_datasets.py --noprint
-        python sync_tools.py --noprint
+        python portal_tables/sync_publications.py --noprint
+        python portal_tables/sync_datasets.py --noprint
+        python portal_tables/sync_tools.py --noprint
       env: 
         SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}
