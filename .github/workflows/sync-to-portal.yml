@@ -23,6 +23,9 @@ jobs:
         pip install synapseclient pandas
 
     - name: Sync to portal
-      run: bash run_sync.sh
+      run: |
+        python portal_tables/sync_publications.py --noprint
+        python portal_tables/sync_datasets.py --noprint
+        python portal_tables/sync_tools.py --noprint
       env: 
         SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}
