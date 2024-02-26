@@ -1,13 +1,14 @@
-name: update-theme-graphs
+name: Sync manifests to portal tables
 
 on:
-  schedule:
-    - cron: "0 0 1 * *"
   workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    # defaults:
+    #   run:
+    #     working-directory: portal_tables
     steps:
     - uses: actions/checkout@v4.1.1
 
@@ -21,8 +22,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install synapseclient pandas
 
-    - name: Update portal graphs
+    - name: Sync to portal
       run: |
-        python utils/tally_themes.py
+        python portal_tables/sync_publications.py --noprint
+        python portal_tables/sync_datasets.py --noprint
+        python portal_tables/sync_tools.py --noprint
       env: 
         SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}

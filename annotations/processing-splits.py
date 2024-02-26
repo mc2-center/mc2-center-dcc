@@ -1,30 +1,48 @@
+"""
+processing-splits.py
+
+Runs the Python script `processing-splits.py` to process split files from the specified output folder. 
+Adds missing columns required to match the schema, truncates any columns with 400+ words, and adds "Read more on Pubmed"
+
+author: aditi.gopalan
+
+"""
+
 import os
 import pandas as pd
 import sys
+
 
 def process_csv(file_path):
     # Read the CSV file into a DataFrame
     df = pd.read_csv(file_path)
 
     # 1. Change column name from "Publication TumorType" to "Publication Tumor Type"
-    if 'Publication TumorType' in df.columns:
-        df = df.rename(columns={'Publication TumorType': 'Publication Tumor Type'})
+    if "Publication TumorType" in df.columns:
+        df = df.rename(columns={"Publication TumorType": "Publication Tumor Type"})
 
     # 2. Add "PublicationView_id" as a column if not present, and fill it with values from "Pubmed Id" column
-    if 'PublicationView_id' not in df.columns and 'Pubmed Id' in df.columns:
-        df['PublicationView_id'] = df['Pubmed Id']
+    if "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
+        df["PublicationView_id"] = df["Pubmed Id"]
 
     # 3. Drop 'Publication Theme Name' and 'Publication Consortium Name' columns
-    columns_to_drop = ['Publication Theme Name', 'Publication Consortium Name']
-    df = df.drop(columns=columns_to_drop, errors='ignore')
+    columns_to_drop = ["Publication Theme Name", "Publication Consortium Name"]
+    df = df.drop(columns=columns_to_drop, errors="ignore")
 
     # 4. Modify each column content as per the second script
     for column in df.columns:
         if column in df.columns:
-            df[column] = df[column].apply(lambda x: x[:400] + "(Read more on Pubmed)" if isinstance(x, str) and len(x) > 500 else x)
+            df[column] = df[column].apply(
+                lambda x: (
+                    x[:400] + "(Read more on Pubmed)"
+                    if isinstance(x, str) and len(x) > 500
+                    else x
+                )
+            )
 
     # Save the modified DataFrame back to the CSV file
     df.to_csv(file_path, index=False)
+
 
 if __name__ == "__main__":
     # Get the folder path from command-line arguments, defaulting to the current working directory
@@ -34,9 +52,8 @@ if __name__ == "__main__":
     for filename in os.listdir(folder_path):
         if filename.endswith(".csv"):
             file_path = os.path.join(folder_path, filename)
-            
+
             # Process each CSV file
             process_csv(file_path)
 
     print("Processing completed.")
-

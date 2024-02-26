@@ -1,107 +1,128 @@
 """Add Tools to the Cancer Complexity Knowledge Portal (CCKP).
 
-This script will sync over new tools and its annotations to the
-Tools portal table.
+This script will "sync" the tool manifest table to the Tool portal
+table, by first truncating the table, then re-adding the rows.
 """
 
-import argparse
-
-from synapseclient import Table
+import pandas as pd
 import utils
 
 
-def get_args():
-    """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser(description="Add new tools to the CCKP")
-    parser.add_argument("-m", "--manifest",
-                        type=str, default="syn35558370",
-                        help="Synapse ID to the manifest table/fileview.")
-    parser.add_argument("-t", "--portal_table",
-                        type=str, default="syn26127427",
-                        help=("Add tools to this specified "
-                              "table. (Default: syn26127427)"))
-    parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
-
-
-def add_missing_info(tools, grants):
-    """Add missing information into table before syncing.
-
-    Returns:
-        tools: Data frame
-    """
-    tools['Link'] = "[Link](" + tools.toolHomepage + ")"
-    tools['PortalDisplay'] = "true"
-    tools['themes'] = ""
+def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
+    tools["link"] = "[Link](" + tools["ToolHomepage"] + ")"
+    tools["portalDisplay"] = "true"
+    tools["themes"] = ""
+    tools["consortium"] = ""
     for _, row in tools.iterrows():
         themes = set()
-        for g in row['toolGrantNumber']:
-            themes.update(grants[grants.grantNumber == g]
-                          ['theme'].values[0])
-        tools.at[_, 'themes'] = list(themes)
+        consortium = set()
+        for g in row["ToolGrantNumber"].split(","):
+            if g not in ["", "Affiliated/Non-Grant Associated"]:
+                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
+                consortium.update(
+                    grants[grants.grantNumber == g]["consortium"].values[0]
+                )
+        tools.at[_, "themes"] = list(themes)
+        tools.at[_, "consortium"] = list(consortium)
     return tools
 
 
-def sync_table(syn, tools, table):
-    """Add tools annotations to the Synapse table."""
-    schema = syn.get(table)
+def clean_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean up the table one final time."""
+
+    # Convert string columns to string-list.
+    for col in [
+        "ToolGrantNumber",
+        "ToolOperation",
+        "ToolInputData",
+        "ToolOutputData",
+        "ToolInputFormat",
+        "ToolOutputFormat",
+        "ToolType",
+        "ToolTopic",
+        "ToolOperatingSystem",
+        "ToolLanguage",
+        "ToolDownloadType",
+        "ToolDocumentationType",
+    ]:
+        df[col] = utils.convert_to_stringlist(df[col])
 
     # Reorder columns to match the table order.
     col_order = [
-        'toolName', 'toolDescription', 'toolHomepage', 'toolVersion',
-        'toolGrantNumber', 'toolConsortiumName', 'themes', 'toolPubmedId',
-        'toolOperation', 'toolInputData', 'toolOutputData',
-        'toolInputFormat', 'toolOutputFormat', 'toolFunctionNote',
-        'toolCmd', 'toolType', 'toolTopic', 'toolOperatingSystem',
-        'toolLanguage', 'toolLicense', 'toolCost', 'toolAccessibility',
-        'toolDownloadUrl', 'Link', 'toolDownloadType', 'toolDownloadNote',
-        'toolDownloadVersion', 'toolDocumentationUrl',
-        'toolDocumentationType', 'toolDocumentationNote', 'toolLinkUrl',
-        'toolLinkType', 'toolLinkNote', 'PortalDisplay'
+        "ToolName",
+        "ToolDescription",
+        "ToolHomepage",
+        "ToolVersion",
+        "ToolGrantNumber",
+        "consortium",
+        "themes",
+        "ToolPubmedId",
+        "ToolOperation",
+        "ToolInputData",
+        "ToolOutputData",
+        "ToolInputFormat",
+        "ToolOutputFormat",
+        "ToolFunctionNote",
+        "ToolCmd",
+        "ToolType",
+        "ToolTopic",
+        "ToolOperatingSystem",
+        "ToolLanguage",
+        "ToolLicense",
+        "ToolCost",
+        "ToolAccessibility",
+        "ToolDownloadUrl",
+        "link",
+        "ToolDownloadType",
+        "ToolDownloadNote",
+        "ToolDownloadVersion",
+        "ToolDocumentationUrl",
+        "ToolDocumentationType",
+        "ToolDocumentationNote",
+        "ToolLinkUrl",
+        "ToolLinkType",
+        "ToolLinkNote",
+        "portalDisplay",
     ]
-    tools = tools[col_order]
-
-    new_rows = tools.values.tolist()
-    syn.store(Table(schema, new_rows))
+    return df[col_order]
 
 
 def main():
     """Main function."""
     syn = utils.syn_login()
-    args = get_args()
+    args = utils.get_args("tool")
 
-    manifest = (
-        syn.tableQuery(f"SELECT * FROM {args.manifest}")
-        .asDataFrame()
-        .fillna("")
-    )
-    curr_tools = (
-        syn.tableQuery(f"SELECT toolName FROM {args.portal_table}")
-        .asDataFrame()
-        .toolName
-        .to_list()
-    )
+    if args.dryrun:
+        print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    # Only add tools not currently in the Tools table.
-    new_tools = manifest[~manifest['toolName'].isin(curr_tools)]
-    if new_tools.empty:
-        print("No new tools found!")
-    else:
-        print(f"{len(new_tools)} new tools found!\n")
-        if args.dryrun:
-            print(u"\u26A0", "WARNING:",
-                  "dryrun is enabled (no updates will be done)\n")
-            print(new_tools)
-        else:
-            print("Adding new tools...")
-            grants = (
-                syn.tableQuery(
-                    "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972")
-                .asDataFrame()
-            )
-            new_tools = add_missing_info(new_tools.copy(), grants)
-            sync_table(syn, new_tools, args.portal_table)
-    print("DONE ✓")
+    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest.columns = manifest.columns.str.replace(" ", "")
+    if args.verbose:
+        print("🔍 Preview of manifest CSV:\n" + "=" * 72)
+        print(manifest)
+        print()
+
+    print("Processing tool staging database...")
+    grants = syn.tableQuery(
+        "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
+    ).asDataFrame()
+
+    database = add_missing_info(manifest, grants)
+    final_database = clean_table(database)
+    if args.verbose:
+        print("\n🔍 Tool(s) to be synced:\n" + "=" * 72)
+        print(final_database)
+        print()
+
+    if not args.dryrun:
+        utils.update_table(syn, args.portal_table_id, final_database)
+        print()
+
+    if not args.noprint:
+        print(f"📄 Saving copy of final table to: {args.output_csv}...")
+        final_database.to_csv(args.output_csv, index=False)
+    print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":

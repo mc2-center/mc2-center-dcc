@@ -17,30 +17,33 @@ def login():
 def get_args():
 
     parser = argparse.ArgumentParser(
-        description=
-        'Get synapse table id of annotations to be editd and synapse table id of controlled vocabulary mappings'
+        description="Get synapse table id of annotations to be editd and synapse table id of controlled vocabulary mappings"
     )
-    parser.add_argument('-a',
-                        '--annots_table_id',
-                        type=str,
-                        help='Synapse table id of annotations to edit.')
     parser.add_argument(
-        '-cv',
-        '--cv_table_id',
+        "-a",
+        "--annots_table_id",
         type=str,
-        help='Synapse table id of controlled vocabulary mappings')
+        help="Synapse table id of annotations to edit.",
+    )
     parser.add_argument(
-        '-it',
-        '--intermediate_table_id',
+        "-cv",
+        "--cv_table_id",
         type=str,
-        help='Synapse table id of intermediary/qc table (if there is one)')
+        help="Synapse table id of controlled vocabulary mappings",
+    )
+    parser.add_argument(
+        "-it",
+        "--intermediate_table_id",
+        type=str,
+        help="Synapse table id of intermediary/qc table (if there is one)",
+    )
 
     return parser.parse_args()
 
 
 def annotation_df(annots_table, syn):
 
-    annots_query = (f"SELECT * FROM {annots_table}")
+    annots_query = f"SELECT * FROM {annots_table}"
     annots_df = syn.tableQuery(annots_query).asDataFrame().fillna("")
 
     return annots_df
@@ -48,8 +51,7 @@ def annotation_df(annots_table, syn):
 
 def cv_df(cv_table, syn):
 
-    cv_query = (
-        f"SELECT attribute, preferredTerm, nonpreferredTerms FROM {cv_table}")
+    cv_query = f"SELECT attribute, preferredTerm, nonpreferredTerms FROM {cv_table}"
     cv_df = syn.tableQuery(cv_query).asDataFrame().fillna("")
 
     return cv_df
@@ -58,8 +60,9 @@ def cv_df(cv_table, syn):
 def cv_dictionary(cv_df):
 
     # Create dictionary from controlled vocabulary table
-    cv_dict = cv_df.groupby('attribute').apply(
-        lambda x: dict(zip(x['preferredTerm'], x['nonpreferredTerms'])))
+    cv_dict = cv_df.groupby("attribute").apply(
+        lambda x: dict(zip(x["preferredTerm"], x["nonpreferredTerms"]))
+    )
 
     return cv_dict
 
@@ -84,8 +87,10 @@ def edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict):
                                 if term == item and term != key:
                                     # Replace nonpreferred term with preferred term in annotation (if a list)
                                     updated_column_value = list(
-                                        map(lambda x: x.replace(term, key),
-                                            column_value))
+                                        map(
+                                            lambda x: x.replace(term, key), column_value
+                                        )
+                                    )
                                     # Update term in annotations data frame
                                     annots_df.at[i, v] = updated_column_value
                                     print(
