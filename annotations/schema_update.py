@@ -13,7 +13,7 @@ if len(sys.argv) != 3:
 input_file_path = sys.argv[1]
 entity_type = sys.argv[2]
 
-grantId_list = pd.read_csv(input_file_path)["grantId"].tolist()
+grantId_list = pd.read_csv(input_file_path)["grantIdPublication"].tolist()
 
 table_ids_list = []
 
