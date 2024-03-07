@@ -105,8 +105,8 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
     print(f"Creating new table version with label: {today}...")
     syn.create_snapshot_version(table_id, label=today)
 
-    print("Syncing table with latest data...\n")
     current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
+    print(f"Syncing table with latest data (new_rows={len(df) - len(current_rows)})...\n")
     syn.delete(current_rows)
     new_rows = df.values.tolist()
     syn.store(synapseclient.Table(table_id, new_rows))
