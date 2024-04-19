@@ -20,32 +20,30 @@ def get_args():
 
 def extract_for_filtering(report_df):
 
-    grant_pattern = re.compile("CA\d{6}")
-    year_pattern = re.compile("(?:-(\d{2}))")
-    report_df["main_grant"] = ""
-    report_df["grant_year"] = ""
-    for _, row in report_df.iterrows():
-        extracted_grants = []
-        extracted_year = []
-        base_grant = grant_pattern.findall(row["project_num"])
-        grant_year = year_pattern.findall(row["project_num"])
-        extracted_grants.append(base_grant[0])
-        extracted_year.append(grant_year[0])
-        report_df.at[_, "main_grant"] = extracted_grants[0]
-        report_df.at[_, "grant_year"] = extracted_year[0]
+    column_info = [("grant", "CA\d{6}", "project_num"), ("year", "(?:-(\d{2}))", "project_num")]
+    for tup in column_info:
+        col_name = "_".join([tup[0], "num"])
+        extract_name = "_".join([tup[0], "extracted"])
+        pattern = re.compile(tup[1])
+        report_df[col_name] = ""
+        for _, row in report_df.iterrows():
+            extract_name = []
+            extract = pattern.findall(row[tup[2]])
+            extract_name.append(extract[0])
+            report_df.at[_, col_name] = extract_name[0]
     return report_df
 
 
 def filter_report(report):
 
-    groups = report.groupby(["main_grant", "grant_year"], as_index=False)
+    groups = report.groupby(["grant_num", "year_num"], as_index=False)
     max_year_table = report.loc[
-        report.groupby(["main_grant"])["grant_year"].idxmax()
-    ].sort_values(by=["main_grant", "grant_year"])
+        report.groupby(["grant_num"])["year_num"].idxmax()
+    ].sort_values(by=["grant_num", "year_num"])
     entries_to_keep = []
     for _, row in max_year_table.iterrows():
-        g = row["grant_year"]
-        n = row["main_grant"]
+        g = row["year_num"]
+        n = row["grant_num"]
         for name, group in groups:
             if name[0] == n and name[1] == g:
                 entries_to_keep.append(group)
