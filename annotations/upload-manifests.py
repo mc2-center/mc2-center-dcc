@@ -16,6 +16,7 @@ import subprocess
 import sys
 import argparse
 from functools import partial
+import time
 
 
 def get_args():
@@ -55,7 +56,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
     fp, target_id = args  # Unpack the tuple
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
-        "schematic",
+       "schematic",
         "model",
         "-c",
         cf,
@@ -69,7 +70,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
     print(f"Running validation command: {' '.join(validate_command)}")
     try:
         subprocess.run(
-            validate_command, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT
+            validate_command, shell=True, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT
         )
         return args  # Validation succeeded, return the tuple
     except subprocess.CalledProcessError:
@@ -103,7 +104,7 @@ def submit_entry_worker(args, cf):
 
     print(cmd_line)
 
-    subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
+    subprocess.run(command, shell=True, stdout=sys.stdout, stderr=subprocess.STDOUT)
 
 
 def main():
