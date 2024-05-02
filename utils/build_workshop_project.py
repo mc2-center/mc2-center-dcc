@@ -106,7 +106,7 @@ def _syn_prettify(name):
 def create_wiki_pages(
     syn, project_id, project_name, slides_link, worksheet_link, resource_link, dca_link
 ):
-    """Create main Wiki page for the Project."""
+    """Create main Wiki page, activity sub wiki, and example resource wiki for the Project."""
 
     # Main Wiki page
     title = project_name
@@ -160,8 +160,9 @@ def create_folders(
 ):
     """Create top-levels and add workshop content.
 
-    workshop_i...folder_n for a range of i to n
+    workshop_i...workshop_n for a range of i to n
     example_resources
+    workshop_table_contents
     """
     folder_list = ["example_resources", "workshop_table_contents"]
 
@@ -210,6 +211,7 @@ def create_team(syn, project_id, team_name, access_type="edit"):
 
 
 def populate_folders(syn, res_dict):
+    """Add resource links, manifest links, and resource description wiki content to folders"""
 
     for (
         k,
