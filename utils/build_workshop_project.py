@@ -104,24 +104,33 @@ def _syn_prettify(name):
 
 
 def create_wiki_pages(
-    syn, project_id, project_name, slides_link, worksheet_link, resource_link, dca_link
+    syn, project_id, project_name, slides_link, worksheet_link, resource_link, dca_link, team_id
 ):
     """Create main Wiki page, activity sub wiki, and example resource wiki for the Project."""
 
     # Main Wiki page
     title = project_name
 
-    content = f"""
+    content = "".join([f"""
 # Welcome to the {title} Synapse Project!
-### Please visit the Resource Curation Activity subpage (left) for instructions on how to participate
-**You can access the slides for this workshop via [this link]({slides_link})**
-
 
 ### The intent of this workshop is to familiarize attendees with:
-#### - basic principles and motivations for sharing resources
-#### - core tools and processes available through the MC^2^ Center to support resource management
+#### --> basic principles and motivations for sharing resources
+#### --> core tools and processes available through the MC^2^ Center to support resource management and dissemination through the [Cancer Complexity Knowledge Portal](https://www.cancercomplexity.synapse.org/)
 
-    """
+### If you haven't done so already, please be sure to join the workshop team using the button below!
+""",
+"${jointeam?teamId=",
+f"{team_id}",
+"&isChallenge=false&isSimpleRequestButton=false&isMemberMessage=Already a member&successMessage=Successfully joined&text=Join the team here&requestOpenText=Your request to join this team has been sent%2E}",
+f"""
+### Please visit the Resource Curation Activity subpage (left) for instructions on how to participate
+""",
+f"""
+### You can access the slides for this workshop via [this link]({slides_link})
+"""
+    ])
+
     main_wiki = Wiki(title=title, owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
@@ -208,6 +217,8 @@ def create_team(syn, project_id, team_name, access_type="edit"):
             print(f"Team already exists: {team_name}")
         else:
             print(f"Something went wrong! Team: {team_name}")
+    
+    return new_team.id
 
 
 def populate_folders(syn, res_dict):
@@ -256,7 +267,7 @@ def create_workshop_project(syn, args, inputs):
             populate_folders(syn, sub_level)
 
         if args.team:
-            create_team(syn, project.id, args.n)
+            team_id = create_team(syn, project.id, args.n)
 
         if args.content:
             create_wiki_pages(
@@ -266,7 +277,8 @@ def create_workshop_project(syn, args, inputs):
                 inputs["slides"],
                 inputs["worksheet"],
                 top_level["example_resources"],
-                inputs["dca"]
+                inputs["dca"],
+                team_id
             )
 
     except synapseclient.core.exceptions.SynapseHTTPError:
