@@ -256,11 +256,15 @@ def combine_rows(args):
 
     return list(zip(groups, names))
 
-def get_ref_tables(syn, names):
+def get_ref_tables(syn, args):
+
+    tables, names = zip(*args)
 
     ref_paths = []
+    table_paths = []
+    ref_names = []
     
-    for name in names:
+    for table, name in tables, names:
 
         if name == "PublicationView":
             ref = "syn53478776"
@@ -276,11 +280,47 @@ def get_ref_tables(syn, names):
 
         ref_table = syn.get(ref, downloadLocation="./output")
         ref_paths.append(ref_table.path)
+        table_paths.append(table)
+        ref_names.append(name)
 
-    return ref_paths
+    return list(zip(ref_paths, table_paths, ref_names))
 
-def compare_and_subset_tables(current, new):
+def compare_and_subset_tables(args):
+
+    current, updated, names = zip(*args)
+
+    updatePaths = []
+    updateNames = []
+
+    for ref, new, name in current, updated, names:
+
+        if name == "PublicationView":
+            key = ["Pubmed Id"]
         
+        elif name == "DatasetView":
+            key = ["Dataset Alias"]
+
+        elif name == "ToolView":
+            key = ["Tool Name"]
+
+        elif name == "EducationalResource":
+            key = ["Resource Alias"]
+
+        current_table = pd.read_csv(ref, header=0).sort_values(by=key)
+        new_table = pd.read_csv(new, header=0).sort_values(by=key)
+
+        updated = new_table[~new_table.isin(current_table).all(axis=1)] #report all non-matching entries
+
+        updatePath = Path((f"output/{name}_updated.csv"))
+        updatePath.parent.mkdir(parents=True, exist_ok=True)
+
+        updated.to_csv(updatePath, index=False)
+
+        updatePaths.append(updatePath)
+        updateNames.append(name)
+    
+    return list(zip(updatePaths, updateNames))
+
 def validate_tables(args, config):
 
     paths, names = zip(*args)
@@ -449,6 +489,8 @@ def main():
 
         else:
             print("\n\nValidating unmerged manifest(s)...")
+        
+        
 
         checkTables = validate_tables(newTables, config)
         print("\n\nValidation logs stored in local output folder!")
