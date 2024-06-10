@@ -2,7 +2,8 @@
 union_qc.py
 
 Submits a query to get all information from a Synapse table
-Validates table entries against a schematic data model
+Checks new Synapse table against current CCKP database entries and reports non-matching entries
+Validates non-matching table entries against a schematic data model
 Returns row identifer and validation state
 Trims invalid entries using schematic error log
 
@@ -71,7 +72,9 @@ def get_tables(syn, tableIdList, mergeFlag):
             1, 0
         ]  # grab name of data type from table; assumes "Component" is first column in table
 
-        manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
+        manifestPath = Path(
+            f"output/{name}/{name}.csv"
+        )  # build path to store table as CSV
         manifestPath.parent.mkdir(
             parents=True, exist_ok=True
         )  # create folder to store CSVs
@@ -256,6 +259,7 @@ def combine_rows(args):
 
     return list(zip(groups, names))
 
+
 def get_ref_tables(syn, args):
 
     tables, names = zip(*args)
@@ -263,12 +267,12 @@ def get_ref_tables(syn, args):
     ref_paths = []
     table_paths = []
     ref_names = []
-    
+
     for table, name in zip(tables, names):
 
         if name == "PublicationView":
             ref = "syn53478776"
-        
+
         elif name == "DatasetView":
             ref = "syn53478774"
 
@@ -285,6 +289,7 @@ def get_ref_tables(syn, args):
 
     return list(zip(ref_paths, table_paths, ref_names))
 
+
 def compare_and_subset_tables(args):
 
     current, updated, names = zip(*args)
@@ -296,11 +301,21 @@ def compare_and_subset_tables(args):
 
         if name == "PublicationView":
             key = ["Pubmed Id"]
-            cols = ["Pubmed Id", "Publication Assay", "Publication Tissue", "Publication Tumor Type"]
-        
+            cols = [
+                "Pubmed Id",
+                "Publication Assay",
+                "Publication Tissue",
+                "Publication Tumor Type",
+            ]
+
         elif name == "DatasetView":
             key = ["Dataset Alias"]
-            cols = ["Dataset Alias", "Dataset Assay", "Dataset Tissue", "Dataset Tumor Type"]
+            cols = [
+                "Dataset Alias",
+                "Dataset Assay",
+                "Dataset Tissue",
+                "Dataset Tumor Type",
+            ]
 
         elif name == "ToolView":
             key = ["Tool Name"]
@@ -314,8 +329,10 @@ def compare_and_subset_tables(args):
         tables = [current_table, new_table]
 
         updated = pd.concat(tables, ignore_index=True).reset_index(drop=True)
-        updated.drop_duplicates(subset=cols, keep=False, ignore_index=True, inplace=True)
-        
+        updated.drop_duplicates(
+            subset=cols, keep=False, ignore_index=True, inplace=True
+        )
+
         updatePath = Path(f"output/{name}/{name}_updated.csv")
         updatePath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -323,8 +340,9 @@ def compare_and_subset_tables(args):
 
         updatePaths.append(updatePath)
         updateNames.append(name)
-    
+
     return list(zip(updatePaths, updateNames))
+
 
 def validate_tables(args, config):
 
@@ -493,7 +511,7 @@ def main():
 
         else:
             print("\n\nValidating unmerged manifest(s)...")
-        
+
         refTables = get_ref_tables(syn, newTables)
 
         updatedTables = compare_and_subset_tables(refTables)
