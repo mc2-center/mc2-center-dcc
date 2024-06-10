@@ -71,7 +71,7 @@ def get_tables(syn, tableIdList, mergeFlag):
             1, 0
         ]  # grab name of data type from table; assumes "Component" is first column in table
 
-        manifestPath = Path(f"output/{name}.csv")  # build path to store table as CSV
+        manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
         manifestPath.parent.mkdir(
             parents=True, exist_ok=True
         )  # create folder to store CSVs
@@ -132,7 +132,7 @@ def combine_rows(args):
 
                     mapping = {  # defines how info in each column is handled by row merging function
                         componentColumn: "first",
-                        idColumn: ",".join,
+                        idColumn: "first",
                         grantColumn: ",".join,
                         "Publication Doi": "first",
                         "Publication Journal": "first",
@@ -246,7 +246,7 @@ def combine_rows(args):
         )  # group rows by designated identifier and map attributes
         mergedTable = mergedTable.iloc[:, 1:]  # remove unnecessary "id" column
 
-        mergePath = Path(f"output/{name}_merged.csv")
+        mergePath = Path(f"output/{name}/{name}_merged.csv")
         mergePath.parent.mkdir(parents=True, exist_ok=True)
 
         mergedTable.to_csv(mergePath, index=False)
@@ -264,7 +264,7 @@ def get_ref_tables(syn, args):
     table_paths = []
     ref_names = []
     
-    for table, name in tables, names:
+    for table, name in zip(tables, names):
 
         if name == "PublicationView":
             ref = "syn53478776"
@@ -278,7 +278,7 @@ def get_ref_tables(syn, args):
         elif name == "EducationalResource":
             ref = "syn53651540"
 
-        ref_table = syn.get(ref, downloadLocation="./output")
+        ref_table = syn.get(ref, downloadLocation=f"output/{name}")
         ref_paths.append(ref_table.path)
         table_paths.append(table)
         ref_names.append(name)
@@ -292,13 +292,15 @@ def compare_and_subset_tables(args):
     updatePaths = []
     updateNames = []
 
-    for ref, new, name in current, updated, names:
+    for ref, new, name in zip(current, updated, names):
 
         if name == "PublicationView":
             key = ["Pubmed Id"]
+            cols = ["Pubmed Id", "Publication Assay", "Publication Tissue", "Publication Tumor Type"]
         
         elif name == "DatasetView":
             key = ["Dataset Alias"]
+            cols = ["Dataset Alias", "Dataset Assay", "Dataset Tissue", "Dataset Tumor Type"]
 
         elif name == "ToolView":
             key = ["Tool Name"]
@@ -309,9 +311,12 @@ def compare_and_subset_tables(args):
         current_table = pd.read_csv(ref, header=0).sort_values(by=key)
         new_table = pd.read_csv(new, header=0).sort_values(by=key)
 
-        updated = new_table[~new_table.isin(current_table).all(axis=1)] #report all non-matching entries
+        tables = [current_table, new_table]
 
-        updatePath = Path((f"output/{name}_updated.csv"))
+        updated = pd.concat(tables, ignore_index=True).reset_index(drop=True)
+        updated.drop_duplicates(subset=cols, keep=False, ignore_index=True, inplace=True)
+        
+        updatePath = Path(f"output/{name}/{name}_updated.csv")
         updatePath.parent.mkdir(parents=True, exist_ok=True)
 
         updated.to_csv(updatePath, index=False)
@@ -347,10 +352,10 @@ def validate_tables(args, config):
 
         print(f"\n\nValidating manifest at: {str(path)}...")
 
-        outPath = Path(f"output/{name}_out.txt")
+        outPath = Path(f"output/{name}/{name}_out.txt")
         outPath.parent.mkdir(parents=True, exist_ok=True)
 
-        errPath = Path(f"output/{name}_error.txt")
+        errPath = Path(f"output/{name}/{name}_error.txt")
         errPath.parent.mkdir(parents=True, exist_ok=True)
 
         commandOut = open(outPath, "w")  # store logs from schematic validation
@@ -377,7 +382,7 @@ def parse_out(args):
 
     for name, out, path in zip(names, outs, paths):
 
-        parsePath = Path(f"output/{name}_trim_config.csv")
+        parsePath = Path(f"output/{name}/{name}_trim_config.csv")
         parsePath.parent.mkdir(parents=True, exist_ok=True)
 
         parsed = pd.read_table(
@@ -402,7 +407,7 @@ def trim_tables(args):
     names, outs, paths = zip(*args)
 
     for name, out, path in zip(names, outs, paths):
-        trimPath = Path(f"output/{name}_trimmed.csv")
+        trimPath = Path(f"output/{name}/{name}_trimmed.csv")
         trimPath.parent.mkdir(parents=True, exist_ok=True)
 
         validationTable = pd.read_csv(out, header=None)
