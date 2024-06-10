@@ -435,6 +435,7 @@ def trim_tables(args):
 def main():
 
     args = get_args()
+    syn = login()
 
     inputList, config, trimList, inputManifest, merge, trim = (
         args.l,
@@ -449,8 +450,6 @@ def main():
 
         if inputManifest is None:
             print("Accessing requested tables...")
-
-            syn = login()
 
             newTables = get_tables(syn, inputList, merge)
             print(
@@ -490,12 +489,14 @@ def main():
         else:
             print("\n\nValidating unmerged manifest(s)...")
         
-        
+        refTables = get_ref_tables(syn, newTables)
 
-        checkTables = validate_tables(newTables, config)
+        updatedTables = compare_and_subset_tables(refTables)
+
+        checkTables = validate_tables(updatedTables, config)
         print("\n\nValidation logs stored in local output folder!")
 
-        print("\n\nConverting validation logs to create reference tables...")
+        print("\n\nConverting validation logs to trim config files...")
 
         print(checkTables)
 
