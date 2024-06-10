@@ -256,7 +256,31 @@ def combine_rows(args):
 
     return list(zip(groups, names))
 
+def get_ref_tables(syn, names):
 
+    ref_paths = []
+    
+    for name in names:
+
+        if name == "PublicationView":
+            ref = "syn53478776"
+        
+        elif name == "DatasetView":
+            ref = "syn53478774"
+
+        elif name == "ToolView":
+            ref = "syn53479671"
+
+        elif name == "EducationalResource":
+            ref = "syn53651540"
+
+        ref_table = syn.get(ref, downloadLocation="./output")
+        ref_paths.append(ref_table.path)
+
+    return ref_paths
+
+def compare_and_subset_tables(current, new):
+        
 def validate_tables(args, config):
 
     paths, names = zip(*args)
