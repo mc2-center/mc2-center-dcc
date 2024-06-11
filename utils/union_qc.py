@@ -319,9 +319,11 @@ def compare_and_subset_tables(args):
 
         elif name == "ToolView":
             key = ["Tool Name"]
+            cols = ["Tool Name", "ToolView_id", "Tool Type", "Tool Topic", "Tool Language", "Tool Documentation Url","Tool Documentation Type"]
 
         elif name == "EducationalResource":
             key = ["Resource Alias"]
+            cols = ["Resource Alias", "EducationalResource_id"]
 
         current_table = pd.read_csv(ref, header=0).sort_values(by=key)
         new_table = pd.read_csv(new, header=0).sort_values(by=key)
