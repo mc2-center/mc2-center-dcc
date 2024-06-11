@@ -69,7 +69,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
     print(f"Running validation command: {' '.join(validate_command)}")
     try:
         subprocess.run(
-            validate_command, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT
+            validate_command, shell=True, check=True, stdout=sys.stdout, stderr=subprocess.STDOUT
         )
         return args  # Validation succeeded, return the tuple
     except subprocess.CalledProcessError:
@@ -103,7 +103,7 @@ def submit_entry_worker(args, cf):
 
     print(cmd_line)
 
-    subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
+    subprocess.run(command, shell=True, stdout=sys.stdout, stderr=subprocess.STDOUT)
 
 
 def main():
