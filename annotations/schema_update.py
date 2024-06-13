@@ -44,7 +44,6 @@ print(table_ids_list)
 # Updating schema for all the tables in the list
 # Columns to modify
 columns_to_modify = [
-    "Component",
     f"{entity_type} Keywords",
     f"{entity_type} Abstract",
     f"{entity_type} Authors",
@@ -55,6 +54,14 @@ columns_to_modify = [
     f"{entity_type} Title",
     f"{entity_type} Download Type",
     f"{entity_type} Documentation Type",
+    f"{entity_type} Grant Number",
+    f"{entity_type} Doi",
+    f"{entity_type} Journal",
+    f"Pubmed Id",
+    f"Pubmed Url",
+    f"{entity_type} Year",
+    f"{entity_type} Accessibility",
+    f"{entity_type}View_id"
 ]
 
 # Initialize counter
@@ -79,13 +86,27 @@ for my_table_synid in table_ids_list:
                 if column_name == f"{entity_type} Abstract":
                     new_column = syn.store(
                         synapseclient.Column(
-                            name=column_name, columnType="LARGETEXT", maximumSize=500
+                            name=column_name, columnType="LARGETEXT"
                         )
                     )
-                else:
+                elif column_name in [f"{entity_type} Authors", f"{entity_type} Keywords", f"{entity_type} Title", f"{entity_type} Assay"]:
+                    new_column = syn.store(
+                        synapseclient.Column(
+                            name=column_name, columnType="MEDIUMTEXT"
+                        )
+                    )
+
+                elif column_name in [f"{entity_type} Tumor Type", f"{entity_type} Tissue"]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="STRING", maximumSize=500
+                        )
+                    )
+                
+                else:
+                    new_column = syn.store(
+                        synapseclient.Column(
+                            name=column_name, columnType="STRING", maximumSize=100
                         )
                     )
 
