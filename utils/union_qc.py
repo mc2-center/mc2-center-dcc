@@ -159,7 +159,7 @@ def combine_rows(args):
 
                     mapping = {
                         componentColumn: "first",
-                        idColumn: ",".join,
+                        idColumn: "first",
                         "Dataset Pubmed Id": "first",
                         grantColumn: ",".join,
                         "Dataset Name": "first",
@@ -180,7 +180,7 @@ def combine_rows(args):
 
                 mapping = {
                     componentColumn: "first",
-                    idColumn: ",".join,
+                    idColumn: "first",
                     "Tool Pubmed Id": "first",
                     grantColumn: ",".join,
                     "Tool Description": "first",
@@ -219,7 +219,7 @@ def combine_rows(args):
 
             mapping = {
                 componentColumn: "first",
-                idColumn: ",".join,
+                idColumn: "first",
                 "Resource Title": "first",
                 "Resource Link": "first",
                 "Resource Topic": "first",
@@ -319,7 +319,15 @@ def compare_and_subset_tables(args):
 
         elif name == "ToolView":
             key = ["Tool Name"]
-            cols = ["Tool Name", "ToolView_id", "Tool Type", "Tool Topic", "Tool Language", "Tool Documentation Url","Tool Documentation Type"]
+            cols = [
+                "Tool Name",
+                "ToolView_id",
+                "Tool Type",
+                "Tool Topic",
+                "Tool Language",
+                "Tool Documentation Url",
+                "Tool Documentation Type",
+            ]
 
         elif name == "EducationalResource":
             key = ["Resource Alias"]
