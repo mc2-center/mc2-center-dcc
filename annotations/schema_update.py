@@ -83,20 +83,20 @@ for my_table_synid in table_ids_list:
 
             if column_to_modify:
                 # Set columnType and maximumSize accordingly
-                if column_name == f"{entity_type} Abstract":
+                if column_name in [f"{entity_type} Abstract", f"{entity_type} Authors"]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="LARGETEXT"
                         )
                     )
-                elif column_name in [f"{entity_type} Authors", f"{entity_type} Keywords", f"{entity_type} Title", f"{entity_type} Assay"]:
+                elif column_name in [f"{entity_type} Keywords", f"{entity_type} Title", f"{entity_type} Assay"]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="MEDIUMTEXT"
                         )
                     )
 
-                elif column_name in [f"{entity_type} Tumor Type", f"{entity_type} Tissue"]:
+                elif column_name in [f"{entity_type} Tumor Type", f"{entity_type} Tissue", f"{entity_type} Dataset Alias"]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="STRING", maximumSize=500
