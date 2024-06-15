@@ -135,7 +135,7 @@ def combine_rows(args):
 
                     mapping = {  # defines how info in each column is handled by row merging function
                         componentColumn: "first",
-                        idColumn: "first",
+                        idColumn: ",".join,
                         grantColumn: ",".join,
                         "Publication Doi": "first",
                         "Publication Journal": "first",
@@ -159,7 +159,7 @@ def combine_rows(args):
 
                     mapping = {
                         componentColumn: "first",
-                        idColumn: "first",
+                        idColumn: ",".join,
                         "Dataset Pubmed Id": "first",
                         grantColumn: ",".join,
                         "Dataset Name": "first",
@@ -180,7 +180,7 @@ def combine_rows(args):
 
                 mapping = {
                     componentColumn: "first",
-                    idColumn: "first",
+                    idColumn: ",".join,
                     "Tool Pubmed Id": "first",
                     grantColumn: ",".join,
                     "Tool Description": "first",
@@ -219,7 +219,7 @@ def combine_rows(args):
 
             mapping = {
                 componentColumn: "first",
-                idColumn: "first",
+                idColumn: ",".join,
                 "Resource Title": "first",
                 "Resource Link": "first",
                 "Resource Topic": "first",
@@ -303,9 +303,11 @@ def compare_and_subset_tables(args):
             key = ["Pubmed Id"]
             cols = [
                 "Pubmed Id",
+                "Pubmed Url",
                 "Publication Assay",
                 "Publication Tissue",
                 "Publication Tumor Type",
+                "Publication Accessibility"
             ]
 
         elif name == "DatasetView":
@@ -315,6 +317,9 @@ def compare_and_subset_tables(args):
                 "Dataset Assay",
                 "Dataset Tissue",
                 "Dataset Tumor Type",
+                "Dataset File Formats",
+                "Dataset Url",
+                "Dataset Species"
             ]
 
         elif name == "ToolView":
