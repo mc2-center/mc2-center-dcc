@@ -59,6 +59,14 @@ columns_to_modify = [
     f"{entity_type} Journal",
     f"Pubmed Id",
     f"Pubmed Url",
+    f"{entity_type} Name",
+    f"{entity_type} Pubmed Id",
+    f"{entity_type} Alias",
+    f"{entity_type} Description",
+    f"{entity_type} Design",
+    f"{entity_type} Species",
+    f"{entity_type} Url",
+    f"{entity_type} File Formats",
     f"{entity_type} Year",
     f"{entity_type} Accessibility",
     f"{entity_type}View_id"
@@ -83,7 +91,7 @@ for my_table_synid in table_ids_list:
 
             if column_to_modify:
                 # Set columnType and maximumSize accordingly
-                if column_name in [f"{entity_type} Abstract", f"{entity_type} Authors"]:
+                if column_name in [f"{entity_type} Abstract", f"{entity_type} Authors", f"{entity_type} Description", f"{entity_type} Design"]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="LARGETEXT"
@@ -96,7 +104,7 @@ for my_table_synid in table_ids_list:
                         )
                     )
 
-                elif column_name in [f"{entity_type} Tumor Type", f"{entity_type} Tissue", f"{entity_type} Dataset Alias"]:
+                elif column_name in [f"{entity_type} Name", f"{entity_type} Alias", f"{entity_type} Species", f"{entity_type} Tumor Type", f"{entity_type} Tissue", f"{entity_type} Dataset Alias", f"{entity_type} Url", f"{entity_type} File Formats"]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="STRING", maximumSize=500
