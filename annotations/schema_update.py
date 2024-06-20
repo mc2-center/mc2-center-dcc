@@ -69,7 +69,34 @@ columns_to_modify = [
     f"{entity_type} File Formats",
     f"{entity_type} Year",
     f"{entity_type} Accessibility",
-    f"{entity_type}View_id"
+    f"{entity_type}View_id",
+    f"{entity_type} Homepage",
+    f"{entity_type} Version",
+    f"{entity_type} Operation",
+    f"{entity_type} Input Data",
+    f"{entity_type} Output Data",
+    f"{entity_type} Input Format",
+    f"{entity_type} Output Format",
+    f"{entity_type} Function Note",
+    f"{entity_type} Cmd",
+    f"{entity_type} Type",
+    f"{entity_type} Topic",
+    f"{entity_type} Operating System",
+    f"{entity_type} Language",
+    f"{entity_type} License",
+    f"{entity_type} Cost",
+    f"{entity_type} Download Url",
+    f"{entity_type} Download Type",
+    f"{entity_type} Download Note",
+    f"{entity_type} Download Version",
+    f"{entity_type} Documentation Url",
+    f"{entity_type} Documentation Type",
+    f"{entity_type} Documentation Note",
+    f"{entity_type} Link Url",
+    f"{entity_type} Link Type",
+    f"{entity_type} Link Note",
+    f"Id",
+    f"entityId"
 ]
 
 # Initialize counter
@@ -91,26 +118,73 @@ for my_table_synid in table_ids_list:
 
             if column_to_modify:
                 # Set columnType and maximumSize accordingly
-                if column_name in [f"{entity_type} Abstract", f"{entity_type} Authors", f"{entity_type} Description", f"{entity_type} Design"]:
+                if column_name in [
+                    f"{entity_type} Abstract",
+                    f"{entity_type} Authors",
+                    f"{entity_type} Description",
+                    f"{entity_type} Design",
+                    f"{entity_type} Function Note",
+                    f"{entity_type} Download Note",
+                    f"{entity_type} Documentation Note",
+                    f"{entity_type} Link Note"
+                ]:
                     new_column = syn.store(
-                        synapseclient.Column(
-                            name=column_name, columnType="LARGETEXT"
-                        )
+                        synapseclient.Column(name=column_name, columnType="LARGETEXT")
                     )
-                elif column_name in [f"{entity_type} Keywords", f"{entity_type} Title", f"{entity_type} Assay"]:
+                elif column_name in [
+                    f"{entity_type} Keywords",
+                    f"{entity_type} Title",
+                    f"{entity_type} Assay",
+                    f"{entity_type} Cmd",
+                    f"{entity_type} Documentation Type",
+                    f"{entity_type} Link Type"
+                ]:
                     new_column = syn.store(
-                        synapseclient.Column(
-                            name=column_name, columnType="MEDIUMTEXT"
-                        )
+                        synapseclient.Column(name=column_name, columnType="MEDIUMTEXT")
                     )
 
-                elif column_name in [f"{entity_type} Name", f"{entity_type} Alias", f"{entity_type} Species", f"{entity_type} Tumor Type", f"{entity_type} Tissue", f"{entity_type} Dataset Alias", f"{entity_type} Url", f"{entity_type} File Formats"]:
+                elif column_name in [
+                    f"{entity_type} Name",
+                    f"{entity_type} Alias",
+                    f"{entity_type} Species",
+                    f"{entity_type} Tumor Type",
+                    f"{entity_type} Tissue",
+                    f"{entity_type} Dataset Alias",
+                    f"{entity_type} Url",
+                    f"{entity_type} File Formats",
+                    f"{entity_type} Homepage",
+                    f"{entity_type} Operation",
+                    f"{entity_type} Input Data",
+                    f"{entity_type} Output Data",
+                    f"{entity_type} Input Format",
+                    f"{entity_type} Output Format",
+                    f"{entity_type} Download Type",
+                    f"{entity_type} Type",
+                    f"{entity_type} Topic",
+                    f"{entity_type} Download Url",
+                    f"{entity_type} Documentation Url",
+                    f"{entity_type} Link Url"
+                ]:
                     new_column = syn.store(
                         synapseclient.Column(
                             name=column_name, columnType="STRING", maximumSize=500
                         )
                     )
                 
+                elif column_name == f"Id":
+                    new_column = syn.store(
+                        synapseclient.Column(
+                            name=column_name, columnType="STRING", maximumSize=64
+                        )
+                    )
+                
+                elif column_name == f"entityId":
+                    new_column = syn.store(
+                        synapseclient.Column(
+                            name=column_name, columnType="STRING", maximumSize=30
+                        )
+                    )
+
                 else:
                     new_column = syn.store(
                         synapseclient.Column(
