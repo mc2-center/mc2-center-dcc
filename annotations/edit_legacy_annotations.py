@@ -47,22 +47,6 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def annotation_df(annots_table, syn):
-
-    annots_query = f"SELECT * FROM {annots_table}"
-    annots_df = syn.tableQuery(annots_query).asDataFrame().fillna("")
-
-    return annots_df
-
-
-def cv_df(cv_table, syn):
-
-    cv_query = f"SELECT attribute, preferredTerm, nonpreferredTerms FROM {cv_table}"
-    cv_df = syn.tableQuery(cv_query).asDataFrame().fillna("")
-
-    return cv_df
-
-
 def cv_dictionary(cv_df):
 
     # Create dictionary from controlled vocabulary table
@@ -123,11 +107,16 @@ def store_edited_annotations(syn, table_id, annots_df):
 
 
 def main():
-
+    """Main function."""
     syn = login()
     args = get_args()
-    annots_df = annotation_df(args.annots_table_id, syn)
-    vocab_df = cv_df(args.cv_table_id, syn)
+
+    annots_df = (
+        syn.tableQuery(f"SELECT * FROM {args.annots_table_id}")
+        .asDataFrame()
+        .fillna("")
+    )
+    vocab_df = pd.read_csv(args.cv_list)
     cv_dict = cv_dictionary(vocab_df)
     edited_annotations = edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict)
 
