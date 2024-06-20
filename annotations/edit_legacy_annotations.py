@@ -1,7 +1,8 @@
-import synapseclient
-from synapseclient import Table
 import argparse
+from getpass import getpass
+
 import pandas as pd
+import synapseclient
 from attribute_dictionary import ATTRIBUTE_DICT
 
 
