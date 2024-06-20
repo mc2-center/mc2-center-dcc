@@ -5,12 +5,18 @@ import pandas as pd
 from attribute_dictionary import ATTRIBUTE_DICT
 
 
-### Login to Synapse ###
-def login():
-
-    syn = synapseclient.Synapse()
-    syn.login()
-
+def login() -> synapseclient.Synapse:
+    """Log into Synapse. If env variables not found, prompt user."""
+    try:
+        syn = synapseclient.login(silent=True)
+    except synapseclient.core.exceptions.SynapseNoCredentialsError:
+        print(
+            ".synapseConfig not found; please manually provide your",
+            "Synapse Personal Access Token (PAT). You can generate"
+            "one at https://www.synapse.org/#!PersonalAccessTokens:0",
+        )
+        pat = getpass("Your Synapse PAT: ")
+        syn = synapseclient.login(authToken=pat, silent=True)
     return syn
 
 
