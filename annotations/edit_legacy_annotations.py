@@ -20,30 +20,29 @@ def login() -> synapseclient.Synapse:
     return syn
 
 
-def get_args():
-
+def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Get synapse table id of annotations to be editd and synapse table id of controlled vocabulary mappings"
+        description="Update legacy annotations to latest standard terms."
     )
     parser.add_argument(
         "-a",
         "--annots_table_id",
         type=str,
-        help="Synapse table id of annotations to edit.",
+        help="Table synID with annotations to update.",
     )
     parser.add_argument(
         "-cv",
-        "--cv_table_id",
+        "--cv_list",
         type=str,
-        help="Synapse table id of controlled vocabulary mappings",
+        default="https://raw.githubusercontent.com/mc2-center/data-models/minor-update/all_valid_values.csv",
+        help="CSV of controlled terms and their non-preferred terms",
     )
     parser.add_argument(
         "-it",
         "--intermediate_table_id",
         type=str,
-        help="Synapse table id of intermediary/qc table (if there is one)",
+        help="Table synID of intermediary/qc table (if there is one)",
     )
-
     return parser.parse_args()
 
 
