@@ -35,7 +35,7 @@ def get_args() -> argparse.Namespace:
         "-cv",
         "--cv_list",
         type=str,
-        default="https://raw.githubusercontent.com/mc2-center/data-models/minor-update/all_valid_values.csv",
+        default="https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv",
         help="CSV of controlled terms and their non-preferred terms",
     )
     parser.add_argument(
