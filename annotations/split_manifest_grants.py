@@ -66,6 +66,8 @@ def split_manifest(df, manifest_type):
 
     df[colname] = df[colname].str.split(", ")
 
+    df = df.drop(["entityId"], axis=1, errors="ignore")
+
     grouped = df.explode(colname).groupby(colname)
     print(f"Found {len(grouped.groups)} grant numbers in table " "- splitting now...")
     return grouped

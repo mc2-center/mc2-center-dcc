@@ -2,7 +2,8 @@
 union_qc.py
 
 Submits a query to get all information from a Synapse table
-Validates table entries against a schematic data model
+Checks new Synapse table against current CCKP database entries and reports non-matching entries
+Validates non-matching table entries against a schematic data model
 Returns row identifer and validation state
 Trims invalid entries using schematic error log
 
@@ -71,7 +72,9 @@ def get_tables(syn, tableIdList, mergeFlag):
             1, 0
         ]  # grab name of data type from table; assumes "Component" is first column in table
 
-        manifestPath = Path(f"output/{name}.csv")  # build path to store table as CSV
+        manifestPath = Path(
+            f"output/{name}/{name}.csv"
+        )  # build path to store table as CSV
         manifestPath.parent.mkdir(
             parents=True, exist_ok=True
         )  # create folder to store CSVs
@@ -246,7 +249,7 @@ def combine_rows(args):
         )  # group rows by designated identifier and map attributes
         mergedTable = mergedTable.iloc[:, 1:]  # remove unnecessary "id" column
 
-        mergePath = Path(f"output/{name}_merged.csv")
+        mergePath = Path(f"output/{name}/{name}_merged.csv")
         mergePath.parent.mkdir(parents=True, exist_ok=True)
 
         mergedTable.to_csv(mergePath, index=False)
@@ -255,6 +258,105 @@ def combine_rows(args):
         names.append(nameParts[0])
 
     return list(zip(groups, names))
+
+
+def get_ref_tables(syn, args):
+
+    tables, names = zip(*args)
+
+    ref_paths = []
+    table_paths = []
+    ref_names = []
+
+    for table, name in zip(tables, names):
+
+        if name == "PublicationView":
+            ref = "syn53478776"
+
+        elif name == "DatasetView":
+            ref = "syn53478774"
+
+        elif name == "ToolView":
+            ref = "syn53479671"
+
+        elif name == "EducationalResource":
+            ref = "syn53651540"
+
+        ref_table = syn.get(ref, downloadLocation=f"output/{name}")
+        ref_paths.append(ref_table.path)
+        table_paths.append(table)
+        ref_names.append(name)
+
+    return list(zip(ref_paths, table_paths, ref_names))
+
+
+def compare_and_subset_tables(args):
+
+    current, updated, names = zip(*args)
+
+    updatePaths = []
+    updateNames = []
+
+    for ref, new, name in zip(current, updated, names):
+
+        if name == "PublicationView":
+            key = ["Pubmed Id"]
+            cols = [
+                "Pubmed Id",
+                "Pubmed Url",
+                "Publication Assay",
+                "Publication Tissue",
+                "Publication Tumor Type",
+                "Publication Accessibility"
+            ]
+
+        elif name == "DatasetView":
+            key = ["Dataset Alias"]
+            cols = [
+                "Dataset Alias",
+                "Dataset Assay",
+                "Dataset Tissue",
+                "Dataset Tumor Type",
+                "Dataset File Formats",
+                "Dataset Url",
+                "Dataset Species"
+            ]
+
+        elif name == "ToolView":
+            key = ["Tool Name"]
+            cols = [
+                "Tool Name",
+                "ToolView_id",
+                "Tool Type",
+                "Tool Topic",
+                "Tool Language",
+                "Tool Documentation Url",
+                "Tool Documentation Type",
+            ]
+
+        elif name == "EducationalResource":
+            key = ["Resource Alias"]
+            cols = ["Resource Alias", "EducationalResource_id"]
+
+        current_table = pd.read_csv(ref, header=0).sort_values(by=key)
+        new_table = pd.read_csv(new, header=0).sort_values(by=key)
+
+        tables = [current_table, new_table]
+
+        updated = pd.concat(tables, ignore_index=True).reset_index(drop=True)
+        updated.drop_duplicates(
+            subset=cols, keep=False, ignore_index=True, inplace=True
+        )
+
+        updatePath = Path(f"output/{name}/{name}_updated.csv")
+        updatePath.parent.mkdir(parents=True, exist_ok=True)
+
+        updated.to_csv(updatePath, index=False)
+
+        updatePaths.append(updatePath)
+        updateNames.append(name)
+
+    return list(zip(updatePaths, updateNames))
 
 
 def validate_tables(args, config):
@@ -283,10 +385,10 @@ def validate_tables(args, config):
 
         print(f"\n\nValidating manifest at: {str(path)}...")
 
-        outPath = Path(f"output/{name}_out.txt")
+        outPath = Path(f"output/{name}/{name}_out.txt")
         outPath.parent.mkdir(parents=True, exist_ok=True)
 
-        errPath = Path(f"output/{name}_error.txt")
+        errPath = Path(f"output/{name}/{name}_error.txt")
         errPath.parent.mkdir(parents=True, exist_ok=True)
 
         commandOut = open(outPath, "w")  # store logs from schematic validation
@@ -313,7 +415,7 @@ def parse_out(args):
 
     for name, out, path in zip(names, outs, paths):
 
-        parsePath = Path(f"output/{name}_trim_config.csv")
+        parsePath = Path(f"output/{name}/{name}_trim_config.csv")
         parsePath.parent.mkdir(parents=True, exist_ok=True)
 
         parsed = pd.read_table(
@@ -338,7 +440,7 @@ def trim_tables(args):
     names, outs, paths = zip(*args)
 
     for name, out, path in zip(names, outs, paths):
-        trimPath = Path(f"output/{name}_trimmed.csv")
+        trimPath = Path(f"output/{name}/{name}_trimmed.csv")
         trimPath.parent.mkdir(parents=True, exist_ok=True)
 
         validationTable = pd.read_csv(out, header=None)
@@ -371,6 +473,7 @@ def trim_tables(args):
 def main():
 
     args = get_args()
+    syn = login()
 
     inputList, config, trimList, inputManifest, merge, trim = (
         args.l,
@@ -385,8 +488,6 @@ def main():
 
         if inputManifest is None:
             print("Accessing requested tables...")
-
-            syn = login()
 
             newTables = get_tables(syn, inputList, merge)
             print(
@@ -426,10 +527,14 @@ def main():
         else:
             print("\n\nValidating unmerged manifest(s)...")
 
-        checkTables = validate_tables(newTables, config)
+        refTables = get_ref_tables(syn, newTables)
+
+        updatedTables = compare_and_subset_tables(refTables)
+
+        checkTables = validate_tables(updatedTables, config)
         print("\n\nValidation logs stored in local output folder!")
 
-        print("\n\nConverting validation logs to create reference tables...")
+        print("\n\nConverting validation logs to trim config files...")
 
         print(checkTables)
 
