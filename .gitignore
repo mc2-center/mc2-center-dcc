@@ -133,4 +133,7 @@ dmypy.json
 **/.DS_Store
 great_expectations/
 .vscode/
+
+outputs/
 upload_check*
+*manifests/
