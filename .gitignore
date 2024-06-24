@@ -134,3 +134,5 @@ dmypy.json
 great_expectations/
 .vscode/
 outputs/
+upload_check*
+*manifests/
