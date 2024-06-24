@@ -90,13 +90,9 @@ def main():
 
     years = []
 
-    for grant in in_grants:
-        grant = "".join([grant, "*"])
-        grants.append(grant)
+    grants = [g + "*" for g in in_grants]
 
-    for year in in_years:
-        year = int(year)
-        years.append(year)
+    years = [int(y) for y in in_years]
 
     headers = {"content-type": "application/json"}
 
