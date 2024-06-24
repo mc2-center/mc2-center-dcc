@@ -4,6 +4,7 @@ import requests
 import numpy as np
 import math
 import pandas as pd
+from io import StringIO
 
 
 def get_args():
@@ -71,7 +72,7 @@ def build_report(report_list, out_path):
 
     df_list = []
     for report in report_list:
-        report_df = pd.read_json(report, orient="records")
+        report_df = pd.read_json(StringIO(report), orient="records")
         df_list.append(report_df)
 
     full_report = pd.concat(df_list).reset_index(drop=True)
