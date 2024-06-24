@@ -109,7 +109,7 @@ def main():
         grant_chunks = [g.tolist() for g in np.array_split(grants, split_count)]
 
     else:
-        grant_chunks = grants
+        grant_chunks = [grants]
 
     all_reports = []
 
@@ -139,7 +139,6 @@ def main():
             print(json_report)
 
     build_report(all_reports, csvPath)
-
 
 if __name__ == "__main__":
     main()
