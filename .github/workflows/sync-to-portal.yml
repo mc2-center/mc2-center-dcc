@@ -22,10 +22,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install synapseclient pandas
 
-    - name: Sync to portal
-      run: |
-        python portal_tables/sync_publications.py --noprint
-        python portal_tables/sync_datasets.py --noprint
-        python portal_tables/sync_tools.py --noprint
+    - name: Sync publications to portal
+      run: python portal_tables/sync_publications.py --noprint
+      env: 
+        SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}
+    
+    - name: Sync datasets to portal
+      run: python portal_tables/sync_datasets.py --noprint
+      env: 
+        SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}
+    
+    - name: Sync tools to portal
+      run: python portal_tables/sync_tools.py --noprint
       env: 
         SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}
