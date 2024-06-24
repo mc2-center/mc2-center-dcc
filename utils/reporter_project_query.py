@@ -9,7 +9,7 @@ import pandas as pd
 def get_args():
 
     parser = argparse.ArgumentParser(
-        description="Access and validate tables from Synapse"
+        description="Query NIH RePORTER for grant information and return as a CSV"
     )
     parser.add_argument(
         "-g",
@@ -51,6 +51,7 @@ def build_payload(grant_numbers, years, lim):
     )
 
     json_payload = json.dumps(payload)
+    print(f"\n\nSUCCESS! Your query was converted to a valid JSON string")
 
     return json_payload
 
@@ -118,16 +119,6 @@ def main():
         query = build_payload(
             grant_numbers=grant_list, years=years, lim=max_request_length
         )
-        valid = json.loads(query)
-
-        if valid:
-            print(f"\n\nSUCCESS! Your query was converted to a valid JSON string")
-
-        else:
-            print(
-                f"\n\nNot quite! Your query: \n {query} \n is an invalid JSON string.\nPlease revise your query and try again."
-            )
-            break
 
         print(f"\n\nSubmitting your query to RePORTER...")
         report = get_reporter_info(query, headers)
