@@ -63,7 +63,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
         "-dt",
         mt,
         "-mp",
-        fp,
+        fp
     ]
 
     print(f"Running validation command: {' '.join(validate_command)}")
@@ -93,11 +93,12 @@ def submit_entry_worker(args, cf):
         fp,
         "-d",
         target_id,
-        "-dl",
         "-mrt",
         "table_and_file",
         "-tm",
         "upsert",
+        "-tcn",
+        "display_name"
     ]
     cmd_line = " ".join(command)
 

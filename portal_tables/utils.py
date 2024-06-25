@@ -17,6 +17,7 @@ CONFIG = {
     "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
     "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
     "education": {"manifest": "syn53651540", "portal_table": "syn51497305"},
+    "project": {"manifest": "syn59074382", "portal_table": "syn21868602"}
 }
 
 
