@@ -19,7 +19,7 @@ def get_args():
         "--sheet",
         type=str,
         required=True,
-        help=("Required. The path to a workshop config CSV file")
+        help=("Required. The path to a workshop config CSV file"),
     )
     parser.add_argument(
         "-n",
@@ -28,7 +28,7 @@ def get_args():
         default=f"New Workshop Project {randint(100,999)}",
         help=(
             "The name to be applied to the Synapse project, if not provided in the workshop config"
-        )
+        ),
     )
     parser.add_argument(
         "-f",
@@ -36,7 +36,7 @@ def get_args():
         action="store_true",
         help=(
             "If provided, attendee folders will be created in the new project using information from the config"
-        )
+        ),
     )
     parser.add_argument(
         "-c",
@@ -44,7 +44,7 @@ def get_args():
         action="store_true",
         help=(
             "If provided, workshop content will be added to the project using information from the config"
-        )
+        ),
     )
     parser.add_argument(
         "-t",
@@ -52,7 +52,7 @@ def get_args():
         action="store_true",
         help=(
             "If provided, a Synapse team will be created and connected to the workshop project"
-        )
+        ),
     )
     parser.add_argument(
         "-r",
@@ -60,7 +60,7 @@ def get_args():
         action="store_true",
         help=(
             "If provided, sub folders will be populated with links, descriptions, and templates from the config"
-        )
+        ),
     )
     parser.add_argument(
         "-a",
@@ -69,7 +69,7 @@ def get_args():
         default="3450948",
         help=(
             "The Synapse user or team ID that will have admin access. If a value is provided in the config, it will overwrite any argument provided here. (Default: 3450948, MC2 Admin)"
-        )
+        ),
     )
     parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
@@ -89,7 +89,7 @@ PERMISSIONS = {
         "MODERATE",
         "CHANGE_SETTINGS",
         "CHANGE_PERMISSIONS",
-    ]
+    ],
 }
 
 
@@ -104,14 +104,23 @@ def _syn_prettify(name):
 
 
 def create_wiki_pages(
-    syn, project_id, project_name, slides_link, worksheet_link, resource_link, dca_link, team_id
+    syn,
+    project_id,
+    project_name,
+    slides_link,
+    worksheet_link,
+    resource_link,
+    dca_link,
+    team_id,
 ):
     """Create main Wiki page, activity sub wiki, and example resource wiki for the Project."""
 
     # Main Wiki page
     title = project_name
 
-    content = "".join([f"""
+    content = "".join(
+        [
+            f"""
 # Welcome to the {title} Synapse Project!
 
 ### The intent of this workshop is to familiarize attendees with:
@@ -120,16 +129,17 @@ def create_wiki_pages(
 
 ### If you haven't done so already, please be sure to join the workshop team using the button below!
 """,
-"${jointeam?teamId=",
-f"{team_id}",
-"&isChallenge=false&isSimpleRequestButton=false&isMemberMessage=Already a member&successMessage=Successfully joined&text=Join the team here&requestOpenText=Your request to join this team has been sent%2E}",
-f"""
+            "${jointeam?teamId=",
+            f"{team_id}",
+            "&isChallenge=false&isSimpleRequestButton=false&isMemberMessage=Already a member&successMessage=Successfully joined&text=Join the team here&requestOpenText=Your request to join this team has been sent%2E}",
+            f"""
 ### Please visit the Resource Curation Activity subpage (left) for instructions on how to participate
 """,
-f"""
+            f"""
 ### You can access the slides for this workshop via [this link]({slides_link})
-"""
-    ])
+""",
+        ]
+    )
 
     main_wiki = Wiki(title=title, owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
@@ -181,7 +191,7 @@ def create_folders(
     descriptions = descriptions.split("#")
 
     working_folders = [
-        "_".join([folder_name, str(folder_id)]) for folder_id in range(1,51)
+        "_".join([folder_name, str(folder_id)]) for folder_id in range(1, 51)
     ]
 
     folder_list = folder_list + working_folders
@@ -217,7 +227,7 @@ def create_team(syn, project_id, team_name, access_type="edit"):
             print(f"Team already exists: {team_name}")
         else:
             print(f"Something went wrong! Team: {team_name}")
-    
+
     return new_team.id
 
 
@@ -260,7 +270,7 @@ def create_workshop_project(syn, args, inputs):
                 inputs["resources"],
                 inputs["links"],
                 inputs["templates"],
-                inputs["descriptions"]
+                inputs["descriptions"],
             )
 
         if args.resources:
@@ -278,7 +288,7 @@ def create_workshop_project(syn, args, inputs):
                 inputs["worksheet"],
                 top_level["example_resources"],
                 inputs["dca"],
-                team_id
+                team_id,
             )
 
     except synapseclient.core.exceptions.SynapseHTTPError:
