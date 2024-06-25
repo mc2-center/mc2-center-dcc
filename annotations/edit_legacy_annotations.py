@@ -47,13 +47,27 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def cv_dictionary(cv_df):
+def map_current_terms_to_legacy(vocab_csv: str) -> dict:
+    """Generate a dictionary of standard terms to their legacy terms.
 
-    # Create dictionary from controlled vocabulary table
-    cv_dict = cv_df.groupby("attribute").apply(
-        lambda x: dict(zip(x["preferredTerm"], x["nonpreferredTerms"]))
+    Standard terms that do not have legacy terms will NOT be added
+    to the dictionary.
+    """
+    current_cv = pd.read_csv(vocab_csv)
+
+    # Only consider terms with legacy terms, then explode the list.
+    filtered_cv = current_cv[current_cv["nonpreferred_values"].notna()]
+    filtered_cv.loc[:, "nonpreferred_values"] = (
+        filtered_cv["nonpreferred_values"].str.replace(", ", ",").str.split(",")
     )
+    filtered_cv = filtered_cv.explode("nonpreferred_values")
 
+    # Create a nested dictionary of
+    #   { category -> { non-preferred-term -> standard term } }
+    cv_dict = filtered_cv.groupby("category").apply(
+        lambda x: dict(zip(x["nonpreferred_values"], x["valid_value"])),
+        include_groups=False,
+    )
     return cv_dict
 
 
@@ -116,9 +130,7 @@ def main():
         .asDataFrame()
         .fillna("")
     )
-    vocab_df = pd.read_csv(args.cv_list)
-    cv_dict = cv_dictionary(vocab_df)
-    edited_annotations = edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict)
+    cv_dict = map_current_terms_to_legacy(args.cv_list)
 
     # Store updated annotations, uncomment when ready.
     # store_edited_annotations(syn, args.annots_table_id, edited_annotations)
