@@ -44,6 +44,7 @@ def get_args() -> argparse.Namespace:
         type=str,
         help="Table synID of intermediary/qc table (if there is one)",
     )
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
@@ -101,23 +102,7 @@ def edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict):
                                         f'\n\nNonpreferred term caught: "{term}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: {column_value}\nUpdated full annotation: {updated_column_value}'
                                     )
 
-                # If column type is not a list, replace annotation term with preferred term
-                else:
-                    for key, value in column_dict.items():
-                        for item in value:
-                            if column_value == item and item != key:
-                                annots_df.at[i, v] = key
-                                print(
-                                    f'\n\nNonpreferred term caught: "{item}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: "{column_value}"\nUpdated full annotation: "{key}"'
-                                )
-    return annots_df
-
-
-def store_edited_annotations(syn, table_id, annots_df):
-
-    syn.store(Table(table_id, annots_df))
-
-    print("\n\nAnnotations have been updated!")
+#     return annots_df
 
 
 def main():
@@ -132,8 +117,9 @@ def main():
     )
     cv_dict = map_current_terms_to_legacy(args.cv_list)
 
-    # Store updated annotations, uncomment when ready.
-    # store_edited_annotations(syn, args.annots_table_id, edited_annotations)
+    if not args.dryrun:
+        syn.store(synapseclient.Table(args.annots_table_id, edited_annotations))
+        print("\n\nAnnotations have been updated!")
 
 
 if __name__ == "__main__":
