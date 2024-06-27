@@ -42,7 +42,7 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def map_current_terms_to_legacy(vocab_csv: str) -> dict:
+def map_legacy_terms_to_standard(vocab_csv: str) -> dict:
     """Generate a dictionary of legacy terms to their standard term.
 
     Standard terms that do not have legacy terms will NOT be added
@@ -118,7 +118,7 @@ def main():
         .asDataFrame()["entityId"]
         .unique()
     )
-    cv_dict = map_current_terms_to_legacy(args.cv_list)
+    cv_dict = map_legacy_terms_to_standard(args.cv_list)
 
     if args.dryrun:
         print("\n❗❗❗ WARNING: dryrun is enabled. Results will be"
