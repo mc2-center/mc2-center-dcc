@@ -104,10 +104,10 @@ def main():
     syn = login()
     args = get_args()
 
-    annots_df = (
-        syn.tableQuery(f"SELECT * FROM {args.annots_table_id}")
-        .asDataFrame()
-        .fillna("")
+    union_table_scope_ids = (
+        syn.tableQuery(f"SELECT entityId FROM {args.union_table_id}")
+        .asDataFrame()["entityId"]
+        .unique()
     )
     cv_dict = map_current_terms_to_legacy(args.cv_list)
 
