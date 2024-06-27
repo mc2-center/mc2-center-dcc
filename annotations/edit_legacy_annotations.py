@@ -44,7 +44,7 @@ def get_args() -> argparse.Namespace:
 
 def get_standard_terms(dictionary: dict, terms: list) -> set:
     """Map list of terms to their standard term, removing all duplicates."""
-    return set([dictionary.get(term, term) for term in terms])
+    return {dictionary.get(term, term) for term in terms}
 
 
 def map_legacy_terms_to_standard(vocab_csv: str) -> dict:
