@@ -71,17 +71,20 @@ def map_legacy_terms_to_standard(vocab_csv: str) -> dict:
     return cv_dict
 
 
-def update_nonpreferred_terms(manifest_table, cv_dict):
+def update_nonpreferred_terms(
+        table: pd.DataFrame,
+        cv_dict: dict
+) -> pd.DataFrame:
     """Update legacy annotations found to current standard terms."""
 
-    # Manifest may use column names that are a variation of what is
-    # listed in the dictionary, e.g. "Publication Assay" instead of
-    # "assay". Re-map colnames to match with dictionary, keeping
-    # record of the original manifest table colnames.
-    og_colnames = manifest_table.columns
-    manifest_table = manifest_table.rename(columns=ATTRIBUTE_DICT)
+    # Manifest may use colnames that are variations of what is listed
+    # in the dictionary, e.g. "Publication Assay" instead of "assay".
+    # Re-map colnames to match with dictionary, keeping record of the
+    # original manifest colnames.
+    og_colnames = table.columns
+    table = table.rename(columns=ATTRIBUTE_DICT)
     for category in cv_dict.index:
-        if category in manifest_table.columns:
+        if category in table.columns:
             print(f"\tChecking {category}...")
             table.loc[:, category] = (
                 table[category]
@@ -93,11 +96,11 @@ def update_nonpreferred_terms(manifest_table, cv_dict):
             )
 
     # Rename colnames to the original names.
-    manifest_table.columns = og_colnames
-    return manifest_table
+    table.columns = og_colnames
+    return table
 
 
-def update_manifest_tables(syn, scope_ids, cv_dict, dryrun):
+def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
     """Update each parent table found in union table."""
     for table_id in scope_ids:
         print(f"Updating annotations found in table ID: {table_id}")
