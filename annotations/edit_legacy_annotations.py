@@ -43,7 +43,7 @@ def get_args() -> argparse.Namespace:
 
 
 def map_current_terms_to_legacy(vocab_csv: str) -> dict:
-    """Generate a dictionary of standard terms to their legacy terms.
+    """Generate a dictionary of legacy terms to their standard term.
 
     Standard terms that do not have legacy terms will NOT be added
     to the dictionary.
