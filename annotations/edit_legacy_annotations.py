@@ -66,37 +66,36 @@ def map_current_terms_to_legacy(vocab_csv: str) -> dict:
     return cv_dict
 
 
-def edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict):
+def update_nonpreferred_terms(manifest, cv_dict):
+    """Update legacy annotations found to current standard terms."""
+    for category in cv_dict.index:
+        if category in manifest.columns:
+            print(f"\tChecking {category}...")
+            manifest.loc[:, category] = (
+                manifest[category]
+                .map(cv_dict[category])
+                .fillna(manifest[category])
+            )
+    return manifest
 
-    # Iterate through attribute diciontary and match column names
-    for k, v in ATTRIBUTE_DICT.items():
-        if v in annots_df.columns:
-            # Get nested dictionary for corresponding column/attribute from cv_dict
-            column_dict = cv_dict.get(k)
-            # Iterate through annotation rows for corresponding column/attribute
-            for i, r in annots_df.iterrows():
-                column_value = r[v]
-                # If column value is a list, iterate through list of terms
-                if type(column_value) == list:
-                    for term in column_value:
-                        # Iterate through corresponding column/attribute dictionary values to match terms.
-                        for key, value in column_dict.items():
-                            for item in value:
-                                # If the terms match and the nonpreferred term is not the same as the preferred term (need to fix this in the CV)
-                                if term == item and term != key:
-                                    # Replace nonpreferred term with preferred term in annotation (if a list)
-                                    updated_column_value = list(
-                                        map(
-                                            lambda x: x.replace(term, key), column_value
-                                        )
-                                    )
-                                    # Update term in annotations data frame
-                                    annots_df.at[i, v] = updated_column_value
-                                    print(
-                                        f'\n\nNonpreferred term caught: "{term}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: {column_value}\nUpdated full annotation: {updated_column_value}'
-                                    )
 
-#     return annots_df
+def update_manifest_tables(syn, scope_ids, cv_dict, dryrun):
+    """Update each parent table found in union table."""
+    for table_id in scope_ids:
+        print(f"Updating annotations found in table ID: {table_id}")
+        table = syn.tableQuery(f"SELECT * FROM {table_id}")
+        updated_table = update_nonpreferred_terms(
+            table.asDataFrame().fillna(""),
+            cv_dict
+        )
+        if dryrun:
+            updated_table.to_csv(table_id + "-updated.csv", index=False)
+        else:
+            syn.store(synapseclient.Table(
+                table_id,
+                updated_table,
+                etag=table.etag
+            ))
 
 
 def main():
