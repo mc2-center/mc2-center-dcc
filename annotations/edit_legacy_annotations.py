@@ -132,7 +132,7 @@ def main():
     cv_dict = map_legacy_terms_to_standard(args.cv_list)
 
     if args.dryrun:
-        print("\n❗❗❗ WARNING: dryrun is enabled. Results will be"
+        print("\n❗❗❗ WARNING: dryrun is enabled. Results will be "
               "saved to CSV instead.\n" + "=" * 80 + "\n")
     update_manifest_tables(syn, union_table_scope_ids, cv_dict, args.dryrun)
 
