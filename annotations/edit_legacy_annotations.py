@@ -111,9 +111,10 @@ def main():
     )
     cv_dict = map_current_terms_to_legacy(args.cv_list)
 
-    if not args.dryrun:
-        syn.store(synapseclient.Table(args.annots_table_id, edited_annotations))
-        print("\n\nAnnotations have been updated!")
+    if args.dryrun:
+        print("\n❗❗❗ WARNING: dryrun is enabled. Results will be"
+              "saved to CSV instead.\n" + "=" * 80 + "\n")
+    update_manifest_tables(syn, union_table_scope_ids, cv_dict, args.dryrun)
 
 
 if __name__ == "__main__":
