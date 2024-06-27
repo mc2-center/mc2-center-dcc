@@ -66,17 +66,27 @@ def map_current_terms_to_legacy(vocab_csv: str) -> dict:
     return cv_dict
 
 
-def update_nonpreferred_terms(manifest, cv_dict):
+def update_nonpreferred_terms(manifest_table, cv_dict):
     """Update legacy annotations found to current standard terms."""
+
+    # Manifest may use column names that are a variation of what is
+    # listed in the dictionary, e.g. "Publication Assay" instead of
+    # "assay". Re-map colnames to match with dictionary, keeping
+    # record of the original manifest table colnames.
+    og_colnames = manifest_table.columns
+    manifest_table = manifest_table.rename(columns=ATTRIBUTE_DICT)
     for category in cv_dict.index:
-        if category in manifest.columns:
+        if category in manifest_table.columns:
             print(f"\tChecking {category}...")
-            manifest.loc[:, category] = (
-                manifest[category]
+            manifest_table.loc[:, category] = (
+                manifest_table[category]
                 .map(cv_dict[category])
-                .fillna(manifest[category])
+                .fillna(manifest_table[category])
             )
-    return manifest
+
+    # Rename colnames to the original names.
+    manifest_table.columns = og_colnames
+    return manifest_table
 
 
 def update_manifest_tables(syn, scope_ids, cv_dict, dryrun):
