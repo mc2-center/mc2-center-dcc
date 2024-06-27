@@ -26,8 +26,8 @@ def get_args() -> argparse.Namespace:
         description="Update legacy annotations to latest standard terms."
     )
     parser.add_argument(
-        "-a",
-        "--annots_table_id",
+        "-u",
+        "--union_table_id",
         type=str,
         help="Table synID with annotations to update.",
     )
@@ -37,12 +37,6 @@ def get_args() -> argparse.Namespace:
         type=str,
         default="https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv",
         help="CSV of controlled terms and their non-preferred terms",
-    )
-    parser.add_argument(
-        "-it",
-        "--intermediate_table_id",
-        type=str,
-        help="Table synID of intermediary/qc table (if there is one)",
     )
     parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
