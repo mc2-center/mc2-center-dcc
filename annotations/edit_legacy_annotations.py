@@ -42,6 +42,11 @@ def get_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def get_standard_terms(dictionary: dict, terms: list) -> set:
+    """Map list of terms to their standard term, removing all duplicates."""
+    return set([dictionary.get(term, term) for term in terms])
+
+
 def map_legacy_terms_to_standard(vocab_csv: str) -> dict:
     """Generate a dictionary of legacy terms to their standard term.
 
@@ -78,10 +83,13 @@ def update_nonpreferred_terms(manifest_table, cv_dict):
     for category in cv_dict.index:
         if category in manifest_table.columns:
             print(f"\tChecking {category}...")
-            manifest_table.loc[:, category] = (
-                manifest_table[category]
-                .map(cv_dict[category])
-                .fillna(manifest_table[category])
+            table.loc[:, category] = (
+                table[category]
+                .str.replace(", ", ",")
+                .str.split(",")
+                .apply(lambda annots: ", ".join(
+                    get_standard_terms(cv_dict[category], annots)
+                ))
             )
 
     # Rename colnames to the original names.
