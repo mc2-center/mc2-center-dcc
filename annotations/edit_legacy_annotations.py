@@ -1,132 +1,140 @@
-import synapseclient
-from synapseclient import Table
 import argparse
+from getpass import getpass
+
 import pandas as pd
+import synapseclient
 from attribute_dictionary import ATTRIBUTE_DICT
 
 
-### Login to Synapse ###
-def login():
-
-    syn = synapseclient.Synapse()
-    syn.login()
-
+def login() -> synapseclient.Synapse:
+    """Log into Synapse. If env variables not found, prompt user."""
+    try:
+        syn = synapseclient.login(silent=True)
+    except synapseclient.core.exceptions.SynapseNoCredentialsError:
+        print(
+            ".synapseConfig not found; please manually provide your",
+            "Synapse Personal Access Token (PAT). You can generate"
+            "one at https://www.synapse.org/#!PersonalAccessTokens:0",
+        )
+        pat = getpass("Your Synapse PAT: ")
+        syn = synapseclient.login(authToken=pat, silent=True)
     return syn
 
 
-def get_args():
-
+def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Get synapse table id of annotations to be editd and synapse table id of controlled vocabulary mappings"
+        description="Update legacy annotations to latest standard terms."
     )
     parser.add_argument(
-        "-a",
-        "--annots_table_id",
+        "-u",
+        "--union_table_id",
         type=str,
-        help="Synapse table id of annotations to edit.",
+        help="Table synID with annotations to update.",
     )
     parser.add_argument(
         "-cv",
-        "--cv_table_id",
+        "--cv_list",
         type=str,
-        help="Synapse table id of controlled vocabulary mappings",
+        default="https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv",
+        help="CSV of controlled terms and their non-preferred terms",
     )
-    parser.add_argument(
-        "-it",
-        "--intermediate_table_id",
-        type=str,
-        help="Synapse table id of intermediary/qc table (if there is one)",
-    )
-
+    parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
 
 
-def annotation_df(annots_table, syn):
-
-    annots_query = f"SELECT * FROM {annots_table}"
-    annots_df = syn.tableQuery(annots_query).asDataFrame().fillna("")
-
-    return annots_df
+def get_standard_terms(dictionary: dict, terms: list) -> set:
+    """Map list of terms to their standard term, removing all duplicates."""
+    return {dictionary.get(term, term) for term in terms}
 
 
-def cv_df(cv_table, syn):
+def map_legacy_terms_to_standard(vocab_csv: str) -> dict:
+    """Generate a dictionary of legacy terms to their standard term.
 
-    cv_query = f"SELECT attribute, preferredTerm, nonpreferredTerms FROM {cv_table}"
-    cv_df = syn.tableQuery(cv_query).asDataFrame().fillna("")
+    Standard terms that do not have legacy terms will NOT be added
+    to the dictionary.
+    """
+    current_cv = pd.read_csv(vocab_csv)
 
-    return cv_df
-
-
-def cv_dictionary(cv_df):
-
-    # Create dictionary from controlled vocabulary table
-    cv_dict = cv_df.groupby("attribute").apply(
-        lambda x: dict(zip(x["preferredTerm"], x["nonpreferredTerms"]))
+    # Only consider terms with legacy terms, then explode the list.
+    filtered_cv = current_cv[current_cv["nonpreferred_values"].notna()]
+    filtered_cv.loc[:, "nonpreferred_values"] = (
+        filtered_cv["nonpreferred_values"].str.replace(", ", ",").str.split(",")
     )
+    filtered_cv = filtered_cv.explode("nonpreferred_values")
 
+    # Create a nested dictionary of
+    #   { category -> { non-preferred-term -> standard term } }
+    cv_dict = filtered_cv.groupby("category").apply(
+        lambda x: dict(zip(x["nonpreferred_values"], x["valid_value"])),
+        include_groups=False,
+    )
     return cv_dict
 
 
-def edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict):
+def update_nonpreferred_terms(
+        table: pd.DataFrame,
+        cv_dict: dict
+) -> pd.DataFrame:
+    """Update legacy annotations found to current standard terms."""
 
-    # Iterate through attribute diciontary and match column names
-    for k, v in ATTRIBUTE_DICT.items():
-        if v in annots_df.columns:
-            # Get nested dictionary for corresponding column/attribute from cv_dict
-            column_dict = cv_dict.get(k)
-            # Iterate through annotation rows for corresponding column/attribute
-            for i, r in annots_df.iterrows():
-                column_value = r[v]
-                # If column value is a list, iterate through list of terms
-                if type(column_value) == list:
-                    for term in column_value:
-                        # Iterate through corresponding column/attribute dictionary values to match terms.
-                        for key, value in column_dict.items():
-                            for item in value:
-                                # If the terms match and the nonpreferred term is not the same as the preferred term (need to fix this in the CV)
-                                if term == item and term != key:
-                                    # Replace nonpreferred term with preferred term in annotation (if a list)
-                                    updated_column_value = list(
-                                        map(
-                                            lambda x: x.replace(term, key), column_value
-                                        )
-                                    )
-                                    # Update term in annotations data frame
-                                    annots_df.at[i, v] = updated_column_value
-                                    print(
-                                        f'\n\nNonpreferred term caught: "{term}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: {column_value}\nUpdated full annotation: {updated_column_value}'
-                                    )
+    # Manifest may use colnames that are variations of what is listed
+    # in the dictionary, e.g. "Publication Assay" instead of "assay".
+    # Re-map colnames to match with dictionary, keeping record of the
+    # original manifest colnames.
+    og_colnames = table.columns
+    table = table.rename(columns=ATTRIBUTE_DICT)
+    for category in cv_dict.index:
+        if category in table.columns:
+            print(f"\tChecking {category}...")
+            table.loc[:, category] = (
+                table[category]
+                .str.replace(", ", ",")
+                .str.split(",")
+                .apply(lambda annots: ", ".join(
+                    get_standard_terms(cv_dict[category], annots)
+                ))
+            )
 
-                # If column type is not a list, replace annotation term with preferred term
-                else:
-                    for key, value in column_dict.items():
-                        for item in value:
-                            if column_value == item and item != key:
-                                annots_df.at[i, v] = key
-                                print(
-                                    f'\n\nNonpreferred term caught: "{item}" and updated to preferred term: "{key}"\nAttribute: {k}\nColumn name: {v}\nOriginal full annotation: "{column_value}"\nUpdated full annotation: "{key}"'
-                                )
-    return annots_df
+    # Rename colnames to the original names.
+    table.columns = og_colnames
+    return table
 
 
-def store_edited_annotations(syn, table_id, annots_df):
-
-    syn.store(Table(table_id, annots_df))
-
-    print("\n\nAnnotations have been updated!")
+def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
+    """Update each parent table found in union table."""
+    for table_id in scope_ids:
+        print(f"Updating annotations found in table ID: {table_id}")
+        table = syn.tableQuery(f"SELECT * FROM {table_id}")
+        updated_table = update_nonpreferred_terms(
+            table.asDataFrame().fillna(""),
+            cv_dict
+        )
+        if dryrun:
+            updated_table.to_csv(table_id + "-updated.csv", index=False)
+        else:
+            syn.store(synapseclient.Table(
+                table_id,
+                updated_table,
+                etag=table.etag
+            ))
 
 
 def main():
-
+    """Main function."""
     syn = login()
     args = get_args()
-    annots_df = annotation_df(args.annots_table_id, syn)
-    vocab_df = cv_df(args.cv_table_id, syn)
-    cv_dict = cv_dictionary(vocab_df)
-    edited_annotations = edit_annotations(ATTRIBUTE_DICT, annots_df, cv_dict)
 
-    # Store updated annotations, uncomment when ready.
-    # store_edited_annotations(syn, args.annots_table_id, edited_annotations)
+    union_table_scope_ids = (
+        syn.tableQuery(f"SELECT entityId FROM {args.union_table_id}")
+        .asDataFrame()["entityId"]
+        .unique()
+    )
+    cv_dict = map_legacy_terms_to_standard(args.cv_list)
+
+    if args.dryrun:
+        print("\n❗❗❗ WARNING: dryrun is enabled. Results will be "
+              "saved to CSV instead.\n" + "=" * 80 + "\n")
+    update_manifest_tables(syn, union_table_scope_ids, cv_dict, args.dryrun)
 
 
 if __name__ == "__main__":
