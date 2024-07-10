@@ -47,10 +47,14 @@ if [ $? -eq 0 ]; then
                 echo "Error: schema_update.py failed."
             fi
         else
-            echo "Error: combined_script.py failed."
+            echo "Error: upload-manifests.py failed."
         fi
     else
-        echo "Error: script_name.py failed."
+        echo "Error: Formatting failed"
     fi
 else
     echo "Error: split_manifest_grants.py failed."
+fi
+else
+    echo "Error: Conda environment activation failed."
+fi
