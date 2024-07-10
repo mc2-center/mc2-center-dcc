@@ -13,18 +13,18 @@ python3 split_manifest_grants.py feb_manifest.csv publication ./output/output_fe
 
 # Check if split_manifest_grants.py was successful
 if [ $? -eq 0 ]; then
-    # Run python3 script_name.py
+    # Generate file paths for split manifests
     echo "Generating file paths..."
     python3 gen-mp-csv.py ./output/output_feb feb_filepaths.csv publications
 
-    # Check if script_name.py was successful
+    # Check if file path generation was successful 
     if [ $? -eq 0 ]; then
-        # Run python3 combined_script.py
+        # Format manifests
         echo "Processing split files..."
         python3 processing-splits.py ./output/output_feb
-        # Check if combined_script.py was successful
+        # Check if formatting was successful
         if [ $? -eq 0 ]; then
-            # Run python3 schema_update.py, generating IDs
+            # Run schema updates, generating IDs
             echo "Running schema updates..."
             python3 schema_update.py feb_filepaths.csv Publication
 
@@ -54,4 +54,3 @@ if [ $? -eq 0 ]; then
     fi
 else
     echo "Error: split_manifest_grants.py failed."
-fi
