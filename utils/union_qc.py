@@ -2,7 +2,8 @@
 union_qc.py
 
 Submits a query to get all information from a Synapse table
-Checks new Synapse table against current CCKP database entries and reports non-matching entries
+Checks new Synapse table against current CCKP database entries and
+reports non-matching entries
 Validates non-matching table entries against a schematic data model
 Returns row identifer and validation state
 Trims invalid entries using schematic error log
@@ -21,7 +22,7 @@ import subprocess
 import re
 
 
-### Login to Synapse ###
+# Login to Synapse
 def login():
 
     syn = synapseclient.login()
@@ -40,7 +41,8 @@ def get_args():
         "-bl",
         required=False,
         default=None,
-        help="path to CSV with row numbers to trim from manifest. Numbers should be provided on separate rows.",
+        help="""path to CSV with row numbers to trim from manifest.
+        Numbers should be provided on separate rows.""",
     )
     parser.add_argument(
         "-tp", required=False, default=None, help="path to manifest CSV to trim."
@@ -48,12 +50,21 @@ def get_args():
     parser.add_argument(
         "-m",
         action="store_true",
-        help="Boolean; if flag is provided, manifest rows will be merged by model-specific key.",
+        help="""Boolean; if flag is provided,
+        manifest rows will be merged by model-specific key.""",
     )
     parser.add_argument(
         "-t",
         action="store_true",
-        help="Boolean; if flag is provided, manifest rows with errors will be trimmed.",
+        help="""Boolean; if flag is provided,
+        manifest rows with errors will be trimmed.""",
+    )
+    parser.add_argument(
+        "-s",
+        action="store_true",
+        help="""Boolean; if flag is provided,
+        an extended column set will be used to 
+        identify updated entries.""",
     )
     return parser.parse_args()
 
@@ -64,33 +75,26 @@ def get_tables(syn, tableIdList, mergeFlag):
     names = []
 
     for tableId in tableIdList:
+        # pull table from Synapse
+        table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame().fillna("")
+        # grab name of data type from table
+        # assumes "Component" is first column in table
+        name = table.iat[1, 0]
+        # build path to store table as CSV
+        manifestPath = Path(f"output/{name}/{name}.csv")
+        # create folder to store CSVs
+        manifestPath.parent.mkdir(parents=True, exist_ok=True)
 
-        table = (
-            syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame().fillna("")
-        )  # pull table from Synapse
-        name = table.iat[
-            1, 0
-        ]  # grab name of data type from table; assumes "Component" is first column in table
-
-        manifestPath = Path(
-            f"output/{name}/{name}.csv"
-        )  # build path to store table as CSV
-        manifestPath.parent.mkdir(
-            parents=True, exist_ok=True
-        )  # create folder to store CSVs
-
-        table.to_csv(
-            manifestPath, index=False, lineterminator="\n"
-        )  # convert df to CSV
-
+        # convert df to CSV
+        table.to_csv(manifestPath, index=False, lineterminator="\n")
+        # if merging store the table for the next function
         if mergeFlag:
-            tables.append(table)  # if merging, store the table for the next function
+            tables.append(table)
+        # if not merging, store the file path for the next function
         else:
-            tables.append(
-                manifestPath
-            )  # if not merging, store the file path for the next function
-
-        names.append(name)  # store the name for next functions
+            tables.append(manifestPath)
+        # store the name for next functions
+        names.append(name)
 
     return list(zip(tables, names))
 
@@ -101,11 +105,9 @@ def combine_rows(args):
 
     groups = []
     names = []
-
+    # make everything strings so they can be joined as needed
     for table, name in zip(newTables, newNames):
-        table = table.astype(
-            str
-        )  # make everything strings so they can be joined as needed
+        table = table.astype(str)
 
         nameParts = [name, "id"]  # define parts of component_id column name
 
@@ -113,7 +115,7 @@ def combine_rows(args):
         idColumn = "_".join(nameParts)  # build component_id column name
 
         if name in ["PublicationView", "DatasetView", "ToolView"]:
-            # define parts of column names with common formats between manifests
+            # define parts of column names with common formats
             # build column names
             # access mapping dictionaries associated with manifest types
 
@@ -130,10 +132,12 @@ def combine_rows(args):
                 tissueColumn = " ".join(tissueParts)
 
                 if name == "PublicationView":
-
-                    aliasColumn = "Pubmed Id"  # column to group entries by
-
-                    mapping = {  # defines how info in each column is handled by row merging function
+                    # column to group entries by
+                    aliasColumn = "Pubmed Id"
+                    # defines how info in each column
+                    # is handled by row merging function
+                    mapping = {
+                        aliasColumn: "first",
                         componentColumn: "first",
                         idColumn: ",".join,
                         grantColumn: ",".join,
@@ -158,6 +162,7 @@ def combine_rows(args):
                     aliasColumn = "Dataset Alias"
 
                     mapping = {
+                        aliasColumn: "first",
                         componentColumn: "first",
                         idColumn: ",".join,
                         "Dataset Pubmed Id": "first",
@@ -179,6 +184,7 @@ def combine_rows(args):
                 aliasColumn = "Tool Name"
 
                 mapping = {
+                    aliasColumn: "first",
                     componentColumn: "first",
                     idColumn: ",".join,
                     "Tool Pubmed Id": "first",
@@ -218,6 +224,7 @@ def combine_rows(args):
             aliasColumn = "Resource Alias"
 
             mapping = {
+                aliasColumn: "first",
                 componentColumn: "first",
                 idColumn: ",".join,
                 "Resource Title": "first",
@@ -243,11 +250,12 @@ def combine_rows(args):
                 "Resource Tool Link": "first",
                 "entityId": ",".join,
             }
-
+        # group rows by designated identifier and map attributes
         mergedTable = (
             table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
-        )  # group rows by designated identifier and map attributes
-        mergedTable = mergedTable.iloc[:, 1:]  # remove unnecessary "id" column
+        )
+        # remove unnecessary "id" column
+        mergedTable = mergedTable.iloc[:, 1:]
 
         mergePath = Path(f"output/{name}/{name}_merged.csv")
         mergePath.parent.mkdir(parents=True, exist_ok=True)
@@ -290,9 +298,10 @@ def get_ref_tables(syn, args):
     return list(zip(ref_paths, table_paths, ref_names))
 
 
-def compare_and_subset_tables(args):
+def compare_and_subset_tables(args, strict):
 
     current, updated, names = zip(*args)
+    strict = strict
 
     updatePaths = []
     updateNames = []
@@ -301,38 +310,50 @@ def compare_and_subset_tables(args):
 
         if name == "PublicationView":
             key = ["Pubmed Id"]
-            cols = [
-                "Pubmed Id",
-                "Pubmed Url",
-                "Publication Assay",
-                "Publication Tissue",
-                "Publication Tumor Type",
-                "Publication Accessibility"
-            ]
+            if strict:
+                cols = [
+                    "PublicationView_id",
+                    "Pubmed Id",
+                    "Pubmed Url",
+                    "Publication Assay",
+                    "Publication Tissue",
+                    "Publication Tumor Type",
+                    "Publication Accessibility",
+                ]
+            else:
+                cols = ["Pubmed Id", "Publication Accessibility"]
 
         elif name == "DatasetView":
             key = ["Dataset Alias"]
-            cols = [
-                "Dataset Alias",
-                "Dataset Assay",
-                "Dataset Tissue",
-                "Dataset Tumor Type",
-                "Dataset File Formats",
-                "Dataset Url",
-                "Dataset Species"
-            ]
+            if strict:
+                cols = [
+                    "DatasetView_id",
+                    "Dataset Alias",
+                    "Dataset Assay",
+                    "Dataset Tissue",
+                    "Dataset Tumor Type",
+                    "Dataset File Formats",
+                    "Dataset Url",
+                    "Dataset Species",
+                ]
+            else:
+                cols = ["DatasetView_id", "Dataset Alias", "Dataset Url"]
 
         elif name == "ToolView":
             key = ["Tool Name"]
-            cols = [
-                "Tool Name",
-                "ToolView_id",
-                "Tool Type",
-                "Tool Topic",
-                "Tool Language",
-                "Tool Documentation Url",
-                "Tool Documentation Type",
-            ]
+            if strict:
+                cols = [
+                    "Tool Name",
+                    "ToolView_id",
+                    "Tool Homepage",
+                    "Tool Type",
+                    "Tool Topic",
+                    "Tool Language",
+                    "Tool Documentation Url",
+                    "Tool Documentation Type",
+                ]
+            else:
+                cols = ["Tool Name"]
 
         elif name == "EducationalResource":
             key = ["Resource Alias"]
@@ -343,7 +364,9 @@ def compare_and_subset_tables(args):
 
         tables = [current_table, new_table]
 
-        updated = pd.concat(tables, ignore_index=True).reset_index(drop=True)
+        updated = (
+            pd.concat(tables, ignore_index=True).reset_index(drop=True).astype(str)
+        )
         updated.drop_duplicates(
             subset=cols, keep=False, ignore_index=True, inplace=True
         )
@@ -368,20 +391,18 @@ def validate_tables(args, config):
     validPaths = []
 
     for path, name in zip(paths, names):
-
-        command = (
-            [  # pass config, datatype, and CSV path(s) to schematic for validation
-                "schematic",
-                "model",
-                "-c",
-                config,
-                "validate",
-                "-dt",
-                name,
-                "-mp",
-                str(path),
-            ]
-        )
+        # pass config, datatype, and CSV path(s) to schematic for validation
+        command = [
+            "schematic",
+            "model",
+            "-c",
+            config,
+            "validate",
+            "-dt",
+            name,
+            "-mp",
+            str(path),
+        ]
 
         print(f"\n\nValidating manifest at: {str(path)}...")
 
@@ -390,13 +411,11 @@ def validate_tables(args, config):
 
         errPath = Path(f"output/{name}/{name}_error.txt")
         errPath.parent.mkdir(parents=True, exist_ok=True)
-
-        commandOut = open(outPath, "w")  # store logs from schematic validation
+        # store logs from schematic validation
+        commandOut = open(outPath, "w")
         errOut = open(errPath, "w")
 
-        process = subprocess.run(
-            command, text=True, check=True, stdout=commandOut, stderr=errOut
-        )
+        subprocess.run(command, text=True, check=True, stdout=commandOut, stderr=errOut)
 
         validNames.append(name)
         validOuts.append(outPath)
@@ -417,14 +436,12 @@ def parse_out(args):
 
         parsePath = Path(f"output/{name}/{name}_trim_config.csv")
         parsePath.parent.mkdir(parents=True, exist_ok=True)
-
-        parsed = pd.read_table(
-            out, sep="], ", header=None, engine="python"
-        )  # load output from schematic validation
-
-        parsedOut = parsed.to_csv(
+        # load output from schematic validation
+        parsed = pd.read_table(out, sep="], ", header=None, engine="python")
+        # convert log to useable format
+        parsed.to_csv(
             parsePath, index=False, sep="\n", header=False, columns=None, quoting=None
-        )  # convert log to useable format
+        )
 
         parsedNames.append(name)
         parsedOuts.append(parsePath)
@@ -475,13 +492,14 @@ def main():
     args = get_args()
     syn = login()
 
-    inputList, config, trimList, inputManifest, merge, trim = (
+    inputList, config, trimList, inputManifest, merge, trim, strict = (
         args.l,
         args.c,
         args.bl,
         args.tp,
         args.m,
         args.t,
+        args.s,
     )
 
     if trimList is None:
@@ -491,7 +509,8 @@ def main():
 
             newTables = get_tables(syn, inputList, merge)
             print(
-                "\n\nTable(s) downloaded from Synapse and stored as CSVs in output folder!"
+                """\n\nTable(s) downloaded from Synapse
+                and stored as CSVs in output folder!"""
             )
 
         elif inputManifest is not None:
@@ -510,7 +529,10 @@ def main():
             newNames.append(name)
 
             newTables = list(zip(tables, newNames))
-            print(f"\n\nReading provided table at {inputManifest} of type {name}.")
+            print(
+                f"""\n\nReading provided table
+                at {inputManifest} of type {name}."""
+            )
 
         if merge:
             print("\n\nMerging rows with matching identifier...")
@@ -519,7 +541,8 @@ def main():
 
             print("\n\nMatching rows merged!")
             print(
-                "\n\nMerged table(s) converted to CSV and stored in local output folder!"
+                """\n\nMerged table(s) converted to CSV
+                and stored in local output folder!"""
             )
 
             print("\n\nValidating merged manifest(s)...")
@@ -529,7 +552,7 @@ def main():
 
         refTables = get_ref_tables(syn, newTables)
 
-        updatedTables = compare_and_subset_tables(refTables)
+        updatedTables = compare_and_subset_tables(refTables, strict)
 
         checkTables = validate_tables(updatedTables, config)
         print("\n\nValidation logs stored in local output folder!")
@@ -543,11 +566,14 @@ def main():
 
         if trim:
             print("\n\nTrimming invalid entries from manifests...")
-            cleanTables = trim_tables(validEntries)
+            trim_tables(validEntries)
             print("\n\nInvalid entries trimmed!")
 
         else:
-            print("\n\nNo trimming performed. Manifests may contain invalid entries.")
+            print(
+                """\n\nNo trimming performed.
+                  Manifests may contain invalid entries."""
+            )
 
     if trimList is not None:
 
@@ -559,13 +585,15 @@ def main():
 
             if name is None:
                 print(
-                    "\n\nPlease provide a trim config that uses the expected naming convention."
+                    """\n\nPlease provide a trim config that
+                    uses the expected naming convention."""
                 )
                 exit
 
             else:
                 print(
-                    f"\n\nThe file {str(inputManifest)} will be trimmed based on {str(trimList)}"
+                    f"""\n\nThe file {str(inputManifest)}
+                    will be trimmed based on {str(trimList)}"""
                 )
 
                 names.append(name[1])
@@ -579,11 +607,14 @@ def main():
                 validEntries = list(zip(names, outs, paths))
 
                 print("\n\nTrimming invalid entries from manifests...")
-                cleanTables = trim_tables(validEntries)
+                trim_tables(validEntries)
                 print("\n\nInvalid entries trimmed!")
 
         elif inputManifest is None:
-            print(f"\n\nNo manifest provided. Please designate a manifest to trim.")
+            print(
+                """\n\nNo manifest provided.
+                Please designate a manifest to trim."""
+            )
 
 
 if __name__ == "__main__":
