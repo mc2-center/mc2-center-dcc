@@ -50,6 +50,7 @@ def get_args():
     parser.add_argument(
         "-m",
         action="store_true",
+        default="store_true",
         help="""Boolean; if flag is provided,
         manifest rows will be merged by model-specific key.""",
     )
