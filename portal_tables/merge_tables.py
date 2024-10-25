@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument(
         "-n",
         type=str,
-        choices=["PublicationView", "DatasetView", "ToolView", "EducationalResource"],
+        choices=["Biospecimen","Study","Model","FileView","PublicationView", "DatasetView", "ToolView", "EducationalResource"],
         help="Name of metadata component being merged into table.",
     )
     return parser.parse_args()
@@ -84,6 +84,10 @@ def main():
     source, target, table_type = args.s, args.t, args.n
 
     if table_type in [
+        "Biospecimen",
+        "Study",
+        "Model",
+        "FileView",
         "PublicationView",
         "DatasetView",
         "ToolView",
