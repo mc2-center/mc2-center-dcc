@@ -1,5 +1,7 @@
 """
 Get synIDs for entities matching input name
+
+author: orion.banks
 """
 
 import synapseclient
