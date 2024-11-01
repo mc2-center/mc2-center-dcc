@@ -36,10 +36,10 @@ def get_args():
         description="Create UNION tables from metadata stored in Synapse project tables"
     )
     parser.add_argument(
-        "-s", type=str, help="Synapse ID of entityview with table information to query."
+        "-s", type=str, default="syn52750482", help="Synapse ID of entityview with table information to query. (Default: syn52750482, MC2_All_Project_Tables)"
     )
     parser.add_argument(
-        "-t", type=str, help="Synapse ID of target project to store merged table."
+        "-t", type=str, default="syn28742843",help="Synapse ID of target project to store merged table. (Default: syn28742843, CCKP - MC2 Admin)"
     )
     parser.add_argument(
         "-n",
