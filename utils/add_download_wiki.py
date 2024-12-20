@@ -30,6 +30,12 @@ def get_args():
         required=False
     )
     parser.add_argument(
+        "-n",
+        type=str,
+        help="Brief text description of the dataset",
+        required=False
+    )
+    parser.add_argument(
         "-c",
         type=str,
         help="Path to a CSV file with Dataset and Folder Synapse Ids.",
@@ -37,8 +43,14 @@ def get_args():
     )
     return parser.parse_args()
 
-def build_wiki(entity, scopeId):
+def build_wiki(description, entity, scopeId):
 
+    desc = f"""
+##Dataset description:
+
+#### {description}
+
+"""
     option1 = """
 ##Available methods for downloading the files and annotations contained in this dataset
 
@@ -136,7 +148,7 @@ ${image?fileName=dataset_download_selection.png&align=None&scale=50&responsive=t
                "/Users/obanks/Documents/screenshots/dataset_download_options.png",
                "/Users/obanks/Documents/screenshots/dataset_download_selection.png"]
 
-    wiki = Wiki(title="Download Files in this Dataset", owner=entity, markdown=option1+option2+option3, attachments=attachments)
+    wiki = Wiki(title="Download Files in this Dataset", owner=entity, markdown=desc+option1+option2+option3, attachments=attachments)
 
     return wiki
 
@@ -148,7 +160,7 @@ def main():
 
     args = get_args()
 
-    datasetId, scopeId, idSheet= args.d, args.s, args.c  # assign path to manifest file from command line input
+    datasetId, scopeId, description, idSheet= args.d, args.s, args.n, args.c  # assign path to manifest file from command line input
 
     if idSheet:
         idSet = pd.read_csv(idSheet, header=None)
@@ -159,8 +171,9 @@ def main():
             for row in idSet.itertuples(index=False):
                 datasetId = row[0]
                 scopeId = row[1]
+                description = row[2]
                 dataset = syn.get(datasetId)
-                new_wiki = build_wiki(dataset, scopeId)
+                new_wiki = build_wiki(description, dataset, scopeId)
                 new_wiki = syn.store(new_wiki)
                 print(f"\nDataset {datasetId} successfully updated with wiki content")
                 count += 1
@@ -172,7 +185,7 @@ def main():
         if datasetId and scopeId:
             dataset = syn.get(datasetId)
 
-            new_wiki = build_wiki(dataset, scopeId)
+            new_wiki = build_wiki(description, dataset, scopeId)
             new_wiki = syn.store(new_wiki)
             print(f"\nDataset {datasetId} successfully updated with wiki content")
         else:
