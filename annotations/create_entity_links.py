@@ -113,11 +113,14 @@ def main():
 
         name_column = "Tool Name"
         primary_key = "ToolView_id"
+        link_column = "Tool Homepage"
 
     elif data_type == "EducationalResource":
 
         name_column = "Resource Title"
         primary_key = "EducationalResource_id"
+        link_column = "Resource Link"
+
 
     print("Capturing information from " + data_type + " manifests...")
     pnt = get_names(manifest, name_column, link_column)
