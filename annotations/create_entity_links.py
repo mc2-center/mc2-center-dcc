@@ -1,15 +1,17 @@
 """create_entity_links.py
 
+Uses link in a resource manifest to generate a Synapse Link Entity
+Links are created in the MC2 Center reference folders, also used to store metadata
+Returns the entity ID and adds it to the primary key column of the input manifest
 
 author: orion.banks
 """
 
+import argparse
+import numpy as np
+import pandas as pd
 import synapseclient
 from synapseclient import File
-import synapseutils
-import argparse
-import pandas as pd
-import numpy as np
 
 
 def get_args():
@@ -29,7 +31,7 @@ def get_args():
     return parser.parse_args()
 
 
-def get_names(manifest, name_column, link_column):
+def get_names(manifest, name_column, target_column, link_column):
 
     path_name_link_target = []
 
@@ -37,7 +39,7 @@ def get_names(manifest, name_column, link_column):
 
     paths = paths_sheet["File Paths"].tolist()
 
-    targets = paths_sheet["folderIdDatasets"].tolist()
+    targets = paths_sheet[f"{target_column}"].tolist() 
 
     for path, target in zip(paths, targets):
 
@@ -53,7 +55,7 @@ def get_names(manifest, name_column, link_column):
     return path_name_link_target
 
 
-def add_folders(syn, path_name_link_target):
+def create_links(syn, path_name_link_target): 
 
     paths, names, links, targets = zip(*path_name_link_target)
 
@@ -108,12 +110,14 @@ def main():
         name_column = "Dataset Alias"
         primary_key = "DatasetView_id"
         link_column = "Dataset Url"
+        target_column = "folderIdDatasets"
 
     elif data_type == "ToolView":
 
         name_column = "Tool Name"
         primary_key = "ToolView_id"
         link_column = "Tool Homepage"
+        target_column = "folderIdTools"
 
     elif data_type == "EducationalResource":
 
@@ -123,11 +127,11 @@ def main():
 
 
     print("Capturing information from " + data_type + " manifests...")
-    pnt = get_names(manifest, name_column, link_column)
+    pnt = get_names(manifest, name_column, target_column, link_column)
     print("PNT", pnt)
 
     print("Generating Synapse Link Entities for each set of " + data_type + " entries...")
-    pni = add_folders(syn, pnt)
+    pni = create_links(syn, pnt)
     print("PNI", pni)
 
     print(
