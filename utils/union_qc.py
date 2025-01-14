@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument(
         "-m",
         action="store_true",
-        default="store_true",
+        default=None,
         help="""Boolean; if flag is provided,
         manifest rows will be merged by model-specific key.""",
     )
@@ -66,6 +66,13 @@ def get_args():
         help="""Boolean; if flag is provided,
         an extended column set will be used to 
         identify updated entries.""",
+    )
+    parser.add_argument(
+        "-db",
+        action="store_true",
+        default=None,
+        help="""Boolean; if flag is provided,
+        column labels will be added to updated output to indicate table source.""",
     )
     return parser.parse_args()
 
@@ -299,7 +306,7 @@ def get_ref_tables(syn, args):
     return list(zip(ref_paths, table_paths, ref_names))
 
 
-def compare_and_subset_tables(args, strict):
+def compare_and_subset_tables(args, strict, debug):
 
     current, updated, names = zip(*args)
     strict = strict
@@ -362,6 +369,10 @@ def compare_and_subset_tables(args, strict):
 
         current_table = pd.read_csv(ref, header=0).sort_values(by=key)
         new_table = pd.read_csv(new, header=0).sort_values(by=key)
+        
+        if debug:
+            current_table["Source"] = "Database"
+            new_table["Source"] = "Updated"
 
         tables = [current_table, new_table]
 
@@ -493,7 +504,7 @@ def main():
     args = get_args()
     syn = login()
 
-    inputList, config, trimList, inputManifest, merge, trim, strict = (
+    inputList, config, trimList, inputManifest, merge, trim, strict, debug = (
         args.l,
         args.c,
         args.bl,
@@ -501,6 +512,7 @@ def main():
         args.m,
         args.t,
         args.s,
+        args.db
     )
 
     if trimList is None:
@@ -553,7 +565,7 @@ def main():
 
         refTables = get_ref_tables(syn, newTables)
 
-        updatedTables = compare_and_subset_tables(refTables, strict)
+        updatedTables = compare_and_subset_tables(refTables, strict, debug)
 
         checkTables = validate_tables(updatedTables, config)
         print("\n\nValidation logs stored in local output folder!")
