@@ -22,8 +22,8 @@ def get_args():
     parser.add_argument(
         "manifest_type",
         type=str,
-        choices=["publication", "dataset", "tool", "project", "resource"],
-        help="type of manifest to split, e.g. publicaiton",
+        choices=["publication", "dataset", "tool", "project", "resource", "grant"],
+        help="type of manifest to split, e.g. publication",
     )
     parser.add_argument(
         "folder", type=str, help="folder path to save split manifests in"
@@ -67,7 +67,11 @@ def generate_manifest_as_excel(df, cv_terms, output):
 
 def split_manifest(df, manifest_type, database):
     """Split manifest into multiple manifests by grant number."""
-    colname = f"{manifest_type.capitalize()} Grant Number"
+    if manifest_type != "grant":
+        colname = f"{manifest_type.capitalize()} Grant Number"
+    else:
+        colname = "Grant Number"
+
     idColumn = f"{manifest_type.capitalize()}View_id"
 
     if database:
@@ -81,7 +85,7 @@ def split_manifest(df, manifest_type, database):
 
     df[colname] = df[colname].str.split(sep)
 
-    df = df.drop(["entityId"], axis=1, errors="ignore")
+    df = df.drop(["entityId", "Id"], axis=1, errors="ignore")
 
     grouped = df.explode(cols).groupby(colname)
     print(f"Found {len(grouped.groups)} grant numbers in table " "- splitting now...")
