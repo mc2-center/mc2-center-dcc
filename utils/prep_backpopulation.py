@@ -6,32 +6,71 @@ to match the respective View-type schema.
 
 import pandas as pd
 import sys
-
+import re
 
 def add_missing_info(
-    pubs: pd.DataFrame
+    df: pd.DataFrame,
+    name: str,
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
 
     prefix = "https://doi.org/"
 
-    pubs["Publication Doi"] = [
-        "".join([prefix, doi])
-        for doi in pubs["Publication Doi"]
-    ]
+    if name == "PublicationView":
+        for entry in df.itertuples():
+            fixed = []
+            i = entry[0]
+            doi = entry[5]
+            matches = re.match('https', doi)
+            if matches is None:
+                doi = "".join([
+                    "".join([prefix, doi])
+                ])
+            fixed.append(doi)
 
-    return pubs
+            fixed_dois = list(dict.fromkeys(fixed))
+            df.at[i, 'Publication Doi'] = "".join(fixed_dois)
+    
+    if name == "DatasetView":
+        df["Data Use Codes"] = ""
 
+    df["Study Key"] = ""
+
+    return df
+
+def extract_lists(df: pd.DataFrame, list_columns, pattern) -> pd.DataFrame:
+    """Extract bracketed/quoted lists from sheets."""
+
+    for col in list_columns:
+
+        df[col] = (
+            df[col]
+            .apply(lambda x: re.findall(pattern, x))
+            .str.join(", "))
+        
+    return df
+
+def map_columns(df: pd.DataFrame, column_map) -> pd.DataFrame:
+    """Map outdated columns to new column names and drop old columns."""
+
+    for start, end in column_map:
+
+        df[f"{end}"] = [
+            x for x in df[f"{start}"]
+        ]
+
+    return df
 
 def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
     """Clean up the table one final time."""
 
     # Reorder columns to match the table order.
-    if data == "publication":
+    if data == "PublicationView":
         col_order = [
             "Component",
             "PublicationView_id",
-            "Publication Grant Number",
+            "Study Key",
+            "GrantView Key",
             "Publication Doi",
             "Publication Journal",
             "Pubmed Id",
@@ -49,12 +88,13 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "entityId",
         ]
 
-    elif data == "dataset":
+    elif data == "DatasetView":
         col_order = [
             "Component",
             "DatasetView_id",
-            "Dataset Pubmed Id",
-            "Dataset Grant Number",
+            "GrantView Key",
+            "Study Key",
+            "PublicationView Key",
             "Dataset Name",
             "Dataset Alias",
             "Dataset Description",
@@ -65,6 +105,7 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Dataset Tissue",
             "Dataset Url",
             "Dataset File Formats",
+            "Data Use Codes",
             "entityId",
         ]
     return df[col_order]
@@ -74,17 +115,38 @@ def main():
     """Main function."""
     input = sys.argv[1]
     output = sys.argv[2]
-    data = sys.argv[3]
-    clean = sys.argv[4]
+    clean = sys.argv[3]
+
+    list_columns = []
+
+    pubs_column_map = [("Publication Grant Number", "GrantView Key")]
+
+    datasets_column_map = [("Dataset Grant Number", "GrantView Key"), ("Dataset Pubmed Id", "PublicationView Key")]
+
+    pattern = re.compile('"(.*?)"')
 
     manifest = pd.read_csv(input, header=0).fillna("")
+    name = manifest.loc[:, "Component"].iat[1]
+    
+    if name == "PublicationView":
+        column_map = pubs_column_map
+    
+    if name == "DatasetView":
+        column_map = datasets_column_map
 
-    if data == "publication" and clean == "doi":
-        database = add_missing_info(manifest)
+    if clean is not None:
+        database = add_missing_info(manifest, name)
+
+        if len(list_columns) > 0:
+            database = extract_lists(database, list_columns, pattern)
+
+        if len(column_map) > 0:
+            database = map_columns(database, column_map)
+
     else:
         database = manifest
     
-    final_database = clean_table(database, data)
+    final_database = clean_table(database, name)
     
     print(f"📄 Saving copy of final table to: {output}...")
     
