@@ -148,9 +148,13 @@ def main(folder_path, output_csv_file, data_type):
         file_suffix = "_education.csv"
         folder_id_column_name = "folderIdEducation"
 
+    elif data_type == "grants":
+        file_suffix = "_grant.csv"
+        folder_id_column_name = "folderIdGrant"
+
     else:
         print(
-            "Invalid data type. Please provide one of 'publications', 'datasets', 'tools', or 'education'."
+            "Invalid data type. Please provide one of 'publications', 'datasets', 'tools', 'education', or 'grants'."
         )
         return
 
