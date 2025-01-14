@@ -29,7 +29,7 @@ def get_args():
     parser.add_argument(
         "-t",
         type=str,
-        choices=["PublicationView", "DatasetView", "ToolView", "EducationalResource"],
+        choices=["PublicationView", "DatasetView", "ToolView", "EducationalResource", "GrantView"],
         help="type of manifest(s) being validated and uploaded",
     )
     parser.add_argument("-c", type=str, help="path to a schematic config file")
