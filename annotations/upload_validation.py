@@ -13,8 +13,8 @@ from datetime import datetime
 def get_folder_type_argument():
     parser = argparse.ArgumentParser(description="Process Synapse folders and create a manifest.")
     parser.add_argument("csv_file_path", help="Path to the input CSV file.")
-    parser.add_argument("folder_type", choices=["Publication", "Dataset", "Tool"],
-                        help="Specify folder type: 'Publication', 'Dataset', or 'Tool'")
+    parser.add_argument("folder_type", choices=["Publication", "Dataset", "Tool", "Grant"],
+                        help="Specify folder type: 'Publication', 'Dataset', 'Tool', or 'Grant'")
     parser.add_argument(
         "-s",
         action="store_true",
@@ -30,6 +30,9 @@ def get_folder_id_column(folder_type):
         return "folderIdDatasets"
     elif folder_type == "Tool":
         return "folderIdTools"
+    elif folder_type == "Grant":
+        return "folderIdGrant"
+    
 
 def get_project_name(syn, folder_id):
     try:
