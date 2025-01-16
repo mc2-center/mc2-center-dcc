@@ -55,6 +55,7 @@ columns_to_modify = [
     f"{entity_type} Download Type",
     f"{entity_type} Documentation Type",
     f"{entity_type} Grant Number",
+    f"Grant Number",
     f"{entity_type} Doi",
     f"{entity_type} Journal",
     f"Pubmed Id",
@@ -95,6 +96,18 @@ columns_to_modify = [
     f"{entity_type} Link Url",
     f"{entity_type} Link Type",
     f"{entity_type} Link Note",
+    f"{entity_type} Theme Name",
+    f"{entity_type} Institution Name",
+    f"{entity_type} Institution Alias",
+    f"{entity_type} Investigator",
+    f"{entity_type} Consortium Name",
+    f"{entity_type} Start Date",
+    f"{entity_type} End Date",
+    f"NIH RePORTER Link",
+    f"Duration of Funding",
+    f"Embargo End Date",
+    f"{entity_type} Synapse Team",
+    f"{entity_type} Synapse Project",
     f"Id",
     f"entityId"
 ]
@@ -126,7 +139,8 @@ for my_table_synid in table_ids_list:
                     f"{entity_type} Function Note",
                     f"{entity_type} Download Note",
                     f"{entity_type} Documentation Note",
-                    f"{entity_type} Link Note"
+                    f"{entity_type} Link Note",
+                    f"{entity_type} Investigator"
                 ]:
                     new_column = syn.store(
                         synapseclient.Column(name=column_name, columnType="LARGETEXT")
@@ -163,7 +177,11 @@ for my_table_synid in table_ids_list:
                     f"{entity_type} Topic",
                     f"{entity_type} Download Url",
                     f"{entity_type} Documentation Url",
-                    f"{entity_type} Link Url"
+                    f"{entity_type} Link Url",
+                    f"{entity_type} Theme Name",
+                    f"NIH RePORTER Link",
+                    f"{entity_type} Synapse Team",
+                    f"{entity_type} Synapse Project"
                 ]:
                     new_column = syn.store(
                         synapseclient.Column(
