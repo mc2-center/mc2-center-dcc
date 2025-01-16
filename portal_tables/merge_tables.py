@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument(
         "-n",
         type=str,
-        choices=["Biospecimen","Study","Model","FileView","PublicationView", "DatasetView", "ToolView", "EducationalResource"],
+        choices=["Biospecimen","Study","Model","FileView","PublicationView", "DatasetView", "ToolView", "EducationalResource", "GrantView"],
         help="Name of metadata component being merged into table.",
     )
     return parser.parse_args()
@@ -92,6 +92,7 @@ def main():
         "DatasetView",
         "ToolView",
         "EducationalResource",
+        "GrantView"
     ]:
 
         label = f"{table_type}_UNION"
