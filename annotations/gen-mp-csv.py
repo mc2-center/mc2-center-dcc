@@ -71,7 +71,7 @@ def extract_ca_number(file_path, file_suffix):
 
 
 def get_folder_id_and_grant_id_from_csv(
-    grant_folder_reference, ca_number, folder_id_column_name, grant_id_column_name
+    grant_folder_reference, ca_number, folder_id_column_name, grant_id_column_name, mapping
 ):
     df = grant_folder_reference
 
@@ -82,6 +82,10 @@ def get_folder_id_and_grant_id_from_csv(
         if not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
+            
+            if ca_number in mapping.keys():
+                folder_id, grant_id = mapping[ca_number]
+            
             print(
                 f"Matching {folder_id_column_name}: {folder_id}, Grant ID: {grant_id}"
             )
@@ -103,6 +107,7 @@ def write_file_paths_to_csv(
     grant_folder_reference,
     folder_id_column_name,
     grant_id_column_name,
+    mapping
 ):
 
     ref_name = "".join(
@@ -125,12 +130,15 @@ def write_file_paths_to_csv(
                 ca_number,
                 folder_id_column_name,
                 grant_id_column_name,
+                mapping
             )
             csv_writer.writerow([file_path, folder_id, grant_id])
 
 
 def main(folder_path, output_csv_file, data_type):
     grant_id_column_name = "grantId"
+
+    eq_mapping = {"CA209997": ("syn32698150", "syn7315802")}
 
     if data_type == "publications":
         file_suffix = "_publication.csv"
@@ -166,6 +174,7 @@ def main(folder_path, output_csv_file, data_type):
         file_suffix,
         folder_id_column_name,
         grant_id_column_name,
+        eq_mapping
     )
 
     print("CSV file with file paths, target IDs, and grant IDs generated.")
