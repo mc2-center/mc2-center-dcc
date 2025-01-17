@@ -122,6 +122,7 @@ def main():
     manifest_type = args.t
     submit_valid = args.v
     skip_validation = args.skip
+    single = True
 
     df = pd.read_csv(csv_file)
     pd.set_option("display.max_colwidth", 90)
@@ -163,7 +164,35 @@ def main():
     )
 
     if choice == "upload":
-        submit_pool.map(partial(submit_entry_worker, cf=config_file), submit_args_list)
+        
+        if single:
+            print("Single upload mode is active. Manifests will be uploaded one-by-one.")
+            cf = config_file
+            for fp, target_id in submit_args_list:
+                command = [
+                "schematic",
+                "model",
+                "-c",
+                cf,
+                "submit",
+                "-mp",
+                fp,
+                "-d",
+                target_id,
+                "-mrt",
+                "table_and_file",
+                "-tm",
+                "upsert",
+                "-tcn",
+                "display_name"
+                ]
+
+                cmd_line = " ".join(command)
+                print(cmd_line)
+                subprocess.run(command, stdout=sys.stdout, stderr=subprocess.STDOUT)
+
+        else:
+            submit_pool.map(partial(submit_entry_worker, cf=config_file), submit_args_list)
 
         submit_pool.close()
         submit_pool.join()
