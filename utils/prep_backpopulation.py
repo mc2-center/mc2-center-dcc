@@ -69,8 +69,8 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
         col_order = [
             "Component",
             "PublicationView_id",
-            "Study Key",
             "GrantView Key",
+            "Study Key",
             "Publication Doi",
             "Publication Journal",
             "Pubmed Id",
