@@ -66,7 +66,7 @@ def extract_ca_number(file_path, file_suffix):
     file_name = os.path.basename(file_path)
     # Assuming the file name format is "CA****_publication.csv" or "CA****_dataset.csv"
     ca_number = file_name.split("_")[0][2:]
-    print(f"Extracted CA number: {ca_number}")
+    print(f"\n\nExtracted CA number: {ca_number}")
     return f"CA{ca_number}"
 
 
@@ -76,23 +76,26 @@ def get_folder_id_and_grant_id_from_csv(
     df = grant_folder_reference
 
     if folder_id_column_name in df.columns and grant_id_column_name in df.columns:
-        print(f"Successfully read reference table: {grant_folder_reference}")
-
+        
         match = df[df["grantNumber"] == ca_number]
-        if not match.empty:
+        if ca_number in mapping.keys():
+            print(f"Entry {ca_number} contains values from mapping dictionary")
+            folder_id, grant_id = mapping[ca_number]
+        
+        elif not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
             
-            if ca_number in mapping.keys():
-                folder_id, grant_id = mapping[ca_number]
-            
-            print(
+        else:
+            print(f"No match found for {ca_number}.")
+            return None, None
+        
+        print(
                 f"Matching {folder_id_column_name}: {folder_id}, Grant ID: {grant_id}"
             )
-            return folder_id, grant_id
-        else:
-            print(f"No match found for {folder_id_column_name}.")
-            return None, None
+        
+        return folder_id, grant_id
+    
     else:
         print(
             f"Error: '{folder_id_column_name}' or '{grant_id_column_name}' column not found in the CSV file: {grant_folder_reference}"
@@ -138,15 +141,21 @@ def write_file_paths_to_csv(
 def main(folder_path, output_csv_file, data_type):
     grant_id_column_name = "grantId"
 
-    eq_mapping = {"CA209997": ("syn32698150", "syn7315802")}
-
     if data_type == "publications":
         file_suffix = "_publication.csv"
         folder_id_column_name = "folderIdPublication"
+        folder_map = {"CA209997": "syn32698150",
+                      "CA209923": "syn43447063",
+                      "CAfiliatedNon-GrantAssociated": "syn52963310",
+                   }
 
     elif data_type == "datasets":
         file_suffix = "_dataset.csv"
         folder_id_column_name = "folderIdDatasets"
+        folder_map = {"CA209997": "syn52744921",
+                      "CA209923": "syn43447065",
+                      "CAfiliatedNon-GrantAssociated": "syn52963225",
+                   }
 
     elif data_type == "tools":
         file_suffix = "_tool.csv"
@@ -165,6 +174,11 @@ def main(folder_path, output_csv_file, data_type):
             "Invalid data type. Please provide one of 'publications', 'datasets', 'tools', 'education', or 'grants'."
         )
         return
+    
+    eq_mapping = {"CA209997": (folder_map["CA209997"], "syn7315802"),
+                  "CA209923": (folder_map["CA209923"], "syn43447051"),
+                  "CAfiliatedNon-GrantAssociated": (folder_map["CAfiliatedNon-GrantAssociated"], "syn52963211")
+                  }
 
     file_paths = get_csv_files_in_folder(folder_path, file_suffix)
     manifest_for_upload = write_file_paths_to_csv(
