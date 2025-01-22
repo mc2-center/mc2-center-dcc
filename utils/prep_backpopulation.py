@@ -2,6 +2,8 @@
 
 This script will reorder and modify database table manifest columns
 to match the respective View-type schema.
+
+author: orion.banks
 """
 
 import pandas as pd
@@ -50,7 +52,7 @@ def extract_lists(df: pd.DataFrame, list_columns, pattern) -> pd.DataFrame:
         
     return df
 
-def map_columns(df: pd.DataFrame, column_map) -> pd.DataFrame:
+def map_columns(df: pd.DataFrame, column_map: list[tuple]) -> pd.DataFrame:
     """Map outdated columns to new column names and drop old columns."""
 
     for start, end in column_map:
@@ -85,7 +87,7 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Publication Tissue",
             "Publication Accessibility",
             "Publication Dataset Alias",
-            "entityId",
+            "entityId"
         ]
 
     elif data == "DatasetView":
@@ -106,7 +108,7 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Dataset Url",
             "Dataset File Formats",
             "Data Use Codes",
-            "entityId",
+            "entityId"
         ]
     return df[col_order]
 
