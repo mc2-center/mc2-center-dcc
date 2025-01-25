@@ -51,7 +51,9 @@ for my_table_synid in table_ids_list:
         current_columns = list(syn.getColumns(my_table_synid))
 
         if entity_type == "Publication":
-            columns_to_add = ["GrantView Key", "Study Key"]
+            columns_to_add = [
+                "GrantView Key",
+                "Study Key"]
 
             column_order = [
                 "Component",
@@ -73,7 +75,7 @@ for my_table_synid in table_ids_list:
                 "Publication Accessibility",
                 "Publication Dataset Alias",
                 "Id",
-                "entityId",
+                "entityId"
             ]
 
         if entity_type == "Dataset":
@@ -81,7 +83,7 @@ for my_table_synid in table_ids_list:
                 "GrantView Key",
                 "Study Key",
                 "PublicationView Key",
-                "Data Use Codes",
+                "Data Use Codes"
             ]
 
             column_order = [
@@ -103,7 +105,70 @@ for my_table_synid in table_ids_list:
                 "Dataset File Formats",
                 "Data Use Codes",
                 "Id",
-                "entityId",
+                "entityId"
+            ]
+
+        if entity_type == "Tool":
+            columns_to_add = [
+                "GrantView Key",
+                "Study Key",
+                "DatasetView Key",
+                "PublicationView Key",
+                "Tool Date Last Modified",
+                "Tool Release Date",
+                "Tool Package Dependencies",
+                "Tool Package Dependencies Present",
+                "Tool Compute Requirements",
+                "Tool Entity Name",
+                "Tool Entity Type",
+                "Tool Entity Role"
+            ]
+
+            column_order = [
+                "Component",
+                "ToolView_id",
+                "GrantView Key",
+                "Study Key",
+                "DatasetView Key",
+                "PublicationView Key",
+                "Tool Name",
+                "Tool Description",
+                "Tool Homepage",
+                "Tool Version",
+                "Tool Operation",
+                "Tool Input Data",
+                "Tool Output Data",
+                "Tool Input Format",
+                "Tool Output Format",
+                "Tool Function Note",
+                "Tool Cmd",
+                "Tool Type",
+                "Tool Topic",
+                "Tool Operating System",
+                "Tool Language",
+                "Tool License",
+                "Tool Cost",
+                "Tool Accessibility",
+                "Tool Download Url",
+                "Tool Download Type",
+                "Tool Download Note",
+                "Tool Download Version",
+                "Tool Documentation Url",
+                "Tool Documentation Type",
+                "Tool Documentation Note",
+                "Tool Link Url",
+                "Tool Link Type",
+                "Tool Link Note",
+                "Tool Date Last Modified",
+                "Tool Release Date",
+                "Tool Package Dependencies",
+                "Tool Package Dependencies Present",
+                "Tool Compute Requirements",
+                "Tool Entity Name",
+                "Tool Entity Type",
+                "Tool Entity Role",
+                "Id",
+                "entityId"
             ]
 
         col_names = [n.name for n in current_columns]
