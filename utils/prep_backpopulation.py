@@ -35,6 +35,20 @@ def add_missing_info(
     
     if name == "DatasetView":
         df["Data Use Codes"] = ""
+    
+    if name == "ToolView":
+        for new_col in [
+            "DatasetView Key",
+            "Tool Date Last Modified",
+            "Tool Release Date",
+            "Tool Package Dependencies",
+            "Tool Package Dependencies Present",
+            "Tool Compute Requirements",
+            "Tool Entity Name",
+            "Tool Entity Type",
+            "Tool Entity Role"]:
+            
+            df[f"{new_col}"] = ""
 
     df["Study Key"] = ""
 
@@ -110,6 +124,54 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Data Use Codes",
             "entityId"
         ]
+
+    elif data == "ToolView":
+        col_order = [
+            "Component",
+            "ToolView_id",
+            "GrantView Key",
+            "Study Key",
+            "DatasetView Key",
+            "PublicationView Key",
+            "Tool Name",
+            "Tool Description",
+            "Tool Homepage",
+            "Tool Version",
+            "Tool Operation",
+            "Tool Input Data",
+            "Tool Output Data",
+            "Tool Input Format",
+            "Tool Output Format",
+            "Tool Function Note",
+            "Tool Cmd",
+            "Tool Type",
+            "Tool Topic",
+            "Tool Operating System",
+            "Tool Language",
+            "Tool License",
+            "Tool Cost",
+            "Tool Accessibility",
+            "Tool Download Url",
+            "Tool Download Type",
+            "Tool Download Note",
+            "Tool Download Version",
+            "Tool Documentation Url",
+            "Tool Documentation Type",
+            "Tool Documentation Note",
+            "Tool Link Url",
+            "Tool Link Type",
+            "Tool Link Note",
+            "Tool Date Last Modified",
+            "Tool Release Date",
+            "Tool Package Dependencies",
+            "Tool Package Dependencies Present",
+            "Tool Compute Requirements",
+            "Tool Entity Name",
+            "Tool Entity Type",
+            "Tool Entity Role",
+            "entityId"
+        ]
+
     return df[col_order]
 
 
@@ -124,6 +186,8 @@ def main():
     pubs_column_map = [("Publication Grant Number", "GrantView Key")]
 
     datasets_column_map = [("Dataset Grant Number", "GrantView Key"), ("Dataset Pubmed Id", "PublicationView Key")]
+    
+    tools_column_map = [("Tool Grant Number", "GrantView Key"), ("Tool Pubmed Id", "PublicationView Key")]
 
     pattern = re.compile('"(.*?)"')
 
@@ -135,6 +199,9 @@ def main():
     
     if name == "DatasetView":
         column_map = datasets_column_map
+
+    if name == "ToolView":
+        column_map = tools_column_map
 
     if clean is not None:
         database = add_missing_info(manifest, name)
