@@ -147,6 +147,7 @@ def main(folder_path, output_csv_file, data_type):
         folder_map = {"CA209997": "syn32698150",
                       "CA209923": "syn43447063",
                       "CAfiliatedNon-GrantAssociated": "syn52963310",
+                      "CA184898": "syn32698262"
                    }
 
     elif data_type == "datasets":
@@ -155,11 +156,17 @@ def main(folder_path, output_csv_file, data_type):
         folder_map = {"CA209997": "syn52744921",
                       "CA209923": "syn43447065",
                       "CAfiliatedNon-GrantAssociated": "syn52963225",
+                      "CA184898": "syn34577441"
                    }
 
     elif data_type == "tools":
         file_suffix = "_tool.csv"
         folder_id_column_name = "folderIdTools"
+        folder_map = {"CA209997": "syn32698153",
+                      "CA209923": "syn43447067",
+                      "CAfiliatedNon-GrantAssociated": "syn52963223",
+                      "CA184898": "syn53478645"
+                   }
 
     elif data_type == "education":
         file_suffix = "_education.csv"
@@ -177,7 +184,8 @@ def main(folder_path, output_csv_file, data_type):
     
     eq_mapping = {"CA209997": (folder_map["CA209997"], "syn7315802"),
                   "CA209923": (folder_map["CA209923"], "syn43447051"),
-                  "CAfiliatedNon-GrantAssociated": (folder_map["CAfiliatedNon-GrantAssociated"], "syn52963211")
+                  "CAfiliatedNon-GrantAssociated": (folder_map["CAfiliatedNon-GrantAssociated"], "syn52963211"),
+                   "CA184898": (folder_map["CA184898"], "syn9772917")
                   }
 
     file_paths = get_csv_files_in_folder(folder_path, file_suffix)
