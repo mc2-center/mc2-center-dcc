@@ -34,23 +34,21 @@ def add_missing_info(
             df.at[i, 'Publication Doi'] = "".join(fixed_dois)
     
     if name == "DatasetView":
-        df["Data Use Codes"] = ""
+        df["Dataset Doi"] = ""
     
     if name == "ToolView":
-        for new_col in [
-            "DatasetView Key",
-            "Tool Date Last Modified",
-            "Tool Release Date",
-            "Tool Package Dependencies",
-            "Tool Package Dependencies Present",
-            "Tool Compute Requirements",
-            "Tool Entity Name",
-            "Tool Entity Type",
-            "Tool Entity Role"]:
-            
-            df[f"{new_col}"] = ""
+        df["Tool Doi"] = ""
 
-    df["Study Key"] = ""
+    if name == "EducationalResource":
+        for col_name in [
+            "GrantView Key",
+            "Study Key",
+            "DatasetView Key",
+            "PublicationView Key",
+            "ToolView Key",
+            "Resource Doi"
+        ]:
+            df[col_name] = ""
 
     return df
 
@@ -120,6 +118,7 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Dataset Tumor Type",
             "Dataset Tissue",
             "Dataset Url",
+            "Dataset Doi",
             "Dataset File Formats",
             "Data Use Codes",
             "entityId"
@@ -161,6 +160,7 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Tool Link Url",
             "Tool Link Type",
             "Tool Link Note",
+            "Tool Doi",
             "Tool Date Last Modified",
             "Tool Release Date",
             "Tool Package Dependencies",
@@ -169,6 +169,40 @@ def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
             "Tool Entity Name",
             "Tool Entity Type",
             "Tool Entity Role",
+            "entityId"
+        ]
+
+    elif data == "EducationalResource":
+        col_order = [
+            "Component",
+            "EducationalResource_id",
+            "GrantView Key",
+            "Study Key",
+            "DatasetView Key",
+            "PublicationView Key",
+            "ToolView Key",
+            "Resource Title",
+            "Resource Link",
+            "Resource Doi",
+            "Resource Topic",
+            "Resource Activity Type",
+            "Resource Primary Format",
+            "Resource Intended Use",
+            "Resource Primary Audience",
+            "Resource Educational Level",
+            "Resource Description",
+            "Resource Origin Institution",
+            "Resource Language",
+            "Resource Contributors",
+            "Resource Secondary Topic",
+            "Resource License",
+            "Resource Use Requirements",
+            "Resource Alias",
+            "Resource Internal Identifier",
+            "Resource Media Accessibility",
+            "Resource Access Hazard",
+            "Resource Dataset Alias",
+            "Resource Tool Link",
             "entityId"
         ]
 
@@ -183,11 +217,13 @@ def main():
 
     list_columns = []
 
-    pubs_column_map = [("Publication Grant Number", "GrantView Key")]
+    pubs_column_map = []
 
-    datasets_column_map = [("Dataset Grant Number", "GrantView Key"), ("Dataset Pubmed Id", "PublicationView Key")]
+    datasets_column_map = []
     
-    tools_column_map = [("Tool Grant Number", "GrantView Key"), ("Tool Pubmed Id", "PublicationView Key")]
+    tools_column_map = []
+
+    edres_column_map = [("Resource Grant Number", "GrantView Key")]
 
     pattern = re.compile('"(.*?)"')
 
@@ -202,6 +238,9 @@ def main():
 
     if name == "ToolView":
         column_map = tools_column_map
+
+    if name == "EducationalResource":
+        column_map = edres_column_map
 
     if clean is not None:
         database = add_missing_info(manifest, name)
