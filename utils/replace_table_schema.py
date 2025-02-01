@@ -38,8 +38,6 @@ for grantId in grantId_list:
 print(table_ids_list)
 print(f"\n\nNumber of tables to modify: {len(table_ids_list)}")
 
-columns_to_drop = [f"{entity_type} Grant Number", f"{entity_type} Pubmed Id"]
-
 # Initialize counter
 successful_table_modifications_count = 0
 
@@ -51,10 +49,8 @@ for my_table_synid in table_ids_list:
         current_columns = list(syn.getColumns(my_table_synid))
 
         if entity_type == "Publication":
-            columns_to_add = [
-                "GrantView Key",
-                "Study Key"]
-
+            columns_to_add = None
+            
             column_order = [
                 "Component",
                 "PublicationView_id",
@@ -80,10 +76,7 @@ for my_table_synid in table_ids_list:
 
         if entity_type == "Dataset":
             columns_to_add = [
-                "GrantView Key",
-                "Study Key",
-                "PublicationView Key",
-                "Data Use Codes"
+                "Dataset Doi"
             ]
 
             column_order = [
@@ -101,7 +94,7 @@ for my_table_synid in table_ids_list:
                 "Dataset Tumor Type",
                 "Dataset Tissue",
                 "Dataset Url",
-                "Publication Abstract",
+                "Dataset Doi",
                 "Dataset File Formats",
                 "Data Use Codes",
                 "Id",
@@ -110,18 +103,7 @@ for my_table_synid in table_ids_list:
 
         if entity_type == "Tool":
             columns_to_add = [
-                "GrantView Key",
-                "Study Key",
-                "DatasetView Key",
-                "PublicationView Key",
-                "Tool Date Last Modified",
-                "Tool Release Date",
-                "Tool Package Dependencies",
-                "Tool Package Dependencies Present",
-                "Tool Compute Requirements",
-                "Tool Entity Name",
-                "Tool Entity Type",
-                "Tool Entity Role"
+                "Tool Doi"
             ]
 
             column_order = [
@@ -159,6 +141,7 @@ for my_table_synid in table_ids_list:
                 "Tool Link Url",
                 "Tool Link Type",
                 "Tool Link Note",
+                "Tool Doi",
                 "Tool Date Last Modified",
                 "Tool Release Date",
                 "Tool Package Dependencies",
@@ -170,6 +153,54 @@ for my_table_synid in table_ids_list:
                 "Id",
                 "entityId"
             ]
+
+        if entity_type == "Education":
+            columns_to_add = [
+                "GrantView Key",
+                "Study Key",
+                "DatasetView Key",
+                "PublicationView Key",
+                "ToolView Key",
+                "Resource Doi"
+            ]
+
+            columns_to_drop = [
+                "Resource Grant Number"
+            ]
+
+            column_order = [
+                "Component",
+                "EducationalResource_id",
+                "GrantView Key",
+                "Study Key",
+                "DatasetView Key",
+                "PublicationView Key",
+                "ToolView Key",
+                "Resource Title",
+                "Resource Link",
+                "Resource Doi",
+                "Resource Topic",
+                "Resource Activity Type",
+                "Resource Primary Format",
+                "Resource Intended Use",
+                "Resource Primary Audience",
+                "Resource Educational Level",
+                "Resource Description",
+                "Resource Origin Institution",
+                "Resource Language",
+                "Resource Contributors",
+                "Resource Secondary Topic",
+                "Resource License",
+                "Resource Use Requirements",
+                "Resource Alias",
+                "Resource Internal Identifier",
+                "Resource Media Accessibility",
+                "Resource Access Hazard",
+                "Resource Dataset Alias",
+                "Resource Tool Link",
+                "Id",
+                "entityId"
+            ]    
 
         col_names = [n.name for n in current_columns]
 
