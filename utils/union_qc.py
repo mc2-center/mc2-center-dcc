@@ -122,13 +122,16 @@ def combine_rows(args):
         componentColumn = "Component"
         idColumn = "_".join(nameParts)  # build component_id column name
 
+        grantColumn = "GrantView Key"
+        studyColumn = "Study Key"
+        pubsColumn = "PublicationView Key"
+        datasetsColumn = "DatasetView Key"
+        toolsColumn = "ToolView Key"
+
         if name in ["PublicationView", "DatasetView", "ToolView"]:
             # define parts of column names with common formats
             # build column names
             # access mapping dictionaries associated with manifest types
-
-            grantParts = [name[:-4], "Grant Number"]
-            grantColumn = " ".join(grantParts)
 
             if name in ["PublicationView", "DatasetView"]:
                 assayParts = [name[:-4], "Assay"]
@@ -149,6 +152,7 @@ def combine_rows(args):
                         componentColumn: "first",
                         idColumn: ",".join,
                         grantColumn: ",".join,
+                        studyColumn: ",".join,
                         "Publication Doi": "first",
                         "Publication Journal": "first",
                         "Pubmed Url": "first",
@@ -173,8 +177,9 @@ def combine_rows(args):
                         aliasColumn: "first",
                         componentColumn: "first",
                         idColumn: ",".join,
-                        "Dataset Pubmed Id": "first",
                         grantColumn: ",".join,
+                        studyColumn: ",".join,
+                        pubsColumn: ",".join,
                         "Dataset Name": "first",
                         "Dataset Description": "first",
                         "Dataset Design": "first",
@@ -183,7 +188,9 @@ def combine_rows(args):
                         tumorColumn: "first",
                         tissueColumn: "first",
                         "Dataset Url": "first",
+                        "Dataset Doi": "first",
                         "Dataset File Formats": "first",
+                        "Data Use Codes": ",".join,
                         "entityId": ",".join,
                     }
 
@@ -195,8 +202,10 @@ def combine_rows(args):
                     aliasColumn: "first",
                     componentColumn: "first",
                     idColumn: ",".join,
-                    "Tool Pubmed Id": "first",
+                    pubsColumn: ",".join,
                     grantColumn: ",".join,
+                    studyColumn: ",".join,
+                    datasetsColumn: ",".join,
                     "Tool Description": "first",
                     "Tool Homepage": "first",
                     "Tool Version": "first",
@@ -224,7 +233,16 @@ def combine_rows(args):
                     "Tool Link Url": "first",
                     "Tool Link Type": "first",
                     "Tool Link Note": "first",
-                    "entityId": ",".join,
+                    "Tool Doi": "first",
+                    "Tool Date Last Modified": "first",
+                    "Tool Release Date": "first",
+                    "Tool Package Dependencies": "first",
+                    "Tool Package Dependencies Present": "first",
+                    "Tool Compute Requirements": "first",
+                    "Tool Entity Name": "first",
+                    "Tool Entity Type": "first",
+                    "Tool Entity Role": "first",
+                    "entityId": ",".join
                 }
 
         elif name == "EducationalResource":
@@ -235,8 +253,14 @@ def combine_rows(args):
                 aliasColumn: "first",
                 componentColumn: "first",
                 idColumn: ",".join,
+                pubsColumn: ",".join,
+                "Resource Grant Number": ",".join,
+                studyColumn: ",".join,
+                datasetsColumn: ",".join,
+                toolsColumn: ",".join,
                 "Resource Title": "first",
                 "Resource Link": "first",
+                "Resource Doi": "first",
                 "Resource Topic": "first",
                 "Resource Activity Type": "first",
                 "Resource Primary Format": "first",
@@ -247,7 +271,6 @@ def combine_rows(args):
                 "Resource Origin Institution": "first",
                 "Resource Language": "first",
                 "Resource Contributors": "first",
-                "Resource Grant Number": ",".join,
                 "Resource Secondary Topic": "first",
                 "Resource License": "first",
                 "Resource Use Requirements": "first",
