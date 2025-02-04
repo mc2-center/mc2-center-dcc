@@ -72,7 +72,11 @@ def split_manifest(df, manifest_type, database):
     else:
         colname = "Grant Number"
 
-    idColumn = f"{manifest_type.capitalize()}View_id"
+    if manifest_type != "education":
+        idColumn = f"{manifest_type.capitalize()}View_id"
+
+    else:
+        idColumn = "EducationalResource_id"
 
     if database:
         sep = ","
@@ -113,15 +117,15 @@ def main():
         cv_terms["category"].str.contains(manifest_type)
         | cv_terms["category"].isin(annots)
     ]
+    
+    if manifest_type == "resource":
+        manifest_type = "education"
 
     # Read in manifest then split by grant number.  For each grant, generate a new
     # manifest as an Excel file.
     manifest = pd.read_csv(args.manifest)
     database = args.db
     split_manifests = split_manifest(manifest, manifest_type, database)
-
-    if manifest_type == "resource":
-        manifest_type = "education"
 
     for grant_number in split_manifests.groups:
         df = split_manifests.get_group(grant_number)
