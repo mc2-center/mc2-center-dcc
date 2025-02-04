@@ -49,7 +49,9 @@ for my_table_synid in table_ids_list:
         current_columns = list(syn.getColumns(my_table_synid))
 
         if entity_type == "Publication":
-            columns_to_add = None
+            columns_to_add = []
+            
+            columns_to_drop = []
             
             column_order = [
                 "Component",
@@ -75,9 +77,9 @@ for my_table_synid in table_ids_list:
             ]
 
         if entity_type == "Dataset":
-            columns_to_add = [
-                "Dataset Doi"
-            ]
+            columns_to_add = []
+
+            columns_to_drop = []
 
             column_order = [
                 "Component",
@@ -102,9 +104,9 @@ for my_table_synid in table_ids_list:
             ]
 
         if entity_type == "Tool":
-            columns_to_add = [
-                "Tool Doi"
-            ]
+            columns_to_add = []
+
+            columns_to_drop = []
 
             column_order = [
                 "Component",
@@ -155,18 +157,9 @@ for my_table_synid in table_ids_list:
             ]
 
         if entity_type == "Education":
-            columns_to_add = [
-                "GrantView Key",
-                "Study Key",
-                "DatasetView Key",
-                "PublicationView Key",
-                "ToolView Key",
-                "Resource Doi"
-            ]
+            columns_to_add = []
 
-            columns_to_drop = [
-                "Resource Grant Number"
-            ]
+            columns_to_drop = []
 
             column_order = [
                 "Component",
