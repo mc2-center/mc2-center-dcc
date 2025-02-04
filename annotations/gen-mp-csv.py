@@ -66,7 +66,7 @@ def extract_ca_number(file_path, file_suffix):
     file_name = os.path.basename(file_path)
     # Assuming the file name format is "CA****_publication.csv" or "CA****_dataset.csv"
     ca_number = file_name.split("_")[0][2:]
-    print(f"\n\nExtracted CA number: {ca_number}")
+    print(f"\n\nExtracted CA number: CA{ca_number}")
     return f"CA{ca_number}"
 
 
@@ -76,15 +76,17 @@ def get_folder_id_and_grant_id_from_csv(
     df = grant_folder_reference
 
     if folder_id_column_name in df.columns and grant_id_column_name in df.columns:
-        
+
         match = df[df["grantNumber"] == ca_number]
-        if ca_number in mapping.keys():
-            print(f"Entry {ca_number} contains values from mapping dictionary")
-            folder_id, grant_id = mapping[ca_number]
-        
-        elif not match.empty:
+
+        if not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
+
+        if mapping is not None:
+            if ca_number in mapping.keys():
+                print(f"Entry {ca_number} contains values from mapping dictionary")
+                folder_id, grant_id = mapping[ca_number]
             
         else:
             print(f"No match found for {ca_number}.")
@@ -171,10 +173,16 @@ def main(folder_path, output_csv_file, data_type):
     elif data_type == "education":
         file_suffix = "_education.csv"
         folder_id_column_name = "folderIdEducation"
+        folder_map = {"CA209997": "syn53014160",
+                      "CA209923": "syn53014271",
+                      "CAfiliatedNon-GrantAssociated": "syn52963215",
+                      "CA184898": "syn53014135"
+                   }
 
     elif data_type == "grants":
         file_suffix = "_grant.csv"
         folder_id_column_name = "folderIdGrant"
+        folder_map = None
 
     else:
         print(
@@ -182,11 +190,14 @@ def main(folder_path, output_csv_file, data_type):
         )
         return
     
-    eq_mapping = {"CA209997": (folder_map["CA209997"], "syn7315802"),
+    if folder_map is not None:
+        eq_mapping = {"CA209997": (folder_map["CA209997"], "syn7315802"),
                   "CA209923": (folder_map["CA209923"], "syn43447051"),
                   "CAfiliatedNon-GrantAssociated": (folder_map["CAfiliatedNon-GrantAssociated"], "syn52963211"),
                    "CA184898": (folder_map["CA184898"], "syn9772917")
                   }
+    else:
+        eq_mapping = None
 
     file_paths = get_csv_files_in_folder(folder_path, file_suffix)
     manifest_for_upload = write_file_paths_to_csv(
