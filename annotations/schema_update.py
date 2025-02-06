@@ -21,6 +21,7 @@ if len(sys.argv) != 3:
 
 input_file_path = sys.argv[1]
 entity_type = sys.argv[2]
+drop_grantId = None
 
 grantId_list = pd.read_csv(input_file_path)["grantId"].tolist()
 
@@ -44,6 +45,12 @@ print(table_ids_list)
 # Updating schema for all the tables in the list
 # Columns to modify
 columns_to_modify = [
+    "GrantView Key",
+    "Study Key",
+    "PublicationView Key",
+    "DatasetView Key",
+    "ToolView Key",
+    "Data Use Codes",
     f"{entity_type} Keywords",
     f"{entity_type} Abstract",
     f"{entity_type} Authors",
@@ -54,7 +61,6 @@ columns_to_modify = [
     f"{entity_type} Title",
     f"{entity_type} Download Type",
     f"{entity_type} Documentation Type",
-    f"{entity_type} Grant Number",
     f"Grant Number",
     f"{entity_type} Doi",
     f"{entity_type} Journal",
@@ -254,8 +260,9 @@ print(
 )
 
 # Remove the 'grantID' column from the input file
-input_data = pd.read_csv(input_file_path)
-input_data = input_data.drop(columns=["grantId"])
-input_data.to_csv(input_file_path, index=False)
+if drop_grantId is not None:
+    input_data = pd.read_csv(input_file_path)
+    input_data = input_data.drop(columns=["grantId"])
+    input_data.to_csv(input_file_path, index=False)
 
-print("The 'grantID' column has been deleted from the input file.")
+    print("The 'grantID' column has been deleted from the input file.")
