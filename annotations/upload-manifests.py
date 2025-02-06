@@ -58,7 +58,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
     print(
         f"Args received in validate_entry_worker: {args}"
     )  # Add this line to print args
-    fp, target_id = args  # Unpack the tuple
+    fp, target_id, project_id = args  # Unpack the tuple
     print(f"Validating file: {fp} of type {mt}")
     validate_command = [
         "schematic",
@@ -69,7 +69,9 @@ def validate_entry_worker(args, cf, mt, valid_only):
         "-dt",
         mt,
         "-mp",
-        fp
+        fp,
+        "-ps",
+        project_id
     ]
 
     print(f"Running validation command: {' '.join(validate_command)}")
@@ -87,7 +89,7 @@ def validate_entry_worker(args, cf, mt, valid_only):
 
 
 def submit_entry_worker(args, cf):
-    fp, target_id = args  # Unpack the tuple
+    fp, target_id, project_id = args  # Unpack the tuple
     print(f"Submitting file: {fp} with target ID: {target_id}")
     command = [
         "schematic",
