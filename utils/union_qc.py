@@ -254,7 +254,7 @@ def combine_rows(args):
                 componentColumn: "first",
                 idColumn: ",".join,
                 pubsColumn: ",".join,
-                "Resource Grant Number": ",".join,
+                grantColumn: ",".join,
                 studyColumn: ",".join,
                 datasetsColumn: ",".join,
                 toolsColumn: ",".join,
@@ -390,8 +390,8 @@ def compare_and_subset_tables(args, strict, debug):
             key = ["Resource Alias"]
             cols = ["Resource Alias", "EducationalResource_id"]
 
-        current_table = pd.read_csv(ref, header=0).sort_values(by=key)
-        new_table = pd.read_csv(new, header=0).sort_values(by=key)
+        current_table = pd.read_csv(ref, header=0).sort_values(by=key).fillna("")
+        new_table = pd.read_csv(new, header=0).sort_values(by=key).fillna("")
         
         if debug:
             current_table["Source"] = "Database"
@@ -405,6 +405,8 @@ def compare_and_subset_tables(args, strict, debug):
         updated.drop_duplicates(
             subset=cols, keep=False, ignore_index=True, inplace=True
         )
+
+        updated.drop(columns=["Publication Grant Number"], inplace=True)
 
         updatePath = Path(f"output/{name}/{name}_updated.csv")
         updatePath.parent.mkdir(parents=True, exist_ok=True)
