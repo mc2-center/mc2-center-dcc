@@ -170,7 +170,7 @@ def main():
         if single:
             print("Single upload mode is active. Manifests will be uploaded one-by-one.")
             cf = config_file
-            for fp, target_id in submit_args_list:
+            for fp, target_id, project_id in submit_args_list:
                 command = [
                 "schematic",
                 "model",
