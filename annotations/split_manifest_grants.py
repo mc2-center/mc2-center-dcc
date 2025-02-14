@@ -68,7 +68,10 @@ def generate_manifest_as_excel(df, cv_terms, output):
 def split_manifest(df, manifest_type, database):
     """Split manifest into multiple manifests by grant number."""
     if manifest_type != "grant":
-        colname = "GrantView Key"
+        if manifest_type == "publication":
+            colname = "Publication Grant Number"
+        else:
+            colname = "GrantView Key"
     else:
         colname = "Grant Number"
 
