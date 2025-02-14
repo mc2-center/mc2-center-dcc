@@ -45,6 +45,7 @@ print(table_ids_list)
 # Updating schema for all the tables in the list
 # Columns to modify
 columns_to_modify = [
+    "Component",
     "GrantView Key",
     "Study Key",
     "PublicationView Key",
@@ -187,7 +188,8 @@ for my_table_synid in table_ids_list:
                     f"{entity_type} Theme Name",
                     f"NIH RePORTER Link",
                     f"{entity_type} Synapse Team",
-                    f"{entity_type} Synapse Project"
+                    f"{entity_type} Synapse Project",
+                    f"{entity_type} Institution Name"
                 ]:
                     new_column = syn.store(
                         synapseclient.Column(
