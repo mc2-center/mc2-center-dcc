@@ -16,20 +16,32 @@ import sys
 def process_csv(file_path):
     # Read the CSV file into a DataFrame
     df = pd.read_csv(file_path, header=0)
+    data = str(df.iloc[0,0])
+    resource = data[:-4]
 
-    # 1. Change column name from "Publication TumorType" to "Publication Tumor Type"
-    if "Publication TumorType" in df.columns:
-        df = df.rename(columns={"Publication TumorType": "Publication Tumor Type"})
+    # 1. Change column names
+    col_mapping = [
+        (f"{resource} Grant Number", "GrantView Key"),
+        ("Publication TumorType", "Publication Tumor Type")
+        ]
+    
+    for old_col, new_col in col_mapping:
+        if old_col in df.columns:
+            df = df.rename(columns={old_col: new_col})
 
     # 2. Add "PublicationView_id" as a column if not present, and fill it with values from "Pubmed Id" column
     if "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
         df["PublicationView_id"] = df["Pubmed Id"]
 
-    # 3. Drop 'Publication Theme Name' and 'Publication Consortium Name' columns
+    # 3. Add Study Key column
+    if "Study Key" not in df.columns:
+        df["Study Key"] = ""
+
+    # 4. Drop 'Publication Theme Name' and 'Publication Consortium Name' columns
     columns_to_drop = ["Publication Theme Name", "Publication Consortium Name"]
     df = df.drop(columns=columns_to_drop, errors="ignore")
 
-    # 4. Modify each column content as per the second script
+    # 5. Modify each column content as per the second script
     for column in df.columns:
         if column in df.columns:
             df[column] = df[column].apply(
@@ -39,9 +51,7 @@ def process_csv(file_path):
                     else x
                 )
             )
-    # 5. Reorder columns to match the table order
-    # Get data type based on Component
-    data = df.iloc[0,0]
+    # 6. Reorder columns to match the table order
     if data == "PublicationView":
         col_order = [
             "Component",
