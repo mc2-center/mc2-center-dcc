@@ -5,8 +5,8 @@ portal table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
+import re
 import utils
-
 
 def add_missing_info(
     datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
@@ -16,15 +16,17 @@ def add_missing_info(
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
+    pattern = re.compile("^CA\d{7,8}$")
     datasets["grantName"] = ""
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
+    datasets["synapseLink"] = ""
     for _, row in datasets.iterrows():
         grant_names = []
         themes = set()
         consortia = set()
-        for g in row["DatasetGrantNumber"].split(","):
+        for g in row["GrantViewKey"].split(","):
             if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
                     grants[grants.grantNumber == g]["grantName"].values[0]
@@ -37,7 +39,7 @@ def add_missing_info(
         datasets.at[_, "themes"] = list(themes)
         datasets.at[_, "consortia"] = list(consortia)
         pub_titles = []
-        for p in row["DatasetPubmedId"].split(","):
+        for p in row["PublicationViewKey"].split(","):
             p = p.strip()  # Remove leading/trailing whitespace, if any
             try:
                 pub_titles.append(
@@ -48,11 +50,19 @@ def add_missing_info(
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
         datasets.at[_, "pub"] = pub_titles
+        for a in row["DatasetAlias"]:
+            m = re.match(pattern, a)
+            if m is not None:
+                datasets.at[_,"synapseLink"] = "".join(["https://www.synapse.org/Synapse:", a])
     return datasets
 
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
+
+    df["DatasetGrantNumber"] = df["GrantViewKey"]
+    df["DatasetPubmedId"] = df["PublicationViewKey"]
+    df = df.drop(["GrantViewKey", "PublicationViewKey", "StudyKey"])
 
     # Convert string columns to string-list.
     for col in [
@@ -91,6 +101,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetPubmedId",
         "pub",
         "link",
+        "DatasetDoi",
+        "synapseLink"
     ]
     return df[col_order]
 
