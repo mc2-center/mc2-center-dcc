@@ -5,19 +5,22 @@ table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
+import re
 import utils
 
 
 def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
+    pattern = re.compile("^https://www.synapse.org/Synapse:")
     tools["link"] = "[Link](" + tools["ToolHomepage"] + ")"
     tools["portalDisplay"] = "true"
     tools["themes"] = ""
     tools["consortium"] = ""
+    tools["synapseLink"] = ""
     for _, row in tools.iterrows():
         themes = set()
         consortium = set()
-        for g in row["ToolGrantNumber"].split(","):
+        for g in row["GrantViewKey"].split(","):
             if g not in ["", "Affiliated/Non-Grant Associated"]:
                 themes.update(grants[grants.grantNumber == g]["theme"].values[0])
                 consortium.update(
@@ -25,12 +28,22 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
                 )
         tools.at[_, "themes"] = list(themes)
         tools.at[_, "consortium"] = list(consortium)
+
+        for a in row["ToolDownloadUrl"] + row["ToolLinkUrl"] + row["ToolHomepage"]:
+            m = re.match(pattern, a)
+            if m is not None:
+                tools.at[_,"synapseLink"] = a
     return tools
 
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
-
+    
+    df["ToolGrantNumber"] = df["GrantViewKey"]
+    df["ToolPubmedId"] = df["PublicationViewKey"]
+    df["ToolDatasets"] = df["DatasetViewKey"]
+    df = df.drop(["GrantViewKey", "PublicationViewKey", "DatasetViewKey", "StudyKey"])
+    
     # Convert string columns to string-list.
     for col in [
         "ToolGrantNumber",
@@ -58,6 +71,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "consortium",
         "themes",
         "ToolPubmedId",
+        "ToolDatasets",
         "ToolOperation",
         "ToolInputData",
         "ToolOutputData",
