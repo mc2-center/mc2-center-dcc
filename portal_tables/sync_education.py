@@ -5,12 +5,31 @@ table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
+import re
 import utils
 
+def add_missing_info(
+    education: pd.DataFrame) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
+
+    pattern = re.compile("^CA\d{7,8}$")
+    education["synapseLink"] = ""
+    for _, row in education.iterrows():
+       for a in row["ResourceAlias"]:
+            m = re.match(pattern, a)
+            if m is not None:
+                education.at[_,"synapseLink"] = "".join(["https://www.synapse.org/Synapse:", a])
+    return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
-
+    
+    df["ResourceGrantNumber"] = df["GrantViewKey"]
+    df["ResourcePubmedId"] = df["PublicationViewKey"]
+    df["ResourceDatasetAlias"] = df["DatasetViewKey"]
+    df["ResourceToolLink"] = df["ToolViewKey"]
+    df = df.drop(["GrantViewKey", "PublicationViewKey", "DatasetViewKey", "ToolViewKey", "StudyKey"])
+    
     # Convert string columns to string-list.
     for col in [
         "ResourceTopic",
@@ -26,6 +45,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceSecondaryTopic",
         "ResourceMediaAccessibility",
         "ResourceAccessHazard",
+        "ResourcePubmedId",
+        "ResourceDatasetAlias"
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
@@ -54,6 +75,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceAccessHazard",
         "ResourceDatasetAlias",
         "ResourceToolLink",
+        "ResourceDoi",
+        "synapseLink",
+        "ResourcePubmedId"
     ]
     return df[col_order]
 
