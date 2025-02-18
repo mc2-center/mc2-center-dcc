@@ -12,13 +12,30 @@ def add_missing_info(
     education: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
 
-    pattern = re.compile("^CA\d{7,8}$")
+    url_pattern = re.compile(".*(synapse\.org).*")
+    alias_pattern = re.compile("^syn\d{7,8}$")
     education["synapseLink"] = ""
     for _, row in education.iterrows():
-       for a in row["ResourceAlias"]:
-            m = re.match(pattern, a)
-            if m is not None:
-                education.at[_,"synapseLink"] = "".join(["https://www.synapse.org/Synapse:", a])
+        is_in_synapse = None
+        alias_list = row["ResourceAlias"].split(",")
+        link_list = row["ResourceLink"].split(",")
+        syn_link_list = []
+        for a in alias_list:
+            a_match = re.match(alias_pattern, a)
+            is_in_synapse = True if a_match else None
+            if is_in_synapse:
+                syn_link = "".join(["https://www.synapse.org/Synapse:", a])
+                formatted_syn_link = "".join(["[", a, "](", syn_link, ")"])
+                syn_link_list.append(formatted_syn_link)
+                syn_links = ",".join(syn_link_list)
+                education.at[_, "synapseLink"] = syn_links
+            else:
+                for s in link_list:
+                    s_match = re.match(url_pattern, s)
+                    is_in_synapse = True if s_match else None
+                    if is_in_synapse:
+                        education.at[_, "synapseLink"] = "".join(["[Link](", education.at[_, "ResourceLink"], ")"])
+   
     return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -28,7 +45,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     df["ResourcePubmedId"] = df["PublicationViewKey"]
     df["ResourceDatasetAlias"] = df["DatasetViewKey"]
     df["ResourceToolLink"] = df["ToolViewKey"]
-    df = df.drop(["GrantViewKey", "PublicationViewKey", "DatasetViewKey", "ToolViewKey", "StudyKey"])
+    df = df.drop(["GrantViewKey", "PublicationViewKey", "DatasetViewKey", "ToolViewKey", "StudyKey"], errors="ignore")
     
     # Convert string columns to string-list.
     for col in [
@@ -98,8 +115,8 @@ def main():
         print()
 
     print("Processing educational resource staging database...")
-
-    final_database = clean_table(manifest)
+    database = add_missing_info(manifest)
+    final_database = clean_table(database)
     if args.verbose:
         print("\n🔍 Educational resource(s) to be synced:\n" + "=" * 72)
         print(final_database)
