@@ -50,7 +50,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
     df["Publication Grant Number"] = df["GrantView Key"]
-    df = df.drop(["GrantView Key", "Study Key"])
+    df = df.drop(["PublicationView_id", "GrantView Key", "Study Key"], errors="ignore")
 
     # Convert string columns to string-list.
     for col in [
