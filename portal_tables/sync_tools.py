@@ -11,7 +11,7 @@ import utils
 
 def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
-    pattern = re.compile("^https://www.synapse.org/Synapse:")
+    url_pattern = re.compile(".*(synapse\.org).*")
     tools["link"] = "[Link](" + tools["ToolHomepage"] + ")"
     tools["portalDisplay"] = "true"
     tools["themes"] = ""
@@ -28,11 +28,15 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
                 )
         tools.at[_, "themes"] = list(themes)
         tools.at[_, "consortium"] = list(consortium)
-
-        for a in row["ToolDownloadUrl"] + row["ToolLinkUrl"] + row["ToolHomepage"]:
-            m = re.match(pattern, a)
-            if m is not None:
-                tools.at[_,"synapseLink"] = a
+        
+        synapse_links = []
+        for s in [row["ToolDownloadUrl"], row["ToolLinkUrl"], row["ToolHomepage"]]:
+            s_match = re.match(url_pattern, s)
+            if s_match:
+                print(s)
+                synapse_links.append("".join(["[Link](", s , ")"]))
+        tools.at[_, "synapseLink"] = ", ".join(list(set(synapse_links)))
+        
     return tools
 
 
@@ -42,7 +46,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     df["ToolGrantNumber"] = df["GrantViewKey"]
     df["ToolPubmedId"] = df["PublicationViewKey"]
     df["ToolDatasets"] = df["DatasetViewKey"]
-    df = df.drop(["GrantViewKey", "PublicationViewKey", "DatasetViewKey", "StudyKey"])
+    df = df.drop(["ToolView_id", "GrantViewKey", "PublicationViewKey", "DatasetViewKey", "StudyKey"], errors="ignore")
     
     # Convert string columns to string-list.
     for col in [
@@ -98,6 +102,16 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolLinkType",
         "ToolLinkNote",
         "portalDisplay",
+        "ToolDoi",
+        "synapseLink",
+        "ToolDateLastModified",
+        "ToolReleaseDate",
+        "ToolPackageDependencies",
+        "ToolPackageDependenciesPresent",
+        "ToolComputeRequirements",
+        "ToolEntityName",
+        "ToolEntityType",
+        "ToolEntityRole"
     ]
     return df[col_order]
 
