@@ -406,8 +406,6 @@ def compare_and_subset_tables(args, strict, debug):
             subset=cols, keep=False, ignore_index=True, inplace=True
         )
 
-        updated.drop(columns=["Publication Grant Number"], inplace=True)
-
         updatePath = Path(f"output/{name}/{name}_updated.csv")
         updatePath.parent.mkdir(parents=True, exist_ok=True)
 
