@@ -16,13 +16,31 @@ def add_missing_info(
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
-    pattern = re.compile("^CA\d{7,8}$")
+    url_pattern = re.compile(".*(synapse\.org).*")
+    alias_pattern = re.compile("^syn\d{7,8}$")
     datasets["grantName"] = ""
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
     datasets["synapseLink"] = ""
     for _, row in datasets.iterrows():
+        is_in_synapse = None
+        for s in row["link"].split("]("):
+            s_match = re.match(url_pattern, s)
+            if s_match:
+                is_in_synapse = True
+        if is_in_synapse:
+            datasets.at[_, "synapseLink"] = datasets.at[_, "link"]
+        else:
+            alias_list = row["DatasetAlias"].split(",")
+            syn_link_list = []
+            for a in alias_list:
+                if re.match(alias_pattern, a):
+                    syn_link = "".join(["https://www.synapse.org/Synapse:", a])
+                    formatted_syn_link = "".join(["[", a, "](", syn_link, ")"])
+                    syn_link_list.append(formatted_syn_link)
+            syn_links = ",".join(syn_link_list)
+            datasets.at[_, "synapseLink"] = syn_links
         grant_names = []
         themes = set()
         consortia = set()
@@ -50,10 +68,7 @@ def add_missing_info(
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
         datasets.at[_, "pub"] = pub_titles
-        for a in row["DatasetAlias"]:
-            m = re.match(pattern, a)
-            if m is not None:
-                datasets.at[_,"synapseLink"] = "".join(["https://www.synapse.org/Synapse:", a])
+        
     return datasets
 
 
@@ -62,7 +77,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
 
     df["DatasetGrantNumber"] = df["GrantViewKey"]
     df["DatasetPubmedId"] = df["PublicationViewKey"]
-    df = df.drop(["GrantViewKey", "PublicationViewKey", "StudyKey"])
+    df = df.drop(["GrantViewKey", "PublicationViewKey", "StudyKey"], errors="ignore")
 
     # Convert string columns to string-list.
     for col in [
