@@ -28,12 +28,11 @@ def add_missing_info(
             datasets.at[_, "synapseLink"] = datasets.at[_, "link"]
         else:
             alias_list = row["DatasetAlias"].split(",")
-            syn_link_list = []
-            for a in alias_list:
-                if re.match(alias_pattern, a):
-                    syn_link = "".join(["https://www.synapse.org/Synapse:", a])
-                    formatted_syn_link = "".join(["[", a, "](", syn_link, ")"])
-                    syn_link_list.append(formatted_syn_link)
+            syn_link_list = [
+                f"[{a}](https://www.synapse.org/Synapse:{a})"
+                for a in alias_list
+                if re.match(alias_pattern, a)
+            ]
             syn_links = ",".join(syn_link_list)
             datasets.at[_, "synapseLink"] = syn_links
         grant_names = []
