@@ -15,16 +15,19 @@ def add_missing_info(
     url_pattern = re.compile(".*(synapse\.org).*")
     alias_pattern = re.compile("^syn\d{7,8}$")
     education["synapseLink"] = ""
+    
     for _, row in education.iterrows():
-        formatted_syn_link_list = []
         alias_list = [alias for alias in row["ResourceAlias"].split(",") if alias_pattern.match(alias)]
-        url_list = [url for url in row["ResourceLink"].split(",") if url_pattern.match(url)]
-        syn_link_tuples = [("".join(["https://www.synapse.org/Synapse:", alias]), alias) for alias in alias_list]
-        formatted_syn_link_list = formatted_syn_link_list + ["".join(["[", alias, "](", syn_link, ")"]) for syn_link, alias in syn_link_tuples]
         if len(alias_list) < 1:
-            formatted_syn_link_list.append("".join(["[Link](", education.at[_, "ResourceLink"], ")"]))
+            url_list = [url for url in row["ResourceLink"].split(",") if url_pattern.match(url)]
+            formatted_syn_link_list = ["".join(["[Link](", url, ")"]) for url in url_list]
+        else:
+            syn_link_tuples = [("".join(["https://www.synapse.org/Synapse:", alias]), alias) for alias in alias_list]
+            formatted_syn_link_list = ["".join(["[", alias, "](", syn_link, ")"]) for syn_link, alias in syn_link_tuples]
+        
         syn_links = ", ".join(formatted_syn_link_list)
         education.at[_, "synapseLink"] = syn_links
+    
     return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
