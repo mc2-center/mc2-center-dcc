@@ -15,37 +15,30 @@ def add_missing_info(
     url_pattern = re.compile(".*(synapse\.org).*")
     alias_pattern = re.compile("^syn\d{7,8}$")
     education["synapseLink"] = ""
+    
     for _, row in education.iterrows():
-        is_in_synapse = None
-        alias_list = row["ResourceAlias"].split(",")
-        link_list = row["ResourceLink"].split(",")
-        syn_link_list = []
-        for a in alias_list:
-            a_match = re.match(alias_pattern, a)
-            is_in_synapse = True if a_match else None
-            if is_in_synapse:
-                syn_link = "".join(["https://www.synapse.org/Synapse:", a])
-                formatted_syn_link = "".join(["[", a, "](", syn_link, ")"])
-                syn_link_list.append(formatted_syn_link)
-                syn_links = ",".join(syn_link_list)
-                education.at[_, "synapseLink"] = syn_links
-            else:
-                for s in link_list:
-                    s_match = re.match(url_pattern, s)
-                    is_in_synapse = True if s_match else None
-                    if is_in_synapse:
-                        education.at[_, "synapseLink"] = "".join(["[Link](", education.at[_, "ResourceLink"], ")"])
-   
+        alias_list = [alias for alias in row["ResourceAlias"].split(",") if alias_pattern.match(alias)]
+        if len(alias_list) < 1:
+            url_list = [url for url in row["ResourceLink"].split(",") if url_pattern.match(url)]
+            formatted_syn_link_list = ["".join(["[Link](", url, ")"]) for url in url_list]
+        else:
+            syn_link_tuples = [("".join(["https://www.synapse.org/Synapse:", alias]), alias) for alias in alias_list]
+            formatted_syn_link_list = ["".join(["[", alias, "](", syn_link, ")"]) for syn_link, alias in syn_link_tuples]
+        
+        syn_links = ", ".join(formatted_syn_link_list)
+        education.at[_, "synapseLink"] = syn_links
+    
     return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
     
-    df["ResourceGrantNumber"] = df["GrantViewKey"]
-    df["ResourcePubmedId"] = df["PublicationViewKey"]
-    df["ResourceDatasetAlias"] = df["DatasetViewKey"]
-    df["ResourceToolLink"] = df["ToolViewKey"]
-    df = df.drop(["GrantViewKey", "PublicationViewKey", "DatasetViewKey", "ToolViewKey", "StudyKey"], errors="ignore")
+    df = df.rename(columns={
+        "GrantViewKey": "ResourceGrantNumber",
+        "PublicationViewKey": "ResourcePubmedId",
+        "DatasetViewKey": "ResourceDatasetAlias",
+        "ToolViewKey": "ResourceToolLink"
+    })
     
     # Convert string columns to string-list.
     for col in [
@@ -65,7 +58,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourcePubmedId",
         "ResourceDatasetAlias"
     ]:
-        df[col] = utils.convert_to_stringlist(df[col])
+        df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
 
     # Ensure columns match the table order.
     col_order = [
