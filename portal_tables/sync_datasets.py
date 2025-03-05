@@ -24,12 +24,7 @@ def add_missing_info(
     datasets["pub"] = ""
     datasets["synapseLink"] = ""
     for _, row in datasets.iterrows():
-        is_in_synapse = None
-        for s in row["link"].split("]("):
-            s_match = re.match(url_pattern, s)
-            if s_match:
-                is_in_synapse = True
-        if is_in_synapse:
+        if any(url_pattern.match(s) for s in row["link"].split("](")):
             datasets.at[_, "synapseLink"] = datasets.at[_, "link"]
         else:
             alias_list = row["DatasetAlias"].split(",")
