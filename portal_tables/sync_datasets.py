@@ -69,8 +69,10 @@ def add_missing_info(
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
-    df["DatasetGrantNumber"] = df["GrantViewKey"]
-    df["DatasetPubmedId"] = df["PublicationViewKey"]
+    df = df.rename(columns={
+        "DatasetGrantNumber": "GrantViewKey",
+        "DatasetPubmedId": "PublicationViewKey"
+    }]
     df = df.drop(["GrantViewKey", "PublicationViewKey", "StudyKey"], errors="ignore")
 
     # Convert string columns to string-list.
