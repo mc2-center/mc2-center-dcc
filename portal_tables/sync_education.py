@@ -5,12 +5,41 @@ table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
+import re
 import utils
 
+def add_missing_info(
+    education: pd.DataFrame) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
+
+    url_pattern = re.compile(".*(synapse\.org).*")
+    alias_pattern = re.compile("^syn\d{7,8}$")
+    education["synapseLink"] = ""
+    
+    for _, row in education.iterrows():
+        alias_list = [alias for alias in row["ResourceAlias"].split(",") if alias_pattern.match(alias)]
+        if len(alias_list) < 1:
+            url_list = [url for url in row["ResourceLink"].split(",") if url_pattern.match(url)]
+            formatted_syn_link_list = ["".join(["[Link](", url, ")"]) for url in url_list]
+        else:
+            syn_link_tuples = [("".join(["https://www.synapse.org/Synapse:", alias]), alias) for alias in alias_list]
+            formatted_syn_link_list = ["".join(["[", alias, "](", syn_link, ")"]) for syn_link, alias in syn_link_tuples]
+        
+        syn_links = ", ".join(formatted_syn_link_list)
+        education.at[_, "synapseLink"] = syn_links
+    
+    return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
-
+    
+    df = df.rename(columns={
+        "GrantViewKey": "ResourceGrantNumber",
+        "PublicationViewKey": "ResourcePubmedId",
+        "DatasetViewKey": "ResourceDatasetAlias",
+        "ToolViewKey": "ResourceToolLink"
+    })
+    
     # Convert string columns to string-list.
     for col in [
         "ResourceTopic",
@@ -26,8 +55,10 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceSecondaryTopic",
         "ResourceMediaAccessibility",
         "ResourceAccessHazard",
+        "ResourcePubmedId",
+        "ResourceDatasetAlias"
     ]:
-        df[col] = utils.convert_to_stringlist(df[col])
+        df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
 
     # Ensure columns match the table order.
     col_order = [
@@ -54,6 +85,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceAccessHazard",
         "ResourceDatasetAlias",
         "ResourceToolLink",
+        "ResourceDoi",
+        "synapseLink",
+        "ResourcePubmedId"
     ]
     return df[col_order]
 
@@ -74,8 +108,8 @@ def main():
         print()
 
     print("Processing educational resource staging database...")
-
-    final_database = clean_table(manifest)
+    database = add_missing_info(manifest)
+    final_database = clean_table(database)
     if args.verbose:
         print("\n🔍 Educational resource(s) to be synced:\n" + "=" * 72)
         print(final_database)

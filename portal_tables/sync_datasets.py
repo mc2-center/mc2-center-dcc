@@ -5,8 +5,8 @@ portal table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
+import re
 import utils
-
 
 def add_missing_info(
     datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
@@ -16,15 +16,29 @@ def add_missing_info(
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
+    url_pattern = re.compile(".*(synapse\.org).*")
+    alias_pattern = re.compile("^syn\d{7,8}$")
     datasets["grantName"] = ""
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
+    datasets["synapseLink"] = ""
     for _, row in datasets.iterrows():
+        if any(url_pattern.match(s) for s in row["link"].split("](")):
+            datasets.at[_, "synapseLink"] = datasets.at[_, "link"]
+        else:
+            alias_list = row["DatasetAlias"].split(",")
+            syn_link_list = [
+                f"[{a}](https://www.synapse.org/Synapse:{a})"
+                for a in alias_list
+                if re.match(alias_pattern, a)
+            ]
+            syn_links = ",".join(syn_link_list)
+            datasets.at[_, "synapseLink"] = syn_links
         grant_names = []
         themes = set()
         consortia = set()
-        for g in row["DatasetGrantNumber"].split(","):
+        for g in row["GrantViewKey"].split(","):
             if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
                     grants[grants.grantNumber == g]["grantName"].values[0]
@@ -37,7 +51,7 @@ def add_missing_info(
         datasets.at[_, "themes"] = list(themes)
         datasets.at[_, "consortia"] = list(consortia)
         pub_titles = []
-        for p in row["DatasetPubmedId"].split(","):
+        for p in row["PublicationViewKey"].split(","):
             p = p.strip()  # Remove leading/trailing whitespace, if any
             try:
                 pub_titles.append(
@@ -48,11 +62,17 @@ def add_missing_info(
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
         datasets.at[_, "pub"] = pub_titles
+        
     return datasets
 
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
+
+    df = df.rename(columns={
+        "GrantViewKey": "DatasetGrantNumber",
+        "PublicationViewKey": "DatasetPubmedId"
+    })
 
     # Convert string columns to string-list.
     for col in [
@@ -91,6 +111,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetPubmedId",
         "pub",
         "link",
+        "DatasetDoi",
+        "synapseLink"
     ]
     return df[col_order]
 
