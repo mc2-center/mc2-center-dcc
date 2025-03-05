@@ -70,10 +70,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
     df = df.rename(columns={
-        "DatasetGrantNumber": "GrantViewKey",
-        "DatasetPubmedId": "PublicationViewKey"
-    }]
-    df = df.drop(["GrantViewKey", "PublicationViewKey", "StudyKey"], errors="ignore")
+        "GrantViewKey": "DatasetGrantNumber",
+        "PublicationViewKey": "DatasetPubmedId"
+    })
 
     # Convert string columns to string-list.
     for col in [
