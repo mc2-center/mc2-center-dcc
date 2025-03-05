@@ -35,7 +35,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
             if s_match:
                 print(s)
                 synapse_links.append("".join(["[Link](", s , ")"]))
-        tools.at[_, "synapseLink"] = ", ".join(list(set(synapse_links)))
+        tools.at[_, "synapseLink"] = ", ".join(set(synapse_links))
         
     return tools
 
