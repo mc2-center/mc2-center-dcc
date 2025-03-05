@@ -48,9 +48,10 @@ def add_missing_info(
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
-
-    df["Publication Grant Number"] = df["GrantView Key"]
-    df = df.drop(["PublicationView_id", "GrantView Key", "Study Key"], errors="ignore")
+    
+    df = df.rename({
+        "GrantView Key": "Publication Grant Number"
+        })
 
     # Convert string columns to string-list.
     for col in [
