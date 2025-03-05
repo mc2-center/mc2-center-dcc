@@ -42,7 +42,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
-    df = df.rename({
+    df = df.rename(columns={
         "GrantViewKey": "ToolGrantNumber",
         "PublicationViewKey": "ToolPubmedId",
         "DatasetViewKey": "ToolDatasets"
