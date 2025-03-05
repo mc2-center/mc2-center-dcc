@@ -58,7 +58,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourcePubmedId",
         "ResourceDatasetAlias"
     ]:
-        df[col] = utils.convert_to_stringlist(df[col])
+        df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
 
     # Ensure columns match the table order.
     col_order = [
