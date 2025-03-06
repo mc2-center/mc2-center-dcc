@@ -84,6 +84,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetTumorType",
         "DatasetGrantNumber",
         "DatasetPubmedId",
+        "iconTags"
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
@@ -112,7 +113,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "pub",
         "link",
         "DatasetDoi",
-        "synapseLink"
+        "synapseLink",
+        "iconTags"
     ]
     return df[col_order]
 
