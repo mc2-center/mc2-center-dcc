@@ -56,7 +56,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceMediaAccessibility",
         "ResourceAccessHazard",
         "ResourcePubmedId",
-        "ResourceDatasetAlias"
+        "ResourceDatasetAlias",
+        "iconTags"
     ]:
         df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
 
@@ -87,7 +88,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceToolLink",
         "ResourceDoi",
         "synapseLink",
-        "ResourcePubmedId"
+        "ResourcePubmedId",
+        "iconTags"
     ]
     return df[col_order]
 
