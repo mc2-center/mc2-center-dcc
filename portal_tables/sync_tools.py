@@ -33,20 +33,20 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
         for s in [row["ToolDownloadUrl"], row["ToolLinkUrl"], row["ToolHomepage"]]:
             s_match = re.match(url_pattern, s)
             if s_match:
-                print(s)
                 synapse_links.append("".join(["[Link](", s , ")"]))
-        tools.at[_, "synapseLink"] = ", ".join(list(set(synapse_links)))
+        tools.at[_, "synapseLink"] = ", ".join(set(synapse_links))
         
     return tools
 
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
-    
-    df["ToolGrantNumber"] = df["GrantViewKey"]
-    df["ToolPubmedId"] = df["PublicationViewKey"]
-    df["ToolDatasets"] = df["DatasetViewKey"]
-    df = df.drop(["ToolView_id", "GrantViewKey", "PublicationViewKey", "DatasetViewKey", "StudyKey"], errors="ignore")
+
+    df = df.rename(columns={
+        "GrantViewKey": "ToolGrantNumber",
+        "PublicationViewKey": "ToolPubmedId",
+        "DatasetViewKey": "ToolDatasets"
+        })
     
     # Convert string columns to string-list.
     for col in [
@@ -62,6 +62,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolLanguage",
         "ToolDownloadType",
         "ToolDocumentationType",
+        "iconTags"
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
@@ -111,7 +112,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolComputeRequirements",
         "ToolEntityName",
         "ToolEntityType",
-        "ToolEntityRole"
+        "ToolEntityRole",
+        "iconTags"
     ]
     return df[col_order]
 
