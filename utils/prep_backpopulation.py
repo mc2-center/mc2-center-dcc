@@ -1,57 +1,84 @@
-"""
-processing-splits.py
+"""Clean and prep MC2 database tables for backpopulation
 
-Runs the Python script `processing-splits.py` to process split files from the specified output folder. 
-Adds missing columns required to match the schema, truncates any columns with 400+ words, and adds "Read more on Pubmed"
+This script will reorder and modify database table manifest columns
+to match the respective View-type schema.
 
-author: aditi.gopalan
-
+author: orion.banks
 """
 
-import os
 import pandas as pd
 import sys
+import re
 
+def add_missing_info(
+    df: pd.DataFrame,
+    name: str,
+) -> pd.DataFrame:
+    """Add missing information into table before syncing."""
 
-def process_csv(file_path):
-    # Read the CSV file into a DataFrame
-    df = pd.read_csv(file_path, header=0)
-    data = str(df.iloc[0,0])
-    resource = data[:-4]
+    prefix = "https://doi.org/"
 
-    # 1. Change column names
-    col_mapping = [
-        (f"{resource} Grant Number", "GrantView Key"),
-        ("Publication TumorType", "Publication Tumor Type")
-        ]
+    if name == "PublicationView":
+        for entry in df.itertuples():
+            fixed = []
+            i = entry[0]
+            doi = entry[5]
+            matches = re.match('https', doi)
+            if matches is None:
+                doi = "".join([
+                    "".join([prefix, doi])
+                ])
+            fixed.append(doi)
+
+            fixed_dois = list(dict.fromkeys(fixed))
+            df.at[i, 'Publication Doi'] = "".join(fixed_dois)
     
-    for old_col, new_col in col_mapping:
-        if old_col in df.columns:
-            df = df.rename(columns={old_col: new_col})
+    if name == "DatasetView":
+        df["Dataset Doi"] = ""
+    
+    if name == "ToolView":
+        df["Tool Doi"] = ""
 
-    # 2. Add "PublicationView_id" as a column if not present, and fill it with values from "Pubmed Id" column
-    if "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
-        df["PublicationView_id"] = df["Pubmed Id"]
+    if name == "EducationalResource":
+        for col_name in [
+            "GrantView Key",
+            "Study Key",
+            "DatasetView Key",
+            "PublicationView Key",
+            "ToolView Key",
+            "Resource Doi"
+        ]:
+            df[col_name] = ""
 
-    # 3. Add Study Key column
-    if "Study Key" not in df.columns:
-        df["Study Key"] = ""
+    return df
 
-    # 4. Drop 'Publication Theme Name' and 'Publication Consortium Name' columns
-    columns_to_drop = ["Publication Theme Name", "Publication Consortium Name"]
-    df = df.drop(columns=columns_to_drop, errors="ignore")
+def extract_lists(df: pd.DataFrame, list_columns, pattern) -> pd.DataFrame:
+    """Extract bracketed/quoted lists from sheets."""
 
-    # 5. Modify each column content as per the second script
-    for column in df.columns:
-        if column in df.columns:
-            df[column] = df[column].apply(
-                lambda x: (
-                    x[:400] + "(Read more on Pubmed)"
-                    if isinstance(x, str) and len(x) > 500
-                    else x
-                )
-            )
-    # 6. Reorder columns to match the table order
+    for col in list_columns:
+
+        df[col] = (
+            df[col]
+            .apply(lambda x: re.findall(pattern, x))
+            .str.join(", "))
+        
+    return df
+
+def map_columns(df: pd.DataFrame, column_map: list[tuple]) -> pd.DataFrame:
+    """Map outdated columns to new column names and drop old columns."""
+
+    for start, end in column_map:
+
+        df[f"{end}"] = [
+            x for x in df[f"{start}"]
+        ]
+
+    return df
+
+def clean_table(df: pd.DataFrame, data) -> pd.DataFrame:
+    """Clean up the table one final time."""
+
+    # Reorder columns to match the table order.
     if data == "PublicationView":
         col_order = [
             "Component",
@@ -71,8 +98,9 @@ def process_csv(file_path):
             "Publication Tumor Type",
             "Publication Tissue",
             "Publication Accessibility",
-            "Publication Dataset Alias"
-            ]
+            "Publication Dataset Alias",
+            "entityId"
+        ]
 
     elif data == "DatasetView":
         col_order = [
@@ -92,8 +120,9 @@ def process_csv(file_path):
             "Dataset Url",
             "Dataset Doi",
             "Dataset File Formats",
-            "Data Use Codes"
-            ]
+            "Data Use Codes",
+            "entityId"
+        ]
 
     elif data == "ToolView":
         col_order = [
@@ -139,8 +168,9 @@ def process_csv(file_path):
             "Tool Compute Requirements",
             "Tool Entity Name",
             "Tool Entity Type",
-            "Tool Entity Role"
-            ]
+            "Tool Entity Role",
+            "entityId"
+        ]
 
     elif data == "EducationalResource":
         col_order = [
@@ -172,25 +202,66 @@ def process_csv(file_path):
             "Resource Media Accessibility",
             "Resource Access Hazard",
             "Resource Dataset Alias",
-            "Resource Tool Link"
+            "Resource Tool Link",
+            "entityId"
         ]
 
-    df = df[col_order]
+    return df[col_order]
 
-    # Save the modified DataFrame back to the CSV file
-    df.to_csv(file_path, index=False)
+
+def main():
+    """Main function."""
+    input = sys.argv[1]
+    output = sys.argv[2]
+    clean = sys.argv[3]
+
+    list_columns = []
+
+    pubs_column_map = []
+
+    datasets_column_map = []
+    
+    tools_column_map = []
+
+    edres_column_map = [("Resource Grant Number", "GrantView Key")]
+
+    pattern = re.compile('"(.*?)"')
+
+    manifest = pd.read_csv(input, header=0).fillna("")
+    name = manifest.loc[:, "Component"].iat[1]
+    
+    if name == "PublicationView":
+        column_map = pubs_column_map
+    
+    if name == "DatasetView":
+        column_map = datasets_column_map
+
+    if name == "ToolView":
+        column_map = tools_column_map
+
+    if name == "EducationalResource":
+        column_map = edres_column_map
+
+    if clean is not None:
+        database = add_missing_info(manifest, name)
+
+        if len(list_columns) > 0:
+            database = extract_lists(database, list_columns, pattern)
+
+        if len(column_map) > 0:
+            database = map_columns(database, column_map)
+
+    else:
+        database = manifest
+    
+    final_database = clean_table(database, name)
+    
+    print(f"📄 Saving copy of final table to: {output}...")
+    
+    final_database.to_csv(output, index=False)
+    
+    print("\n\nDONE ✅")
 
 
 if __name__ == "__main__":
-    # Get the folder path from command-line arguments, defaulting to the current working directory
-    folder_path = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
-
-    # Iterate over all files in the specified directory with a .csv extension
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".csv"):
-            file_path = os.path.join(folder_path, filename)
-
-            # Process each CSV file
-            process_csv(file_path)
-
-    print("Processing completed.")
+    main()
