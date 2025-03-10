@@ -5,10 +5,10 @@ Runs the Python script `processing-splits.py` to process split files from the sp
 Adds missing columns required to match the schema, truncates any columns with 400+ words, and adds "Read more on Pubmed"
 
 author: aditi.gopalan
+author: orion.banks
 
 """
 
-import os
 import pandas as pd
 import sys
 
@@ -182,15 +182,12 @@ def process_csv(file_path):
 
 
 if __name__ == "__main__":
-    # Get the folder path from command-line arguments, defaulting to the current working directory
-    folder_path = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    # Get the csv path from command-line arguments
+    file_path_csv = pd.read_csv(sys.argv[1])
 
-    # Iterate over all files in the specified directory with a .csv extension
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".csv"):
-            file_path = os.path.join(folder_path, filename)
-
-            # Process each CSV file
-            process_csv(file_path)
+    # Iterate over all files in gen-mp-csv.py output
+    for file_path in file_path_csv["File Paths"]:
+        process_csv(file_path) # Process each CSV file
+        
 
     print("Processing completed.")
