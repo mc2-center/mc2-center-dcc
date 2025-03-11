@@ -62,6 +62,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolLanguage",
         "ToolDownloadType",
         "ToolDocumentationType",
+        "iconTags"
     ]:
         df[col] = utils.convert_to_stringlist(df[col])
 
@@ -111,7 +112,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolComputeRequirements",
         "ToolEntityName",
         "ToolEntityType",
-        "ToolEntityRole"
+        "ToolEntityRole",
+        "iconTags"
     ]
     return df[col_order]
 
