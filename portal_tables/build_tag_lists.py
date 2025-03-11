@@ -10,19 +10,9 @@ Outputs:
 author: orion.banks
 """
 
-import synapseclient
 import argparse
 import pandas as pd
 from datetime import datetime
-
-### Login to Synapse ###
-def login():
-
-    syn = synapseclient.Synapse()
-    syn.login()
-
-    return syn
-
 
 def get_args():
 
@@ -30,10 +20,10 @@ def get_args():
         description="Create lists of tags for icons on the CCKP"
     )
     parser.add_argument(
-        "-d", help="Path to manifest with annotations."
+        "-d", help="Path to manifest with annotations.", required=True
     )
     parser.add_argument(
-        "-t", help="Path to CSV with annotation-to-tag mappings."
+        "-t", help="Path to CSV with annotation-to-tag mappings.", required=True
     )
     return parser.parse_args()
 
@@ -47,7 +37,7 @@ def collect_labels(database, terms, attributes):
     tag_columns = [sep.join([data_type_prefix, a]) for a in attributes]
 
     term_df = pd.read_csv(terms, header=0)
-    term_tuples = [(x, y) for x, y in zip(term_df["term"].to_list(), term_df["label"].to_list())]
+    term_tuples = [(term, label) for term, label in zip(term_df["term"].to_list(), term_df["label"].to_list())]
 
     database_df["iconTags"] = ""
     
@@ -57,7 +47,7 @@ def collect_labels(database, terms, attributes):
             print(f"Accessing annotations for column {column}")
             annotations = annotations + row[column].split(", ")
         print(f"Collected annotations: {annotations}")
-        labels = set([str(y) for x, y in term_tuples for n in annotations if n == x])
+        labels = set([str(label) for term, label in term_tuples for annot in annotations if annot == term])
         label_str = ", ".join(labels)
         labels_str_trimmed = ", ".join(labels - {"nan"})
         print(f"Labels associated with resource: {labels_str_trimmed}\n\n")
@@ -70,7 +60,6 @@ def collect_labels(database, terms, attributes):
 
 def main():
 
-    #syn = login()
     args = get_args()
     database = args.d
     terms = args.t
