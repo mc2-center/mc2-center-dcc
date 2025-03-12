@@ -56,8 +56,8 @@ def get_args():
         "-m",
         "--manifest",
         type=str,
-        default="syn35242677",
-        help=("Synapse ID to the manifest table/fileview." "(Default: syn35242677)"),
+        default="syn53259587",
+        help=("Synapse ID to the manifest table/fileview." "(Default: syn53259587)"),
     )
     parser.add_argument(
         "-t",
@@ -74,11 +74,11 @@ def create_wiki_pages(syn, project_id, grant):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant["grantConsortiumName"]
-    grant_type = grant["grantType"]
-    title = grant["grantInstitutionAlias"]
-    institutions = grant["grantInstitutionName"]
-    desc = grant["grantAbstract"] or ""
+    consortium = grant["Grant Consortium Name"]
+    grant_type = grant["Grant Type"]
+    title = grant["Grant Institution Alias"]
+    institutions = grant["Grant Institution Name"]
+    desc = grant["Grant Abstract"] or ""
 
     content = f"""### The {consortium} {grant_type} Research Project \@ {title}
 
@@ -96,11 +96,11 @@ def create_wiki_pages(syn, project_id, grant):
         "&url=https%3A%2F%2Fwww%2Esynapse%2Eorg%2F%23%21Synapse%3Asyn7080714%2F}"
         "<-"
     )
-    main_wiki = Wiki(title=grant["grantName"], owner=project_id, markdown=content)
+    main_wiki = Wiki(title=grant["Grant Name"], owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
-    pis = [pi.strip(" ") for pi in grant["grantInvestigator"].split(",")]
+    pis = [pi.strip(" ") for pi in grant["Grant Investigator"].split(",")]
     pi_markdown = "* " + "\n* ".join(pis)
     pi_wiki = Wiki(
         title="Project Investigators",
@@ -127,9 +127,9 @@ def create_folders(syn, project_id):
 
 def create_team(syn, project_id, grant, access_type="edit"):
     """Create team for new grant project."""
-    consortia = _join_listlike_col(grant["grantConsortiumName"])
-    center = _join_listlike_col(grant["grantInstitutionAlias"])
-    team_name = f"{consortia} {center} {grant['grantType']} {grant['grantNumber']}"
+    consortia = _join_listlike_col(grant["Grant Consortium Name"])
+    center = _join_listlike_col(grant["Grant Institution Alias"])
+    team_name = f"{consortia} {center} {grant['Grant Type']} {grant['Grant Number']}"
     try:
         new_team = Team(name=team_name, canPublicJoin=False)
         new_team = syn.store(new_team)
@@ -139,14 +139,17 @@ def create_team(syn, project_id, grant, access_type="edit"):
     except ValueError as err:
         if err.__context__.response.status_code == 409:
             print(f"Team already exists: {team_name}")
+            new_team.id = None
         else:
             print(f"Something went wrong! Team: {team_name}")
+    return team_name, project_id, new_team.id
 
 
 def create_grant_projects(syn, grants):
     """Create a new Synapse project for each grant and populate its Wiki."""
+    project_list = []
     for _, row in grants.iterrows():
-        name = _syn_prettify(row["grantName"])
+        name = _syn_prettify(row["Grant Name"])
         try:
             project = Project(name)
             project = syn.store(project)
@@ -156,9 +159,13 @@ def create_grant_projects(syn, grants):
 
             create_wiki_pages(syn, project.id, row)
             create_folders(syn, project.id)
-            create_team(syn, project.id, row)
+            team_name, project_id, team_id = create_team(syn, project.id, row)
+            project_list.append((team_name, project_id, team_id))
+
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
+        
+    return project_list
 
 
 def main():
@@ -175,7 +182,7 @@ def main():
     )
 
     # Only add grants not currently in the Grants table.
-    new_grants = manifest[~manifest.grantNumber.isin(curr_grants)]
+    new_grants = manifest[~manifest["Grant Number"].isin(curr_grants)]
     if new_grants.empty:
         print("No new grants found!")
     else:
@@ -185,8 +192,9 @@ def main():
             print(new_grants)
         else:
             print("Adding new grants...")
-            create_grant_projects(syn, new_grants)
+            new_projects = create_grant_projects(syn, new_grants)
     print("DONE ✓")
+    print(f"New project information: {new_projects}")
 
 
 if __name__ == "__main__":
