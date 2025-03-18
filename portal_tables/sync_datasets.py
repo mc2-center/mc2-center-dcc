@@ -16,25 +16,11 @@ def add_missing_info(
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
-    url_pattern = re.compile(".*(synapse\.org).*")
-    alias_pattern = re.compile("^syn\d{7,8}$")
     datasets["grantName"] = ""
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
-    datasets["synapseLink"] = ""
     for _, row in datasets.iterrows():
-        if any(url_pattern.match(s) for s in row["link"].split("](")):
-            datasets.at[_, "synapseLink"] = datasets.at[_, "link"]
-        else:
-            alias_list = row["DatasetAlias"].split(",")
-            syn_link_list = [
-                f"[{a}](https://www.synapse.org/Synapse:{a})"
-                for a in alias_list
-                if re.match(alias_pattern, a)
-            ]
-            syn_links = ",".join(syn_link_list)
-            datasets.at[_, "synapseLink"] = syn_links
         grant_names = []
         themes = set()
         consortia = set()
@@ -104,8 +90,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetAssay",
         "DatasetSpecies",
         "DatasetTissue",
-        "DatasetTumorType",
         "themes",
+        "DatasetTumorType",
         "consortia",
         "DatasetGrantNumber",
         "grantName",
@@ -113,7 +99,6 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "pub",
         "link",
         "DatasetDoi",
-        "synapseLink",
         "iconTags"
     ]
     return df[col_order]
