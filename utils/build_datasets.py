@@ -9,6 +9,7 @@ author: orion.banks
 """
 
 import synapseclient
+import synapseutils
 import argparse
 import pandas as pd
 
@@ -25,7 +26,7 @@ def get_args():
     parser.add_argument(
         "-s",
         type=str,
-        help="Synapse Id of a folder that should have all files added to the Dataset",
+        help="Synapse Id of a folder that contains files to add to the Dataset",
         required=False
     )
     parser.add_argument(
@@ -34,8 +35,28 @@ def get_args():
         help="Path to a CSV file with Dataset and Folder Synapse Ids.",
         required=False
     )
+    parser.add_argument(
+        "-f",
+        nargs="+",
+        help="Space-separated list of file formats to include in the Dataset.",
+        required=False,
+        default=None
+    )
     return parser.parse_args()
 
+def filter_files_in_folder(syn, scopeId, formats, dataset):
+
+    all_files = []
+    walkPath = synapseutils.walk(syn, scopeId, ["file"])
+    for dirpath, dirname, filename in walkPath:
+        all_files = all_files + filename
+    print(all_files)
+    files = [file[1] for file in all_files for format in formats if format in file[0]]
+    print(files)
+    dataset_items = [{"entityId":f, "versionNumber":syn.get(f, downloadFile=False).versionLabel} for f in files]
+    dataset.add_items(dataset_items)
+
+    return dataset
 
 def main():
 
@@ -45,7 +66,7 @@ def main():
 
     args = get_args()
 
-    datasetId, scopeId, idSheet= args.d, args.s, args.c  # assign path to manifest file from command line input
+    datasetId, scopeId, idSheet, formats = args.d, args.s, args.c, args.f  # assign path to manifest file from command line input
 
     if idSheet:
         idSet = pd.read_csv(idSheet, header=None)
@@ -57,7 +78,10 @@ def main():
                 datasetId = row[0]
                 scopeId = row[1]
                 dataset = syn.get(datasetId)
-                dataset.add_folder(scopeId, force=True)
+                if formats is not None:
+                    dataset = filter_files_in_folder(syn, scopeId, formats, dataset)
+                else:
+                    dataset.add_folder(scopeId, force=True)
                 dataset = syn.store(dataset)
                 print(f"\nDataset {datasetId} successfully updated with files from {scopeId}")
                 count += 1
@@ -68,9 +92,10 @@ def main():
     else:
         if datasetId and scopeId:
             dataset = syn.get(datasetId)
-
-            dataset.add_folder(scopeId, force=True)
-
+            if formats is not None:
+                dataset = filter_files_in_folder(syn, scopeId, formats, dataset)
+            else:    
+                dataset.add_folder(scopeId, force=True)
             dataset = syn.store(dataset)
         else:
             print(f"\n❗❗❗ No dataset information provided.❗❗❗\nPlease check your command line inputs and try again.")
