@@ -33,8 +33,7 @@ def collect_labels(database, terms, attributes):
     database_df = pd.read_csv(database, header=0, na_values=None, keep_default_na=False)
     component = str(database_df.iat[1,1])
     data_type_prefix = component[:-4]
-    sep = " " if data_type_prefix == "Publication" else ""
-    tag_columns = [sep.join([data_type_prefix, a]) for a in attributes]
+    tag_columns = [" ".join([data_type_prefix, a]) for a in attributes]
 
     term_df = pd.read_csv(terms, header=0)
     term_tuples = [(term, label) for term, label in zip(term_df["term"].to_list(), term_df["label"].to_list())]
