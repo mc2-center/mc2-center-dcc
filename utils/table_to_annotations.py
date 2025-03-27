@@ -47,6 +47,9 @@ def build_annotations(syn, component, source_id, target_id, mapping):
     
     entity = syn.get(target_id, downloadFile=False)
     query = f"SELECT * FROM {source_id} WHERE {component}_id = '{target_id}'"
+    #additional case: applying annotations from a single table type to a whole bunch of files
+    #would want to pull entire table and create + add annotations in a loop
+    #could be a separate script
     annotations_to_add = syn.tableQuery(query).asDataFrame()
     print(f"Annotations acquired from Synapse table {source_id} for entity: {target_id}")
     if mapping is not None:
@@ -57,8 +60,21 @@ def build_annotations(syn, component, source_id, target_id, mapping):
     new_annotations = syn.set_annotations(new_annotations)
     print(f"Annotations applied to Synapse entity: {target_id}")
 
-def map_annotations():
-    None
+def map_annotations(df: pd.DataFrame, column_map: list[tuple]) -> pd.DataFrame:
+    """Map table columns names to different schema"""
+    #define mapping between table column names and desired schema for entity, if different
+    #mostly applicable for datasets or converting between MC2 and CRDC table headers
+
+    for start, end in column_map:
+
+        df[f"{end}"] = [
+            x for x in df[f"{start}"]
+        ]
+
+        df = df.drop([f"{start}"])
+
+    return df
+
 
 def main():
 
