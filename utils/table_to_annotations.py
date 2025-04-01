@@ -19,46 +19,84 @@ def get_args():
     parser.add_argument(
         "-t",
         type=str,
-        help="Synapse Id of an entity to which annotations will be applied",
-        required=False
+        help="Synapse Id of an dataset with files to annotate",
+        required=True
     )
     parser.add_argument(
-        "-c",
+        "-f",
         type=str,
-        help="The Component name of the schema associated with the entity to be annotated",
-        required=False
+        help="Synapse Id of a table containing File View metadata.",
+        required=True
     )
     parser.add_argument(
         "-s",
         type=str,
-        help="Synapse Id of a table containing the data that should be converted to annotations.",
+        help="Synapse Id of a table containing Biospecimen metadata.",
+        required=True
+    )
+    parser.add_argument(
+        "-i",
+        type=str,
+        help="Synapse Id of a table containing Model metadata.",
         required=False
     )
     parser.add_argument(
         "-m",
         type=str,
-        help="Path to a CSV with the source table Synapse Ids and entity Ids to be annotated",
+        help="Synapse Id of a table containing Model metadata.",
         required=False
     )
     return parser.parse_args()
 
 
-def build_annotations(syn, component, source_id, target_id, mapping):
+def get_dataset_file_ids(syn, dataset_id):
     
-    entity = syn.get(target_id, downloadFile=False)
-    query = f"SELECT * FROM {source_id} WHERE {component}_id = '{target_id}'"
-    #additional case: applying annotations from a single table type to a whole bunch of files
-    #would want to pull entire table and create + add annotations in a loop
-    #could be a separate script
-    annotations_to_add = syn.tableQuery(query).asDataFrame()
-    print(f"Annotations acquired from Synapse table {source_id} for entity: {target_id}")
-    if mapping is not None:
-        annotations_to_add = map_annotations()
-    annotations_to_add = annotations_to_add.to_dict()
-    new_annotations = Annotations(target_id, entity.etag, annotations_to_add)
+    query = f"SELECT id FROM {dataset_id}"
+    file_table = syn.tableQuery(query).asDataFrame().fillna("")
+    files = list(file_table["id"])
+    print(f"Synapse Ids acquired from Dataset {dataset_id}")
 
-    new_annotations = syn.set_annotations(new_annotations)
-    print(f"Annotations applied to Synapse entity: {target_id}")
+    return files
+
+
+def get_annotations_table(syn, source_id):
+    
+    query = f"SELECT * FROM {source_id}"
+    annotations_table = syn.tableQuery(query).asDataFrame().fillna("")
+    print(f"Annotations acquired from Synapse table {source_id}")
+
+    return annotations_table
+
+
+def build_annotations(syn, files, fileview_table, biospecimen_table, individual_table, model_table, mapping, specimen_columns):
+
+    data_types = [fileview_table, biospecimen_table, individual_table, model_table]
+
+    data_tables = [get_annotations_table(syn, data) for data in data_types if data is not None]
+    
+    id_key_tuples = []
+
+    for _, row in data_tables[0].iterrows():
+        id_key_tuple = (row["Biospecimen Key"], row["FileView_id"])
+        id_key_tuples.append(id_key_tuple)
+    
+    file_tuples = dict([tup for tup in id_key_tuples if tup[1] in files])
+
+    for row in data_tables[1].itertuples(index=False):
+        biospecimen_id = row[1]
+        if biospecimen_id in file_tuples.keys():
+            file_id = file_tuples[biospecimen_id]
+            individual_id = row[3]
+            model_id = row[4]
+            new_annotations = list(zip(specimen_columns, list(row)))
+            print(new_annotations)
+            file_annotations = syn.get_annotations(file_id)
+            for annot in new_annotations:
+                file_annotations[annot[0]] = annot[1]
+            print(file_annotations)
+            #entity = syn.set_anotations(new_annotations)
+            #print(f"Annotations applied to Synapse entity: {file_id}")
+    
 
 def map_annotations(df: pd.DataFrame, column_map: list[tuple]) -> pd.DataFrame:
     """Map table columns names to different schema"""
@@ -84,28 +122,51 @@ def main():
 
     args = get_args()
 
-    target, component, source, sheet = args.t, args.c, args.v, args.s, args.m
+    target, file_table, specimen_table, individual_table, model_table = args.t, args.f, args.s, args.i, args.m
+
+    biospecimen_columns = ["Component",
+                           "Biospecimen_id",
+                           "Study Key",
+                           "Individual Key",
+                           "Model Key",
+                           "Parent Biospecimen Key",
+                           "Biospecimen Type Category",
+                           "Biospecimen Type",
+                           "Biospecimen Tumor Status",
+                           "Biospecimen Acquisition Method",
+                           "Biospecimen Incidence Type",
+                           "Biospecimen Stain",
+                           "Biospecimen Species",
+                           "Biospecimen Sex",
+                           "Biospecimen Age at Collection",
+                           "Biospecimen Age at Collection Unit",
+                           "Biospecimen Disease Type",
+                           "Biospecimen Primary Site",
+                           "Biospecimen Primary Diagnosis",
+                           "Biospecimen Site of Origin",
+                           "Biospecimen Tumor Subtype",
+                           "Biospecimen Tumor Grade",
+                           "Biospecimen Known Metastasis Sites",
+                           "Biospecimen Tumor Morphology",
+                           "Biospecimen Composition",
+                           "Biospecimen Preservation Method",
+                           "Biospecimen Fixative",
+                           "Biospecimen Embedding Medium",
+                           "Biospecimen Anatomic Site",
+                           "Biospecimen Site of Resection or Biopsy",
+                           "Biospecimen Timepoint Type",
+                           "Biospecimen Timepoint Offset",
+                           "Biospecimen Collection Site",
+                           "Biospecimen Treatment Type",
+                           "Biospecimen Therapeutic Agent",
+                           "Biospecimen Treatment Response",
+                           "Biospecimen Last Known Disease Status",
+                           "Biospecimen BioSample Identifier",
+                           "Biospecimen Description"]
+
+    files = get_dataset_file_ids(syn, target)
     
-    if sheet:
-        idSet = pd.read_csv(sheet, header=None)
-        if idSet.iat[0,0] == "entity" and idSet.iat[0,1] == "component":
-            print(f"\nInput sheet read successfully!\n\nApplying annotations now...")
-            idSet = idSet.iloc[1:,:]
-            count = 0
-            for row in idSet.itertuples(index=False):
-                target = row[0]
-                component = row[1]
-                annotations = build_annotations(syn, component, source, target)  
-                count += 1
-            print(f"\n\nDONE ✅\n{count} entities had annotations applied.")
-        else:
-            print(f"\n❗❗❗ The table provided does not appear to be formatted for this operation.❗❗❗\nPlease check its contents and try again.")
-    
-    else: #if no sheet provided, run process for one round of inputs only
-        if target and component:
-            annotations = build_annotations(syn, component, source, target)
-        else:
-            print(f"\n❗❗❗ No dataset information provided.❗❗❗\nPlease check your command line inputs and try again.")
+    annotations = build_annotations(syn, files, file_table, specimen_table, individual_table, model_table, None, biospecimen_columns)
 
 if __name__ == "__main__":
     main()
