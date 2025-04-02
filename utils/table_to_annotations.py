@@ -151,8 +151,7 @@ def apply_annotations_to_entity(syn, component: str, entity_id: str, new_annotat
     filtered_annotations = [tup for tup in new_annotations if len(tup[1]) > 0]
     for annot in filtered_annotations:
         entity_annotations[annot[0].replace(" ", "")] = annot[1]
-    print(entity_annotations)
-    #entity = syn.set_annotations(entity_annotations)
+    entity = syn.set_annotations(entity_annotations)
     print(f"\n{component} annotations applied to Synapse entity: {entity_id}")
 
 
