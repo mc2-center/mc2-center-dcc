@@ -36,6 +36,12 @@ def get_args():
         required=True
     )
     parser.add_argument(
+        "-g",
+        type=str,
+        help="Grant number associated with a duoCodeAR type schema, in CAxxxxxx format (e.g., CA274499).",
+        required=False
+    )
+    parser.add_argument(
         "-s",
         type=str,
         help="Path to a CSV file with entity Synapse Ids and Components on each row.",
@@ -57,8 +63,6 @@ def get_schema_organization(service):
         print(f"Organization {org_name} already exists, getting info now...")
         schema_org = service.get_organization(organization_name = org_name)
     
-    #schema_org.set_acl("3450948, 3458480")
-
     return service, schema_org, org_name
 
 
@@ -71,34 +75,40 @@ def register_json_schema(org, schema_type, schema_json, version, schema_org_name
     try:
         schema = org.create_json_schema(schema_json, schema_type, semantic_version=num_version)
         uri = schema.uri
-        print(f"JSON schema {schema.name} was successfully registered.")
-    except synapseclient.core.exceptions.SynapseHTTPError:
-        print(f"JSON schema {schema_type}-{num_version} was previously registered and will be bound to the entity.")
+        print(f"JSON schema {uri} was successfully registered.")
+    except synapseclient.core.exceptions.SynapseHTTPError as error:
+        print(error)
+        print(f"JSON schema {uri} was previously registered and will be bound to the entity.")
         
     return uri
 
 
-def bind_schema_to_entity(syn, service, schema_uri, dataset_id, component):
+def bind_schema_to_entity(syn, service, schema_uri, entity_id, component_type):
 
-    if component != "duoCodeAR":
-        service.bind_json_schema(schema_uri, dataset_id)
+    if component_type != "duoCodeAR":
+        print(f"Binding non-AR schema {schema_uri}")
+        service.bind_json_schema(schema_uri, entity_id)
 
     else:
+        print(f"Binding AR schema {schema_uri}")
         request_body = {
-            "entityId": dataset_id,
+            "entityId": entity_id,
             "schema$id": schema_uri,
             "enableDerivedAnnotations": True
             }
         syn.restPUT(
-            f"/entity/{dataset_id}/schema/binding", body=json.dumps(request_body)
+            f"/entity/{entity_id}/schema/binding", body=json.dumps(request_body)
         )
 
    
-def get_schema_from_url(component, version):
+def get_schema_from_url(component, version, grant):
 
     #base_schema_url = "".join(["https://raw.githubusercontent.com/mc2-center/data-models/refs/tags/v", version, "/json_schemas/"])
     base_schema_url = "".join(["https://raw.githubusercontent.com/mc2-center/data-models/refs/heads/136-173-dataset-schema/json_schemas/"])
 
+    if grant is not None and component == "duoCodeAR":
+        component = "".join([grant, component])
+    
     component_json_name = ".".join(["mc2", component, "schema", "json"])
     
     schema_url = "".join([base_schema_url, component_json_name])
@@ -109,18 +119,18 @@ def get_schema_from_url(component, version):
 
     print(f"JSON schema {component} {version} successfully acquired from repository")
 
-    return schema_json
+    return schema_json, component
 
 
-def get_register_bind_schema(syn, component, version, target, schema_org_name, org, service):
+def get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service):
     
-    schema_json = get_schema_from_url(component, version)
-    print(f"Registering JSON schema {component} {version}")
+    schema_json, component_adjusted = get_schema_from_url(component, version, grant)
+    print(f"Registering JSON schema {component_adjusted} {version}")
 
-    uri = register_json_schema(org, component, schema_json, version, schema_org_name)
+    uri = register_json_schema(org, component_adjusted, schema_json, version, schema_org_name)
     
     bound_schema = bind_schema_to_entity(syn, service, uri, target, component)
-    print(f"\nSchema {component} {version} successfully bound to entity {target}")
+    print(f"\nSchema {component_adjusted} {version} successfully bound to entity {target}")
 
 
 def main():
@@ -132,7 +142,7 @@ def main():
 
     args = get_args()
 
-    target, component, version, sheet= args.t, args.c, args.v, args.s
+    target, component, version, grant, sheet= args.t, args.c, args.v, args.g, args.s
     
     syn.get_available_services()
 
@@ -149,7 +159,7 @@ def main():
             for row in idSet.itertuples(index=False):
                 target = row[0]
                 component = row[1]
-                get_register_bind_schema(syn, component, version, target, schema_org_name, org, service)  
+                get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service)  
                 count += 1
             print(f"\n\nDONE ✅\n{count} schemas bound")
         else:
@@ -157,7 +167,7 @@ def main():
     
     else: #if no sheet provided, run process for one round of inputs only
         if target and component:
-            get_register_bind_schema(syn, component, version, target, schema_org_name, org, service)
+            get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service)
         else:
             print(f"\n❗❗❗ No dataset information provided.❗❗❗\nPlease check your command line inputs and try again.")
 
