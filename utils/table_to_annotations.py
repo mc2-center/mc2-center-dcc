@@ -73,15 +73,15 @@ def collect_fileview_annotations(syn, files: list, fileview_id: str) -> dict:
     fileview_table = get_table(syn, fileview_id, fileview_columns)
 
     for _, row in fileview_table.iterrows():
-        id_key_tuple = (row["Biospecimen Key"], row["FileView_id"])
+        id_key_tuple = (row["FileView_id"], row["Biospecimen Key"])
         id_key_tuples.append(id_key_tuple)
     
-    file_tuples = dict([tup for tup in id_key_tuples if tup[1] in files])
+    file_tuples = dict([tup for tup in id_key_tuples if tup[0] in files])
 
     return file_tuples
             
 
-def collect_biospecimen_annotations(syn, file_tuples: dict, specimen_info_tuple: tuple[str, str, str]) -> tuple[dict, dict]:
+def collect_biospecimen_annotations(syn, file_tuples: dict, specimen_info_tuple: tuple[str, str, str]) -> tuple[dict, dict, dict]:
     """Collect all entries from a Biospecimen metadata table,
     select entries where Biospecimen_id is present in Biospecimen Keys associated with files,
     match Biospecimen metadata with column names to create key:value pairs,
@@ -95,25 +95,26 @@ def collect_biospecimen_annotations(syn, file_tuples: dict, specimen_info_tuple:
     component, table_id, column_list = specimen_info_tuple
     data_table = get_table(syn, table_id, column_list)
     count = 0
-    for _, row in data_table.iterrows():
-        id = row["Biospecimen_id"]
-        if id in file_tuples:
-            file_id = file_tuples[id]
-            individual_id = row["Individual Key"]
-            model_id = row["Model Key"]
-            individual_tup = (individual_id, file_id)
-            individual_tup_list.append(individual_tup)
-            model_tup = (model_id, file_id)
-            model_tup_list.append(model_tup)
-            biospecimen_annotations = list(zip(column_list, list(row)))
-            apply_annotations_to_entity(syn, component, file_id, biospecimen_annotations)
-            count += 1
+    for file in file_tuples:
+        for _, row in data_table.iterrows():
+            id = row["Biospecimen_id"]
+            if id in file_tuples.values():
+                if file_tuples[file] == id:
+                    individual_id = row["Individual Key"]
+                    model_id = row["Model Key"]
+                    individual_tup = (file, individual_id)
+                    individual_tup_list.append(individual_tup)
+                    model_tup = (file, model_id)
+                    model_tup_list.append(model_tup)
+                    biospecimen_annotations = list(zip(column_list, list(row)))
+                    apply_annotations_to_entity(syn, component, file, biospecimen_annotations)
+                    count += 1
     
     print(f"Biospecimen annotations applied to {count} entities")
-    return dict(individual_tup_list), dict(model_tup_list)
+    return file_tuples, dict(individual_tup_list), dict(model_tup_list)
 
 
-def collect_record_annotations(syn, info_tuple: tuple[str, str, str], tuple_dict: dict):
+def collect_record_annotations(syn, file_tuples: dict, info_tuple: tuple[str, str, str], tuple_dict: dict):
     """Collect all entries from a Synapse table,
     select entries where primary key (e.g. Individual_id) matches foreign key (e.g. Individual Key),
     based on dictionary output from collect_biospecimen_annotations,
@@ -122,13 +123,14 @@ def collect_record_annotations(syn, info_tuple: tuple[str, str, str], tuple_dict
     component, table_id, column_list = info_tuple
     data_table = get_table(syn, table_id, column_list)
     count = 0
-    for _, row in data_table.iterrows():
-        id = row[f"{component}_id"]
-        if id in tuple_dict:
-            file_id = tuple_dict[id]
-            annotations = list(zip(column_list, list(row)))
-            apply_annotations_to_entity(syn, component, file_id, annotations)
-            count += 1
+    for file in file_tuples:
+        for _, row in data_table.iterrows():
+            id = row[f"{component}_id"]
+            if id in tuple_dict.values():
+                if tuple_dict[file] == id:
+                    annotations = list(zip(column_list, list(row)))
+                    apply_annotations_to_entity(syn, component, file, annotations)
+                    count += 1
     
     print(f"{component} annotations applied to {count} entities")
 
@@ -253,13 +255,13 @@ def main():
 
     file_view_out = collect_fileview_annotations(syn, files, file_table)
 
-    ind_dict, model_dict = collect_biospecimen_annotations(syn, file_view_out, specimen_info_tuple)
+    file_dict, ind_dict, model_dict = collect_biospecimen_annotations(syn, file_view_out, specimen_info_tuple)
 
     if individual_table is not None:
-        individual_out = collect_record_annotations(syn, individual_info_tuple, ind_dict)
+        individual_out = collect_record_annotations(syn, file_dict, individual_info_tuple, ind_dict)
 
     if model_table is not None:
-        model_out = collect_record_annotations(syn, model_info_tuple, model_dict)
+        model_out = collect_record_annotations(syn, file_dict, model_info_tuple, model_dict)
 
 if __name__ == "__main__":
     main()
