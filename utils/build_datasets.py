@@ -3,7 +3,7 @@
 This script will update the scope of a Synapse Dataset
 
 Usage:
-python build_datasets.py -d <Dataset Synapse Id> -s <Folder Synapse Id containing files for Dataset> -c <CSV with dataset and folder Synapse Ids>
+python build_datasets.py -d [Dataset Synapse Id] -s [Folder Synapse Id containing files for Dataset] -c [CSV with dataset and folder Synapse Ids] -f [File formats to include in Dataset]
 
 author: orion.banks
 """
