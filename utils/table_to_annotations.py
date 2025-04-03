@@ -48,7 +48,7 @@ def get_args():
     )
     return parser.parse_args()
 
-def get_table(syn, source_id: str, cols: str = "*") -> pd.DataFrame:
+def get_table(syn, source_id: str, cols: str | list = "*") -> pd.DataFrame:
     """Collect columns from a Synapse table entity and return as a Dataframe."""
     
     if type(cols) == list:
