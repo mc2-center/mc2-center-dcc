@@ -54,7 +54,7 @@ def get_dataset_file_ids(syn, dataset_id:str) -> list:
     
     query = f"SELECT id FROM {dataset_id}"
     file_table = syn.tableQuery(query).asDataFrame().fillna("")
-    files = list(file_table["id"])
+    files = file_table["id"].tolist()
     print(f"Synapse Ids acquired from Dataset {dataset_id}")
 
     return files
