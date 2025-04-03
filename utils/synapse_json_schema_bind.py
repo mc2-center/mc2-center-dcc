@@ -77,7 +77,7 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
     
     num_version = version.split("v")[1]
 
-    uri = "-".join([schema_org_name.replace(" ", ""),schema_type,num_version])
+    uri = "-".join([schema_org_name.replace(" ", ""), schema_type,num_version])
 
     try:
         schema = org.create_json_schema(schema_json, schema_type, semantic_version=num_version)
@@ -154,14 +154,11 @@ def get_register_bind_schema(syn, component: str, grant: str, version: str, targ
 
 def main():
 
-    syn = (
-        synapseclient.Synapse()
-    )
-    syn.login()
+    syn = synapseclient.login()
 
     args = get_args()
 
-    target, component, version, grant, sheet= args.t, args.c, args.v, args.g, args.s
+    target, component, version, grant, sheet = args.t, args.c, args.v, args.g, args.s
     
     syn.get_available_services()
 
@@ -170,12 +167,12 @@ def main():
     service, org, schema_org_name = get_schema_organization(schema_service)
     
     if sheet:
-        idSet = pd.read_csv(sheet, header=None)
-        if idSet.iat[0,0] == "entity" and idSet.iat[0,1] == "component":
+        id_set = pd.read_csv(sheet, header=None)
+        if id_set.iat[0,0] == "entity" and id_set.iat[0,1] == "component":
             print(f"\nInput sheet read successfully!\n\nBinding schemas now...")
-            idSet = idSet.iloc[1:,:]
+            id_set = id_set.iloc[1:,:]
             count = 0
-            for row in idSet.itertuples(index=False):
+            for row in id_set.itertuples(index=False):
                 target = row[0]
                 component = row[1]
                 get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service)  
@@ -184,7 +181,7 @@ def main():
         else:
             print(f"\n❗❗❗ The table provided does not appear to be formatted for this operation.❗❗❗\nPlease check its contents and try again.")
     
-    else: #if no sheet provided, run process for one round of inputs only
+    else:  # if no sheet provided, run process for one round of inputs only
         if target and component:
             get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service)
         else:
