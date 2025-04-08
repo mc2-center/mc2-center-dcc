@@ -97,7 +97,7 @@ def collect_biospecimen_annotations(
 
     component, table_id, column_list = specimen_info_tuple
     data_table = get_table(syn, table_id, column_list).set_index("Biospecimen_id")
-    column_list.pop(0)
+    column_list.pop(0) # remove Biospecimen_id from list of columns, since it is now the index
     biospecimen_ids = set(file_biospecimen_dict.values())
     filtered_metadata = data_table[data_table.index.isin(biospecimen_ids)]
     count = 0
@@ -132,9 +132,9 @@ def collect_record_annotations(
     apply annotations to each file"""
 
     component, table_id, column_list = info_tuple
-    key_column = "_".join([component, "id"])
+    key_column = f"{component}_id"
     data_table = get_table(syn, table_id, column_list).set_index(key_column)
-    column_list.pop(0)
+    column_list.pop(0)  # remove Component_id from list of columns, since it is now the index
     table_keys = set(tuple_dict.values())
     filtered_metadata = data_table[data_table.index.isin(table_keys)]
     count = 0
