@@ -20,248 +20,287 @@ def get_args():
         "-t",
         type=str,
         help="Synapse Id of an dataset with files to annotate",
-        required=True
+        required=True,
     )
     parser.add_argument(
         "-f",
         type=str,
         help="Synapse Id of a table containing File View metadata.",
-        required=True
+        required=True,
     )
     parser.add_argument(
         "-s",
         type=str,
         help="Synapse Id of a table containing Biospecimen metadata.",
-        required=True
+        required=True,
     )
     parser.add_argument(
         "-i",
         type=str,
         help="Synapse Id of a table containing Model metadata.",
-        required=False
+        required=False,
     )
     parser.add_argument(
         "-m",
         type=str,
         help="Synapse Id of a table containing Model metadata.",
-        required=False
+        required=False,
     )
     return parser.parse_args()
 
+
 def get_table(syn, source_id: str, cols: str | list = "*") -> pd.DataFrame:
     """Collect columns from a Synapse table entity and return as a Dataframe."""
-    
+
     if type(cols) == list:
         cols = ", ".join(["".join(['"', col, '"']) for col in cols])
 
     query = f"SELECT {cols} FROM {source_id}"
     table = syn.tableQuery(query).asDataFrame().fillna("")
     print(f"Data acquired from Synapse table {source_id}")
-    
+
     return table
 
 
 def collect_fileview_annotations(syn, files: list, fileview_id: str) -> dict:
-    """Collect all entries from a File View metadata table,
-    extract Biospecimen and File identifiers,
-    return a Biospecimen Key: File Synapse Id dictionary"""
-    
-    id_key_tuples = []
+    """Collect all Biospecimen and File identifiers from a File View metadata table,
+    return a File Synapse Id: Biospecimen Key dictionary"""
 
     fileview_columns = ["FileView_id", "Biospecimen Key"]
 
     fileview_table = get_table(syn, fileview_id, fileview_columns)
 
-    for _, row in fileview_table.iterrows():
-        id_key_tuple = (row["FileView_id"], row["Biospecimen Key"])
-        id_key_tuples.append(id_key_tuple)
-    
-    file_tuples = dict([tup for tup in id_key_tuples if tup[0] in files])
+    file_biospecimen_mapping = {
+        row["FileView_id"]: row["Biospecimen Key"]
+        for _, row in fileview_table.iterrows()
+        if row["FileView_id"] in files
+    }
 
-    return file_tuples
-            
+    return file_biospecimen_mapping
 
-def collect_biospecimen_annotations(syn, file_tuples: dict, specimen_info_tuple: tuple[str, str, str]) -> tuple[dict, dict, dict]:
+
+def collect_biospecimen_annotations(
+    syn,
+    file_biospecimen_dict: dict,
+    specimen_info_tuple: tuple[str, str, list[str]],
+    keys_to_drop: list[str],
+) -> tuple[dict, dict, dict]:
     """Collect all entries from a Biospecimen metadata table,
     select entries where Biospecimen_id is present in Biospecimen Keys associated with files,
     match Biospecimen metadata with column names to create key:value pairs,
     apply annotations to each file,
-    return Individual Key:File Id and Model Key: File Id dictionaries
+    return File Id: Individual Key and File Id: Model Key dictionaries
     """
-    
-    individual_tup_list = []
-    model_tup_list = []
-    
+
+    individual_dict = {}
+    model_dict = {}
+
     component, table_id, column_list = specimen_info_tuple
-    data_table = get_table(syn, table_id, column_list)
+    data_table = get_table(syn, table_id, column_list).set_index("Biospecimen_id")
+    column_list.pop(0)
+    biospecimen_ids = set(file_biospecimen_dict.values())
+    filtered_metadata = data_table[data_table.index.isin(biospecimen_ids)]
     count = 0
-    for file in file_tuples:
-        for _, row in data_table.iterrows():
-            id = row["Biospecimen_id"]
-            if id in file_tuples.values():
-                if file_tuples[file] == id:
-                    individual_id = row["Individual Key"]
-                    model_id = row["Model Key"]
-                    individual_tup = (file, individual_id)
-                    individual_tup_list.append(individual_tup)
-                    model_tup = (file, model_id)
-                    model_tup_list.append(model_tup)
-                    biospecimen_annotations = list(zip(column_list, list(row)))
-                    apply_annotations_to_entity(syn, component, file, biospecimen_annotations)
-                    count += 1
-    
+    for file_id, biospecimen_key in file_biospecimen_dict.items():
+        if biospecimen_key in filtered_metadata.index:
+            metadata = filtered_metadata.loc[biospecimen_key]
+            individual_id = metadata["Individual Key"]
+            model_id = metadata["Model Key"]
+            individual_dict[file_id] = individual_id
+            model_dict[file_id] = model_id
+            biospecimen_annotations = list(zip(column_list, metadata.tolist()))
+            apply_annotations_to_entity(
+                syn, component, file_id, biospecimen_annotations, keys_to_drop
+            )
+            count += 1
+        else:
+            print(f"Metadata not found for: {biospecimen_key}")
+
     print(f"Biospecimen annotations applied to {count} entities")
-    return file_tuples, dict(individual_tup_list), dict(model_tup_list)
+    return individual_dict, model_dict
 
 
-def collect_record_annotations(syn, file_tuples: dict, info_tuple: tuple[str, str, str], tuple_dict: dict):
+def collect_record_annotations(
+    syn,
+    info_tuple: tuple[str, str, list[str]],
+    tuple_dict: dict,
+    keys_to_drop: list[str],
+):
     """Collect all entries from a Synapse table,
     select entries where primary key (e.g. Individual_id) matches foreign key (e.g. Individual Key),
     based on dictionary output from collect_biospecimen_annotations,
     apply annotations to each file"""
-    
+
     component, table_id, column_list = info_tuple
-    data_table = get_table(syn, table_id, column_list)
+    key_column = "_".join([component, "id"])
+    data_table = get_table(syn, table_id, column_list).set_index(key_column)
+    column_list.pop(0)
+    table_keys = set(tuple_dict.values())
+    filtered_metadata = data_table[data_table.index.isin(table_keys)]
     count = 0
-    for file in file_tuples:
-        for _, row in data_table.iterrows():
-            id = row[f"{component}_id"]
-            if id in tuple_dict.values():
-                if tuple_dict[file] == id:
-                    annotations = list(zip(column_list, list(row)))
-                    apply_annotations_to_entity(syn, component, file, annotations)
-                    count += 1
-    
+    for file_id, table_key in tuple_dict.items():
+        if table_key in filtered_metadata.index:
+            metadata = filtered_metadata.loc[table_key]
+            annotations = list(zip(column_list, metadata.tolist()))
+            apply_annotations_to_entity(
+                syn, component, file_id, annotations, keys_to_drop
+            )
+            count += 1
+
     print(f"{component} annotations applied to {count} entities")
 
 
-def apply_annotations_to_entity(syn, component: str, entity_id: str, new_annotations: list[tuple[str, str]]):
+def apply_annotations_to_entity(
+    syn,
+    component: str,
+    entity_id: str,
+    new_annotations: list[tuple[str, str]],
+    keys_to_drop: list,
+):
     """Apply annotations to a Synapse entity by:
     retrieving current annotations,
+    filtering to remove empty annotations,
+    filtering to remove keys in keys_to_drop,
     converting new_annotations tuple to key:value pairs within the retrieved annotation object,
-    storing modified annotation object in Synapse.
-    Note that only keys with non-empty values will be applied."""
-    
+    storing modified annotation object in Synapse."""
+
     entity_annotations = syn.get_annotations(entity_id)
     filtered_annotations = [tup for tup in new_annotations if len(tup[1]) > 0]
-    for annot in filtered_annotations:
-        entity_annotations[annot[0].replace(" ", "")] = annot[1]
+    for key, annot in filtered_annotations:
+        if key not in keys_to_drop:
+            entity_annotations[key.replace(" ", "")] = annot
     syn.set_annotations(entity_annotations)
-    print(f"\n{component} annotations applied to Synapse entity: {entity_id}")
+    print(f"{component} annotations applied to Synapse entity: {entity_id}\n")
 
 
 def main():
 
-    syn = synapseclient.login() 
+    syn = synapseclient.login()
 
     args = get_args()
 
-    target, file_table, specimen_table, individual_table, model_table = args.t, args.f, args.s, args.i, args.m
+    target, file_table, specimen_table, individual_table, model_table = (
+        args.t,
+        args.f,
+        args.s,
+        args.i,
+        args.m,
+    )
 
-    biospecimen_columns = ["Biospecimen_id",
-                           "Study Key",
-                           "Individual Key",
-                           "Model Key",
-                           "Parent Biospecimen Key",
-                           "Biospecimen Type Category",
-                           "Biospecimen Type",
-                           "Biospecimen Tumor Status",
-                           "Biospecimen Acquisition Method",
-                           "Biospecimen Incidence Type",
-                           "Biospecimen Stain",
-                           "Biospecimen Species",
-                           "Biospecimen Sex",
-                           "Biospecimen Age at Collection",
-                           "Biospecimen Age at Collection Unit",
-                           "Biospecimen Disease Type",
-                           "Biospecimen Primary Site",
-                           "Biospecimen Primary Diagnosis",
-                           "Biospecimen Site of Origin",
-                           "Biospecimen Tumor Subtype",
-                           "Biospecimen Tumor Grade",
-                           "Biospecimen Known Metastasis Sites",
-                           "Biospecimen Tumor Morphology",
-                           "Biospecimen Composition",
-                           "Biospecimen Preservation Method",
-                           "Biospecimen Fixative",
-                           "Biospecimen Embedding Medium",
-                           "Biospecimen Anatomic Site",
-                           "Biospecimen Site of Resection or Biopsy",
-                           "Biospecimen Timepoint Type",
-                           "Biospecimen Timepoint Offset",
-                           "Biospecimen Collection Site",
-                           "Biospecimen Treatment Type",
-                           "Biospecimen Therapeutic Agent",
-                           "Biospecimen Treatment Response",
-                           "Biospecimen Last Known Disease Status",
-                           "Biospecimen BioSample Identifier",
-                           "Biospecimen Description"]
-    
-    individual_columns = ['Individual_id',
-                          'Study Key',
-                          'Individual dbGaP Subject Id',
-                          'Individual Sex',
-                          'Individual Gender',
-                          'Individual Age at Diagnosis',
-                          'Individual Disease Type',
-                          'Individual Primary Diagnosis',
-                          'Individual Primary Site',
-                          'Individual Primary Tumor Stage',
-                          'Individual Site of Origin',
-                          'Individual Tumor Subtype',
-                          'Individual Tumor Grade',
-                          'Individual Tumor Lymph Node Stage',
-                          'Individual Known Metastasis Sites',
-                          'Individual Metastasis Stage',
-                          'Individual Treatment Type',
-                          'Individual Therapeutic Agent',
-                          'Individual Days to Treatment',
-                          'Individual Treatment Response',
-                          'Individual Days to Last Followup',
-                          'Individual Recurrence Status',
-                          'Individual Days To Recurrence',
-                          'Individual Days to Last Known Disease Status',
-                          'Individual Last Known Disease Status',
-                          'Individual Vital Status']
-    
-    model_columns = ['Model_id',
-                     'Study Key',
-                     'Individual Key',
-                     'Model Age',
-                     'Model Age Unit',
-                     'Model Sex',
-                     'Model Disease Type',
-                     'Model Primary Diagnosis',
-                     'Model Primary Site',
-                     'Model Site of Origin',
-                     'Model Tumor Subtype',
-                     'Model Species',
-                     'Model Type',
-                     'Model Method',
-                     'Model Source',
-                     'Model Acquisition Type',
-                     'Model Graft Source',
-                     'Model Genotype',
-                     'Model Treatment Type',
-                     'Model Therapeutic Agent',
-                     'Model Days to Treatment',
-                     'Model Treatment Response']
+    biospecimen_columns = [
+        "Biospecimen_id",
+        "Study Key",
+        "Individual Key",
+        "Model Key",
+        "Parent Biospecimen Key",
+        "Biospecimen Type Category",
+        "Biospecimen Type",
+        "Biospecimen Tumor Status",
+        "Biospecimen Acquisition Method",
+        "Biospecimen Incidence Type",
+        "Biospecimen Stain",
+        "Biospecimen Species",
+        "Biospecimen Sex",
+        "Biospecimen Age at Collection",
+        "Biospecimen Age at Collection Unit",
+        "Biospecimen Disease Type",
+        "Biospecimen Primary Site",
+        "Biospecimen Primary Diagnosis",
+        "Biospecimen Site of Origin",
+        "Biospecimen Tumor Subtype",
+        "Biospecimen Tumor Grade",
+        "Biospecimen Known Metastasis Sites",
+        "Biospecimen Tumor Morphology",
+        "Biospecimen Composition",
+        "Biospecimen Preservation Method",
+        "Biospecimen Fixative",
+        "Biospecimen Embedding Medium",
+        "Biospecimen Anatomic Site",
+        "Biospecimen Site of Resection or Biopsy",
+        "Biospecimen Timepoint Type",
+        "Biospecimen Timepoint Offset",
+        "Biospecimen Collection Site",
+        "Biospecimen Treatment Type",
+        "Biospecimen Therapeutic Agent",
+        "Biospecimen Treatment Response",
+        "Biospecimen Last Known Disease Status",
+        "Biospecimen BioSample Identifier",
+        "Biospecimen Description",
+    ]
+
+    individual_columns = [
+        "Individual_id",
+        "Study Key",
+        "Individual dbGaP Subject Id",
+        "Individual Sex",
+        "Individual Gender",
+        "Individual Age at Diagnosis",
+        "Individual Disease Type",
+        "Individual Primary Diagnosis",
+        "Individual Primary Site",
+        "Individual Primary Tumor Stage",
+        "Individual Site of Origin",
+        "Individual Tumor Subtype",
+        "Individual Tumor Grade",
+        "Individual Tumor Lymph Node Stage",
+        "Individual Known Metastasis Sites",
+        "Individual Metastasis Stage",
+        "Individual Treatment Type",
+        "Individual Therapeutic Agent",
+        "Individual Days to Treatment",
+        "Individual Treatment Response",
+        "Individual Days to Last Followup",
+        "Individual Recurrence Status",
+        "Individual Days To Recurrence",
+        "Individual Days to Last Known Disease Status",
+        "Individual Last Known Disease Status",
+        "Individual Vital Status",
+    ]
+
+    model_columns = [
+        "Model_id",
+        "Study Key",
+        "Individual Key",
+        "Model Age",
+        "Model Age Unit",
+        "Model Sex",
+        "Model Disease Type",
+        "Model Primary Diagnosis",
+        "Model Primary Site",
+        "Model Site of Origin",
+        "Model Tumor Subtype",
+        "Model Species",
+        "Model Type",
+        "Model Method",
+        "Model Source",
+        "Model Acquisition Type",
+        "Model Graft Source",
+        "Model Genotype",
+        "Model Treatment Type",
+        "Model Therapeutic Agent",
+        "Model Days to Treatment",
+        "Model Treatment Response",
+    ]
 
     specimen_info_tuple = ("Biospecimen", specimen_table, biospecimen_columns)
     individual_info_tuple = ("Individual", individual_table, individual_columns)
     model_info_tuple = ("Model", model_table, model_columns)
-    
+    keys_to_drop = ["Study Key"]
+
     files = get_table(syn, target, cols="id")["id"].tolist()
 
     file_view_out = collect_fileview_annotations(syn, files, file_table)
 
-    file_dict, ind_dict, model_dict = collect_biospecimen_annotations(syn, file_view_out, specimen_info_tuple)
+    ind_dict, model_dict = collect_biospecimen_annotations(
+        syn, file_view_out, specimen_info_tuple, keys_to_drop
+    )
 
     if individual_table is not None:
-        individual_out = collect_record_annotations(syn, file_dict, individual_info_tuple, ind_dict)
+        collect_record_annotations(syn, individual_info_tuple, ind_dict, keys_to_drop)
 
     if model_table is not None:
-        model_out = collect_record_annotations(syn, file_dict, model_info_tuple, model_dict)
+        collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop)
+
 
 if __name__ == "__main__":
     main()
