@@ -21,7 +21,8 @@ def get_args():
         "-d",
         type=str,
         help="Synapse Id of a Dataset to update with files from input folder",
-        required=False
+        required=False,
+        default=None
     )
     parser.add_argument(
         "-s",
@@ -39,6 +40,13 @@ def get_args():
         "-f",
         nargs="+",
         help="Space-separated list of file formats to include in the Dataset.",
+        required=False,
+        default=None
+    )
+    parser.add_argument(
+        "--create",
+        action="store_true",
+        help="Boolean flag. Provide this flag if Datasets need to be created.",
         required=False,
         default=None
     )
@@ -66,7 +74,7 @@ def main():
 
     args = get_args()
 
-    dataset_id, scope_id, id_sheet, formats = args.d, args.s, args.c, args.f
+    dataset_id, scope_id, id_sheet, formats, create = args.d, args.s, args.c, args.f, args.create
 
     if id_sheet:
         id_set = pd.read_csv(id_sheet, header=None)
@@ -90,8 +98,11 @@ def main():
             print(f"\n❗❗❗ The table provided does not appear to be formatted for this operation.❗❗❗\nPlease check its contents and try again.")
     
     else:
-        if dataset_id and scope_id:
-            dataset = syn.get(dataset_id)
+        if scope_id:
+            if dataset is not None:
+                dataset = syn.get(dataset_id)
+            elif create is not None:
+                name = syn.get(scope_id).name
             if formats is not None:
                 dataset = filter_files_in_folder(syn, scope_id, formats, dataset)
             else:    
