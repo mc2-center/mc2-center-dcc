@@ -1,6 +1,8 @@
 """
 Check if Synapse user account is certified. 
 Prints output to terminal, unless '-f' is provided as a flag at run time
+
+author: orion.banks
 """
 
 import synapseclient

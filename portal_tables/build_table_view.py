@@ -35,7 +35,7 @@ def get_args():
     )
     parser.add_argument(
         "-c",
-        choices=["file", "project", "table", "folder", "view", "docker"],
+        choices=["file", "project", "table", "folder", "view", "docker", "dataset"],
         help="the type of entities to display in the view table",
     )
     parser.add_argument(
