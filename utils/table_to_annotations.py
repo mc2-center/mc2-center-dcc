@@ -166,7 +166,7 @@ def collect_record_annotations(
 
 
 def collect_dataset_annotations(
-    syn, info_tuple: tuple[str, str, list[str]], keys_to_drop: list[str]
+    syn, dataset_id: str, info_tuple: tuple[str, str, list[str]], keys_to_drop: list[str]
 ):
     """Collect all entries from a DatasetView Synapse table,
     select entry where input table Synapse Id matches DatasetView_id,
@@ -177,13 +177,11 @@ def collect_dataset_annotations(
     data_table = get_table(syn, table_id, column_list).set_index(key_column)
     column_list.pop(
         0
-    )  # remove Component_id from list of columns, since it is now the index
-    if table_id in data_table.index:
-        metadata = data_table.loc[table_id]
+    )  # remove DatasetView_id from list of columns, since it is now the index
+    if dataset_id in data_table.index:
+        metadata = data_table.loc[dataset_id]
         annotations = list(zip(column_list, metadata.tolist()))
-        apply_annotations_to_entity(syn, component, table_id, annotations, keys_to_drop)
-
-    print(f"{component} annotations applied to entity {table_id}")
+        apply_annotations_to_entity(syn, component, dataset_id, annotations, keys_to_drop)
 
 
 def apply_annotations_to_entity(
@@ -362,7 +360,7 @@ def main():
             collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop)
 
     if datasetview_table is not None:
-        collect_dataset_annotations(syn, dataset_info_tuple, keys_to_drop)
+        collect_dataset_annotations(syn, target, dataset_info_tuple, keys_to_drop)
 
 
 if __name__ == "__main__":
