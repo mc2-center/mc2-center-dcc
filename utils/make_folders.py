@@ -1,5 +1,7 @@
 """
 Create new folders from a list of Synapse project IDs and return project, folder ID CSV
+
+author: orion.banks
 """
 
 import synapseclient
