@@ -142,7 +142,7 @@ def main():
                 dataset.add_items(dataset_items=scope_files, force=True)
                 print(f"--> Files added to Dataset!")
 
-            #dataset = syn.store(dataset)
+            dataset = syn.store(dataset)
             print(f"Dataset {dataset_id} successfully stored in {dataset.parentId}")
 
             if update_dsp_sheet is not None:
