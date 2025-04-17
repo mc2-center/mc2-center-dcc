@@ -51,17 +51,15 @@ def filter_files_in_folder(syn, scope: str, formats: list[str]) -> list:
     """Capture all files in provided scope and select files that match a list of formats,
     return list of dataset items"""
 
-    all_files = []
+    dataset_items = []
     walk_path = synapseutils.walk(syn, scope, ["file"])
-    for dirpath, dirname, filename in walk_path:
-        all_files = all_files + filename
-    filtered_files = [
-        file[1] for file in all_files for format in formats if file[0].endswith(format)
-    ]  # only select files of desired format
-    dataset_items = [
-        {"entityId": f, "versionNumber": syn.get(f, downloadFile=False).versionLabel}
-        for f in filtered_files
-    ]
+    for _p, _d, filename in walk_path:
+        for f, entity_id in filename:
+            if any(f.endswith(fmt) for fmt in formats):  # only select files of desired format
+                dataset_items.append({
+                    "entityId": entity_id,
+                    "versionNumber": syn.get(f, downloadFile=False).versionLabel
+                })
 
     return dataset_items
 
