@@ -19,32 +19,43 @@ def get_args():
     parser.add_argument(
         "-t",
         type=str,
-        help="Synapse Id of an dataset with files to annotate",
+        help="Synapse Id of a dataset with files to annotate",
         required=True,
+    )
+    parser.add_argument(
+        "-v",
+        type=str,
+        help="Synapse Id of a table containing DatasetView metadata",
+        required=False,
+        default=None,
     )
     parser.add_argument(
         "-f",
         type=str,
         help="Synapse Id of a table containing File View metadata.",
-        required=True,
+        required=False,
+        default=None,
     )
     parser.add_argument(
         "-s",
         type=str,
         help="Synapse Id of a table containing Biospecimen metadata.",
-        required=True,
+        required=False,
+        default=None,
     )
     parser.add_argument(
         "-i",
         type=str,
-        help="Synapse Id of a table containing Model metadata.",
+        help="Synapse Id of a table containing Individual metadata.",
         required=False,
+        default=None,
     )
     parser.add_argument(
         "-m",
         type=str,
         help="Synapse Id of a table containing Model metadata.",
         required=False,
+        default=None,
     )
     return parser.parse_args()
 
@@ -97,7 +108,7 @@ def collect_biospecimen_annotations(
 
     component, table_id, column_list = specimen_info_tuple
     data_table = get_table(syn, table_id, column_list).set_index("Biospecimen_id")
-    column_list.pop(0) # remove Biospecimen_id from list of columns, since it is now the index
+    column_list.pop(0)  # remove Biospecimen_id from list of columns, since it is now the index
     biospecimen_ids = set(file_biospecimen_dict.values())
     filtered_metadata = data_table[data_table.index.isin(biospecimen_ids)]
     count = 0
@@ -150,6 +161,23 @@ def collect_record_annotations(
     print(f"{component} annotations applied to {count} entities")
 
 
+def collect_dataset_annotations(
+    syn, dataset_id: str, info_tuple: tuple[str, str, list[str]], keys_to_drop: list[str]
+):
+    """Collect all entries from a DatasetView Synapse table,
+    select entry where input table Synapse Id matches DatasetView_id,
+    apply annotations to the Dataset"""
+
+    component, table_id, column_list = info_tuple
+    key_column = f"{component}_id"
+    data_table = get_table(syn, table_id, column_list).set_index(key_column)
+    column_list.pop(0)  # remove DatasetView_id from list of columns, since it is now the index
+    if dataset_id in data_table.index:
+        metadata = data_table.loc[dataset_id]
+        annotations = list(zip(column_list, metadata.tolist()))
+        apply_annotations_to_entity(syn, component, dataset_id, annotations, keys_to_drop)
+
+
 def apply_annotations_to_entity(
     syn,
     component: str,
@@ -179,13 +207,13 @@ def main():
 
     args = get_args()
 
-    target, file_table, specimen_table, individual_table, model_table = (
-        args.t,
-        args.f,
-        args.s,
-        args.i,
-        args.m,
-    )
+    (
+        target,
+        datasetview_table,
+        file_table, specimen_table,
+        individual_table,
+        model_table
+    ) = (args.t, args.v, args.f, args.s, args.i, args.m)
 
     biospecimen_columns = [
         "Biospecimen_id",
@@ -282,24 +310,50 @@ def main():
         "Model Treatment Response",
     ]
 
+    datasetview_columns = [
+        "DatasetView_id",
+        "GrantView Key",
+        "Study Key",
+        "PublicationView Key",
+        "Dataset Name",
+        "Dataset Alias",
+        "Dataset Description",
+        "Dataset Design",
+        "Dataset Assay",
+        "Dataset Species",
+        "Dataset Tumor Type",
+        "Dataset Tissue",
+        "Dataset Url",
+        "Dataset Doi",
+        "Dataset File Formats",
+        "Data Use Codes",
+    ]
+
     specimen_info_tuple = ("Biospecimen", specimen_table, biospecimen_columns)
     individual_info_tuple = ("Individual", individual_table, individual_columns)
     model_info_tuple = ("Model", model_table, model_columns)
+    dataset_info_tuple = ("DatasetView", datasetview_table, datasetview_columns)
     keys_to_drop = ["Study Key"]
 
-    files = get_table(syn, target, cols="id")["id"].tolist()
+    if file_table is not None:
+        files = get_table(syn, target, cols="id")["id"].tolist()
+        file_view_out = collect_fileview_annotations(syn, files, file_table)
 
-    file_view_out = collect_fileview_annotations(syn, files, file_table)
+        if specimen_table is not None:
+            ind_dict, model_dict = collect_biospecimen_annotations(
+                syn, file_view_out, specimen_info_tuple, keys_to_drop
+            )
 
-    ind_dict, model_dict = collect_biospecimen_annotations(
-        syn, file_view_out, specimen_info_tuple, keys_to_drop
-    )
+        if individual_table is not None:
+            collect_record_annotations(
+                syn, individual_info_tuple, ind_dict, keys_to_drop
+            )
 
-    if individual_table is not None:
-        collect_record_annotations(syn, individual_info_tuple, ind_dict, keys_to_drop)
+        if model_table is not None:
+            collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop)
 
-    if model_table is not None:
-        collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop)
+    if datasetview_table is not None:
+        collect_dataset_annotations(syn, target, dataset_info_tuple, keys_to_drop)
 
 
 if __name__ == "__main__":
