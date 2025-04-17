@@ -53,7 +53,7 @@ def filter_files_in_folder(syn, scope: str, formats: list[str]) -> list:
 
     dataset_items = []
     walk_path = synapseutils.walk(syn, scope, ["file"])
-    for _p, _d, filename in walk_path:
+    for *_, filename in walk_path:
         for f, entity_id in filename:
             if any(f.endswith(fmt) for fmt in formats):  # only select files of desired format
                 dataset_items.append({
