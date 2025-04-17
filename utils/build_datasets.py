@@ -110,7 +110,7 @@ def main():
                 continue  # move to next table entry if not data files
             
             print(f"\nProcessing Dataset {dataset_name}")
-            if len(dataset_id) > 0:  # check if a Dataset entity was previously recorded 
+            if dataset_id:  # check if a Dataset entity was previously recorded 
                 print(f"--> Accessing Dataset {dataset_id}")
                 dataset = syn.get(dataset_id)
                 print(f"--> {dataset_id} accessed!")
@@ -122,7 +122,7 @@ def main():
                 update_dsp_sheet = True  # record the new DatasetView_id in DSP
                 print(f"--> New Dataset created!")
 
-            if len(formats) > 0:  # only filter files if formats were specified
+            if formats:  # only filter files if formats were specified
                 print(f"--> Filtering files from {scope_id}")
                 scope_files = filter_files_in_folder(syn, scope_id, formats)
                 folder_or_files = "files"  # use add_items function
