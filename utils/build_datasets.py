@@ -58,7 +58,7 @@ def filter_files_in_folder(syn, scope: str, formats: list[str]) -> list:
             if any(f.endswith(fmt) for fmt in formats):  # only select files of desired format
                 dataset_items.append({
                     "entityId": entity_id,
-                    "versionNumber": syn.get(f, downloadFile=False).versionLabel
+                    "versionNumber": syn.get(entity_id, downloadFile=False).versionLabel
                 })
 
     return dataset_items
@@ -107,6 +107,7 @@ def main():
             formats = re.split(", |,", row["DSP Dataset File Formats"])
             level = row["DSP Dataset Level"]
             if level in ["Metadata", "Auxiliary", "Not Applicable"]:
+                print(f"Skipping Dataset {dataset_name} of type {level}")
                 continue  # move to next table entry if not data files
             
             print(f"\nProcessing Dataset {dataset_name}")
@@ -141,7 +142,7 @@ def main():
                 dataset.add_items(dataset_items=scope_files, force=True)
                 print(f"--> Files added to Dataset!")
 
-            dataset = syn.store(dataset)
+            #dataset = syn.store(dataset)
             print(f"Dataset {dataset_id} successfully stored in {dataset.parentId}")
 
             if update_dsp_sheet is not None:
