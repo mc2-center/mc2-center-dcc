@@ -23,7 +23,7 @@ def process_csv(file_path):
 
     # 2. Add "PublicationView_id" as a column if not present, and fill it with values from "Pubmed Id" column
     if "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
-        df["PublicationView_id"] = df["Pubmed Id"]
+        df.insert(1,'PublicationView_id',df['Pubmed Id'].copy())
 
     # 3. Drop 'Publication Theme Name' and 'Publication Consortium Name' columns
     columns_to_drop = ["Publication Theme Name", "Publication Consortium Name"]
@@ -39,6 +39,12 @@ def process_csv(file_path):
                     else x
                 )
             )
+    # Re-order the Dataframe with columns in the same order as the union table
+    if "Publication Dataset Alias" in df.columns and "Publication Accessibility" in df.columns:
+        col_list = list(df.columns)
+        x,y = col_list.index('Publication Dataset Alias'), col_list.index('Publication Accessibility')
+        col_list[y], col_list[x] = col_list[x], col_list[y]
+        df = df[col_list]
 
     # Save the modified DataFrame back to the CSV file
     df.to_csv(file_path, index=False)
