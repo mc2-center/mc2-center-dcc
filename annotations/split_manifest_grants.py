@@ -22,8 +22,8 @@ def get_args():
     parser.add_argument(
         "manifest_type",
         type=str,
-        choices=["publication", "dataset", "tool", "project", "resource"],
-        help="type of manifest to split, e.g. publicaiton",
+        choices=["publication", "dataset", "tool", "project", "resource", "grant"],
+        help="type of manifest to split, e.g. publication",
     )
     parser.add_argument(
         "folder", type=str, help="folder path to save split manifests in"
@@ -32,6 +32,11 @@ def get_args():
         "--csv",
         action="store_true",
         help="If this flag is provided, manifests will be output as CSV files with no CV sheet",
+    )
+    parser.add_argument(
+        "-db",
+        action="store_true",
+        help="If this flag is provided, the input manifest will be processed as a backpopulation database",
     )
     return parser.parse_args()
 
@@ -60,15 +65,36 @@ def generate_manifest_as_excel(df, cv_terms, output):
     wb.save(output)
 
 
-def split_manifest(df, manifest_type):
+def split_manifest(df, manifest_type, database):
     """Split manifest into multiple manifests by grant number."""
-    colname = f"{manifest_type.capitalize()} Grant Number"
+    if manifest_type != "grant":
+        if manifest_type == "publication":
+            colname = "Publication Grant Number"
+        else:
+            colname = "GrantView Key"
+    else:
+        colname = "Grant Number"
 
-    df[colname] = df[colname].str.split(", ")
+    if manifest_type != "education":
+        idColumn = f"{manifest_type.capitalize()}View_id"
 
-    df = df.drop(["entityId"], axis=1, errors="ignore")
+    else:
+        idColumn = "EducationalResource_id"
 
-    grouped = df.explode(colname).groupby(colname)
+    if database:
+        sep = ","
+        cols = [colname, idColumn]
+        df[idColumn] = df[idColumn].str.split(sep)
+    
+    else:
+        sep = ", "
+        cols = [colname]
+
+    df[colname] = df[colname].str.split(sep)
+
+    df = df.drop(["entityId", "Id"], axis=1, errors="ignore")
+
+    grouped = df.explode(cols).groupby(colname)
     print(f"Found {len(grouped.groups)} grant numbers in table " "- splitting now...")
     return grouped
 
@@ -94,14 +120,15 @@ def main():
         cv_terms["category"].str.contains(manifest_type)
         | cv_terms["category"].isin(annots)
     ]
+    
+    if manifest_type == "resource":
+        manifest_type = "education"
 
     # Read in manifest then split by grant number.  For each grant, generate a new
     # manifest as an Excel file.
     manifest = pd.read_csv(args.manifest)
-    split_manifests = split_manifest(manifest, manifest_type)
-
-    if manifest_type == "resource":
-        manifest_type = "education"
+    database = args.db
+    split_manifests = split_manifest(manifest, manifest_type, database)
 
     for grant_number in split_manifests.groups:
         df = split_manifests.get_group(grant_number)
