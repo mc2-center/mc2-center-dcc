@@ -31,7 +31,7 @@ def get_args():
     return parser.parse_args()
 
 
-def get_names(manifest, name_column, target_column, link_column):
+def get_names(manifest: str, name_column: str, target_column: str, link_column: str) -> list[tuple[str, str, str, str]]:
 
     path_name_link_target = []
 
@@ -55,7 +55,7 @@ def get_names(manifest, name_column, target_column, link_column):
     return path_name_link_target
 
 
-def create_links(syn, path_name_link_target): 
+def create_links(syn, path_name_link_target: list[tuple[str, str, str, str]]) -> list[tuple[str, str, str]]: 
 
     paths, names, links, targets = zip(*path_name_link_target)
 
@@ -74,7 +74,7 @@ def create_links(syn, path_name_link_target):
     return path_name_id
 
 
-def add_ids_to_manifests(path_name_id, name_column, primary_key):
+def add_ids_to_manifests(path_name_id: list[tuple[str, str, str]], name_column: str, primary_key: str) -> None:
 
     df_to_merge = pd.DataFrame.from_records(
         path_name_id, columns=["File Paths", f"{name_column}", f"{primary_key}"]
@@ -92,14 +92,12 @@ def add_ids_to_manifests(path_name_id, name_column, primary_key):
         info_df = group[[f"{name_column}", f"{primary_key}"]]
         info_df = info_df.set_index(keys=np.arange(stop=len(info_df)))
         base_df[f"{primary_key}"] = info_df[f"{primary_key}"]
-        new_manifest = base_df.to_csv(path_or_buf=name_path, index=False)
+        base_df.to_csv(path_or_buf=name_path, index=False)
 
 
 def main():
 
-    syn = (
-        synapseclient.login()
-    )  # you can pass your username and password directly to this function
+    syn = synapseclient.login()  
 
     args = get_args()
 
@@ -128,11 +126,9 @@ def main():
 
     print("Capturing information from " + data_type + " manifests...")
     pnt = get_names(manifest, name_column, target_column, link_column)
-    print("PNT", pnt)
 
     print("Generating Synapse Link Entities for each set of " + data_type + " entries...")
     pni = create_links(syn, pnt)
-    print("PNI", pni)
 
     print(
         "Adding Synapse IDs to "
@@ -141,7 +137,8 @@ def main():
         + data_type
         + " manifests"
     )
-    filled_manifests = add_ids_to_manifests(pni, name_column, primary_key)
+    
+    add_ids_to_manifests(pni, name_column, primary_key)
 
     print("Manifests have been populated with Synapse IDs!")
 
