@@ -51,17 +51,15 @@ def filter_files_in_folder(syn, scope: str, formats: list[str]) -> list:
     """Capture all files in provided scope and select files that match a list of formats,
     return list of dataset items"""
 
-    all_files = []
+    dataset_items = []
     walk_path = synapseutils.walk(syn, scope, ["file"])
-    for dirpath, dirname, filename in walk_path:
-        all_files = all_files + filename
-    filtered_files = [
-        file[1] for file in all_files for format in formats if file[0].endswith(format)
-    ]  # only select files of desired format
-    dataset_items = [
-        {"entityId": f, "versionNumber": syn.get(f, downloadFile=False).versionLabel}
-        for f in filtered_files
-    ]
+    for *_, filename in walk_path:
+        for f, entity_id in filename:
+            if any(f.endswith(fmt) for fmt in formats):  # only select files of desired format
+                dataset_items.append({
+                    "entityId": entity_id,
+                    "versionNumber": syn.get(entity_id, downloadFile=False).versionLabel
+                })
 
     return dataset_items
 
@@ -108,60 +106,62 @@ def main():
             dataset_name = row["DSP Dataset Name"]
             formats = re.split(", |,", row["DSP Dataset File Formats"])
             level = row["DSP Dataset Level"]
-            if level not in ["Metadata", "Auxiliary", "Not Applicable"]:
-                print(f"\nProcessing Dataset {dataset_name}")
-                if len(dataset_id) > 0:
-                    print(f"--> Accessing Dataset {dataset_id}")
-                    dataset = syn.get(dataset_id)
-                    print(f"--> {dataset_id} accessed!")
-                else:
-                    print(
-                        f"--> A new Dataset will be created for files from {scope_id}"
-                    )
-                    dataset = create_dataset_entity(syn, dataset_name, grant_id)
-                    update_dsp_sheet = True
-                    print(f"--> New Dataset created!")
+            if level in ["Metadata", "Auxiliary", "Not Applicable"]:
+                print(f"Skipping Dataset {dataset_name} of type {level}")
+                continue  # move to next table entry if not data files
+            
+            print(f"\nProcessing Dataset {dataset_name}")
+            if dataset_id:  # check if a Dataset entity was previously recorded 
+                print(f"--> Accessing Dataset {dataset_id}")
+                dataset = syn.get(dataset_id)
+                print(f"--> {dataset_id} accessed!")
+            else:
+                print(
+                    f"--> A new Dataset will be created for files from {scope_id}"
+                )
+                dataset = create_dataset_entity(syn, dataset_name, grant_id)
+                update_dsp_sheet = True  # record the new DatasetView_id in DSP
+                print(f"--> New Dataset created!")
 
-                if len(formats) > 0:
-                    print(f"--> Filtering files from {scope_id}")
-                    scope_files = filter_files_in_folder(syn, scope_id, formats)
-                    folder_or_files = "files"
-                    print(
-                        f"--> {scope_id} files filtered!\n    {len(scope_files)} files will be added to the Dataset."
-                    )
-                else:
-                    folder_or_files = "folder"
+            if formats:  # only filter files if formats were specified
+                print(f"--> Filtering files from {scope_id}")
+                scope_files = filter_files_in_folder(syn, scope_id, formats)
+                folder_or_files = "files"  # use add_items function
+                print(
+                    f"--> {scope_id} files filtered!\n    {len(scope_files)} files will be added to the Dataset."
+                )
+            else:
+                folder_or_files = "folder"  # whole folder should be added, use add_folder function
 
-                if folder_or_files == "folder":
-                    print(f"--> Adding Folder {scope_id} to Dataset {dataset_id}")
-                    dataset.add_folder(scope_id, force=True)
-                    print(f"--> Folder added to Dataset!")
-                elif folder_or_files == "files":
-                    print(f"--> Adding Files from {scope_id} to Dataset {dataset_id}")
-                    dataset.add_items(dataset_items=scope_files, force=True)
-                    print(f"--> Files added to Dataset!")
+            if folder_or_files == "folder":
+                print(f"--> Adding Folder {scope_id} to Dataset {dataset_id}")
+                dataset.add_folder(scope_id, force=True)
+                print(f"--> Folder added to Dataset!")
+            elif folder_or_files == "files":
+                print(f"--> Adding Files from {scope_id} to Dataset {dataset_id}")
+                dataset.add_items(dataset_items=scope_files, force=True)
+                print(f"--> Files added to Dataset!")
 
-                dataset = syn.store(dataset)
+            dataset = syn.store(dataset)
+            print(f"Dataset {dataset_id} successfully stored in {dataset.parentId}")
 
-                if update_dsp_sheet is not None:
-                    dataset_id = dataset.id
-                    dsp_df.at[_, "DatasetView Key"] = dataset_id
+            if update_dsp_sheet is not None:
+                dataset_id = dataset.id
+                dsp_df.at[_, "DatasetView Key"] = dataset_id
 
-                print(f"Dataset {dataset_id} successfully stored in {dataset.parentId}")
-
-                count += 1
-
-        print(f"\n\nDONE ✅\n{count} Datasets processed")
-
-        if update_dsp_sheet is not None:
-            dsp_path = f"{os.getcwd()}/{new_name}.csv"
-            dsp_df.to_csv(path_or_buf=dsp_path, index=False)
-            print(f"\nDSP sheet has been updated\nPath: {dsp_path}")
+            count += 1
     else:
         print(
             f"❗❗❗ The table provided does not appear to be a Dataset Sharing Plan.❗❗❗\nPlease check its contents and try again."
         )
         exit()
+    
+    print(f"\n\nDONE ✅\n{count} Datasets processed")
+
+    if update_dsp_sheet is not None:
+        dsp_path = f"{os.getcwd()}/{new_name}.csv"
+        dsp_df.to_csv(path_or_buf=dsp_path, index=False)
+        print(f"\nDSP sheet has been updated\nPath: {dsp_path}")
 
 
 if __name__ == "__main__":

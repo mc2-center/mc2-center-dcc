@@ -108,9 +108,7 @@ def collect_biospecimen_annotations(
 
     component, table_id, column_list = specimen_info_tuple
     data_table = get_table(syn, table_id, column_list).set_index("Biospecimen_id")
-    column_list.pop(
-        0
-    )  # remove Biospecimen_id from list of columns, since it is now the index
+    column_list.pop(0)  # remove Biospecimen_id from list of columns, since it is now the index
     biospecimen_ids = set(file_biospecimen_dict.values())
     filtered_metadata = data_table[data_table.index.isin(biospecimen_ids)]
     count = 0
@@ -147,9 +145,7 @@ def collect_record_annotations(
     component, table_id, column_list = info_tuple
     key_column = f"{component}_id"
     data_table = get_table(syn, table_id, column_list).set_index(key_column)
-    column_list.pop(
-        0
-    )  # remove Component_id from list of columns, since it is now the index
+    column_list.pop(0)  # remove Component_id from list of columns, since it is now the index
     table_keys = set(tuple_dict.values())
     filtered_metadata = data_table[data_table.index.isin(table_keys)]
     count = 0
@@ -175,9 +171,7 @@ def collect_dataset_annotations(
     component, table_id, column_list = info_tuple
     key_column = f"{component}_id"
     data_table = get_table(syn, table_id, column_list).set_index(key_column)
-    column_list.pop(
-        0
-    )  # remove DatasetView_id from list of columns, since it is now the index
+    column_list.pop(0)  # remove DatasetView_id from list of columns, since it is now the index
     if dataset_id in data_table.index:
         metadata = data_table.loc[dataset_id]
         annotations = list(zip(column_list, metadata.tolist()))
@@ -216,10 +210,9 @@ def main():
     (
         target,
         datasetview_table,
-        file_table,
-        specimen_table,
+        file_table, specimen_table,
         individual_table,
-        model_table,
+        model_table
     ) = (args.t, args.v, args.f, args.s, args.i, args.m)
 
     biospecimen_columns = [
