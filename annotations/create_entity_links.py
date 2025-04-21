@@ -122,6 +122,7 @@ def main():
         name_column = "Resource Title"
         primary_key = "EducationalResource_id"
         link_column = "Resource Link"
+        target_column = "folderIdEducation"
 
 
     print("Capturing information from " + data_type + " manifests...")
