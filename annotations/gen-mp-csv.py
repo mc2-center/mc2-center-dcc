@@ -24,8 +24,8 @@ from datetime import datetime
 
 
 def query_synapse_for_folder_info(
-    ref_path, data_type, folder_id_column_name, grant_id_column_name
-):
+    ref_path: str, data_type: str, folder_id_column_name: str, grant_id_column_name: str
+) -> pd.DataFrame:
 
     syn = synapseclient.login()
 
@@ -54,7 +54,7 @@ def query_synapse_for_folder_info(
     return grant_folder_reference
 
 
-def get_csv_files_in_folder(folder_path, file_suffix):
+def get_csv_files_in_folder(folder_path: str, file_suffix: str) -> list[str]:
     csv_files = []
     for file in os.listdir(folder_path):
         if file.endswith(file_suffix):
@@ -62,10 +62,9 @@ def get_csv_files_in_folder(folder_path, file_suffix):
     return csv_files
 
 
-def extract_ca_number(file_path, file_suffix):
+def extract_ca_number(file_path: str) -> str:
     file_name = os.path.basename(file_path)
-    # Assuming the file name format is "CA****_publication.csv" or "CA****_dataset.csv"
-    ca_number = file_name.split("_")[0][2:]
+    ca_number = file_name.split("_")[0][2:]  # Assuming the file name format is "CA****_publication.csv" or "CA****_dataset.csv"
     print(f"\n\nExtracted CA number: CA{ca_number}")
     return f"CA{ca_number}"
 
@@ -106,14 +105,13 @@ def get_folder_id_and_grant_id_from_csv(
 
 
 def write_file_paths_to_csv(
-    file_paths,
-    output_file,
-    file_suffix,
-    grant_folder_reference,
-    folder_id_column_name,
-    grant_id_column_name,
-    mapping
-):
+    file_paths: list[str],
+    output_file: os.path,
+    data_type: str,
+    folder_id_column_name: str,
+    grant_id_column_name: str,
+    mapping: dict[str, str]
+) -> None:
 
     ref_name = "".join(
         ["grant_folder_reference_", datetime.today().strftime("%Y-%m-%d"), ".csv"]
@@ -129,7 +127,7 @@ def write_file_paths_to_csv(
         csv_writer.writerow(["File Paths", folder_id_column_name, grant_id_column_name])
 
         for file_path in file_paths:
-            ca_number = extract_ca_number(file_path, file_suffix)
+            ca_number = extract_ca_number(file_path)
             folder_id, grant_id = get_folder_id_and_grant_id_from_csv(
                 grant_folder_reference,
                 ca_number,
@@ -200,11 +198,10 @@ def main(folder_path, output_csv_file, data_type):
         eq_mapping = None
 
     file_paths = get_csv_files_in_folder(folder_path, file_suffix)
-    manifest_for_upload = write_file_paths_to_csv(
+    write_file_paths_to_csv(
         file_paths,
         output_csv_file,
         data_type,
-        file_suffix,
         folder_id_column_name,
         grant_id_column_name,
         eq_mapping
