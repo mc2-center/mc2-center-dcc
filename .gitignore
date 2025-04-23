@@ -137,3 +137,6 @@ great_expectations/
 outputs/
 upload_check*
 *manifests/
+annotations/inputs/*
+annotations/outputs/*
+annotations/output/*
