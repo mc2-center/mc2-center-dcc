@@ -24,8 +24,8 @@ from datetime import datetime
 
 
 def query_synapse_for_folder_info(
-    ref_path, data_type, folder_id_column_name, grant_id_column_name
-):
+    ref_path: str, data_type: str, folder_id_column_name: str, grant_id_column_name: str
+) -> pd.DataFrame:
 
     syn = synapseclient.login()
 
@@ -54,7 +54,7 @@ def query_synapse_for_folder_info(
     return grant_folder_reference
 
 
-def get_csv_files_in_folder(folder_path, file_suffix):
+def get_csv_files_in_folder(folder_path: str, file_suffix: str) -> list[str]:
     csv_files = []
     for file in os.listdir(folder_path):
         if file.endswith(file_suffix):
@@ -62,33 +62,41 @@ def get_csv_files_in_folder(folder_path, file_suffix):
     return csv_files
 
 
-def extract_ca_number(file_path, file_suffix):
+def extract_ca_number(file_path: str) -> str:
     file_name = os.path.basename(file_path)
-    # Assuming the file name format is "CA****_publication.csv" or "CA****_dataset.csv"
-    ca_number = file_name.split("_")[0][2:]
-    print(f"Extracted CA number: {ca_number}")
+    ca_number = file_name.split("_")[0][2:]  # Assuming the file name format is "CA****_publication.csv" or "CA****_dataset.csv"
+    print(f"\n\nExtracted CA number: CA{ca_number}")
     return f"CA{ca_number}"
 
 
 def get_folder_id_and_grant_id_from_csv(
-    grant_folder_reference, ca_number, folder_id_column_name, grant_id_column_name
+    grant_folder_reference, ca_number, folder_id_column_name, grant_id_column_name, mapping
 ):
     df = grant_folder_reference
 
     if folder_id_column_name in df.columns and grant_id_column_name in df.columns:
-        print(f"Successfully read reference table: {grant_folder_reference}")
 
         match = df[df["grantNumber"] == ca_number]
+
         if not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
-            print(
+
+        if mapping is not None:
+            if ca_number in mapping.keys():
+                print(f"Entry {ca_number} contains values from mapping dictionary")
+                folder_id, grant_id = mapping[ca_number]
+            
+        else:
+            print(f"No match found for {ca_number}.")
+            return None, None
+        
+        print(
                 f"Matching {folder_id_column_name}: {folder_id}, Grant ID: {grant_id}"
             )
-            return folder_id, grant_id
-        else:
-            print(f"No match found for {folder_id_column_name}.")
-            return None, None
+        
+        return folder_id, grant_id
+    
     else:
         print(
             f"Error: '{folder_id_column_name}' or '{grant_id_column_name}' column not found in the CSV file: {grant_folder_reference}"
@@ -97,13 +105,13 @@ def get_folder_id_and_grant_id_from_csv(
 
 
 def write_file_paths_to_csv(
-    file_paths,
-    output_file,
-    file_suffix,
-    grant_folder_reference,
-    folder_id_column_name,
-    grant_id_column_name,
-):
+    file_paths: list[str],
+    output_file: os.path,
+    data_type: str,
+    folder_id_column_name: str,
+    grant_id_column_name: str,
+    mapping: dict[str, str]
+) -> None:
 
     ref_name = "".join(
         ["grant_folder_reference_", datetime.today().strftime("%Y-%m-%d"), ".csv"]
@@ -119,12 +127,13 @@ def write_file_paths_to_csv(
         csv_writer.writerow(["File Paths", folder_id_column_name, grant_id_column_name])
 
         for file_path in file_paths:
-            ca_number = extract_ca_number(file_path, file_suffix)
+            ca_number = extract_ca_number(file_path)
             folder_id, grant_id = get_folder_id_and_grant_id_from_csv(
                 grant_folder_reference,
                 ca_number,
                 folder_id_column_name,
                 grant_id_column_name,
+                mapping
             )
             csv_writer.writerow([file_path, folder_id, grant_id])
 
@@ -135,33 +144,67 @@ def main(folder_path, output_csv_file, data_type):
     if data_type == "publications":
         file_suffix = "_publication.csv"
         folder_id_column_name = "folderIdPublication"
+        folder_map = {"CA209997": "syn32698150",
+                      "CA209923": "syn43447063",
+                      "CAfiliatedNon-GrantAssociated": "syn52963310",
+                      "CA184898": "syn32698262"
+                   }
 
     elif data_type == "datasets":
         file_suffix = "_dataset.csv"
         folder_id_column_name = "folderIdDatasets"
+        folder_map = {"CA209997": "syn52744921",
+                      "CA209923": "syn43447065",
+                      "CAfiliatedNon-GrantAssociated": "syn52963225",
+                      "CA184898": "syn34577441"
+                   }
 
     elif data_type == "tools":
         file_suffix = "_tool.csv"
         folder_id_column_name = "folderIdTools"
+        folder_map = {"CA209997": "syn32698153",
+                      "CA209923": "syn43447067",
+                      "CAfiliatedNon-GrantAssociated": "syn52963223",
+                      "CA184898": "syn53478645"
+                   }
 
     elif data_type == "education":
         file_suffix = "_education.csv"
         folder_id_column_name = "folderIdEducation"
+        folder_map = {"CA209997": "syn53014160",
+                      "CA209923": "syn53014271",
+                      "CAfiliatedNon-GrantAssociated": "syn52963215",
+                      "CA184898": "syn53014135"
+                   }
+
+    elif data_type == "grants":
+        file_suffix = "_grant.csv"
+        folder_id_column_name = "folderIdGrant"
+        folder_map = None
 
     else:
         print(
-            "Invalid data type. Please provide one of 'publications', 'datasets', 'tools', or 'education'."
+            "Invalid data type. Please provide one of 'publications', 'datasets', 'tools', 'education', or 'grants'."
         )
         return
+    
+    if folder_map is not None:
+        eq_mapping = {"CA209997": (folder_map["CA209997"], "syn7315802"),
+                  "CA209923": (folder_map["CA209923"], "syn43447051"),
+                  "CAfiliatedNon-GrantAssociated": (folder_map["CAfiliatedNon-GrantAssociated"], "syn52963211"),
+                   "CA184898": (folder_map["CA184898"], "syn9772917")
+                  }
+    else:
+        eq_mapping = None
 
     file_paths = get_csv_files_in_folder(folder_path, file_suffix)
-    manifest_for_upload = write_file_paths_to_csv(
+    write_file_paths_to_csv(
         file_paths,
         output_csv_file,
         data_type,
-        file_suffix,
         folder_id_column_name,
         grant_id_column_name,
+        eq_mapping
     )
 
     print("CSV file with file paths, target IDs, and grant IDs generated.")

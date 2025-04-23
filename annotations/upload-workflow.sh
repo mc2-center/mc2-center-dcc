@@ -29,7 +29,7 @@ if [ $? -eq 0 ]; then
             python3 schema_update.py feb_filepaths.csv Publication
 
             echo "Generating Dataset/ Tool/ Educational Resource folder Ids"
-            python3 create_id_folders.py -m april_datasets_filepaths.csv -t DatasetView
+            python3 create_entity_links.py -m april_datasets_filepaths.csv -t DatasetView
 
             # Check if schema_update.py was successful
             if [ $? -eq 0 ]; then

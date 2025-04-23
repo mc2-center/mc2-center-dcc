@@ -21,6 +21,7 @@ if len(sys.argv) != 3:
 
 input_file_path = sys.argv[1]
 entity_type = sys.argv[2]
+drop_grantId = None
 
 grantId_list = pd.read_csv(input_file_path)["grantId"].tolist()
 
@@ -44,6 +45,13 @@ print(table_ids_list)
 # Updating schema for all the tables in the list
 # Columns to modify
 columns_to_modify = [
+    "Component",
+    "GrantView Key",
+    "Study Key",
+    "PublicationView Key",
+    "DatasetView Key",
+    "ToolView Key",
+    "Data Use Codes",
     f"{entity_type} Keywords",
     f"{entity_type} Abstract",
     f"{entity_type} Authors",
@@ -54,7 +62,7 @@ columns_to_modify = [
     f"{entity_type} Title",
     f"{entity_type} Download Type",
     f"{entity_type} Documentation Type",
-    f"{entity_type} Grant Number",
+    f"Grant Number",
     f"{entity_type} Doi",
     f"{entity_type} Journal",
     f"Pubmed Id",
@@ -95,6 +103,26 @@ columns_to_modify = [
     f"{entity_type} Link Url",
     f"{entity_type} Link Type",
     f"{entity_type} Link Note",
+    f"{entity_type} Compute Requirements",
+    f"{entity_type} Date Last Modified",
+    f"{entity_type} Entity Name",
+    f"{entity_type} Entity Role",
+    f"{entity_type} Entity Type",
+    f"{entity_type} Package Dependencies",
+    f"{entity_type} Package Dependencies Present",
+    f"{entity_type} Release Date",
+    f"{entity_type} Theme Name",
+    f"{entity_type} Institution Name",
+    f"{entity_type} Institution Alias",
+    f"{entity_type} Investigator",
+    f"{entity_type} Consortium Name",
+    f"{entity_type} Start Date",
+    f"{entity_type} End Date",
+    f"NIH RePORTER Link",
+    f"Duration of Funding",
+    f"Embargo End Date",
+    f"{entity_type} Synapse Team",
+    f"{entity_type} Synapse Project",
     f"Id",
     f"entityId"
 ]
@@ -126,7 +154,8 @@ for my_table_synid in table_ids_list:
                     f"{entity_type} Function Note",
                     f"{entity_type} Download Note",
                     f"{entity_type} Documentation Note",
-                    f"{entity_type} Link Note"
+                    f"{entity_type} Link Note",
+                    f"{entity_type} Investigator"
                 ]:
                     new_column = syn.store(
                         synapseclient.Column(name=column_name, columnType="LARGETEXT")
@@ -163,7 +192,12 @@ for my_table_synid in table_ids_list:
                     f"{entity_type} Topic",
                     f"{entity_type} Download Url",
                     f"{entity_type} Documentation Url",
-                    f"{entity_type} Link Url"
+                    f"{entity_type} Link Url",
+                    f"{entity_type} Theme Name",
+                    f"NIH RePORTER Link",
+                    f"{entity_type} Synapse Team",
+                    f"{entity_type} Synapse Project",
+                    f"{entity_type} Institution Name"
                 ]:
                     new_column = syn.store(
                         synapseclient.Column(
@@ -236,8 +270,9 @@ print(
 )
 
 # Remove the 'grantID' column from the input file
-input_data = pd.read_csv(input_file_path)
-input_data = input_data.drop(columns=["grantId"])
-input_data.to_csv(input_file_path, index=False)
+if drop_grantId is not None:
+    input_data = pd.read_csv(input_file_path)
+    input_data = input_data.drop(columns=["grantId"])
+    input_data.to_csv(input_file_path, index=False)
 
-print("The 'grantID' column has been deleted from the input file.")
+    print("The 'grantID' column has been deleted from the input file.")
