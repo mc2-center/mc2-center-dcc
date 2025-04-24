@@ -111,3 +111,8 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
     syn.delete(current_rows)
     new_rows = df.values.tolist()
     syn.store(synapseclient.Table(table_id, new_rows))
+
+
+def get_manifest(resource: str) -> dict[str, dict[str, str]]:
+    """Get the config dictionary for the portal tables."""
+    return CONFIG.get(resource).get("manifest")
