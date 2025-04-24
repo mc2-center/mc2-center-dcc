@@ -20,6 +20,7 @@ import pandas as pd
 from pathlib import Path
 import subprocess
 import re
+import utils
 
 
 def get_args():
@@ -136,19 +137,11 @@ def get_ref_tables(syn: synapseclient.login, args: list[tuple[Path, str]]) -> li
     ref_names = []
 
     for table, name in zip(tables, names):
+        shortName = re.split(r'(?=[A-Z])', name)[1].lower()
+        if shortName == "educational":
+            shortName = "education"
 
-        if name == "PublicationView":
-            ref = "syn53478776"
-
-        elif name == "DatasetView":
-            ref = "syn53478774"
-
-        elif name == "ToolView":
-            ref = "syn53479671"
-
-        elif name == "EducationalResource":
-            ref = "syn53651540"
-
+        ref = utils.get_manifest(shortName)
         ref_table = syn.get(ref, downloadLocation=f"output/{name}")
         ref_paths.append(ref_table.path)
         table_paths.append(table)
