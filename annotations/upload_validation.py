@@ -13,10 +13,15 @@ from datetime import datetime
 def get_folder_type_argument():
     parser = argparse.ArgumentParser(description="Process Synapse folders and create a manifest.")
     parser.add_argument("csv_file_path", help="Path to the input CSV file.")
-    parser.add_argument("folder_type", choices=["Publication", "Dataset", "Tool"],
-                        help="Specify folder type: 'Publication', 'Dataset', or 'Tool'")
+    parser.add_argument("folder_type", choices=["Publication", "Dataset", "Tool", "Grant"],
+                        help="Specify folder type: 'Publication', 'Dataset', 'Tool', or 'Grant'")
+    parser.add_argument(
+        "-s",
+        action="store_true",
+        help="Boolean; if this flag is provided, validation report will not be uploaded",
+    )
     args = parser.parse_args()
-    return args.csv_file_path, args.folder_type
+    return args.csv_file_path, args.folder_type, args.s
 
 def get_folder_id_column(folder_type):
     if folder_type == "Publication":
@@ -25,6 +30,9 @@ def get_folder_id_column(folder_type):
         return "folderIdDatasets"
     elif folder_type == "Tool":
         return "folderIdTools"
+    elif folder_type == "Grant":
+        return "folderIdGrant"
+    
 
 def get_project_name(syn, folder_id):
     try:
@@ -36,7 +44,7 @@ def get_project_name(syn, folder_id):
         return 'ERROR'
 
 def main():
-    csv_file_path, folder_type = get_folder_type_argument()
+    csv_file_path, folder_type, upload = get_folder_type_argument()
     
     syn = synapseclient.Synapse()
     syn.login()
@@ -75,12 +83,13 @@ def main():
 
     print(f"Results saved to {output_csv_file}")
 
-    folder_id = "syn53770348"  # Replace with the actual Synapse folder ID
+    if upload is None:
+        folder_id = "syn53770348"  # Replace with the actual Synapse folder ID
 
-    file_entity = synapseclient.File(output_csv_file, parent=folder_id)
-    syn.store(file_entity)
+        file_entity = synapseclient.File(output_csv_file, parent=folder_id)
+        syn.store(file_entity)
 
-    print(f"Manifest uploaded to Synapse folder: {folder_id}")
+        print(f"Manifest uploaded to Synapse folder: {folder_id}")
 
 if __name__ == "__main__":
     main()
