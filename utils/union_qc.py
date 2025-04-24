@@ -100,16 +100,20 @@ def combine_rows(args: list[tuple[pd.DataFrame | str, str]], mapping: pd.DataFra
     
     for table, name in zip(newTables, newNames):
         table = table.astype(str)  # make everything strings so they can be joined as needed
-        mapping = {}
+        mappingDict = {}
         
-        for _, row in mapping.itterows():
+        for _, row in mapping.iterrows():
             if row["component"] == name:
-                mapping[row["attribute"]] = row["mapping"]
+                mappingDict[row["attribute"]] = row["mapping"]
                 if row["tag"] == "aliasColumn":
                     aliasColumn = row["attribute"]
-
+        
+        for k, v in mappingDict.items():
+            if v == '",".join':
+                mappingDict[k] = ",".join
+        
         mergedTable = (  # group rows by designated identifier and map attributes
-            table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
+            table.groupby(aliasColumn, as_index=False).agg(mappingDict).reset_index()
         )
         mergedTable = mergedTable.iloc[:, 1:]  # remove unnecessary "id" column
         
@@ -164,9 +168,9 @@ def compare_and_subset_tables(args: list[tuple[Path, Path, str]], mapping: pd.Da
 
     for ref, new, name in zip(current, updated, names):
         cols = []
-        for _, row in mapping.itterows():
+        for _, row in mapping.iterrows():
             if row["component"] == name:
-                if row["filter"] in set(filter, "all"):
+                if row["filter"] in set([filter, "all"]):
                     cols.append(row["attribute"])
                 if row["tag"] == "aliasColumn":
                     key = row["attribute"]
