@@ -33,6 +33,9 @@ def add_missing_info(
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
     
+    if "iconTags" not in df.columns:
+        df["iconTags"] = ""
+    
     df = df.rename(columns={
         "GrantViewKey": "ResourceGrantNumber",
         "PublicationViewKey": "ResourcePubmedId",
@@ -41,7 +44,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     })
     
     # Convert string columns to string-list.
-    for col in [
+    cols = [
         "ResourceTopic",
         "ResourceActivityType",
         "ResourcePrimaryFormat",
@@ -58,7 +61,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourcePubmedId",
         "ResourceDatasetAlias",
         "iconTags"
-    ]:
+    ]
+    
+    for col in cols:
         df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
 
     # Ensure columns match the table order.
