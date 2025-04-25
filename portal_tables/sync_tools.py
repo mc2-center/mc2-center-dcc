@@ -42,6 +42,9 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
+    if "iconTags" not in df.columns:
+        df["iconTags"] = ""
+
     df = df.rename(columns={
         "GrantViewKey": "ToolGrantNumber",
         "PublicationViewKey": "ToolPubmedId",
@@ -134,8 +137,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    # manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
-    manifest = pd.read_csv("/Users/obanks/mc2-center/mc2-center-dcc/output/ToolView/ToolView_merged.csv").fillna("")
+    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
