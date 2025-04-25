@@ -61,7 +61,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     })
 
     # Convert string columns to string-list.
-    for col in [
+    cols = [
         "DatasetView_id",
         "DatasetFileFormats",
         "DatasetAssay",
@@ -71,8 +71,14 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetGrantNumber",
         "DatasetPubmedId",
         "iconTags"
-    ]:
+    ]
+    
+    for col in cols:
         df[col] = utils.convert_to_stringlist(df[col])
+    
+    for _,row in df.iterrows():
+        for col in cols:
+           df.at[_, col] = list(set(row[col]))
 
     # We only need one synID for the portal table. See
     # https://github.com/mc2-center/mc2-center-dcc/pull/41#issuecomment-1955119623
