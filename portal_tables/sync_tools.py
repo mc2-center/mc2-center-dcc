@@ -49,8 +49,10 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         })
     
     # Convert string columns to string-list.
-    for col in [
+    cols = [
         "ToolGrantNumber",
+        "ToolPubmedId",
+        "ToolDatasets",
         "ToolOperation",
         "ToolInputData",
         "ToolOutputData",
@@ -63,8 +65,14 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolDownloadType",
         "ToolDocumentationType",
         "iconTags"
-    ]:
+    ]
+    
+    for col in cols:
         df[col] = utils.convert_to_stringlist(df[col])
+    
+    for _,row in df.iterrows():
+        for col in cols:
+           df.at[_, col] = list(set(row[col]))
 
     # Reorder columns to match the table order.
     col_order = [
@@ -126,7 +134,8 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    # manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest = pd.read_csv("/Users/obanks/mc2-center/mc2-center-dcc/output/ToolView/ToolView_merged.csv").fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
