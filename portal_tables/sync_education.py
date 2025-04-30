@@ -27,7 +27,12 @@ def add_missing_info(
         
         syn_links = ", ".join(formatted_syn_link_list)
         education.at[_, "synapseLink"] = syn_links
-    
+
+        topics = row["ResourceTopic"].split(", ")
+        print(topics)
+        
+        education.at[_, "ResourceTopic"] = ", ".join(set([topic for topic in topics if topic != "Diversity/Equity/Inclusion"]))
+        
     return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
