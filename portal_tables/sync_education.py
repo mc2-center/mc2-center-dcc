@@ -27,11 +27,16 @@ def add_missing_info(
         
         syn_links = ", ".join(formatted_syn_link_list)
         education.at[_, "synapseLink"] = syn_links
-    
+
+        education.at[_, "ResourceTopic"] = ", ".join(set([topic for topic in row["ResourceTopic"].split(", ") if topic != "Diversity/Equity/Inclusion"]))
+        
     return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
+    
+    if "iconTags" not in df.columns:
+        df["iconTags"] = ""
     
     df = df.rename(columns={
         "GrantViewKey": "ResourceGrantNumber",
@@ -41,7 +46,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     })
     
     # Convert string columns to string-list.
-    for col in [
+    cols = [
         "ResourceTopic",
         "ResourceActivityType",
         "ResourcePrimaryFormat",
@@ -58,7 +63,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourcePubmedId",
         "ResourceDatasetAlias",
         "iconTags"
-    ]:
+    ]
+    
+    for col in cols:
         df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
 
     # Ensure columns match the table order.

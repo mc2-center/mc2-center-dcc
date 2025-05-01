@@ -42,6 +42,9 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
 
+    if "iconTags" not in df.columns:
+        df["iconTags"] = ""
+
     df = df.rename(columns={
         "GrantViewKey": "ToolGrantNumber",
         "PublicationViewKey": "ToolPubmedId",
@@ -49,8 +52,10 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         })
     
     # Convert string columns to string-list.
-    for col in [
+    cols = [
         "ToolGrantNumber",
+        "ToolPubmedId",
+        "ToolDatasets",
         "ToolOperation",
         "ToolInputData",
         "ToolOutputData",
@@ -63,8 +68,14 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolDownloadType",
         "ToolDocumentationType",
         "iconTags"
-    ]:
+    ]
+    
+    for col in cols:
         df[col] = utils.convert_to_stringlist(df[col])
+    
+    for _,row in df.iterrows():
+        for col in cols:
+           df.at[_, col] = list(set(row[col]))
 
     # Reorder columns to match the table order.
     col_order = [
