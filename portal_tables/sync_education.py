@@ -29,7 +29,6 @@ def add_missing_info(
         education.at[_, "synapseLink"] = syn_links
 
         topics = row["ResourceTopic"].split(", ")
-        print(topics)
         
         education.at[_, "ResourceTopic"] = ", ".join(set([topic for topic in topics if topic != "Diversity/Equity/Inclusion"]))
         
