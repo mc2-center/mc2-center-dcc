@@ -20,6 +20,7 @@ import pandas as pd
 from pathlib import Path
 import subprocess
 import re
+import utils
 
 
 def get_args():
@@ -29,6 +30,7 @@ def get_args():
     )
     parser.add_argument("-l", nargs="+", help="Synapse table IDs to query.")
     parser.add_argument("-c", help="path to schematic config.yml")
+    parser.add_argument("-p", help="path to mapping CSV")
     parser.add_argument(
         "-bl",
         required=False,
@@ -90,7 +92,7 @@ def get_tables(syn: synapseclient.login, tableIdList: list[str], mergeFlag: bool
     return list(zip(tables, names))
 
 
-def combine_rows(args: list[tuple[pd.DataFrame | str, str]]) -> list[tuple[Path, str]]:
+def combine_rows(args: list[tuple[pd.DataFrame | str, str]], mapping: pd.DataFrame) -> list[tuple[Path, str]]:
 
     newTables, newNames = zip(*args)  # unpack the input
 
@@ -99,158 +101,20 @@ def combine_rows(args: list[tuple[pd.DataFrame | str, str]]) -> list[tuple[Path,
     
     for table, name in zip(newTables, newNames):
         table = table.astype(str)  # make everything strings so they can be joined as needed
-        nameParts = [name, "id"]  # define parts of component_id column name
-        componentColumn = "Component"
-        idColumn = "_".join(nameParts)  # build component_id column name
-        grantColumn = "GrantView Key"
-        studyColumn = "Study Key"
-        pubsColumn = "PublicationView Key"
-        datasetsColumn = "DatasetView Key"
-        toolsColumn = "ToolView Key"
-
-        if name in ["PublicationView", "DatasetView", "ToolView"]:
-            if name in ["PublicationView", "DatasetView"]:  # define parts of column names with common formats
-                assayParts = [name[:-4], "Assay"]
-                tumorParts = [name[:-4], "Tumor Type"]
-                tissueParts = [name[:-4], "Tissue"]
-                assayColumn = " ".join(assayParts)  # build column names
-                tumorColumn = " ".join(tumorParts)
-                tissueColumn = " ".join(tissueParts)
-                
-                # access mapping dictionaries associated with manifest types
-                if name == "PublicationView":
-                    aliasColumn = "Pubmed Id"  # column to group entries by
-                    mapping = {  # defines how info in each column is handled by row merging function
-                        aliasColumn: "first",
-                        componentColumn: "first",
-                        idColumn: ",".join,
-                        grantColumn: ",".join,
-                        studyColumn: ",".join,
-                        "Publication Doi": "first",
-                        "Publication Journal": "first",
-                        "Pubmed Url": "first",
-                        "Publication Title": "first",
-                        "Publication Year": "first",
-                        "Publication Keywords": "first",
-                        "Publication Authors": "first",
-                        "Publication Abstract": "first",
-                        assayColumn: "first",
-                        tumorColumn: "first",
-                        tissueColumn: "first",
-                        "Publication Accessibility": "first",
-                        "Publication Dataset Alias": "first",
-                        "entityId": ",".join,
-                    }
-
-                elif name == "DatasetView":
-                    aliasColumn = "Dataset Alias"
-                    mapping = {
-                        aliasColumn: "first",
-                        componentColumn: "first",
-                        idColumn: ",".join,
-                        grantColumn: ",".join,
-                        studyColumn: ",".join,
-                        pubsColumn: ",".join,
-                        "Dataset Name": "first",
-                        "Dataset Description": "first",
-                        "Dataset Design": "first",
-                        assayColumn: "first",
-                        "Dataset Species": "first",
-                        tumorColumn: "first",
-                        tissueColumn: "first",
-                        "Dataset Url": "first",
-                        "Dataset Doi": "first",
-                        "Dataset File Formats": "first",
-                        "Data Use Codes": ",".join,
-                        "entityId": ",".join,
-                    }
-
-            elif name == "ToolView":
-                aliasColumn = "Tool Name"
-                mapping = {
-                    aliasColumn: "first",
-                    componentColumn: "first",
-                    idColumn: ",".join,
-                    pubsColumn: ",".join,
-                    grantColumn: ",".join,
-                    studyColumn: ",".join,
-                    datasetsColumn: ",".join,
-                    "Tool Description": "first",
-                    "Tool Homepage": "first",
-                    "Tool Version": "first",
-                    "Tool Operation": "first",
-                    "Tool Input Data": "first",
-                    "Tool Output Data": "first",
-                    "Tool Input Format": "first",
-                    "Tool Output Format": "first",
-                    "Tool Function Note": "first",
-                    "Tool Cmd": "first",
-                    "Tool Type": "first",
-                    "Tool Topic": "first",
-                    "Tool Operating System": "first",
-                    "Tool Language": "first",
-                    "Tool License": "first",
-                    "Tool Cost": "first",
-                    "Tool Accessibility": "first",
-                    "Tool Download Url": "first",
-                    "Tool Download Type": "first",
-                    "Tool Download Note": "first",
-                    "Tool Download Version": "first",
-                    "Tool Documentation Url": "first",
-                    "Tool Documentation Type": "first",
-                    "Tool Documentation Note": "first",
-                    "Tool Link Url": "first",
-                    "Tool Link Type": "first",
-                    "Tool Link Note": "first",
-                    "Tool Doi": "first",
-                    "Tool Date Last Modified": "first",
-                    "Tool Release Date": "first",
-                    "Tool Package Dependencies": "first",
-                    "Tool Package Dependencies Present": "first",
-                    "Tool Compute Requirements": "first",
-                    "Tool Entity Name": "first",
-                    "Tool Entity Type": "first",
-                    "Tool Entity Role": "first",
-                    "entityId": ",".join
-                }
-
-        elif name == "EducationalResource":
-            aliasColumn = "Resource Alias"
-            mapping = {
-                aliasColumn: "first",
-                componentColumn: "first",
-                idColumn: ",".join,
-                pubsColumn: ",".join,
-                grantColumn: ",".join,
-                studyColumn: ",".join,
-                datasetsColumn: ",".join,
-                toolsColumn: ",".join,
-                "Resource Title": "first",
-                "Resource Link": "first",
-                "Resource Doi": "first",
-                "Resource Topic": "first",
-                "Resource Activity Type": "first",
-                "Resource Primary Format": "first",
-                "Resource Intended Use": "first",
-                "Resource Primary Audience": "first",
-                "Resource Educational Level": "first",
-                "Resource Description": "first",
-                "Resource Origin Institution": "first",
-                "Resource Language": "first",
-                "Resource Contributors": "first",
-                "Resource Secondary Topic": "first",
-                "Resource License": "first",
-                "Resource Use Requirements": "first",
-                "Resource Internal Identifier": "first",
-                "Resource Media Accessibility": "first",
-                "Resource Access Hazard": "first",
-                "Resource Dataset Alias": "first",
-                "Resource Tool Link": "first",
-                "entityId": ",".join,
-            }
-
+        mappingDict = {}
+        
+        for _, row in mapping.iterrows():
+            if row["component"] == name:
+                mappingDict[row["attribute"]] = row["mapping"]
+                if row["tag"] == "aliasColumn":
+                    aliasColumn = row["attribute"]
+        
+        for k, v in mappingDict.items():
+            if v == '",".join':
+                mappingDict[k] = ",".join
+        
         mergedTable = (  # group rows by designated identifier and map attributes
-            table.groupby(aliasColumn, as_index=False).agg(mapping).reset_index()
+            table.groupby(aliasColumn, as_index=False).agg(mappingDict).reset_index()
         )
         mergedTable = mergedTable.iloc[:, 1:]  # remove unnecessary "id" column
         
@@ -259,7 +123,7 @@ def combine_rows(args: list[tuple[pd.DataFrame | str, str]]) -> list[tuple[Path,
         mergedTable.to_csv(mergePath, index=False)
 
         groups.append(mergePath)
-        names.append(nameParts[0])
+        names.append(name)
 
     return list(zip(groups, names))
 
@@ -273,19 +137,11 @@ def get_ref_tables(syn: synapseclient.login, args: list[tuple[Path, str]]) -> li
     ref_names = []
 
     for table, name in zip(tables, names):
+        shortName = re.split(r'(?=[A-Z])', name)[1].lower()
+        if shortName == "educational":
+            shortName = "education"
 
-        if name == "PublicationView":
-            ref = "syn53478776"
-
-        elif name == "DatasetView":
-            ref = "syn53478774"
-
-        elif name == "ToolView":
-            ref = "syn53479671"
-
-        elif name == "EducationalResource":
-            ref = "syn53651540"
-
+        ref = utils.get_manifest(shortName)
         ref_table = syn.get(ref, downloadLocation=f"output/{name}")
         ref_paths.append(ref_table.path)
         table_paths.append(table)
@@ -294,65 +150,23 @@ def get_ref_tables(syn: synapseclient.login, args: list[tuple[Path, str]]) -> li
     return list(zip(ref_paths, table_paths, ref_names))
 
 
-def compare_and_subset_tables(args: list[tuple[Path, Path, str]], strict: bool, debug: bool) -> list[tuple[Path, str]]:
+def compare_and_subset_tables(args: list[tuple[Path, Path, str]], mapping: pd.DataFrame, strict: bool, debug: bool) -> list[tuple[Path, str]]:
 
     current, updated, names = zip(*args)
 
     updatePaths = []
     updateNames = []
 
+    filter = "strict" if strict else "all"
+
     for ref, new, name in zip(current, updated, names):
-
-        if name == "PublicationView":
-            key = ["Pubmed Id"]
-            if strict:
-                cols = [
-                    "PublicationView_id",
-                    "Pubmed Id",
-                    "Pubmed Url",
-                    "Publication Assay",
-                    "Publication Tissue",
-                    "Publication Tumor Type",
-                    "Publication Accessibility",
-                ]
-            else:
-                cols = ["Pubmed Id", "Publication Accessibility"]
-
-        elif name == "DatasetView":
-            key = ["Dataset Alias"]
-            if strict:
-                cols = [
-                    "DatasetView_id",
-                    "Dataset Alias",
-                    "Dataset Assay",
-                    "Dataset Tissue",
-                    "Dataset Tumor Type",
-                    "Dataset File Formats",
-                    "Dataset Url",
-                    "Dataset Species",
-                ]
-            else:
-                cols = ["DatasetView_id", "Dataset Alias", "Dataset Url"]
-
-        elif name == "ToolView":
-            key = ["Tool Name"]
-            if strict:
-                cols = [
-                    "Tool Name",
-                    "ToolView_id",
-                    "Tool Homepage",
-                    "Tool Type",
-                    "Tool Topic",
-                    "Tool Language",
-                    "Tool Documentation Url",
-                    "Tool Documentation Type",
-                ]
-            else:
-                cols = ["Tool Name"]
-
-        elif name == "EducationalResource":
-            key = ["Resource Alias"]
-            cols = ["Resource Alias", "EducationalResource_id"]
+        cols = []
+        for _, row in mapping.iterrows():
+            if row["component"] == name:
+                if row["filter"] in set([filter, "all"]):
+                    cols.append(row["attribute"])
+                if row["tag"] == "aliasColumn":
+                    key = row["attribute"]
 
         current_table = pd.read_csv(ref, header=0).sort_values(by=key).fillna("")
         new_table = pd.read_csv(new, header=0).sort_values(by=key).fillna("")
@@ -483,9 +297,10 @@ def main():
     args = get_args()
     syn = synapseclient.login()
 
-    inputList, config, trimList, inputManifest, merge, trim, strict, debug = (
+    inputList, config, attributeMap, trimList, inputManifest, merge, trim, strict, debug = (
         args.l,
         args.c,
+        args.p,
         args.bl,
         args.tp,
         args.m,
@@ -493,6 +308,8 @@ def main():
         args.s,
         args.db
     )
+
+    mapping = pd.read_csv(attributeMap, header=0)
 
     if trimList is None:
         if inputManifest is None:
@@ -520,7 +337,7 @@ def main():
 
         if merge:
             print("\n\nMerging rows with matching identifier...")
-            newTables = combine_rows(newTables)
+            newTables = combine_rows(newTables, mapping)
             print("\n\nMatching rows merged!")
             print(
                 """\n\nMerged table(s) converted to CSV
@@ -531,7 +348,7 @@ def main():
             print("\n\nValidating unmerged manifest(s)...")
 
         refTables = get_ref_tables(syn, newTables)
-        updatedTables = compare_and_subset_tables(refTables, strict, debug)
+        updatedTables = compare_and_subset_tables(refTables, mapping, strict, debug)
         checkTables = validate_tables(updatedTables, config)
         print("\n\nValidation logs stored in local output folder!")
         print("\n\nConverting validation logs to trim config files...")
