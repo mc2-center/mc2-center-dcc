@@ -37,6 +37,7 @@ def add_missing_info(
         datasets.at[_, "themes"] = list(themes)
         datasets.at[_, "consortia"] = list(consortia)
         pub_titles = []
+        pub_doi = []
         for p in row["PublicationViewKey"].split(","):
             p = p.strip()  # Remove leading/trailing whitespace, if any
             try:
@@ -45,10 +46,18 @@ def add_missing_info(
                     .values[0]
                     .replace("\xa0", " ")
                 )
+                pub_doi.append(
+                    pubs[pubs.pubMedId == int(p)]["doi"]
+                    .values[0]
+                )
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
-        datasets.at[_, "pub"] = pub_titles
-        
+        datasets.at[_, "pub"] = list(set(pub_titles))
+        if not row["DatasetDoi"]:  # If dataset does not have a pre-curated DOI, add a publication DOI
+            try:
+                datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
+            except IndexError:
+                datasets.at[_, "DatasetDoi"] = "DOI Not Available"
     return datasets
 
 
@@ -130,7 +139,7 @@ def main():
         "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
     ).asDataFrame()
     pubs = syn.tableQuery(
-        "SELECT pubMedId, publicationTitle FROM syn21868591"
+        "SELECT doi, pubMedId, publicationTitle FROM syn21868591"
     ).asDataFrame()
 
     database = add_missing_info(manifest, grants, pubs)
