@@ -80,8 +80,6 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         for col in cols:
            df.at[_, col] = list(set(row[col]))
     
-    
-
     # Reorder columns to match the table order.
     col_order = [
         "ToolName",
