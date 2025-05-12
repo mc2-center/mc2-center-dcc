@@ -36,6 +36,8 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
                 synapse_links.append("".join(["[Link](", s , ")"]))
         tools.at[_, "synapseLink"] = ", ".join(set(synapse_links))
         
+        tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or "Pending Annotation"
+        
     return tools
 
 
@@ -50,7 +52,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "PublicationViewKey": "ToolPubmedId",
         "DatasetViewKey": "ToolDatasets"
         })
-    
+
     # Convert string columns to string-list.
     cols = [
         "ToolGrantNumber",
@@ -76,7 +78,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     for _,row in df.iterrows():
         for col in cols:
            df.at[_, col] = list(set(row[col]))
-
+    
     # Reorder columns to match the table order.
     col_order = [
         "ToolName",
