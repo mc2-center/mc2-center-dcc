@@ -36,8 +36,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
                 synapse_links.append("".join(["[Link](", s , ")"]))
         tools.at[_, "synapseLink"] = ", ".join(set(synapse_links))
         
-        if tools.at[_,"PublicationViewKey"] == "":
-            tools.at[_,"PublicationViewKey"] = "Pending Annotation"
+        tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or "Pending Annotation"
         
     return tools
 
