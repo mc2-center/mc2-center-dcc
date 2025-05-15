@@ -15,6 +15,8 @@ def add_missing_info(
     url_pattern = re.compile(".*(synapse\.org).*")
     alias_pattern = re.compile("^syn\d{7,8}$")
     education["synapseLink"] = ""
+    if "iconTags" not in education.columns:
+        education["iconTags"] = ""
     
     for _, row in education.iterrows():
         alias_list = [alias for alias in row["ResourceAlias"].split(",") if alias_pattern.match(alias)]
@@ -30,19 +32,19 @@ def add_missing_info(
 
         education.at[_, "ResourceTopic"] = ", ".join(set([topic for topic in row["ResourceTopic"].split(", ") if topic != "Diversity/Equity/Inclusion"]))
         
+        for key_col, external_link_col in zip(["DatasetViewKey", "ToolViewKey"], ["ResourceDatasetAlias", "ResourceToolLink"]):
+            key_links = [f"[{key}](https://www.synapse.org/#!Synapse:{key})" for key in row[key_col].split(", ") if row[key_col]]
+            external_links = [external_link for external_link in row[external_link_col].split(", ") if row[external_link_col]]
+            education.at[_, external_link_col] = ", ".join(external_links + key_links)
+    
     return education
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     """Clean up the table one final time."""
     
-    if "iconTags" not in df.columns:
-        df["iconTags"] = ""
-    
     df = df.rename(columns={
         "GrantViewKey": "ResourceGrantNumber",
-        "PublicationViewKey": "ResourcePubmedId",
-        "DatasetViewKey": "ResourceDatasetAlias",
-        "ToolViewKey": "ResourceToolLink"
+        "PublicationViewKey": "ResourcePubmedId"
     })
     
     # Convert string columns to string-list.
@@ -61,7 +63,6 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ResourceMediaAccessibility",
         "ResourceAccessHazard",
         "ResourcePubmedId",
-        "ResourceDatasetAlias",
         "iconTags"
     ]
     
