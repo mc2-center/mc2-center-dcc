@@ -8,6 +8,7 @@ author: orion.banks
 
 import argparse
 import pandas as pd
+import synapseclient
 import sys
 import re
 
@@ -15,47 +16,41 @@ def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-t",
+        "-d",
         type=str,
         help="Dataset metadata CSV",
         required=True,
-    )
-    parser.add_argument(
-        "-v",
-        type=str,
-        help="Grant metadata CSV",
-        required=False,
         default=None,
-    )
+        ),
     parser.add_argument(
-        "-f",
+        "-t",
         type=str,
-        help="Consortium metadata CSV",
-        required=False,
-        default=None,
-    )
-    parser.add_argument(
-        "-s",
-        type=str,
-        help="Study metadata CSV",
-        required=False,
-        default=None,
-    )
-    parser.add_argument(
-        "-i",
-        type=str,
-        help="Target metadata CSV",
-        required=False,
+        help="Target template name",
+        required=True,
         default=None,
     )
     parser.add_argument(
         "-m",
         type=str,
         help="Target-to-source mapping CSV",
-        required=False,
+        required=True,
         default=None,
     )
     return parser.parse_args()
+
+
+def get_table(syn, source_id: str, cols: str | list = "*") -> pd.DataFrame:
+    """Collect columns from a Synapse table entity and return as a Dataframe."""
+
+    if type(cols) == list:
+        cols = ", ".join(["".join(['"', col, '"']) for col in cols])
+
+    query = f"SELECT {cols} FROM {source_id}"
+    table = syn.tableQuery(query).asDataFrame().fillna("")
+    print(f"Data acquired from Synapse table {source_id}")
+
+    return table
+
 
 def extract_lists(df: pd.DataFrame, list_columns, pattern) -> pd.DataFrame:
     """Extract bracketed/quoted lists from sheets."""
@@ -69,50 +64,39 @@ def extract_lists(df: pd.DataFrame, list_columns, pattern) -> pd.DataFrame:
         
     return df
 
-def map_columns(df: pd.DataFrame, column_map: list[tuple]) -> pd.DataFrame:
-    """Map outdated columns to new column names and drop old columns."""
-
-    for start, end in column_map:
-
-        df[f"{end}"] = [
-            x for x in df[f"{start}"]
-        ]
-
-    return df
-
 
 def main():
     """Main function."""
     
     args = get_args()
 
-    dataset_input, grant_input, consortium_input, study_input, target_input, mapping = args.t, args.v, args.f, args.s, args.i, args.m
+    manifests, target_output, mapping = args.d, args.t, args.m
 
-    dataset, grant, consortium, study = None, None, None, None
+    syn = synapseclient.login()
 
-    source_metadata = [(dataset_input, dataset), (grant_input, grant), (consortium_input, consortium), (study_input, study)]
+    manifests_df = pd.read_csv(manifests, header=0).fillna("")
+    mapping_df = pd.read_csv(mapping, header=0).fillna("")
 
-    target = pd.read_csv(target_input, header=0).fillna("")
+    source_metadata_dict = dict(zip(manifests_df["Component"], manifests_df["Table_syn_id"]))
 
-    mapping = pd.read_csv(mapping, header=0).to_dict()
+    gc_template_dict = dict(zip(mapping_df["Property"], (zip(mapping_df["Node"], mapping_df["Acceptable Values"]))))
 
-    for input_file in source_metadata:
-        input_file[1] = pd.read_csv(input_file[0], header=0).fillna("")
-        
-    for col in target:
-        for k, v in mapping.items():
-            if col == k:
-                source_col = v
-        if source_col in dataset.columns:
-            target[col] = dataset[source_col]
-        elif source_col in grant.columns:
-            target[col] = grant[source_col]
-        elif source_col in consortium.columns:
-            target[col] = consortium[source_col]
-        elif source_col in study.columns:
-            target[col] = study[source_col]
+    gc_mc2_mapping_dict = dict(zip(mapping_df["Property"], mapping_df["MC2 attribute"]))
 
-    target.to_csv("mapped_metadata.csv", index=False)
+    for type, table in source_metadata_dict.items():
+        table_df = get_table(syn, table, cols="*")
+        source_metadata_dict[type] = (table_df, table_df.columns.tolist())
+
+    template_df = pd.DataFrame()
+    
+    for attribute, (template, valid_values) in gc_template_dict.items():
+        if template == target_output:
+            template_df[attribute] = ""
+            for component, (df, cols) in source_metadata_dict.items():
+                if gc_mc2_mapping_dict[attribute] in cols:
+                    template_df[attribute] = df[gc_mc2_mapping_dict[attribute]]
+
+    template_df.to_csv("mapped_metadata.csv", index=False)
 
 if __name__ == "__main__":
     main()
