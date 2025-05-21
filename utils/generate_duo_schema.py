@@ -3,7 +3,7 @@ import json
 import argparse
 from collections import OrderedDict
 
-def build_condition(row):
+def build_condition(row, col_names):
     """
     Builds a JSON Schema if-then rule based on a row from the data dictionary.
     """
@@ -15,7 +15,7 @@ def build_condition(row):
                     "items": {
                         "type": "string"
                     },  
-                    "contains": { "const": row["DUO_Code"] }
+                    "contains": { "const": row["dataUseModifiers"] }
                 }
             },
             "required": ["dataUseModifiers"]
@@ -27,7 +27,7 @@ def build_condition(row):
                     "items": {
                         "type": "string"
                     },
-                    "contains": { "const": int(row["Access_Requirement_ID"]) }
+                    "contains": { "const": int(row["accessRequirementId"]) }
                 }
             }
         }
@@ -37,17 +37,14 @@ def build_condition(row):
     additional_conditions = {}
     required_fields = ["dataUseModifiers"]
 
-    if "Grant_Number" in row and pd.notna(row["Grant_Number"]):
-        additional_conditions["grantNumber"] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row["Grant_Number"] } }
-        required_fields.append("grantNumber")
+    if "activatedByAttribute" in row and pd.notna(row["activatedByAttribute"]):
+        additional_conditions[row["activatedByAttribute"]] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row["activationValue"] } }
+        required_fields.append(row["activatedByAttribute"])
 
-    if "Data_Type" in row and pd.notna(row["Data_Type"]):
-        additional_conditions["dataType"] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row["Data_Type"] } }
-        required_fields.append("dataType")
-
-    if "Activated_By_Attribute" in row and pd.notna(row["Activated_By_Attribute"]):
-        additional_conditions[row["Activated_By_Attribute"]] = { "type": "array", "items": { "type": "string" }, "contains": { "const": "True" } }
-        required_fields.append(row["Activated_By_Attribute"])
+    for col in col_names:
+        if col in row and pd.notna(row[col]):
+            additional_conditions[col] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row[col] } }
+            required_fields.append(col)
 
     if additional_conditions:
         condition["if"]["properties"].update(additional_conditions)
@@ -57,13 +54,16 @@ def build_condition(row):
 
 
 def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id):
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, header=0, dtype=str)
 
     conditions = []
+    base_conditions = ["dataUseModifiers", "accessRequirementId", "activatedByAttribute", "activationValue", "entityIdList"]
+    col_names = df.columns.tolist()
+    col_names = [col for col in col_names if col not in base_conditions]
     for _, row in df.iterrows():
-        if grant_id and row["Grant_Number"] != grant_id:
+        if grant_id != "Project" and row["grantNumber"] != grant_id:
             continue
-        condition = build_condition(row)
+        condition = build_condition(row, col_names)
         conditions.append(condition)
 
     schema = OrderedDict({
@@ -86,10 +86,10 @@ if __name__ == "__main__":
     parser.add_argument("output_path", help="Path to output directory for the JSON schema")
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
-    parser.add_argument("-o", "--org_id", default="MC2", help="Organization ID for $id field")
+    parser.add_argument("-o", "--org_id", default="mc2", help="Organization ID for $id field")
     parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table")
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "", args.version, "-schema.json"])
-    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, args.grant_id)
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", args.version, "-schema.json"])
+    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id if args.grant_id else "Project")
