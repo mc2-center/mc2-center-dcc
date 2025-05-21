@@ -10,17 +10,23 @@ def build_condition(row):
     condition = {
         "if": {
             "properties": {
-                "duoCodes": {
+                "dataUseModifiers": {
                     "type": "array",
+                    "items": {
+                        "type": "string"
+                    },  
                     "contains": { "const": row["DUO_Code"] }
                 }
             },
-            "required": ["duoCodes"]
+            "required": ["dataUseModifiers"]
         },
         "then": {
             "properties": {
                 "_accessRequirementIds": {
                     "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
                     "contains": { "const": int(row["Access_Requirement_ID"]) }
                 }
             }
@@ -29,7 +35,7 @@ def build_condition(row):
 
     # Optional conditional fields
     additional_conditions = {}
-    required_fields = ["duoCodes"]
+    required_fields = ["dataUseModifiers"]
 
     if "Grant_Number" in row and pd.notna(row["Grant_Number"]):
         additional_conditions["grantNumber"] = { "const": row["Grant_Number"] }
@@ -39,6 +45,10 @@ def build_condition(row):
         additional_conditions["dataType"] = { "const": row["Data_Type"] }
         required_fields.append("dataType")
 
+    if "Activated_By_Attribute" in row and pd.notna(row["Activated_By_Attribute"]):
+        additional_conditions["activatedByAttribute"] = { "const": row["Activated_By_Attribute"] }
+        required_fields.append("activatedByAttribute")
+
     if additional_conditions:
         condition["if"]["properties"].update(additional_conditions)
         condition["if"]["required"] = required_fields
@@ -46,18 +56,20 @@ def build_condition(row):
     return condition
 
 
-def generate_json_schema(csv_path, output_path, title="DUO Access Schema", version="1.0.0", org_id="MC2-Custom"):
+def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id):
     df = pd.read_csv(csv_path)
 
     conditions = []
     for _, row in df.iterrows():
+        if grant_id and row["Grant_Number"] != grant_id:
+            continue
         condition = build_condition(row)
         conditions.append(condition)
 
     schema = OrderedDict({
         "$schema": "http://json-schema.org/draft-07/schema",
         "title": title,
-        "$id": f"{org_id}-duoCodeAR-{version}",
+        "$id": f"{org_id}-{grant_id}-AccessRequirementSchema-{version}",
         "description": "Auto-generated schema defining DUO-based access restrictions.",
         "allOf": conditions
     })
@@ -71,10 +83,13 @@ def generate_json_schema(csv_path, output_path, title="DUO Access Schema", versi
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate DUO JSON Schema from Data Dictionary CSV")
     parser.add_argument("csv_path", help="Path to the data_dictionary.csv")
-    parser.add_argument("output_path", help="Path to output JSON schema")
-    parser.add_argument("--title", default="DUO Access Schema", help="Schema title")
-    parser.add_argument("--version", default="1.0.0", help="Schema version")
-    parser.add_argument("--org_id", default="MC2-Custom", help="Organization ID for $id field")
+    parser.add_argument("output_path", help="Path to output directory for the JSON schema")
+    parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
+    parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
+    parser.add_argument("-o", "--org_id", default="MC2", help="Organization ID for $id field")
+    parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table")
 
     args = parser.parse_args()
-    generate_json_schema(args.csv_path, args.output_path, args.title, args.version, args.org_id)
+
+    output_path = "".join([args.output_path, "/", args.org_id, ".", f"{args.grant_id}-" if args.grant_id else "", "AccessRequirement-", args.version, ".schema.json"])
+    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, args.grant_id)
