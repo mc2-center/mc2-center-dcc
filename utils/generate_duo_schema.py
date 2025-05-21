@@ -38,16 +38,16 @@ def build_condition(row):
     required_fields = ["dataUseModifiers"]
 
     if "Grant_Number" in row and pd.notna(row["Grant_Number"]):
-        additional_conditions["grantNumber"] = { "const": row["Grant_Number"] }
+        additional_conditions["grantNumber"] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row["Grant_Number"] } }
         required_fields.append("grantNumber")
 
     if "Data_Type" in row and pd.notna(row["Data_Type"]):
-        additional_conditions["dataType"] = { "const": row["Data_Type"] }
+        additional_conditions["dataType"] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row["Data_Type"] } }
         required_fields.append("dataType")
 
     if "Activated_By_Attribute" in row and pd.notna(row["Activated_By_Attribute"]):
-        additional_conditions["activatedByAttribute"] = { "const": row["Activated_By_Attribute"] }
-        required_fields.append("activatedByAttribute")
+        additional_conditions[row["Activated_By_Attribute"]] = { "type": "array", "items": { "type": "string" }, "contains": { "const": "True" } }
+        required_fields.append(row["Activated_By_Attribute"])
 
     if additional_conditions:
         condition["if"]["properties"].update(additional_conditions)
@@ -91,5 +91,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", f"{args.grant_id}-" if args.grant_id else "", "AccessRequirement-", args.version, ".schema.json"])
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "", args.version, "-schema.json"])
     generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, args.grant_id)
