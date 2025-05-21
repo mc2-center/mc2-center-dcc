@@ -43,7 +43,7 @@ def get_args():
         type=str,
         default="Multi Consortia Coordinating Center",
         help="The name of the organization with which the JSON schema should be associated.",
-        required=True
+        required=False
     )
     return parser.parse_args()
 
