@@ -20,41 +20,37 @@ def get_args():
     parser.add_argument(
         "-t",
         type=str,
+        default=None,
         help="Synapse Id of an entity to which a schema will be bound.",
-        required=False
-    )
-    parser.add_argument(
-        "-c",
-        type=str,
-        help="The Component name of the schema that will be bound to the requested entity.",
-        required=False
-    )
-    parser.add_argument(
-        "-v",
-        type=str,
-        help="The release version of the schema. This should match the release version tag on GitHub.",
         required=True
     )
     parser.add_argument(
-        "-g",
+        "-l",
         type=str,
-        help="Grant number associated with a duoCodeAR type schema, in CAxxxxxx format (e.g., CA274499).",
+        default=None,
+        help="The URL for the JSON schema to be bound to the requested entity.",
         required=False
     )
     parser.add_argument(
-        "-s",
+        "-p",
         type=str,
-        help="Path to a CSV file with entity Synapse Ids and Components on each row.",
+        default=None,
+        help="The file path for the JSON schema to be bound to the requested entity.",
         required=False
+    )
+    parser.add_argument(
+        "-n",
+        type=str,
+        default="Multi Consortia Coordinating Center",
+        help="The name of the organization with which the JSON schema should be associated.",
+        required=True
     )
     return parser.parse_args()
 
 
-def get_schema_organization(service) -> tuple:
+def get_schema_organization(service, org_name: str) -> tuple:
     """Create or access the MC2 Center Synapse organization,
     return a tuple of schema service object, organization object, and organization name"""
-
-    org_name = "Multi Consortia Coordinating Center"
     
     print(f"Creating organization: {org_name}")
 
@@ -72,7 +68,7 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
     """Register or access a previously registered JSON schema and return the uri.
     If the schema was previously registered, the constructed uri will be returned.
     uri format: [schema_org_name]-[schema_type]-[num_version]
-    Example uri: MultiConsortiaCoordinatingCenter-CA987654duoCodeAR-2.0.0
+    Example uri: MultiConsortiaCoordinatingCenter-CA987654AccessRequirement-2.0.0
     """
     
     num_version = version.split("v")[1]
@@ -95,7 +91,7 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
     For JSON schemas associated with DUO-based access restrictions, use the REST API and enable derived annotations,
     For non-AR schemas, use the python client bind_json_schema function"""
 
-    if component_type != "duoCodeAR":
+    if component_type != "AccessRequirement":
         print(f"Binding non-AR schema {schema_uri}")
         service.bind_json_schema(schema_uri, entity_id)
 
@@ -111,44 +107,48 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
         )
 
    
-def get_schema_from_url(component: str, version: str, grant: str) -> tuple[any, str]:
-    """Access a JSON schema stored in the MC2 Center data-models GitHub repo,
-    based on the version release tag, data type, and grant number (if of type duoCodeAR).
-    Return request JSON and adjusted component name.
+def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
+    """Access a JSON schema via a provided path or URL.
+    Return request JSON and parsed schema name elements.
 
     Note that the filename must match expected conventions:
-    Non-AR schema example: mc2.DatasetView.schema.json
-    AR schema example: mc2.CA987654duoCodeAR.schema.json
+    Non-AR schema example: mc2.DatasetView-v1.0.0-schema.json
+    AR schema example: MC2.AccessRequirement-CA000001-v3.0.2-schema.json
     """
 
-    #base_schema_url = "".join(["https://raw.githubusercontent.com/mc2-center/data-models/refs/tags/v", version, "/json_schemas/"])
-    base_schema_url = "".join(["https://raw.githubusercontent.com/mc2-center/data-models/refs/heads/136-173-dataset-schema/json_schemas/"])
-
-    if grant is not None and component == "duoCodeAR":
-        component = "".join([grant, component])
-    
-    component_json_name = ".".join(["mc2", component, "schema", "json"])
-    
-    schema_url = "".join([base_schema_url, component_json_name])
-
-    source_schema = requests.get(schema_url) 
-
-    schema_json = source_schema.json()
+    if url or path is not None:
+        if url is not None:
+            schema = url
+            source_schema = requests.get(url)
+            schema_json = source_schema.json()
+        else:
+            schema = path
+            source_schema = open(path, "r")
+            schema_json = json.load(source_schema)
+            
+        schema_info = schema.split("/")[-1]
+        base_component = schema_info.split(".")[1].split("-")[0]
+        if base_component == "AccessRequirement":
+            component = "".join(schema_info.split("-")[0:2]).split(".")[1]
+            version = schema_info.split("-")[2]
+        else:
+            component = base_component
+            version = schema_info.split("-")[1]
 
     print(f"JSON schema {component} {version} successfully acquired from repository")
 
-    return schema_json, component
+    return schema_json, component, base_component, version
 
 
-def get_register_bind_schema(syn, component: str, grant: str, version: str, target: str, schema_org_name: str, org, service):
+def get_register_bind_schema(syn, target: str, schema_org_name: str, org, service, path, url):
     """Access JSON from URL, register the JSON schema, and bind the schema to the target entity."""
-    
-    schema_json, component_adjusted = get_schema_from_url(component, version, grant)
+
+    schema_json, component_adjusted, base_component, version = get_schema_from_url(url, path)
     print(f"Registering JSON schema {component_adjusted} {version}")
 
     uri = register_json_schema(org, component_adjusted, schema_json, version, schema_org_name)
-    
-    bound_schema = bind_schema_to_entity(syn, service, uri, target, component)
+
+    bind_schema_to_entity(syn, service, uri, target, base_component)
     print(f"\nSchema {component_adjusted} {version} successfully bound to entity {target}")
 
 
@@ -158,34 +158,18 @@ def main():
 
     args = get_args()
 
-    target, component, version, grant, sheet = args.t, args.c, args.v, args.g, args.s
+    target, url, path, org_name = args.t, args.l, args.p, args.n
     
     syn.get_available_services()
 
     schema_service = syn.service("json_schema")
 
-    service, org, schema_org_name = get_schema_organization(schema_service)
+    service, org, schema_org_name = get_schema_organization(schema_service, org_name)
     
-    if sheet:
-        id_set = pd.read_csv(sheet, header=None)
-        if id_set.iat[0,0] == "entity" and id_set.iat[0,1] == "component":
-            print(f"\nInput sheet read successfully!\n\nBinding schemas now...")
-            id_set = id_set.iloc[1:,:]
-            count = 0
-            for row in id_set.itertuples(index=False):
-                target = row[0]
-                component = row[1]
-                get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service)  
-                count += 1
-            print(f"\n\nDONE ✅\n{count} schemas bound")
-        else:
-            print(f"\n❗❗❗ The table provided does not appear to be formatted for this operation.❗❗❗\nPlease check its contents and try again.")
-    
-    else:  # if no sheet provided, run process for one round of inputs only
-        if target and component:
-            get_register_bind_schema(syn, component, grant, version, target, schema_org_name, org, service)
-        else:
-            print(f"\n❗❗❗ No dataset information provided.❗❗❗\nPlease check your command line inputs and try again.")
+    if target:
+        get_register_bind_schema(syn, target, schema_org_name, org, service, path, url)
+    else:
+        print(f"\n❗❗❗ No dataset information provided.❗❗❗\nPlease check your command line inputs and try again.")
 
 if __name__ == "__main__":
     main()
