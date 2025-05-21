@@ -1,7 +1,12 @@
-"""Clean and prep MC2 database tables for backpopulation
+"""Map MC2 Center metadata to GC models.
 
-This script will reorder and modify database table manifest columns
-to match the respective View-type schema.
+This script maps metadata from MC2 Center to the Genomic Commons (GC) models.
+It retrieves metadata from Synapse tables, extracts relevant information,
+and generates a CSV file with the mapped metadata.
+The script requires the following command-line arguments:
+1. -d: Path to the dataset metadata CSV file. An example of this file can be found here: https://docs.google.com/spreadsheets/d/1LLpSIFAh12YdKnGfzXMxGpoKCaEH90nDx-QvncaIJlk/edit?gid=288959359#gid=288959359
+2. -t: Target template name.
+3. -m: Path to the target-to-source mapping CSV file.
 
 author: orion.banks
 """
@@ -9,7 +14,6 @@ author: orion.banks
 import argparse
 import pandas as pd
 import synapseclient
-import sys
 import re
 
 def get_args():
