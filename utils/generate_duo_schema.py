@@ -56,7 +56,7 @@ def build_condition(row, col_names, multi_condition):
 
 def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition):
     """
-    Generates a JSON Schema from a CSV file containing DUO-based access restrictions.
+    Generates a JSON Schema from a CSV file containing annotation-based access restrictions.
     """
     df = pd.read_csv(csv_path, header=0, dtype=str)
 
