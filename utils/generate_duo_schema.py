@@ -54,7 +54,7 @@ def build_condition(row, col_names, multi_condition):
     return condition
 
 
-def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition):
+def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col):
     """
     Generates a JSON Schema from a CSV file containing annotation-based access restrictions.
     """
@@ -65,7 +65,9 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
     col_names = df.columns.tolist()
     col_names = [col for col in col_names if col not in base_conditions]
     for _, row in df.iterrows():
-        if grant_id != "Project" and row["grantNumber"] != grant_id:
+        if grant_id != "Project" and row[grant_col] != grant_id:
+            continue
+        if study_id is not None and row[study_col] != study_id:
             continue
         condition = build_condition(row, col_names, multi_condition)
         conditions.append(condition)
@@ -73,7 +75,7 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
     schema = OrderedDict({
         "$schema": "http://json-schema.org/draft-07/schema",
         "title": title,
-        "$id": f"{org_id}-{grant_id}-AccessRequirementSchema-{version}",
+        "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{version}",
         "description": "Auto-generated schema defining DUO-based access restrictions.",
         "allOf": conditions
     })
@@ -91,10 +93,13 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
     parser.add_argument("-o", "--org_id", default="mc2", help="Organization ID for $id field")
-    parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table")
-    parser.add_argument("-m", "--multi_condition", help="Generate schema with multiple conditions defined in the CSV", action="store_true", default=None)
+    parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table. If nothing is provided, the JSON schema will include all conditions listed in the input table.", default="Project")
+    parser.add_argument("-m", "--multi_condition", help="Boolean. Generate schema with multiple conditions defined in the CSV", action="store_true", default=None)
+    parser.add_argument("-gc", "--grant_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the grant", default="grantNumber")
+    parser.add_argument("-s", "--study_id", help="Study ID to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable studies listed in the input table.", default=None)
+    parser.add_argument("-sc", "--study_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the study", default="studyKey")
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", args.version, "-schema.json"])
-    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id if args.grant_id else "Project", multi_condition=args.multi_condition)
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", args.version, f"-{args.study_id}" if args.study_id else "", "-mc." if args.multi_condition else "-", "schema.json"])
+    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col)
