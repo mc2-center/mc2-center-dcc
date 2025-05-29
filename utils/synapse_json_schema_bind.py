@@ -128,9 +128,10 @@ def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
             
         schema_info = schema.split("/")[-1]
         base_component = schema_info.split(".")[1].split("-")[0]
+        
         if base_component == "AccessRequirement":
-            component = "".join(schema_info.split("-")[0:2]).split(".")[1]
-            version = schema_info.split("-")[2]
+            component = "".join(schema_info.split("-")[0:-2]).split(".")[1]
+            version = schema_info.split("-")[-2]
         else:
             component = base_component
             version = schema_info.split("-")[1]
