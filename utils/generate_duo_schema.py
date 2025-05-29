@@ -101,5 +101,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", args.version, f"-{args.study_id}" if args.study_id else "", "-mc." if args.multi_condition else "-", "schema.json"])
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", f"{args.study_id}-" if args.study_id else "", "mc-" if args.multi_condition else "", args.version, "-schema.json"])
     generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col)
