@@ -22,7 +22,7 @@ def get_args():
         type=str,
         default=None,
         help="Synapse Id of an entity to which a schema will be bound.",
-        required=True
+        required=False
     )
     parser.add_argument(
         "-l",
@@ -49,6 +49,13 @@ def get_args():
         "-ar",
         action="store_true",
         help="Indicates if the schema includes Access Requirement information.",
+        required=False,
+        default=None
+    )
+    parser.add_argument(
+        "--no_bind",
+        action="store_true",
+        help="Indicates the schema should not be bound to the entity.",
         required=False,
         default=None
     )
