@@ -41,8 +41,8 @@ def get_args():
     parser.add_argument(
         "-n",
         type=str,
-        default="Multi Consortia Coordinating Center",
-        help="The name of the organization with which the JSON schema should be associated.",
+        default="Example Organization",
+        help="The name of the organization with which the JSON schema should be associated. Default: 'Example Organization'.",
         required=False
     )
     parser.add_argument(
