@@ -2,7 +2,7 @@
 
 This script will create and bind a JSON schema to an entity
 
-Usage: python synapse_json_schema_bind.py -t [Entity Synapse Id] -c [Schema data type] -v [Data model release version] -g [Grant number in CA format] -s [Path to CSV for schema binding in bulk]
+Usage: python synapse_json_schema_bind.py -t [Entity Synapse Id] -l [JSON Schema URL] -p [JSON Schema File Path] -n [Organization Name] -ar [Access Requirement Flag]
 
 author: orion.banks
 """
