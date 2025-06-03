@@ -54,7 +54,7 @@ def build_condition(row, col_names, multi_condition):
     return condition
 
 
-def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col):
+def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col, data_type, data_col):
     """
     Generates a JSON Schema from a CSV file containing annotation-based access restrictions.
     """
@@ -69,13 +69,15 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
             continue
         if study_id is not None and row[study_col] != study_id:
             continue
+        if data_type is not None and row[data_col] != data_type:
+            continue
         condition = build_condition(row, col_names, multi_condition)
         conditions.append(condition)
 
     schema = OrderedDict({
         "$schema": "http://json-schema.org/draft-07/schema",
         "title": title,
-        "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{version}",
+        "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id is not None else ''}{data_type + '-' if data_type is not None else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{version}",
         "description": "Auto-generated schema defining DUO-based access restrictions.",
         "allOf": conditions
     })
@@ -98,8 +100,10 @@ if __name__ == "__main__":
     parser.add_argument("-gc", "--grant_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the grant", default="grantNumber")
     parser.add_argument("-s", "--study_id", help="Study ID to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable studies listed in the input table.", default=None)
     parser.add_argument("-sc", "--study_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the study", default="studyKey")
+    parser.add_argument("-dt", "--data_type", help="Data type to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable data types listed in the input table.", default=None)
+    parser.add_argument("-dc", "--data_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the data type", default="dataType")
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", f"{args.study_id}-" if args.study_id else "", "mc-" if args.multi_condition else "", args.version, "-schema.json"])
-    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col)
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", f"{args.study_id}-" if args.study_id else "", f"{args.data_type}-" if args.data_type else "", "mc-" if args.multi_condition else "", args.version, "-schema.json"])
+    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col, data_type = args.data_type, data_col=args.data_col)
