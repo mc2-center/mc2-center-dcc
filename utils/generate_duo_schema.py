@@ -54,7 +54,7 @@ def build_condition(row, col_names, multi_condition):
     return condition
 
 
-def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col, data_type, data_col, species_type, species_col):
+def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col, data_type, data_col, species_type, species_col, access_requirement):
     """
     Generates a JSON Schema from a CSV file containing annotation-based access restrictions.
     """
@@ -65,6 +65,8 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
     col_names = df.columns.tolist()
     col_names = [col for col in col_names if col not in base_conditions]
     for _, row in df.iterrows():
+        if access_requirement is not None and row["accessRequirementId"] != access_requirement:
+            continue
         if grant_id != "Project" and row[grant_col] != grant_id:
             continue
         if study_id is not None and row[study_col] != study_id:
@@ -97,6 +99,7 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
     parser.add_argument("-o", "--org_id", default="Project", help="Organization ID for $id field")
+    parser.add_argument("-a", "--access_requirement", default=None, help="Access requirement ID to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable conditions listed in the input table.")
     parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table. If nothing is provided, the JSON schema will include all conditions listed in the input table.", default="Project")
     parser.add_argument("-m", "--multi_condition", help="Boolean. Generate schema with multiple conditions defined in the CSV", action="store_true", default=None)
     parser.add_argument("-gc", "--grant_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the grant", default="grantNumber")
@@ -109,5 +112,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", f"{args.study_id}-" if args.study_id else "", f"{args.data_type}-" if args.data_type else "", f"{args.species_type}-" if args.species_type else "", "mc-" if args.multi_condition else "", args.version, "-schema.json"])
-    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col, data_type = args.data_type, data_col=args.data_col, species_type = args.species_type, species_col=args.species_col)
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", f"{args.study_id}-" if args.study_id else "", f"{args.data_type}-" if args.data_type else "", f"{args.species_type}-" if args.species_type else "", "mc-" if args.multi_condition else "", f"{args.access_requirement}-" if args.access_requirement else "", args.version, "-schema.json"])
+    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col, data_type = args.data_type, data_col=args.data_col, species_type = args.species_type, species_col=args.species_col, access_requirement=args.access_requirement)
