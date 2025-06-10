@@ -2,7 +2,13 @@
 
 This script will create and bind a JSON schema to an entity
 
-Usage: python synapse_json_schema_bind.py -t [Entity Synapse Id] -l [JSON Schema URL] -p [JSON Schema File Path] -n [Organization Name] -ar [Access Requirement Flag]
+Usage: python synapse_json_schema_bind.py -t [Entity Synapse Id] -l [JSON Schema URL] -p [JSON Schema File Path] -n [Organization Name] -ar --no_bind
+-t Synapse Id of an entity to which a schema will be bound.
+-l URL for the JSON schema to be bound to the requested entity.
+-p File path for the JSON schema to be bound to the requested entity.
+-n Name of the organization with which the JSON schema should be associated. Default: 'Example Organization'.
+-ar Indicates if the schema includes Access Requirement information.
+--no_bind Indicates the schema should not be bound to the entity. 
 
 author: orion.banks
 """
@@ -63,7 +69,7 @@ def get_args():
 
 
 def get_schema_organization(service, org_name: str) -> tuple:
-    """Create or access the MC2 Center Synapse organization,
+    """Create or access the named Synapse organization,
     return a tuple of schema service object, organization object, and organization name"""
     
     print(f"Creating organization: {org_name}")
@@ -82,7 +88,7 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
     """Register or access a previously registered JSON schema and return the uri.
     If the schema was previously registered, the constructed uri will be returned.
     uri format: [schema_org_name]-[schema_type]-[num_version]
-    Example uri: MultiConsortiaCoordinatingCenter-CA987654AccessRequirement-2.0.0
+    Example uri: ExampleOrganization-CA987654AccessRequirement-2.0.0
     """
     
     num_version = version.split("v")[1]
