@@ -81,7 +81,7 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
     schema = OrderedDict({
         "$schema": "http://json-schema.org/draft-07/schema",
         "title": title,
-        "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id is not None else ''}{data_type + '-' if data_type is not None else ''}{species_type + '-' if species_type is not None else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{version}",
+        "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id is not None else ''}{data_type + '-' if data_type is not None else ''}{species_type + '-' if species_type is not None else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{access_requirement + '-' if access_requirement is not None else ''}{version}",
         "description": "Auto-generated schema defining DUO-based access restrictions.",
         "allOf": conditions
     })
