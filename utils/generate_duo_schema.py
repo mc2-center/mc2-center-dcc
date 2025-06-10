@@ -82,7 +82,7 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
         "$schema": "http://json-schema.org/draft-07/schema",
         "title": title,
         "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id is not None else ''}{data_type + '-' if data_type is not None else ''}{species_type + '-' if species_type is not None else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{access_requirement + '-' if access_requirement is not None else ''}{version}",
-        "description": "Auto-generated schema defining DUO-based access restrictions.",
+        "description": f"Auto-generated schema that defines access requirements for biomedical data. Organization: {org_id}, Grant number or Project designation: {grant_id}, Study ID: {study_id if study_id else 'N/A'}, Data Type: {data_type if data_type else 'N/A'}, Species Type: {species_type if species_type else 'N/A'}, Multi-condition: {'Yes' if multi_condition else 'No'}, Selected Access Requirement ID: {access_requirement if access_requirement else 'N/A'}",
         "allOf": conditions
     })
 
@@ -93,8 +93,8 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate DUO JSON Schema from Data Dictionary CSV")
-    parser.add_argument("csv_path", help="Path to the data_dictionary.csv")
+    parser = argparse.ArgumentParser(description="Generate Access Requirement JSON Schema from Data Dictionary CSV")
+    parser.add_argument("csv_path", help="Path to the data_dictionary.csv. See and example at https://github.com/Sage-Bionetworks/governanceDUO/blob/main/access_requirement_JSON/example_annotation_AR_reference.csv")
     parser.add_argument("output_path", help="Path to output directory for the JSON schema")
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
