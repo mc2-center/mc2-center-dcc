@@ -93,12 +93,14 @@ def main():
 
     template_df = pd.DataFrame()
     
-    for attribute, (template, valid_values) in gc_template_dict.items():
+    for attribute, (template, _) in gc_template_dict.items():
         if template == target_output:
             template_df[attribute] = ""
-            for component, (df, cols) in source_metadata_dict.items():
-                if gc_mc2_mapping_dict[attribute] in cols:
-                    template_df[attribute] = df[gc_mc2_mapping_dict[attribute]]
+        else:
+            continue
+        for component, (df, cols) in source_metadata_dict.items():
+            if gc_mc2_mapping_dict[attribute] in cols:
+                template_df[attribute] = df[gc_mc2_mapping_dict[attribute]]
 
     template_df.to_csv("mapped_metadata.csv", index=False)
 
