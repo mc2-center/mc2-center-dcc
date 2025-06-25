@@ -102,7 +102,8 @@ def main():
             if gc_mc2_mapping_dict[attribute] in cols:
                 template_df[attribute] = df[gc_mc2_mapping_dict[attribute]]
 
-    template_df.to_csv("mapped_metadata.csv", index=False)
+    template_df.to_csv(f"{target_output}_mapped_metadata.csv", index=False)
+    print(f"Mapped metadata saved to {target_output}_mapped_metadata.csv")
 
 if __name__ == "__main__":
     main()
