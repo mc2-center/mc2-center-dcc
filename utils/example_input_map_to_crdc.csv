@@ -1,6 +1,5 @@
-Component,Table_syn_id
-Biospecimen,syn65877820
-FileView,syn65877828
-Individual,syn65877815
-ImagingLevel2,syn65880241
-Study,syn65877778
+entity_id,data_type,study_key
+syn64713344,ImagingLevel2,CA261841-CR_2024
+syn64713343,ImagingLevel2,CA261841-CR_2024
+syn64779989,ImagingLevel3,CA261841-CR_2024
+syn65877778,Study,CA261841-CR_2024
