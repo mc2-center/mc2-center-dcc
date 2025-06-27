@@ -14,6 +14,7 @@ author: orion.banks
 import argparse
 import pandas as pd
 import synapseclient
+from synapseclient.models import query
 import re
 
 def get_args():
@@ -43,13 +44,15 @@ def get_args():
     return parser.parse_args()
 
 
-def get_table(syn, source_id: str, cols: str | list = "*") -> pd.DataFrame:
+def get_table(syn, source_id: str, cols: str | list = "*", conditions: str | None = None) -> pd.DataFrame:
     """Collect columns from a Synapse table entity and return as a Dataframe."""
 
     if type(cols) == list:
         cols = ", ".join(["".join(['"', col, '"']) for col in cols])
 
     query = f"SELECT {cols} FROM {source_id}"
+    if conditions is not None:
+        query += f" WHERE {conditions}"
     table = syn.tableQuery(query).asDataFrame().fillna("")
     print(f"Data acquired from Synapse table {source_id}")
 
@@ -81,28 +84,38 @@ def main():
     manifests_df = pd.read_csv(manifests, header=0).fillna("")
     mapping_df = pd.read_csv(mapping, header=0).fillna("")
 
-    source_metadata_dict = dict(zip(manifests_df["Component"], manifests_df["Table_syn_id"]))
+    source_metadata_dict = dict(zip(manifests_df["entity_id"], (zip(manifests_df["data_type"], manifests_df["study_key"]))))
 
     gc_template_dict = dict(zip(mapping_df["Property"], (zip(mapping_df["Node"], mapping_df["Acceptable Values"]))))
 
     gc_mc2_mapping_dict = dict(zip(mapping_df["Property"], mapping_df["MC2 attribute"]))
 
-    for type, table in source_metadata_dict.items():
-        table_df = get_table(syn, table, cols="*")
-        source_metadata_dict[type] = (table_df, table_df.columns.tolist())
-
     template_df = pd.DataFrame()
     
     for attribute, (template, _) in gc_template_dict.items():
         if template == target_output:
-            template_df[attribute] = ""
-        else:
-            continue
-        for component, (df, cols) in source_metadata_dict.items():
-            if gc_mc2_mapping_dict[attribute] in cols:
-                template_df[attribute] = df[gc_mc2_mapping_dict[attribute]]
+            template_df[attribute] = ""  # create GC template columns
+            print(f"{attribute} added to template \n")
+    
+    template_df["crdc_id"] = ""
+    attribute_list = template_df.columns.tolist()
 
-    template_df.to_csv(f"{target_output}_mapped_metadata.csv", index=False)
+    for id, (data_type, study_key) in source_metadata_dict.items():
+        if data_type == "Study" and target_output in ["study", "image"]:
+            df = get_table(syn, id, cols="*", conditions=f"Study_id = '{study_key}'")
+        elif target_output != "study":
+            if data_type not in ["Study"]:
+                df = query(query=f"SELECT * FROM {id}")
+        else:
+            df = pd.DataFrame()
+        source_metadata_dict[id] = (data_type, df, df.columns.tolist())
+
+    for _, (data_type, df, cols) in source_metadata_dict.items():
+        mapped_attributes = [attribute for attribute in attribute_list if "".join("".join(str(gc_mc2_mapping_dict[attribute]).split(" ")).split("-")) in cols]
+        mapped_df = df.rename(columns={"".join("".join(str(gc_mc2_mapping_dict[attribute]).split(" ")).split("-")): attribute for attribute in mapped_attributes})
+        template_df = pd.concat([template_df, mapped_df]).drop_duplicates(subset=attribute_list, keep="first").reset_index(drop=True)
+
+    template_df[attribute_list].to_csv(f"{target_output}_mapped_metadata.csv", index=False)
     print(f"Mapped metadata saved to {target_output}_mapped_metadata.csv")
 
 if __name__ == "__main__":
