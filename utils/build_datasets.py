@@ -12,6 +12,7 @@ author: orion.banks
 import argparse
 import os
 import pandas as pd
+import random
 import re
 import synapseclient
 from synapseclient import Dataset
@@ -47,34 +48,47 @@ def get_table(syn, source_id: str) -> pd.DataFrame:
     return table
 
 
-def filter_files_in_folder(syn, scope: str, formats: list[str]) -> list:
+def filter_files_in_folder(syn, scope: str, formats: list[str], folder_or_files: str) -> list:
     """Capture all files in provided scope and select files that match a list of formats,
     return list of dataset items"""
 
     dataset_items = []
     walk_path = synapseutils.walk(syn, scope, ["file"])
     for *_, filename in walk_path:
-        for f, entity_id in filename:
-            if any(f.endswith(fmt) for fmt in formats):  # only select files of desired format
-                dataset_items.append({
+        if folder_or_files == "files":
+            file_to_add = [entity_id for f, entity_id in filename if any(f.endswith(fmt) for fmt in formats)]  # only select files of desired format
+        elif folder_or_files == "folder":
+            file_to_add = [entity_id for f, entity_id in filename]  # select all files in folder
+        for entity_id in file_to_add:
+            dataset_items.append({
                     "entityId": entity_id,
                     "versionNumber": syn.get(entity_id, downloadFile=False).versionLabel
                 })
-
+        dataset_len = len(dataset_items)
+        print(f"--> {dataset_len} files found...")
     return dataset_items
 
 
-def create_dataset_entity(syn, name: str, grant: str) -> Dataset:
+def create_dataset_entity(syn, name: str, grant: str, multi_dataset: bool) -> Dataset:
     """Create an empty Synapse Dataset using the
     Project associated with the applicable grant number as parent.
     Return the Dataset object."""
 
     query = f"SELECT grantId FROM syn21918972 WHERE grantViewId='{grant}'"
     project_id = syn.tableQuery(query).asDataFrame().iat[0, 0]
+    if multi_dataset:
+        name = f"{name}-{random.randint(1000, 9999)}"  # append random number to name for multi-dataset
     dataset = Dataset(name=name, parent=project_id)
 
     return dataset
 
+def chunk_files_for_dataset(scope_files: list[str], file_max: int, dataset_total: int) -> list[list[str]]:
+    """Chunk files into lists of size file_max for Dataset creation."""
+    file_groups = []
+    for i in range(dataset_total):
+        file_group = scope_files[i * file_max:(i + 1) * file_max]
+        file_groups.append(file_group)
+    return file_groups
 
 def main():
 
@@ -84,6 +98,8 @@ def main():
 
     dsp, new_name = args.d, args.n
     update_dsp_sheet = None
+
+    file_max = 10000  # maximum number of files per Dataset
     
     if os.path.exists(dsp):
         dsp_df = pd.read_csv(dsp, keep_default_na=False)
@@ -97,7 +113,7 @@ def main():
         )
         exit()
 
-    if dsp_df.iat[1, 0] == "DataDSP":
+    if dsp_df.iat[0, 0] == "DataDSP":
         count = 0
         for _, row in dsp_df.iterrows():
             grant_id = row["GrantView Key"]
@@ -110,44 +126,65 @@ def main():
                 print(f"Skipping Dataset {dataset_name} of type {level}")
                 continue  # move to next table entry if not data files
             
-            print(f"\nProcessing Dataset {dataset_name}")
-            if dataset_id:  # check if a Dataset entity was previously recorded 
-                print(f"--> Accessing Dataset {dataset_id}")
-                dataset = syn.get(dataset_id)
-                print(f"--> {dataset_id} accessed!")
-            else:
-                print(
-                    f"--> A new Dataset will be created for files from {scope_id}"
-                )
-                dataset = create_dataset_entity(syn, dataset_name, grant_id)
-                update_dsp_sheet = True  # record the new DatasetView_id in DSP
-                print(f"--> New Dataset created!")
+            dataset_id_list = []
+            file_scope_list = []
+            dataset_name_list = []
 
             if formats:  # only filter files if formats were specified
                 print(f"--> Filtering files from {scope_id}")
-                scope_files = filter_files_in_folder(syn, scope_id, formats)
-                folder_or_files = "files"  # use add_items function
-                print(
-                    f"--> {scope_id} files filtered!\n    {len(scope_files)} files will be added to the Dataset."
-                )
+                folder_or_files = "files"  # filter files by extension/format
             else:
-                folder_or_files = "folder"  # whole folder should be added, use add_folder function
+                folder_or_files = "folder"  # whole folder should be added, don't filter files
+            
+            scope_files = filter_files_in_folder(syn, scope_id, formats, folder_or_files)
+            print(f"--> {scope_id} files acquired!\n    {len(scope_files)} files will be added to the Dataset.")
 
-            if folder_or_files == "folder":
-                print(f"--> Adding Folder {scope_id} to Dataset {dataset_id}")
-                dataset.add_folder(scope_id, force=True)
-                print(f"--> Folder added to Dataset!")
-            elif folder_or_files == "files":
-                print(f"--> Adding Files from {scope_id} to Dataset {dataset_id}")
+            if dataset_id:  # check if a Dataset entity was previously recorded 
+                print(f"--> Files will be added to Dataset {dataset_id}")
+                dataset = syn.get(dataset_id, downloadFile=False)
+            else:
+                dataset = create_dataset_entity(syn, dataset_name, grant_id, multi_dataset=False)
+                update_dsp_sheet = True  # record the new DatasetView_id in DSP
+                print(f"--> New Dataset created for files from {scope_id}")
+            
+            dataset_id_list.append(dataset.id)
+            dataset_name_list.append(dataset.name)
+
+            if len(scope_files) > file_max:
+                dataset_total = (len(scope_files) // file_max) + 1
+                multi_dataset = True
+                update_dsp_sheet = True
+                print(
+                    f"--> File count exceeds file max.\n--> Creating {dataset_total} new Datasets for files from {scope_id}"
+                )
+                for i in range(dataset_total):
+                    dataset = create_dataset_entity(syn, dataset_name, grant_id, multi_dataset)
+                    print(f"--> New Dataset created!")
+                    dataset_id_list.append(dataset.id)
+                    dataset_name_list.append(dataset.name)
+                file_scope_list = chunk_files_for_dataset(scope_files, file_max, dataset_total)
+            else:
+                multi_dataset = False
+                file_scope_list = [scope_files]  # single dataset, no chunking needed
+
+            dataset_tuples = zip(dataset_id_list, file_scope_list, dataset_name_list)
+
+            for dataset_id, scope_files, name in dataset_tuples:
+                dataset = syn.get(dataset_id, downloadFile=False)
                 dataset.add_items(dataset_items=scope_files, force=True)
                 print(f"--> Files added to Dataset!")
-
-            dataset = syn.store(dataset)
-            print(f"Dataset {dataset_id} successfully stored in {dataset.parentId}")
-
-            if update_dsp_sheet is not None:
-                dataset_id = dataset.id
-                dsp_df.at[_, "DatasetView Key"] = dataset_id
+                dataset = syn.store(dataset)
+                print(f"Dataset {dataset.id} successfully stored in {dataset.parentId}")
+                if update_dsp_sheet is not None:
+                    temp_df = pd.DataFrame()
+                    if multi_dataset:
+                        temp_df.loc[_] = dsp_df.loc[_]
+                        temp_df[_, "DatasetView Key"] = dataset.id
+                        temp_df[_, "DSP Dataset Name"] = name
+                        dsp_df = pd.concat([dsp_df, temp_df], ignore_index=True)
+                    else:
+                        dataset_id = dataset.id
+                        dsp_df.at[_, "DatasetView Key"] = dataset_id
 
             count += 1
     else:
