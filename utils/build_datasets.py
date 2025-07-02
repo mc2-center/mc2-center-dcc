@@ -90,8 +90,11 @@ def chunk_files_for_dataset(scope_files: list[str], file_max: int, dataset_total
     while i < dataset_total:
         file_groups.append(scope_files[i * file_max:(i + 1) * file_max])
         i += 1
-    if i == dataset_total: 
-        file_groups.append(scope_files[i * file_max:])
+    if i == dataset_total:
+        if len(scope_files) % file_max != 0:
+            file_groups.append(scope_files[i * file_max:])
+        else:
+            file_groups.append(scope_files[(i - 1) * file_max:i * file_max])
     return file_groups
 
 def main():
@@ -101,15 +104,14 @@ def main():
     args = get_args()
 
     dsp, new_name = args.d, args.n
+    
     update_dsp_sheet = None
     create_dataset = False
     multi_dataset = False
-    dataset_total = 0
+    file_max = 5000  # maximum number of files per Dataset; set to 5000 to avoid web page latency issues
 
-    file_max = 3  # maximum number of files per Dataset
-    
     if os.path.exists(dsp):
-        dsp_df = pd.read_csv(dsp, keep_default_na=False)
+        dsp_df = pd.read_csv(dsp, keep_default_na=False, header=0)
         print("\nData Sharing Plan read successfully!")
     elif "syn" in dsp:
         dsp_df = get_table(syn, dsp)
@@ -121,6 +123,7 @@ def main():
         exit()
 
     if dsp_df.iat[0, 0] == "DataDSP":
+        updated_df = pd.DataFrame(columns=dsp_df.columns)
         count = 0
         for _, row in dsp_df.iterrows():
             grant_id = row["GrantView Key"]
@@ -133,6 +136,7 @@ def main():
                 print(f"Skipping Dataset {dataset_name} of type {level}")
                 continue  # move to next table entry if not data files
             
+            dataset_total = 1
             dataset_id_list = []
             file_scope_list = []
             dataset_name_list = []
@@ -140,7 +144,6 @@ def main():
             if dataset_id:  # check if a Dataset entity was previously recorded 
                 print(f"--> Files will be added to Dataset {dataset_id}")
             else:
-                dataset_total = dataset_total + 1
                 create_dataset = True
                 update_dsp_sheet = True
             
@@ -154,14 +157,15 @@ def main():
             print(f"--> {scope_id} files acquired!\n    {len(scope_files)} files will be added to the Dataset.")
             
             if len(scope_files) > file_max:
-                dataset_total = dataset_total + (len(scope_files) // file_max)
+                new_dataset_count = (len(scope_files) // file_max)
+                dataset_total = dataset_total + new_dataset_count
                 multi_dataset = True
                 update_dsp_sheet = True
                 create_dataset = True
                 print(
-                    f"--> File count exceeds file max.\n--> Creating {dataset_total} new Datasets for files from {scope_id}"
+                    f"--> File count exceeds file max.\n--> Creating {dataset_total} groups for files from {scope_id}"
                 )
-                file_scope_list = chunk_files_for_dataset(scope_files, file_max, dataset_total)
+                file_scope_list = chunk_files_for_dataset(scope_files, file_max, new_dataset_count)
                 
             else:
                 multi_dataset = False
@@ -172,31 +176,30 @@ def main():
                 dataset_id_list.append(dataset.id)
                 dataset_name_list.append(dataset.name)
                 dataset.add_items(dataset_items=file_scope_list[0], force=True)
-                dataset = syn.store(dataset)
+                syn.store(dataset)
                 print(f"--> Files added to existing Dataset {dataset.id}")
                 file_scope_list = file_scope_list[1:]  # remove first item, already added
 
             if create_dataset:
-                for i, scope in zip(range(dataset_total), file_scope_list):
+                for scope in file_scope_list:
                     dataset = create_dataset_entity(syn, dataset_name, grant_id, multi_dataset, scope)
                     print(f"--> New Dataset created and populated with files!")
                     dataset_id_list.append(dataset.id)
                     dataset_name_list.append(dataset.name)
+            
+            count += 1
 
             dataset_tuples = zip(dataset_id_list, dataset_name_list)
 
             for dataset_id, name in dataset_tuples:
                 if update_dsp_sheet is not None:
                     temp_df = dsp_df.copy()
-                    if multi_dataset:
-                        temp_df.at[_, "DatasetView Key"] = dataset_id
-                        temp_df.at[_, "DSP Dataset Name"] = name
-                        dsp_df = pd.concat([dsp_df, temp_df], ignore_index=True)
-                    else:
-                        dsp_df.at[_, "DatasetView Key"] = dataset_id
-            dsp_df.drop_duplicates(subset=["DatasetView Key"], keep="last", inplace=True)
+                    temp_df.iloc[[_]] = row
+                    temp_df.at[_, "DatasetView Key"] = dataset_id
+                    temp_df.at[_, "DSP Dataset Name"] = name
+                updated_df = pd.concat([updated_df, temp_df], ignore_index=True)
+            updated_df.drop_duplicates(subset=["DatasetView Key"], keep="last", inplace=True)
 
-            count += 1
     else:
         print(
             f"❗❗❗ The table provided does not appear to be a Dataset Sharing Plan.❗❗❗\nPlease check its contents and try again."
@@ -207,7 +210,7 @@ def main():
 
     if update_dsp_sheet is not None:
         dsp_path = f"{os.getcwd()}/{new_name}.csv"
-        dsp_df.to_csv(path_or_buf=dsp_path, index=False)
+        updated_df.to_csv(path_or_buf=dsp_path, index=False)
         print(f"\nDSP sheet has been updated\nPath: {dsp_path}")
 
 
