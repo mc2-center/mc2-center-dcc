@@ -140,3 +140,4 @@ upload_check*
 annotations/inputs/*
 annotations/outputs/*
 annotations/output/*
+utils/example_files/*
