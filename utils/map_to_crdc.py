@@ -41,6 +41,13 @@ def get_args():
         required=True,
         default=None,
     )
+    parser.add_argument(
+        "-o",
+        type=str,
+        help="Output directory",
+        required=False,
+        default="./output",
+    )
     return parser.parse_args()
 
 
@@ -59,25 +66,12 @@ def get_table(syn, source_id: str, cols: str | list = "*", conditions: str | Non
     return table
 
 
-def extract_lists(df: pd.DataFrame, list_columns, pattern) -> pd.DataFrame:
-    """Extract bracketed/quoted lists from sheets."""
-
-    for col in list_columns:
-
-        df[col] = (
-            df[col]
-            .apply(lambda x: re.findall(pattern, x))
-            .str.join(", "))
-        
-    return df
-
-
 def main():
     """Main function."""
     
     args = get_args()
 
-    manifests, target_output, mapping = args.d, args.t, args.m
+    manifests, target_output, mapping, out_dir = args.d, args.t, args.m, args.o
 
     syn = synapseclient.login()
 
@@ -103,9 +97,8 @@ def main():
     for id, (data_type, study_key) in source_metadata_dict.items():
         if data_type == "Study" and target_output in ["study", "image"]:
             df = get_table(syn, id, cols="*", conditions=f"Study_id = '{study_key}'")
-        elif target_output != "study":
-            if data_type not in ["Study"]:
-                df = query(query=f"SELECT * FROM {id}")
+        elif data_type != "Study" and target_output != "study":
+            df = query(query=f"SELECT * FROM {id}")
         else:
             df = pd.DataFrame()
         source_metadata_dict[id] = (data_type, df, df.columns.tolist())
@@ -115,8 +108,8 @@ def main():
         mapped_df = df.rename(columns={"".join("".join(str(gc_mc2_mapping_dict[attribute]).split(" ")).split("-")): attribute for attribute in mapped_attributes})
         template_df = pd.concat([template_df, mapped_df]).drop_duplicates(subset=attribute_list, keep="first").reset_index(drop=True)
 
-    template_df[attribute_list].to_csv(f"{target_output}_mapped_metadata.csv", index=False)
-    print(f"Mapped metadata saved to {target_output}_mapped_metadata.csv")
+    template_df[attribute_list].to_csv(f"{out_dir}/{target_output}_mapped_metadata.csv", index=False)
+    print(f"Mapped metadata saved to {out_dir}/{target_output}_mapped_metadata.csv")
 
 if __name__ == "__main__":
     main()
