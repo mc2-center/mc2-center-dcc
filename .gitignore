@@ -141,3 +141,4 @@ annotations/inputs/*
 annotations/outputs/*
 annotations/output/*
 mapped_metadata.csv
+utils/example_files/*
