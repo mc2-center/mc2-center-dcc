@@ -60,20 +60,18 @@ def transform_csv_to_tsv(mapping_config):
 			target_col = mapping["target"]
 			
 			if "value" in mapping:
-				if source_col is None:
-					if mapping["value"]:
-						constant_value = mapping["value"]
-						transformed_df[target_col] = constant_value
+				if mapping["value"] is not None:
+					if "map" in mapping["value"]:
+						value_map = mapping["value"]["map"]
+						default = mapping["value"]["default_literal"] if mapping["value"]["default_literal"] else ""
+						transformed_df[target_col] = df[source_col].map(value_map).fillna(default)
 					else:
-						transformed_df[target_col] = None
-				elif "map" in mapping["value"]:
-					value_map = mapping["value"]["map"]
-					transformed_df[target_col] = df[source_col].map(value_map).fillna(df[source_col])
+						constant_value = mapping["value"]
+						transformed_df[target_col] = [constant_value] * df.shape[0]
 				else:
-					constant_value = mapping["value"]
-					transformed_df[target_col] = constant_value
+					transformed_df[target_col] = None
 			else:
-				transformed_df[target_col] = df[source_col].fillna('')
+				transformed_df[target_col] = df[source_col].fillna("")
 
 		# Save the transformed DataFrame to TSV
 		os.makedirs(os.path.dirname(output_file), exist_ok=True)
