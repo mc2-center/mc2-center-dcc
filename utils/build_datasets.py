@@ -192,8 +192,8 @@ def main():
             dataset_tuples = zip(dataset_id_list, dataset_name_list)
 
             for dataset_id, name in dataset_tuples:
+                temp_df = dsp_df.copy()
                 if update_dsp_sheet is not None:
-                    temp_df = dsp_df.copy()
                     temp_df.iloc[[_]] = row
                     temp_df.at[_, "DatasetView Key"] = dataset_id
                     temp_df.at[_, "DSP Dataset Name"] = name
