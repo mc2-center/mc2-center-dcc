@@ -75,6 +75,7 @@ def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataF
     return updated_database
 
 def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
+    """Remove leading and trailing whitespace from entries in curated columns."""
     
     cols_to_clean = [
         "Publication Assay",
@@ -95,6 +96,7 @@ def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
     return database
 
 def fix_pub_doi(database: pd.DataFrame) -> pd.DataFrame:
+    """Add 'https://doi.org/' to existing identifiers or record 'No DOI Listed' if cell is empty."""
 
     for _,row in database.iterrows():
         if row["Publication Doi"].startswith("https://doi.org/") is False:
@@ -107,7 +109,7 @@ def fix_pub_doi(database: pd.DataFrame) -> pd.DataFrame:
     return database
 
 def main():
-    """Main function to merge corrected manifests."""
+    """Main function to merge and clean manifests."""
     args = get_args()
 
     database, new_entries = args.d, args.n
