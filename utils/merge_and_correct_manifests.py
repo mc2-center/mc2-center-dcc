@@ -94,6 +94,18 @@ def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
 
     return database
 
+def fix_pub_doi(database: pd.DataFrame) -> pd.DataFrame:
+
+    for _,row in database.iterrows():
+        if row["Publication Doi"].startswith("https://doi.org/") is False:
+            if row["Publication Doi"] == "":
+                value = "No DOI Listed"
+            else:
+                value = "".join(["https://doi.org/", row["Publication Doi"]])
+            database.at[row.name, "Publication Doi"] = value
+            
+    return database
+
 def main():
     """Main function to merge corrected manifests."""
     args = get_args()
@@ -127,7 +139,9 @@ def main():
     print(f"\nEmpty cells filled successfully!")
     updated_database = trim_whitespace(updated_database)
     print(f"\nWhitespace removed from list entries!")
-        
+    
+    if data_type == "PublicationView":
+        updated_database = fix_pub_doi(updated_database)
 
     updated_database_path = f"{os.getcwd()}/{data_type}_merged_corrected.csv"
     updated_database.to_csv(path_or_buf=updated_database_path, index=False)
