@@ -1,8 +1,9 @@
 """merge_and_correct_manifests.py
 
-This script replaces entries in a metadata manifest based on a primary key field.
-It also fills empty cells in the updated database with 'Pending Annotation' or 'Not Applicable'
-for specific columns, depending on the data type.
+This script performs the following operations on a manifest CSV:
+- replaces entries based on a primary key field, using a corrected manifest
+- fills empty cells in the updated database with 'Pending Annotation' or 'Not Applicable' for specific columns, depending on the data type.
+- removes leading and trailing whitespace for list columns in Publication View and Dataset View metadata
 
 author: orion.banks
 """
@@ -25,7 +26,7 @@ def get_args():
         "-n",
         type=str,
         help="Path to CSV with corrected metadata entries.",
-        required=True,
+        required=False,
         default=None,
     )
     return parser.parse_args()
@@ -73,6 +74,25 @@ def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataF
 
     return updated_database
 
+def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
+    
+    cols_to_clean = [
+        "Publication Assay",
+        "Publication Tumor Type",
+        "Publication Tissue",
+        "Dataset Assay",
+        "Dataset Species",
+        "Dataset Tissue",
+        "Dataset Tumor Type"
+    ]
+    
+    clean_cols = [col for col in database.columns if col in cols_to_clean]
+    
+    for _,row in database.iterrows():
+        for col in clean_cols:
+            database.at[row.name, col] = row[col].strip()
+
+    return database
 
 def main():
     """Main function to merge corrected manifests."""
@@ -81,26 +101,33 @@ def main():
     database, new_entries = args.d, args.n
 
     for sheet in [database, new_entries]:
-        if os.path.exists(sheet):
-            continue
-        else:
-            print(f"\n❗❗❗ The file {sheet} does not exist! ❗❗❗")
-            exit()
+        if sheet is not None:
+            if os.path.exists(sheet):
+                continue
+            else:
+                print(f"\n❗❗❗ The file {sheet} does not exist! ❗❗❗")
+                exit()
 
     data_type = os.path.basename(database).split("_")[0]
     index_col = data_type + "_id"
 
     database_df = pd.read_csv(database, keep_default_na=False, index_col=False)
     print(f"\nDatabase read successfully!")
-    new_entries_df = pd.read_csv(new_entries, keep_default_na=False, index_col=False)
-    print(f"\nNew_entries read successfully!")
+    
+    if new_entries is not None:
+        new_entries_df = pd.read_csv(new_entries, keep_default_na=False, index_col=False)
+        print(f"\nNew_entries read successfully!")
+        updated_database = update_database(database_df, new_entries_df, index_col)
+        print(f"\nDatabase has been successfully updated!")
+    else:
+        print(f"\nCurrent database will not be updated with corrected entries.")
+        updated_database = database_df
 
-    updated_database = update_database(database_df, new_entries_df, index_col)
-    print(f"\nDatabase has been successfully updated!")
-
-    if data_type in ["PublicationView", "DatasetView"]:
-        updated_database = fill_empty_cells(updated_database, data_type)
-        print(f"\nEmpty cells filled successfully!")
+    updated_database = fill_empty_cells(updated_database, data_type)
+    print(f"\nEmpty cells filled successfully!")
+    updated_database = trim_whitespace(updated_database)
+    print(f"\nWhitespace removed from list entries!")
+        
 
     updated_database_path = f"{os.getcwd()}/{data_type}_merged_corrected.csv"
     updated_database.to_csv(path_or_buf=updated_database_path, index=False)
