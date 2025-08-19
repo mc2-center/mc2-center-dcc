@@ -177,13 +177,12 @@ def compare_and_subset_tables(args: list[tuple[Path, Path, str]], mapping: pd.Da
 
         tables = [current_table, new_table]
 
-        updated = (
-            pd.concat(tables, ignore_index=True).reset_index(drop=True).astype(str)
-        )
-        updated.drop_duplicates(
-            subset=cols, keep=False, ignore_index=True, inplace=True
-        )
-        updated.sort_values(by=[key, "Source"], inplace=True)
+        updated = pd.concat(tables, ignore_index=True).reset_index(drop=True).astype(str)
+
+        updated.drop_duplicates(subset=cols, keep=False, ignore_index=True, inplace=True)
+
+        if debug:
+            updated.sort_values(by=[key, "Source"], inplace=True)
 
         updatePath = Path(f"output/{name}/{name}_updated.csv")
         updatePath.parent.mkdir(parents=True, exist_ok=True)
