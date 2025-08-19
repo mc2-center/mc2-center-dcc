@@ -183,6 +183,7 @@ def compare_and_subset_tables(args: list[tuple[Path, Path, str]], mapping: pd.Da
         updated.drop_duplicates(
             subset=cols, keep=False, ignore_index=True, inplace=True
         )
+        updated.sort_values(by=[key, "Source"], inplace=True)
 
         updatePath = Path(f"output/{name}/{name}_updated.csv")
         updatePath.parent.mkdir(parents=True, exist_ok=True)
@@ -217,7 +218,7 @@ def validate_tables(args: list[tuple[Path, str]], config: str) -> list[tuple[str
             str(path),
         ]
 
-        print(f"\n\nValidating manifest at: {str(path)}...")
+        print(f"\nValidating manifest at: {str(path)}...")
 
         outPath = Path(f"output/{name}/{name}_out.txt")
         outPath.parent.mkdir(parents=True, exist_ok=True)
@@ -313,12 +314,10 @@ def main():
 
     if trimList is None:
         if inputManifest is None:
+            compare_and_subset = True
             print("Accessing requested tables...")
             newTables = get_tables(syn, inputList, merge)
-            print(
-                """\n\nTable(s) downloaded from Synapse
-                and stored as CSVs in output folder!"""
-            )
+            print("\nTable(s) downloaded from Synapse and stored as CSVs in output folder!")
 
         elif inputManifest is not None:
             tables, newNames = [], []
@@ -326,76 +325,65 @@ def main():
             name = table.loc[:, "Component"].iat[1]
             if merge:
                 tables.append(table)
+                compare_and_subset = True
             else:
                 tables.append(inputManifest)
+                compare_and_subset = False
             newNames.append(name)
             newTables = list(zip(tables, newNames))
-            print(
-                f"""\n\nReading provided table
-                at {inputManifest} of type {name}."""
-            )
+            print(f"\nReading provided table at {inputManifest} of type {name}.")
 
         if merge:
-            print("\n\nMerging rows with matching identifier...")
+            print("\nMerging rows with matching identifier...")
             newTables = combine_rows(newTables, mapping)
-            print("\n\nMatching rows merged!")
-            print(
-                """\n\nMerged table(s) converted to CSV
-                and stored in local output folder!"""
-            )
-            print("\n\nValidating merged manifest(s)...")
+            print("\nMatching rows merged!")
+            print("\nMerged table(s) converted to CSV and stored in local output folder!")
+            print("\nSubsequent operations will be performed on merged manifest(s).")
+            if compare_and_subset:
+                print("\nIdentifying new and updated resource records from to database entries...\n")
+                refTables = get_ref_tables(syn, newTables)
+                updatedTables = compare_and_subset_tables(refTables, mapping, strict, debug)
+                print("\nNew and updated resource records found!")
         else:
-            print("\n\nValidating unmerged manifest(s)...")
+            print("\nSubsequent operations will be performed on un-merged manifest(s).")
+            print("\nDatabase comparison and filtering is disabled.")
+            updatedTables = newTables
 
-        refTables = get_ref_tables(syn, newTables)
-        updatedTables = compare_and_subset_tables(refTables, mapping, strict, debug)
+        
         checkTables = validate_tables(updatedTables, config)
-        print("\n\nValidation logs stored in local output folder!")
-        print("\n\nConverting validation logs to trim config files...")
-        print(checkTables)
+        print("\nValidation logs stored in local output folder!")
+        print("\nConverting validation logs to trim config files...")
         validEntries = parse_out(checkTables)
-        print("\n\nValidation logs parsed and saved as CSVs!")
+        print("\nValidation logs parsed and saved as CSVs!")
         
         if trim:
-            print("\n\nTrimming invalid entries from manifests...")
+            print("\nTrimming invalid entries from manifests...")
             trim_tables(validEntries)
-            print("\n\nInvalid entries trimmed!")
+            print("\nInvalid entries trimmed!")
         else:
-            print(
-                """\n\nNo trimming performed.
-                  Manifests may contain invalid entries."""
-            )
+            print("\nNo trimming performed. Manifests may contain invalid entries.")
 
     if trimList is not None:
         if inputManifest is not None:
             names, outs, paths = [], [], []
             name = re.search("\/(\w*)(_trim_config)", str(trimList))
             if name is None:
-                print(
-                    """\n\nPlease provide a trim config that
-                    uses the expected naming convention."""
-                )
+                print("\nPlease provide a trim config that uses the expected naming convention.")
                 exit
             else:
-                print(
-                    f"""\n\nThe file {str(inputManifest)}
-                    will be trimmed based on {str(trimList)}"""
-                )
+                print(f"\nThe file {str(inputManifest)} will be trimmed based on {str(trimList)}")
                 names.append(name[1])
                 out = str(trimList)
                 outs.append(out)
                 path = str(inputManifest)
                 paths.append(path)
                 validEntries = list(zip(names, outs, paths))
-                print("\n\nTrimming invalid entries from manifests...")
+                print("\nTrimming invalid entries from manifests...")
                 trim_tables(validEntries)
-                print("\n\nInvalid entries trimmed!")
+                print("\nInvalid entries trimmed!")
 
         elif inputManifest is None:
-            print(
-                """\n\nNo manifest provided.
-                Please designate a manifest to trim."""
-            )
+            print("\nNo manifest provided. Please designate a manifest to trim.")
 
 
 if __name__ == "__main__":
