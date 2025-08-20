@@ -131,6 +131,7 @@ def main():
     if new_entries is not None:
         new_entries_df = pd.read_csv(new_entries, keep_default_na=False, index_col=False)
         print(f"\nNew_entries read successfully!")
+        new_entries_df.drop(["entityId", "iconTags", "Source"], axis=1, errors="ignore", inplace=True)
         updated_database = update_database(database_df, new_entries_df, index_col)
         print(f"\nDatabase has been successfully updated!")
     else:
