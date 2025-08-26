@@ -1,6 +1,8 @@
 """merge_and_correct_manifests.py
 
 This script performs the following operations on a manifest CSV:
+- removes duplicate entries in Updated input manifest
+- reports Updated entries that are included in the merged and corrected manifest
 - replaces entries based on a primary key field, using a corrected manifest
 - fills empty cells in the updated database with 'Pending Annotation' or 'Not Applicable' for specific columns, depending on the data type.
 - removes leading and trailing whitespace for list columns in Publication View and Dataset View metadata
@@ -35,7 +37,7 @@ def get_args():
 
 
 def filter_updated_manifest(new_entries_df: pd.DataFrame, index_col: str, data_type: str) -> pd.DataFrame:
-    """Update the database DataFrame with new entries based on the index column."""
+    """Remove duplicate entries in updated manifest. Retain current Database entries and new Updated entries."""
     filtered_entries_df = pd.DataFrame(columns=new_entries_df.columns)
     updated_entries_df = pd.DataFrame(columns=new_entries_df.columns)
     updated_count = 0
@@ -54,6 +56,7 @@ def filter_updated_manifest(new_entries_df: pd.DataFrame, index_col: str, data_t
     updated_entries_df.to_csv(f"{os.getcwd()}/{data_type}_new_rows_{datetime.now().strftime('%Y%m%d')}.csv", index=False)
 
     return filtered_entries_df
+
 
 def update_database(database_df: pd.DataFrame, new_entries_df: pd.DataFrame, index_col: str) -> pd.DataFrame:
     """Update the database DataFrame with new entries based on the index column."""
@@ -99,6 +102,7 @@ def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataF
 
     return updated_database
 
+
 def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
     """Remove leading and trailing whitespace from entries in curated columns."""
     
@@ -120,6 +124,7 @@ def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
 
     return database
 
+
 def fix_pub_doi(database: pd.DataFrame) -> pd.DataFrame:
     """Add 'https://doi.org/' to existing identifiers or record 'No DOI Listed' if cell is empty."""
 
@@ -127,11 +132,14 @@ def fix_pub_doi(database: pd.DataFrame) -> pd.DataFrame:
         if row["Publication Doi"].startswith("https://doi.org/") is False:
             if row["Publication Doi"] == "":
                 value = "No DOI Listed"
-            else:
+            elif re.match(r"^\d", row["Publication Doi"]):
                 value = "".join(["https://doi.org/", row["Publication Doi"]])
+            else:
+                value = row["Publication Doi"]
             database.at[row.name, "Publication Doi"] = value
             
     return database
+
 
 def main():
     """Main function to merge and clean manifests."""
