@@ -74,7 +74,11 @@ def transform_csv_to_tsv(mapping_config):
 				transformed_df[target_col] = df[source_col].fillna("")
 
 		# Save the transformed DataFrame to TSV
-		os.makedirs(os.path.dirname(output_file), exist_ok=True)
+		try:
+			os.makedirs(os.path.dirname(output_file), exist_ok=True)
+		except FileNotFoundError:
+			os.makedirs("mappings", exist_ok=True)
+			output_file = "/".join(["mappings", output_file])
 		transformed_df.to_csv(output_file, sep='\t', index=False)
 		print(f"Transformed file saved to {output_file}")
 
