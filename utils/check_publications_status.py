@@ -77,7 +77,10 @@ def status_check(syn, query, colname, email, publication_dict):
             except (requests.exceptions.HTTPError, json.JSONDecodeError):
                 # Assumption: DOI does not exist yet; skip.
                 pass
-    ready_for_review = pd.concat(ready_for_review)
+    if ready_for_review:
+        ready_for_review = pd.concat(ready_for_review)
+    else:
+        ready_for_review = pd.DataFrame(columns=df.columns)
 
     # Switch column name dictionary key/value pairs
     column_names = {value: key for key, value in publication_dict.items()}
@@ -126,7 +129,7 @@ def main():
             "Hey MC2 Center curators,",
             f"According to Unpaywall, {len(ready_for_review)} publications "
             "are now marked as Free and/or Open Access.\n\n"
-            "List of publications here: https://www.synapse.org/#!Synapse:{file_id}",
+            "Find the results here: https://www.synapse.org/#!Synapse:{file_id}",
         )
         syn.sendMessage(
             userIds=args.send_email,
