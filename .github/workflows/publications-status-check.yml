@@ -23,6 +23,6 @@ jobs:
 
     - name: Check availability of publications
       run: |
-        python utils/check_publications_status.py --send_email 3393723 3408068 3458480
+        python utils/check_publications_status.py --send_email 3393723 3408068 3458480 3474475 3510065 3537715
       env: 
         SYNAPSE_AUTH_TOKEN: ${{ secrets.SYNAPSE_AUTH_TOKEN }}

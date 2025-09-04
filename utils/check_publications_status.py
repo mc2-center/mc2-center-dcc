@@ -62,17 +62,25 @@ def status_check(syn, query, colname, email, publication_dict):
     """
     df = syn.tableQuery(query).asDataFrame()
     doi_list = df[~df[colname].isnull()]["doi"]
-
     ready_for_review = []
     with requests.Session() as session:
         for doi in doi_list:
-            url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
-            response = json.loads(session.get(url).content)
-            if response.get("is_oa"):
-                row = df[df[colname] == doi]
-                row.loc[row.index, "accessibility"] = "Open Access"
-                ready_for_review.append(row)
-    ready_for_review = pd.concat(ready_for_review)
+            unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
+            try:
+                check_oa_status = session.get(unpaywall_url)
+                check_oa_status.raise_for_status()
+                is_open = json.loads(check_oa_status.content).get("is_oa")
+                if is_open:
+                    row = df[df[colname] == doi]
+                    row.loc[row.index, "accessibility"] = "Open Access"
+                    ready_for_review.append(row)
+            except (requests.exceptions.HTTPError, json.JSONDecodeError):
+                # Assumption: DOI does not exist yet; skip.
+                pass
+    if ready_for_review:
+        ready_for_review = pd.concat(ready_for_review)
+    else:
+        ready_for_review = pd.DataFrame(columns=df.columns)
 
     # Switch column name dictionary key/value pairs
     column_names = {value: key for key, value in publication_dict.items()}
@@ -118,11 +126,10 @@ def main():
 
     if args.send_email:
         message = (
-            "Hey data curators,",
-            f"{len(ready_for_review)} publications are now marked as "
-            "Free and/or Open Access. Find the results here: "
-            f"https://www.synapse.org/#!Synapse:{file_id}",
-            "Have fun! :)",
+            "Hey MC2 Center curators,",
+            f"According to Unpaywall, {len(ready_for_review)} publications "
+            "are now marked as Free and/or Open Access.\n\n"
+            "Find the results here: https://www.synapse.org/#!Synapse:{file_id}",
         )
         syn.sendMessage(
             userIds=args.send_email,
