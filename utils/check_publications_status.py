@@ -129,7 +129,7 @@ def main():
             "Hey MC2 Center curators,",
             f"According to Unpaywall, {len(ready_for_review)} publications "
             "are now marked as Free and/or Open Access.\n\n"
-            "Find the results here: https://www.synapse.org/#!Synapse:{file_id}",
+            f"Find the results here: https://www.synapse.org/#!Synapse:{file_id}",
         )
         syn.sendMessage(
             userIds=args.send_email,
