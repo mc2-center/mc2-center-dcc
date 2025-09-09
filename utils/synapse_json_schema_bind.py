@@ -177,9 +177,9 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
 
 def main():
 
-    syn = synapseclient.login()
-
     args = get_args()
+    
+    syn = synapseclient.login()
 
     target, url, path, org_name, includes_ar, no_bind = args.t, args.l, args.p, args.n, args.ar, args.no_bind
 
