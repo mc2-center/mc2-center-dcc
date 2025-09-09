@@ -94,7 +94,7 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Access Requirement JSON Schema from Data Dictionary CSV")
-    parser.add_argument("csv_path", help="Path to the data_dictionary.csv. See and example at https://github.com/Sage-Bionetworks/governanceDUO/blob/main/access_requirement_JSON/example_annotation_AR_reference.csv")
+    parser.add_argument("csv_path", help="Path to the data_dictionary.csv. See and example at https://github.com/Sage-Bionetworks/governanceDUO/blob/main/access_requirement_JSON/README.md")
     parser.add_argument("output_path", help="Path to output directory for the JSON schema")
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
