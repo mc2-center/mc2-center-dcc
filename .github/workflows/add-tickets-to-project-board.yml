@@ -1,0 +1,23 @@
+name: Add Issue to Project Board
+
+on:
+  issues:
+    types:
+      - opened
+    # Uncomment the following lines to trigger on more issue events
+    #   - reopened
+    #   - transferred
+    #   - labeled
+
+jobs:
+  add-issue:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Add issue to project board
+      uses: actions/add-to-project@v1.0.2
+      with:
+        project-url: https://github.com/orgs/mc2-center/projects/4
+        github-token: ${{ secrets.GH_TOKEN }}
+        # Uncomment the following to only add specific issues
+        # labeled: bug, good-first-issue
+        # label-operator: OR  # other options: AND, NOT
