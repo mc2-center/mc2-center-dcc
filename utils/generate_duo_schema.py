@@ -98,7 +98,7 @@ if __name__ == "__main__":
     parser.add_argument("output_path", help="Path to output directory for the JSON schema")
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
-    parser.add_argument("-o", "--org_id", default="Project", help="Organization ID for $id field")
+    parser.add_argument("-o", "--org_id", default="DCC", help="Organization ID for $id field")
     parser.add_argument("-a", "--access_requirement", default=None, help="Access requirement ID to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable conditions listed in the input table.")
     parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table. If nothing is provided, the JSON schema will include all conditions listed in the input table.", default="Project")
     parser.add_argument("-m", "--multi_condition", help="Boolean. Generate schema with multiple conditions defined in the CSV", action="store_true", default=None)
