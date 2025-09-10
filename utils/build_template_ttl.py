@@ -51,9 +51,9 @@ def get_args():
         "-v",
 		"--version",
         type=str,
-        help="Version applied to output ttl filename (Default: None)",
+        help="Version applied to output ttl filename (Default: 1.0.0)",
         required=False,
-		default=None
+		default="1.0.0"
     )
 	return parser.parse_args()
 
