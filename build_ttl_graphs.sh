@@ -23,6 +23,7 @@ done
 for ttl in "$outdir"/*.ttl; do
 	if [ -f "$ttl" ]; then
 		cat "$ttl" >> "$org"_all.ttl
-		mv "$org"_all.ttl "$outdir"
 	fi
 done
+
+mv "$org"_all.ttl "$outdir"
