@@ -70,6 +70,7 @@ def main():
 	prefix_tag = args.tag_prefix
 	conform_tag = "<http://purl.org/dc/terms/conformsTo>"
 	int_tag = "<http://www.w3.org/2001/XMLSchema#integer>"
+	version = args.version
 	
 	if args.template:
 		print(f"Processing model [{args.template}] to template.ttl...")
@@ -78,7 +79,11 @@ def main():
 		sep = "," if template_path.suffix == ".csv" else "\t" 
 		template_df = pd.read_csv(args.template, header=0, keep_default_na=True, sep=sep)
 
-	out_file = "/".join([args.output, f"{args.org_name}_{template_name}_{args.version}.ttl"])
+	if template_name.startswith("GC_Data_Loading_Template"):
+		template_name = template_name.split("_")[-2]
+		version = template_name.split("_")[-1]
+
+	out_file = "/".join([args.output, f"{args.org_name}_{template_name}_{version}.ttl"])
 
 	with open(out_file, "w+") as f:
 		print(f"Building RDF triples and serializing to TTL...")
