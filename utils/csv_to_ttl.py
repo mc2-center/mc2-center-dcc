@@ -137,7 +137,7 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "has_enum"] = ", ".join(row["has_enum"])
 		out_df.at[_, "description"] = '"' + (f'{row["cde_name"]}: ' if str(row["cde_name"]) != "nan" else "") + row["description"] + '"'
 	
-	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "cde_name", "is_key", "has_enum"]
+	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
 	return out_df[final_cols]
 
 
