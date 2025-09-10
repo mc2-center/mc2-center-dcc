@@ -107,7 +107,8 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 	out_df["term"] = input_df.apply(
 		lambda row: format_uri(base_tag, row["Node"], row["Property"], org_name), axis=1)
 	out_df["label"] = '"' + input_df["Property"].fillna('') + '"'
-	out_df["description"] = '"' + input_df["Description"].fillna('').replace('"', '') + '"'
+	out_df["description"] = input_df["Description"].fillna("").replace('"', '')
+	out_df["cde_name"] = input_df["CDEFullName"].fillna("")
 	out_df["node"] = input_df["Node"].apply(
 		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>")
 	out_df["is_cde"] = input_df["CDECode"].fillna("").apply(lambda x: str(x).split(".")[0])
@@ -124,6 +125,7 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "type"] = '"' + str(convert_gc_column_type(col_type, is_enum)) + '"'
 		out_df.at[_, "required_by"] = row["node"] if row["required_by"] == "required" else ""
 		out_df.at[_, "has_enum"] = ", ".join(row["has_enum"])
+		out_df.at[_, "description"] = '"' + (f'{row["cde_name"]}: ' if str(row["cde_name"]) != "nan" else "") + row["description"] + '"'
 	
 	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "cde_name", "is_key", "has_enum"]
