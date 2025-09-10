@@ -22,8 +22,8 @@ done
 
 for ttl in "$outdir"/*.ttl; do
 	if [ -f "$ttl" ]; then
-		cat "$ttl" >> "$org"_all.ttl
+		cat "$ttl" >> "$org"_"$version"_model.ttl
 	fi
 done
 
-mv "$org"_all.ttl "$outdir"
+mv "$org"_"$version"_model.ttl "$outdir"
