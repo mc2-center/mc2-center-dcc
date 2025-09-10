@@ -9,7 +9,7 @@ usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-b 
 
 options:
   -h, --help						show this help message and exit
-  -m MODEL, --model MODEL			Path to schematic or CRDC data model CSV
+  -m MODEL, --model MODEL			Path to schematic model CSV or CRDC data model TSV
   -p MAPPING, --mapping MAPPING		Path to ttl source content file
   -o OUTPUT, --output OUTPUT		Path to folder where graph should be stored (Default: current directory)
   -g ORG_NAME, --org_name ORG_NAME	Abbreviation used to label the data model and determine how model should be processed (Default: 'new_org', schematic processing)
@@ -31,7 +31,7 @@ def get_args():
         "-m",
 		"--model",
         type=str,
-        help="Path to schematic or CRDC data model CSV",
+        help="Path to schematic model CSV or CRDC data model TSV",
         required=False
     )
 	parser.add_argument(
