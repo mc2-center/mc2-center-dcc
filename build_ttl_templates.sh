@@ -10,7 +10,7 @@ dir="$1"
 datatype="$2"
 org="$3"
 version="$4"
-outdir="ttl_templates"
+outdir="$org"_ttl_templates
 
 mkdir -p ./"$outdir"
 

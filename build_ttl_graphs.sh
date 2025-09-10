@@ -10,7 +10,7 @@ dir="$1"
 datatype="$2"
 org="$3"
 version="$4"
-outdir="ttl_graphs"
+outdir="$org"_ttl_graphs
 
 mkdir -p ./"$outdir"
 
