@@ -105,10 +105,12 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	out_df["label"] = '"' + out_df["label"].fillna('') + '"'
 	out_df["description"] = '"' + out_df["description"].fillna('').replace('"', '') + '"'
 	out_df["is_cde"] = out_df["is_cde"].fillna("")
+
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
 	
 	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
-	return out_df[final_cols]
+	return out_df[final_cols], node_name
 
 
 def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
@@ -137,8 +139,10 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "has_enum"] = ", ".join(row["has_enum"])
 		out_df.at[_, "description"] = '"' + (f'{row["cde_name"]}: ' if str(row["cde_name"]) != "nan" else "") + row["description"] + '"'
 	
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
+	
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
-	return out_df[final_cols]
+	return out_df[final_cols], node_name
 
 
 def format_uri(base_tag:str, node:str, attribute:str, org_name:str) -> str:
@@ -213,6 +217,7 @@ def main():
 	if args.mapping:
 		print(f"Processing RDF triples precursor CSV [{args.mapping}]...")
 		ttl_df = pd.read_csv(args.mapping, header=0, keep_default_na=False)
+		node_name = "mapped"
 		print(f"RDF triples will be built from pre-cursor file!")
 	
 	elif args.model:
@@ -220,12 +225,12 @@ def main():
 		sep = "," if Path(args.model).suffix == ".csv" else "\t" 
 		model_df = pd.read_csv(args.model, header=0, keep_default_na=True, sep=sep)
 		if str(args.org_name).lower() in ["new_org", "mc2", "nf", "adkp", "htan"]:
-			ttl_df = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
+			ttl_df, node_name = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
 		if str(args.org_name).lower() in ["gc", "crdc", "dh"]:
-			ttl_df = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
+			ttl_df, node_name = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
-	out_file = "/".join([args.output, f"{args.org_name}.ttl"])
+	out_file = "/".join([args.output, f"{args.org_name}_{node_name}.ttl"])
 
 	with open(out_file, "w+") as f:
 		print(f"Building RDF triples and serializing to TTL...")
