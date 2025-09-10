@@ -10,6 +10,8 @@ author: orion.banks
 import argparse
 import os
 import pandas as pd
+from pathlib import Path
+import re
 
 def get_args():
 	"""Set up command-line interface and get arguments."""
@@ -18,7 +20,7 @@ def get_args():
         "-m",
 		"--model",
         type=str,
-        help="Path to schematic data model CSV",
+        help="Path to schematic or CRDC data model CSV",
         required=False
     )
 	parser.add_argument(
@@ -83,7 +85,8 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 		out_df.at[_, "is_cde"] = get_cde_id(str(attribute_rows.loc[row["label"], "Properties"]))
 		out_df.at[_, "node"] = row["Resolved_Node_URI"]
 		out_df.at[_, "is_key"] = "true" if str(attribute_rows.loc[row["label"], "Validation Rules"]).strip().lower() == "unique" else ""
-		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""	
+		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
+		out_df.at[_, "has_enum"] = str(attribute_rows.loc[row["label"], "Required"]) if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
 		col_type = attribute_rows.loc[row["label"], "columnType"]
 		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else False
 		out_df.at[_, "type"] = '"' + str(convert_schematic_column_type(col_type, is_enum)) + '"'
@@ -93,7 +96,37 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	out_df["is_cde"] = out_df["is_cde"].fillna("")
 	
 	# Final output
-	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key"]
+	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
+	return out_df[final_cols]
+
+
+def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
+	"""Convert schematic model DataFrame to TTL format."""
+	out_df = pd.DataFrame()
+	
+	out_df["term"] = input_df.apply(
+		lambda row: format_uri(base_tag, row["Node"], row["Property"], org_name), axis=1)
+	out_df["label"] = '"' + input_df["Property"].fillna('') + '"'
+	out_df["description"] = '"' + input_df["Description"].fillna('').replace('"', '') + '"'
+	out_df["node"] = input_df["Node"].apply(
+		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>")
+	out_df["is_cde"] = input_df["CDECode"].fillna("").apply(lambda x: str(x).split(".")[0])
+	out_df["is_key"] = input_df["Key Property"].apply(lambda x: str(x)).replace(["False", "True"], ["", "true"])
+	out_df["required_by"] = input_df["Required"].apply(lambda x: str(x))
+	out_df["type"] = input_df["Type"].apply(lambda x: str(x))
+	out_df["has_enum"] = input_df["Acceptable Values"].fillna("").apply(lambda x: x.split(","))
+	out_df["cde_name"] = input_df["CDEFullName"].apply(lambda x: str(x))
+
+
+	for _, row in out_df.iterrows():
+		col_type = row["type"]
+		is_enum = True if len(row["has_enum"]) > 1 else False
+		out_df.at[_, "type"] = '"' + str(convert_gc_column_type(col_type, is_enum)) + '"'
+		out_df.at[_, "required_by"] = row["node"] if row["required_by"] == "required" else ""
+		out_df.at[_, "has_enum"] = ", ".join(row["has_enum"])
+	
+	# Final output
+	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "cde_name", "is_key", "has_enum"]
 	return out_df[final_cols]
 
 
@@ -132,6 +165,26 @@ def get_cde_id(entry: str) -> str:
 	else:
 		return entry.split(":")[1] if entry.split(":")[0] == "CDE" else ""
 
+
+def convert_gc_column_type(type:str, is_enum:bool) -> str: 
+	"""Convert GC column type to TTL-compatible format."""
+
+	if type in ["string", "list"]:
+		string_type = "string;enum" if is_enum else "string"
+		if type == "list":
+			out_type = f"array[{string_type}]"
+		else:
+			out_type = string_type
+	elif re.match(r'{"pattern"', type) is not None:
+		out_type = "string"
+	elif re.match(r'{"value_type":"number"', type) is not None:
+		out_type = "number"
+	else:
+		out_type = type
+	
+	return out_type
+
+
 def main():
 	
 	args = get_args()
@@ -144,6 +197,7 @@ def main():
 	req_tag = f"<{base_tag}/requiredBy>"
 	cde_tag = f"<{base_tag}/isCDE>"
 	key_tag = f"<{base_tag}/isKey>"
+	enum_tag = f"<{base_tag}/acceptableValues>"
 
 	if args.mapping:
 		print(f"Processing RDF triples precursor CSV [{args.mapping}]...")
@@ -152,8 +206,12 @@ def main():
 	
 	elif args.model:
 		print(f"Processing model [{args.model}] to RDF triples precursor CSV...")
-		model_df = pd.read_csv(args.model, header=0, keep_default_na=True)
-		ttl_df = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
+		sep = "," if Path(args.model).suffix == ".csv" else "\t" 
+		model_df = pd.read_csv(args.model, header=0, keep_default_na=True, sep=sep)
+		if str(args.org_name).lower() in ["new_org", "mc2", "nf", "adkp", "htan"]:
+			ttl_df = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
+		if str(args.org_name).lower() in ["gc", "crdc", "dh"]:
+			ttl_df = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
 	out_file = "/".join([args.output, f"{args.org_name}.ttl"])
@@ -169,22 +227,27 @@ def main():
 			type_tag: row["type"],
 			req_tag: row["required_by"],
 			cde_tag: row["is_cde"],
-			key_tag: row["is_key"]
+			key_tag: row["is_key"],
+			enum_tag: row["has_enum"]
 			}
 			
 			f.write(f"{ttl_dict['term']} {label_tag} {ttl_dict[label_tag]};"+"\n")
 			f.write("\t"+f"{desc_tag} {ttl_dict[desc_tag]};"+"\n")
 			f.write("\t"+f"{node_tag} {ttl_dict[node_tag]};"+"\n")
-			line_end = ";" if ttl_dict[req_tag] or ttl_dict[key_tag] or ttl_dict[cde_tag] else " ."
+			line_end = ";" if ttl_dict[req_tag] or ttl_dict[key_tag] or ttl_dict[cde_tag] or ttl_dict[enum_tag] else " ."
 			f.write("\t"+f"{type_tag} {ttl_dict[type_tag]}{line_end}"+"\n")
 			if ttl_dict[req_tag]:
-				line_end = ";\n" if ttl_dict[key_tag] or ttl_dict[cde_tag] else " .\n"
+				line_end = ";\n" if ttl_dict[key_tag] or ttl_dict[cde_tag] or ttl_dict[enum_tag] else " .\n"
 				f.write("\t"+f"{req_tag} {''.join([ttl_dict[req_tag], line_end])}")
 			if ttl_dict[key_tag]:
-				line_end = ";\n" if ttl_dict[cde_tag] else " .\n"
+				line_end = ";\n" if ttl_dict[cde_tag] or ttl_dict[enum_tag] else " .\n"
 				f.write("\t"+f"{key_tag} {''.join([ttl_dict[key_tag], line_end])}")
 			if ttl_dict[cde_tag]:
-				f.write("\t"+f"{cde_tag} {' '.join([ttl_dict[cde_tag], '.'])}"+"\n")
+				line_end = ";\n" if ttl_dict[enum_tag] else " .\n"
+				f.write("\t"+f"{cde_tag} {''.join([ttl_dict[cde_tag], line_end])}")
+			if ttl_dict[enum_tag]:
+				line_end = " .\n"
+				f.write("\t"+f"{enum_tag} {''.join([ttl_dict[enum_tag], line_end])}")
 			f.write("\n")
 	
 	print(f"Done ✅")
