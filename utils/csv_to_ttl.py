@@ -1,8 +1,19 @@
 """
 csv_to_ttl.py
 
-Converts a CSV with formatted ttl info to a ttl file
+Converts a schematic data model CSV or CRDC data model TSV to RDF triples
+Serialized triples to a ttl file
 ttl file can be used as a graph input for the arachne agent.
+
+usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-b BASE_TAG]
+
+options:
+  -h, --help						show this help message and exit
+  -m MODEL, --model MODEL			Path to schematic or CRDC data model CSV
+  -p MAPPING, --mapping MAPPING		Path to ttl source content file
+  -o OUTPUT, --output OUTPUT		Path to folder where graph should be stored (Default: current directory)
+  -g ORG_NAME, --org_name ORG_NAME	Abbreviation used to label the data model and determine how model should be processed (Default: 'new_org', schematic processing)
+  -b BASE_TAG, --base_tag BASE_TAG	url applied to the beginning of internal tags (Default: 'http://syn.org')
 
 author: orion.banks
 """
@@ -34,7 +45,7 @@ def get_args():
         "-o",
 		"--output",
         type=str,
-        help="Path to folder where graph should be stored",
+        help="Path to folder where graph should be stored (Default: current directory)",
         required=False,
 		default=os.getcwd()
     )
@@ -42,7 +53,7 @@ def get_args():
         "-g",
 		"--org_name",
         type=str,
-        help="Abbreviation used to label the data model",
+        help="Abbreviation used to label the data model and determine how model should be processed (Default: 'new_org', schematic processing)",
         required=False,
 		default="new_org"
     )
@@ -50,7 +61,7 @@ def get_args():
         "-b",
 		"--base_tag",
         type=str,
-        help="url applied to the beginning of internal tags",
+        help="url applied to the beginning of internal tags (Default: 'http://syn.org')",
         required=False,
 		default="http://syn.org"
     )
@@ -101,7 +112,7 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 
 
 def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
-	"""Convert schematic model DataFrame to TTL format."""
+	"""Convert CRDC model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
 	out_df["term"] = input_df.apply(
@@ -118,7 +129,6 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 	out_df["has_enum"] = input_df["Acceptable Values"].fillna("").apply(lambda x: x.split(","))
 	out_df["cde_name"] = input_df["CDEFullName"].apply(lambda x: str(x))
 
-
 	for _, row in out_df.iterrows():
 		col_type = row["type"]
 		is_enum = True if len(row["has_enum"]) > 1 else False
@@ -127,7 +137,6 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "has_enum"] = ", ".join(row["has_enum"])
 		out_df.at[_, "description"] = '"' + (f'{row["cde_name"]}: ' if str(row["cde_name"]) != "nan" else "") + row["description"] + '"'
 	
-	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "cde_name", "is_key", "has_enum"]
 	return out_df[final_cols]
 
