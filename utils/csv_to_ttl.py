@@ -53,9 +53,17 @@ def get_args():
         "-g",
 		"--org_name",
         type=str,
-        help="Abbreviation used to label the data model and determine how model should be processed (Default: 'new_org', schematic processing)",
+        help="Abbreviation used in the data model name and RDF tags. (Default: 'new_org')",
         required=False,
 		default="new_org"
+    )
+	parser.add_argument(
+        "-r",
+		"--reference_type",
+        type=str,
+        help="The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be automatically determined based on the provided org name (Default: None)",
+        required=False,
+		default=None
     )
 	parser.add_argument(
         "-b",
@@ -64,6 +72,14 @@ def get_args():
         help="url applied to the beginning of internal tags (Default: 'http://syn.org')",
         required=False,
 		default="http://syn.org"
+    )
+	parser.add_argument(
+        "-v",
+		"--version",
+        type=str,
+        help="Version applied to output ttl filename (Default: None)",
+        required=False,
+		default=None
     )
 	return parser.parse_args()
 
@@ -230,7 +246,7 @@ def main():
 			ttl_df, node_name = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
-	out_file = "/".join([args.output, f"{args.org_name}_{node_name}.ttl"])
+	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
 
 	with open(out_file, "w+") as f:
 		print(f"Building RDF triples and serializing to TTL...")
