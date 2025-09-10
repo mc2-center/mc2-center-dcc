@@ -61,6 +61,7 @@ def get_args():
         "-r",
 		"--reference_type",
         type=str,
+		choices=["schematic", "crdc"],
         help="The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be automatically determined based on the provided org name (Default: None)",
         required=False,
 		default=None
@@ -237,12 +238,20 @@ def main():
 		print(f"RDF triples will be built from pre-cursor file!")
 	
 	elif args.model:
-		print(f"Processing model [{args.model}] to RDF triples precursor CSV...")
+		print(f"Processing model [{args.model}] to RDF triples precursor dataframe...")
 		sep = "," if Path(args.model).suffix == ".csv" else "\t" 
 		model_df = pd.read_csv(args.model, header=0, keep_default_na=True, sep=sep)
-		if str(args.org_name).lower() in ["new_org", "mc2", "nf", "adkp", "htan"]:
+		ref = args.reference_type
+		if ref is None:
+			if str(args.org_name).lower() in ["new_org", "mc2", "nf", "adkp", "htan"]:
+				ref = "schematic"
+			if str(args.org_name).lower() in ["gc", "crdc", "dh"]:
+				ref = "crdc"
+		if ref == "schematic":
+			print(f"Processing model based on schematic CSV specification...")
 			ttl_df, node_name = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
-		if str(args.org_name).lower() in ["gc", "crdc", "dh"]:
+		if ref == "crdc":
+			print(f"Processing model based on CRDC TSV specification...")
 			ttl_df, node_name = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
