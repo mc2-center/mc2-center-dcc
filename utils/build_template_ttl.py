@@ -47,6 +47,14 @@ def get_args():
         required=False,
 		default="http://syn.org"
     )
+	parser.add_argument(
+        "-v",
+		"--version",
+        type=str,
+        help="Version applied to output ttl filename (Default: None)",
+        required=False,
+		default=None
+    )
 	return parser.parse_args()
 
 
@@ -67,9 +75,10 @@ def main():
 		print(f"Processing model [{args.template}] to template.ttl...")
 		template_path = Path(args.template)
 		template_name = template_path.stem
-		template_df = pd.read_csv(args.template, header=0, keep_default_na=True)
+		sep = "," if template_path.suffix == ".csv" else "\t" 
+		template_df = pd.read_csv(args.template, header=0, keep_default_na=True, sep=sep)
 
-	out_file = "/".join([args.output, f"{args.org_name}_{template_name}.ttl"])
+	out_file = "/".join([args.output, f"{args.org_name}_{template_name}_{args.version}.ttl"])
 
 	with open(out_file, "w+") as f:
 		print(f"Building RDF triples and serializing to TTL...")
