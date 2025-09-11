@@ -124,7 +124,7 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 		out_df.at[_, "node"] = row["Resolved_Node_URI"]
 		out_df.at[_, "is_key"] = "true" if str(attribute_rows.loc[row["label"], "Validation Rules"]).strip().lower() == "unique" else ""
 		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
-		out_df.at[_, "has_enum"] = str(attribute_rows.loc[row["label"], "Required"]) if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
+		out_df.at[_, "has_enum"] = '["' + '", "'.join(attribute_rows.loc[row["label"], "Valid Values"].split(", ")) + '"]' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
 		col_type = attribute_rows.loc[row["label"], "columnType"]
 		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else False
 		out_df.at[_, "type"] = '"' + str(convert_schematic_column_type(col_type, is_enum)) + '"'
