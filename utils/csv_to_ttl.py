@@ -147,7 +147,7 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 	out_df["term"] = input_df.apply(
 		lambda row: format_uri(base_tag, row["Node"], row["Property"], org_name), axis=1)
 	out_df["label"] = '"' + input_df["Property"].fillna('') + '"'
-	out_df["description"] = input_df["Description"].fillna("").replace('"', '')
+	out_df["description"] = input_df["Description"].fillna("")
 	out_df["cde_name"] = input_df["CDEFullName"].fillna("")
 	out_df["node"] = input_df["Node"].apply(
 		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>")
@@ -163,9 +163,9 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		is_enum = True if len(row["has_enum"]) > 1 else False
 		out_df.at[_, "type"] = '"' + str(convert_gc_column_type(col_type, is_enum)) + '"'
 		out_df.at[_, "required_by"] = row["node"] if row["required_by"] == "required" else ""
-		out_df.at[_, "has_enum"] = ", ".join(row["has_enum"])
-		out_df.at[_, "description"] = '"' + (f'{row["cde_name"]}: ' if str(row["cde_name"]) != "nan" else "") + row["description"] + '"'
-	
+		out_df.at[_, "has_enum"] = (''.join(['"[', ', '.join(row["has_enum"]).replace('"', '').replace('[', '').replace(']', ''), ']"'])) if is_enum else ""
+		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "nan" else "", row["description"]]).replace('"', '') + '"'
+
 	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
 	
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
@@ -288,12 +288,12 @@ def main():
 			line_end = ";" if ttl_dict[req_tag] or ttl_dict[key_tag] or ttl_dict[cde_tag] or ttl_dict[enum_tag] else " ."
 			f.write("\t"+f"{type_tag} {ttl_dict[type_tag]}{line_end}"+"\n")
 			if ttl_dict[req_tag]:
-				line_end = ";\n" if ttl_dict[key_tag] or ttl_dict[cde_tag] or ttl_dict[enum_tag] else " .\n"
+				line_end = ";\n" if ttl_dict[key_tag] or (ttl_dict[cde_tag] and ttl_dict[cde_tag] != "TBD") or ttl_dict[enum_tag] else " .\n"
 				f.write("\t"+f"{req_tag} {''.join([ttl_dict[req_tag], line_end])}")
 			if ttl_dict[key_tag]:
-				line_end = ";\n" if ttl_dict[cde_tag] or ttl_dict[enum_tag] else " .\n"
+				line_end = ";\n" if (ttl_dict[cde_tag] and ttl_dict[cde_tag] != "TBD") or ttl_dict[enum_tag] else " .\n"
 				f.write("\t"+f"{key_tag} {''.join([ttl_dict[key_tag], line_end])}")
-			if ttl_dict[cde_tag]:
+			if ttl_dict[cde_tag] and ttl_dict[cde_tag] != "TBD":
 				line_end = ";\n" if ttl_dict[enum_tag] else " .\n"
 				f.write("\t"+f"{cde_tag} {''.join([ttl_dict[cde_tag], line_end])}")
 			if ttl_dict[enum_tag]:
