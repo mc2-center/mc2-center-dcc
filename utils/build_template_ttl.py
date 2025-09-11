@@ -114,7 +114,7 @@ def main():
 			clean_col = format_uri(col)
 			col_uuid = uuid4()
 			if col in ["Component", "type"]:
-				f.write(f'<{prefix_tag}/{args.org_name}/{template_name}/{clean_col}> <{prefix_tag}/defaultValue> "{template_name}"'+"\n")
+				f.write(f'<{prefix_tag}/{args.org_name}/{template_name}/{clean_col}> <{prefix_tag}/defaultValue> "{template_name}" .'+"\n")
 			f.write(f"<{prefix_tag}/{args.org_name}/{template_name}> <{prefix_tag}/hasColumn> <{prefix_tag}/{args.org_name}/{template_name}/{clean_col}> ."+"\n")
 			f.write(f"<{prefix_tag}/{col_uuid}>a <{prefix_tag}/ColumnPosition> ;"+"\n")
 			f.write(f"<{prefix_tag}/template> <{prefix_tag}/{args.org_name}/{template_name}> ;"+"\n")
