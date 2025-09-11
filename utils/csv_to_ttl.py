@@ -5,15 +5,25 @@ Converts a schematic data model CSV or CRDC data model TSV to RDF triples
 Serialized triples to a ttl file
 ttl file can be used as a graph input for the arachne agent.
 
-usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-b BASE_TAG]
+usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-r {schematic,crdc}] [-b BASE_TAG] [-v VERSION]
 
 options:
-  -h, --help						show this help message and exit
-  -m MODEL, --model MODEL			Path to schematic model CSV or CRDC data model TSV
-  -p MAPPING, --mapping MAPPING		Path to ttl source content file
-  -o OUTPUT, --output OUTPUT		Path to folder where graph should be stored (Default: current directory)
-  -g ORG_NAME, --org_name ORG_NAME	Abbreviation used to label the data model and determine how model should be processed (Default: 'new_org', schematic processing)
-  -b BASE_TAG, --base_tag BASE_TAG	url applied to the beginning of internal tags (Default: 'http://syn.org')
+  -h, --help            show this help message and exit
+  -m MODEL, --model MODEL
+                        Path to schematic model CSV or CRDC data model TSV
+  -p MAPPING, --mapping MAPPING
+                        Path to ttl source content file
+  -o OUTPUT, --output OUTPUT
+                        Path to folder where graph should be stored (Default: current directory)
+  -g ORG_NAME, --org_name ORG_NAME
+                        Abbreviation used in the data model name and RDF tags. (Default: 'new_org')
+  -r {schematic,crdc}, --reference_type {schematic,crdc}
+                        The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be automatically determined based on
+                        the provided org name (Default: None)
+  -b BASE_TAG, --base_tag BASE_TAG
+                        url applied to the beginning of internal tags (Default: 'http://syn.org')
+  -v VERSION, --version VERSION
+                        Version applied to output ttl filename (Default: None)
 
 author: orion.banks
 """
