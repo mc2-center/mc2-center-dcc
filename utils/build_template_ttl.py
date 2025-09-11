@@ -4,6 +4,21 @@ build_template_ttl.py
 Converts a metadata template CSV info to a ttl file defining the template.
 ttl file can be used as input for the arachne agent and would be available as a target.
 
+usage: build_template_ttl.py [-h] [-t TEMPLATE] [-o OUTPUT] [-g ORG_NAME] [-p TAG_PREFIX] [-v VERSION]
+
+options:
+  -h, --help            show this help message and exit
+  -t TEMPLATE, --template TEMPLATE
+                        Path to metadata template CSV
+  -o OUTPUT, --output OUTPUT
+                        Path to folder where graph should be stored
+  -g ORG_NAME, --org_name ORG_NAME
+                        Abbreviation for org, used in RDF prefixes
+  -p TAG_PREFIX, --tag_prefix TAG_PREFIX
+                        The tag that will be used as a prefix in RDF
+  -v VERSION, --version VERSION
+                        Version applied to output ttl filename (Default: 1.0.0)
+
 author: orion.banks
 """
 
