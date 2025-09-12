@@ -63,8 +63,7 @@ def transform_csv_to_tsv(mapping_config):
 				if mapping["value"] is not None:
 					if "map" in mapping["value"]:
 						value_map = mapping["value"]["map"]
-						default = mapping["value"]["default_literal"] if mapping["value"]["default_literal"] else ""
-						transformed_df[target_col] = df[source_col].map(value_map).fillna(default)
+						transformed_df[target_col] = df[source_col].map(value_map).fillna("")
 					else:
 						constant_value = mapping["value"]
 						transformed_df[target_col] = [constant_value] * df.shape[0]
