@@ -78,7 +78,7 @@ def get_schema_organization(service, org_name: str) -> tuple:
         schema_org = service.JsonSchemaOrganization(name = org_name)
         schema_org.create()
     except synapseclient.core.exceptions.SynapseHTTPError:
-        print(f"Organization {org_name} already exists, getting info now...")
+        print(f"\nOrganization {org_name} already exists, getting info now...")
         schema_org = service.get_organization(organization_name = org_name)
     
     return service, schema_org, org_name
@@ -100,10 +100,10 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
         uri = schema.uri
         print(f"JSON schema {uri} was successfully registered.")
     except synapseclient.core.exceptions.SynapseHTTPError as error:
-        print(error)
-        print(f"JSON schema {uri} was previously registered and will not be updated.")
+        print("\n" + error)
+        print(f"JSON schema {uri} was previously registered and will not be updated.\n")
     
-    print(f"\nSchema is available at https://repo-prod.prod.sagebase.org/repo/v1/schema/type/registered/{uri}\nThe schema can be referenced using the id: {uri}\n")
+    print(f"\nSchema is available at https://repo-prod.prod.sagebase.org/repo/v1/schema/type/registered/{uri}\nThe schema can be referenced using the id: {uri}")
     
     return uri
 
@@ -114,7 +114,7 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
     For non-AR schemas, use the python client bind_json_schema function"""
 
     if component_type == "AccessRequirement" or includes_ar is not None:
-        print(f"Binding AR schema {schema_uri}")
+        print(f"\nBinding AR schema {schema_uri}")
         request_body = {
             "entityId": entity_id,
             "schema$id": schema_uri,
@@ -125,7 +125,7 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
         )
     
     else:
-        print(f"Binding non-AR schema {schema_uri}")
+        print(f"\nBinding non-AR schema {schema_uri}")
         service.bind_json_schema(schema_uri, entity_id)
    
 def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
@@ -157,7 +157,7 @@ def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
             component = base_component
             version = schema_info.split("-")[1]
 
-    print(f"JSON schema {component} {version} successfully acquired from repository")
+    print(f"\nJSON schema {component} {version} successfully acquired from repository")
 
     return schema_json, component, base_component, version
 
@@ -166,13 +166,17 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
     """Access JSON from URL, register the JSON schema, and bind the schema to the target entity."""
 
     schema_json, component_adjusted, base_component, version = get_schema_from_url(url, path)
-    print(f"Registering JSON schema {component_adjusted} {version}")
+    print(f"\nRegistering JSON schema {component_adjusted} {version}\n")
 
     uri = register_json_schema(org, component_adjusted, schema_json, version, schema_org_name)
 
-    if no_bind is None:
+    if no_bind is None and target is not None:
         bind_schema_to_entity(syn, service, uri, target, base_component, includes_ar)
         print(f"\nSchema {component_adjusted} {version} successfully bound to entity {target}")
+    else:
+        print("\nSchema was not bound to an entity.")
+    
+    print("\nDONE ✅")
         
 
 def main():
@@ -184,7 +188,10 @@ def main():
     target, url, path, org_name, includes_ar, no_bind = args.t, args.l, args.p, args.n, args.ar, args.no_bind
 
     if no_bind is not None:
-        print(f"Warning ❗❗❗ Schema will not be bound to the entity if one was provided.")
+        print(f"Warning ❗❗❗ Schema will not be bound to the entity if one was provided.\n")
+
+    if target is None:
+        print(f"Warning ❗❗❗ No entity id provided. Schema will only be registered.\n")
     
     syn.get_available_services()
 
@@ -193,9 +200,6 @@ def main():
     service, org, schema_org_name = get_schema_organization(schema_service, org_name)
     
     get_register_bind_schema(syn, target, schema_org_name, org, service, path, url, includes_ar, no_bind)
-    
-    if target is None and no_bind is None:
-        print(f"\n❗❗❗ No dataset information provided.❗❗❗\nPlease check your command line inputs and try again.")
 
 if __name__ == "__main__":
     main()
