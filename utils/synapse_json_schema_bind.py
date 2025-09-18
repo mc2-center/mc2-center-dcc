@@ -100,7 +100,7 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
         uri = schema.uri
         print(f"JSON schema {uri} was successfully registered.")
     except synapseclient.core.exceptions.SynapseHTTPError as error:
-        print("\n" + error)
+        print(error)
         print(f"JSON schema {uri} was previously registered and will not be updated.\n")
     
     print(f"\nSchema is available at https://repo-prod.prod.sagebase.org/repo/v1/schema/type/registered/{uri}\nThe schema can be referenced using the id: {uri}")
