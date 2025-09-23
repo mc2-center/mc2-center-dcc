@@ -24,15 +24,29 @@ options:
                         url applied to the beginning of internal tags (Default: 'http://syn.org')
   -v VERSION, --version VERSION
                         Version applied to output ttl filename (Default: None)
+  -bg, --build_graph
+  						Boolean. Pass this flag to generate a PNG of the input model (Default: None)
+  -ig, --interactive_graph
+                        Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)
 
 author: orion.banks
 """
 
 import argparse
+import io
+from IPython.display import display, Image
+import matplotlib.pyplot as plt
+import networkx as nx
 import os
 import pandas as pd
 from pathlib import Path
+from PIL import Image
+import pydot
+import rdflib
+from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
+from rdflib.tools import rdf2dot
 import re
+
 
 def get_args():
 	"""Set up command-line interface and get arguments."""
@@ -89,6 +103,22 @@ def get_args():
 		"--version",
         type=str,
         help="Version applied to output ttl filename (Default: None)",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-bg",
+		"--build_graph",
+        help="Boolean. Pass this flag to generate a PNG of the input model (Default: None)",
+		action="store_true",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-ig",
+		"--interactive_graph",
+        help="Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)",
+		action="store_true",
         required=False,
 		default=None
     )
@@ -304,5 +334,23 @@ def main():
 	print(f"Done ✅")
 	print(f"{out_file} was written with {len(ttl_df)} triples!")
 
+	image_path = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.png"])
+	g = rdflib.Graph()
+	model_graph = g.parse(out_file, format="turtle")
+	
+	if args.build_graph is not None:
+		dot_stream = io.StringIO()
+		rdf2dot.rdf2dot(model_graph, dot_stream, opts={display})
+		dot_string = dot_stream.getvalue()
+		dg = pydot.graph_from_dot_data(dot_string)
+		dg[0].write_png(image_path)
+		image = Image.open(image_path)
+		image.show()
+		
+	if args.interactive_graph is not None:
+		model_graph = rdflib_to_networkx_multidigraph(model_graph)
+		nx.draw_networkx(model_graph, arrows=False, with_labels=True, font_size=4, node_size=200)
+		plt.show()
+		
 if __name__ == "__main__":
     main()
