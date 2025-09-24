@@ -353,7 +353,7 @@ def main():
             collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop)
 
     if datasetview_table is not None:
-        collect_dataset_annotations(syn, target, dataset_info_tuple, keys_to_drop)
+        collect_dataset_annotations(syn, target, dataset_info_tuple, keys_to_drop=None)
 
 
 if __name__ == "__main__":

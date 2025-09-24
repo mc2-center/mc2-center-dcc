@@ -1,0 +1,403 @@
+"""
+csv_to_ttl.py
+
+Converts a schematic data model CSV or CRDC data model TSV to RDF triples
+Serialized triples to a ttl file
+ttl file can be used as a graph input for the arachne agent.
+
+usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-r {schematic,crdc}] [-b BASE_TAG] [-v VERSION]
+
+options:
+  -h, --help            show this help message and exit
+  -m MODEL, --model MODEL
+                        Path to schematic model CSV or CRDC data model TSV
+  -p MAPPING, --mapping MAPPING
+                        Path to ttl source content file
+  -o OUTPUT, --output OUTPUT
+                        Path to folder where graph should be stored (Default: current directory)
+  -g ORG_NAME, --org_name ORG_NAME
+                        Abbreviation used in the data model name and RDF tags. (Default: 'new_org')
+  -r {schematic,crdc}, --reference_type {schematic,crdc}
+                        The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be automatically determined based on
+                        the provided org name (Default: None)
+  -b BASE_TAG, --base_tag BASE_TAG
+                        url applied to the beginning of internal tags (Default: 'http://syn.org')
+  -v VERSION, --version VERSION
+                        Version applied to output ttl filename (Default: None)
+  -bg, --build_graph
+  						Boolean. Pass this flag to generate a PNG of the input model (Default: None)
+  -ig, --interactive_graph
+                        Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)
+
+author: orion.banks
+"""
+
+import argparse
+import io
+from IPython.display import display, Image
+import matplotlib.pyplot as plt
+import networkx as nx
+import os
+import pandas as pd
+from pathlib import Path
+from PIL import Image
+import pydot
+import rdflib
+from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
+from rdflib.tools import rdf2dot
+import re
+
+
+def get_args():
+	"""Set up command-line interface and get arguments."""
+	parser = argparse.ArgumentParser()
+	parser.add_argument(
+        "-m",
+		"--model",
+        type=str,
+        help="Path to schematic model CSV or CRDC data model TSV",
+        required=False
+    )
+	parser.add_argument(
+        "-p",
+		"--mapping",
+        type=str,
+        help="Path to ttl source content file",
+        required=False
+    )
+	parser.add_argument(
+        "-o",
+		"--output",
+        type=str,
+        help="Path to folder where graph should be stored (Default: current directory)",
+        required=False,
+		default=os.getcwd()
+    )
+	parser.add_argument(
+        "-g",
+		"--org_name",
+        type=str,
+        help="Abbreviation used in the data model name and RDF tags. (Default: 'new_org')",
+        required=False,
+		default="new_org"
+    )
+	parser.add_argument(
+        "-r",
+		"--reference_type",
+        type=str,
+		choices=["schematic", "crdc"],
+        help="The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be automatically determined based on the provided org name (Default: None)",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-b",
+		"--base_tag",
+        type=str,
+        help="url applied to the beginning of internal tags (Default: 'http://syn.org')",
+        required=False,
+		default="http://syn.org"
+    )
+	parser.add_argument(
+        "-v",
+		"--version",
+        type=str,
+        help="Version applied to output ttl filename (Default: None)",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-bg",
+		"--build_graph",
+        help="Boolean. Pass this flag to generate a PNG of the input model (Default: None)",
+		action="store_true",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-ig",
+		"--interactive_graph",
+        help="Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)",
+		action="store_true",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-s",
+		"--subset",
+        type=str,
+        help="(For schematic models only) The name of one or more data model components to extract from model (Default: None)",
+        required=False,
+		default=None
+    )
+	return parser.parse_args()
+
+
+def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
+	"""Convert schematic model DataFrame to TTL format."""
+	out_df = pd.DataFrame()
+	
+	# Step 1: Identify all node rows (treat rows with non-empty DependsOn as nodes)
+	node_rows = input_df[input_df["DependsOn"].notna()]
+	attribute_rows = input_df[input_df["DependsOn"].isna()].set_index("Attribute")
+	attribute_to_node = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in node_rows.iterrows()}
+	
+	
+	attribute_info = [(attribute, node) for node, attribute_list in attribute_to_node.items() for attribute in attribute_list]
+	out_df["label"] = [entry[0] for entry in attribute_info]
+	out_df["Resolved_Node"] = [entry[1] for entry in attribute_info]
+
+	# Step 2: Assign node URI for each attribute
+	out_df["Resolved_Node_URI"] = out_df["Resolved_Node"].apply(
+		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>"
+		)
+	
+	# Step 3: Construct term URIs for each attribute
+	out_df["term"] = out_df.apply(lambda row: format_uri(base_tag, row["Resolved_Node"], row["label"], org_name), axis=1)
+	
+	# Step 4: Info extraction and TTL-compatible column formatting
+	for _, row in out_df.iterrows():
+		out_df.at[_, "description"] = attribute_rows.loc[row["label"], "Description"]
+		out_df.at[_, "is_cde"] = get_cde_id(str(attribute_rows.loc[row["label"], "Properties"]))
+		out_df.at[_, "node"] = row["Resolved_Node_URI"]
+		out_df.at[_, "is_key"] = "true" if str(attribute_rows.loc[row["label"], "Validation Rules"]).strip().lower() == "unique" else ""
+		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
+		out_df.at[_, "has_enum"] = '"[' + ", ".join(attribute_rows.loc[row["label"], "Valid Values"].split(", ")) + ']"' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
+		col_type = attribute_rows.loc[row["label"], "columnType"]
+		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else False
+		out_df.at[_, "type"] = '"' + str(convert_schematic_column_type(col_type, is_enum)) + '"'
+	
+	out_df["label"] = '"' + out_df["label"].fillna('') + '"'
+	out_df["description"] = '"' + out_df["description"].fillna('').apply(lambda x: x.replace('"', '')) + '"'
+	out_df["is_cde"] = out_df["is_cde"].fillna("")
+
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
+	
+	# Final output
+	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
+	return out_df[final_cols], node_name
+
+
+def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
+	"""Convert CRDC model DataFrame to TTL format."""
+	out_df = pd.DataFrame()
+	
+	out_df["term"] = input_df.apply(
+		lambda row: format_uri(base_tag, row["Node"], row["Property"], org_name), axis=1)
+	out_df["label"] = '"' + input_df["Property"].fillna('') + '"'
+	out_df["description"] = input_df["Description"].fillna("")
+	out_df["cde_name"] = input_df["CDEFullName"].fillna("")
+	out_df["node"] = input_df["Node"].apply(
+		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>")
+	out_df["is_cde"] = input_df["CDECode"].fillna("").apply(lambda x: str(x).split(".")[0])
+	out_df["is_key"] = input_df["Key Property"].apply(lambda x: str(x)).replace(["False", "True"], ["", "true"])
+	out_df["required_by"] = input_df["Required"].apply(lambda x: str(x))
+	out_df["type"] = input_df["Type"].apply(lambda x: str(x))
+	out_df["has_enum"] = input_df["Acceptable Values"].fillna("").apply(lambda x: x.split(","))
+	out_df["cde_name"] = input_df["CDEFullName"].apply(lambda x: str(x))
+
+	for _, row in out_df.iterrows():
+		col_type = row["type"]
+		is_enum = True if len(row["has_enum"]) > 1 else False
+		out_df.at[_, "type"] = '"' + str(convert_gc_column_type(col_type, is_enum)) + '"'
+		out_df.at[_, "required_by"] = row["node"] if row["required_by"] == "required" else ""
+		out_df.at[_, "has_enum"] = (''.join(['"[', ', '.join(row["has_enum"]).replace('"', '').replace('[', '').replace(']', ''), ']"'])) if is_enum else ""
+		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "nan" else "", row["description"]]).replace('"', '') + '"'
+
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
+	
+	final_cols = ["term", "label", "description", "node", "type", "required_by", "is_cde", "is_key", "has_enum"]
+	return out_df[final_cols], node_name
+
+
+def format_uri(base_tag:str, node:str, attribute:str, org_name:str) -> str:
+	"""Format the URI for a given node and attribute."""
+
+	node_segment = node.strip().lower().replace(" ", "_")
+	attr_segment = attribute.strip().lower().replace(" ", "_")
+    
+	return f"<{base_tag}/{org_name}/{node_segment}/{attr_segment}>"
+
+
+def convert_schematic_column_type(type:str, is_enum:bool) -> str: 
+	"""Convert schematic column type to TTL-compatible format."""
+
+	if type in ["string", "string_list"]:
+		string_type = "string;enum" if is_enum else "string"
+		if type == "string_list":
+			out_type = f"array[{string_type}]"
+		else:
+			out_type = string_type
+	else:
+		out_type = type
+	
+	return out_type
+
+
+def get_cde_id(entry: str) -> str:
+	"""Extract CDE ID from Properties entry."""
+	entry = entry.split(", ") if len(entry.split(", ")) > 1 else entry
+	
+	if type(entry) == list:
+		for ref in entry:
+			if ref.split(":")[0] == "CDE":
+				return ref.split(":")[1]
+	else:
+		return entry.split(":")[1] if entry.split(":")[0] == "CDE" else ""
+
+
+def convert_gc_column_type(type:str, is_enum:bool) -> str: 
+	"""Convert GC column type to TTL-compatible format."""
+
+	if type in ["string", "list"]:
+		string_type = "string;enum" if is_enum else "string"
+		if type == "list":
+			out_type = f"array[{string_type}]"
+		else:
+			out_type = string_type
+	elif re.match(r'{"pattern"', type) is not None:
+		out_type = "string"
+	elif re.match(r'{"value_type":"number"', type) is not None:
+		out_type = "number"
+	else:
+		out_type = type
+	
+	return out_type
+
+def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
+
+	node_subset_df = pd.DataFrame()
+	
+	nodes = nodes.split(", ")
+	
+	model_df = model_df.set_index("Attribute")
+
+	for node in nodes:
+		node_attributes = str(model_df.loc[node, "DependsOn"]).split(", ")
+		node_attributes.append(node)
+		node_rows = model_df.loc[node_attributes]
+		node_subset_df = pd.concat([node_subset_df, node_rows])
+
+	node_subset_df = node_subset_df.drop_duplicates().reset_index()
+	
+	return node_subset_df
+
+
+def main():
+	
+	args = get_args()
+
+	base_tag = args.base_tag
+	label_tag = "<http://www.w3.org/2000/01/rdf-schema#label>"
+	desc_tag = "<http://purl.org/dc/terms/description>"
+	node_tag = f"<{base_tag}/node>"
+	type_tag = f"<{base_tag}/type>"
+	req_tag = f"<{base_tag}/requiredBy>"
+	cde_tag = f"<{base_tag}/isCDE>"
+	key_tag = f"<{base_tag}/isKey>"
+	enum_tag = f"<{base_tag}/acceptableValues>"
+
+	if args.mapping:
+		print(f"Processing RDF triples precursor CSV [{args.mapping}]...")
+		ttl_df = pd.read_csv(args.mapping, header=0, keep_default_na=False)
+		node_name = "mapped"
+		print(f"RDF triples will be built from pre-cursor file!")
+	
+	elif args.model:
+		print(f"Processing model [{args.model}] to RDF triples precursor dataframe...")
+		sep = "," if Path(args.model).suffix == ".csv" else "\t" 
+		model_df = pd.read_csv(args.model, header=0, keep_default_na=True, sep=sep)
+		ref = args.reference_type
+		if ref is None:
+			if str(args.org_name).lower() in ["new_org", "mc2", "nf", "adkp", "htan"]:
+				ref = "schematic"
+			if str(args.org_name).lower() in ["gc", "crdc", "dh"]:
+				ref = "crdc"
+		if ref == "schematic":
+			print(f"Processing model based on schematic CSV specification...")
+			if args.subset is not None:
+				model_df = subset_model(model_df, f"{args.subset}")
+			ttl_df, node_name = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
+		if ref == "crdc":
+			print(f"Processing model based on CRDC TSV specification...")
+			ttl_df, node_name = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
+		print(f"RDF triples will be built from the generated precursor dataframe!")
+
+	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
+
+	with open(out_file, "w+") as f:
+		print(f"Building RDF triples and serializing to TTL...")
+		for _, row in ttl_df.iterrows():
+			ttl_dict = {
+			"term": row["term"],
+			label_tag: row["label"],
+			desc_tag: row["description"],
+			node_tag: row["node"],
+			type_tag: row["type"],
+			req_tag: row["required_by"],
+			cde_tag: row["is_cde"],
+			key_tag: row["is_key"],
+			enum_tag: row["has_enum"]
+			}
+			
+			f.write(f"{ttl_dict['term']} {label_tag} {ttl_dict[label_tag]};"+"\n")
+			f.write("\t"+f"{desc_tag} {ttl_dict[desc_tag]};"+"\n")
+			f.write("\t"+f"{node_tag} {ttl_dict[node_tag]};"+"\n")
+			line_end = ";" if ttl_dict[req_tag] or ttl_dict[key_tag] or ttl_dict[cde_tag] or ttl_dict[enum_tag] else " ."
+			f.write("\t"+f"{type_tag} {ttl_dict[type_tag]}{line_end}"+"\n")
+			if ttl_dict[req_tag]:
+				line_end = ";\n" if ttl_dict[key_tag] or (ttl_dict[cde_tag] and ttl_dict[cde_tag] != "TBD") or ttl_dict[enum_tag] else " .\n"
+				f.write("\t"+f"{req_tag} {''.join([ttl_dict[req_tag], line_end])}")
+			if ttl_dict[key_tag]:
+				line_end = ";\n" if (ttl_dict[cde_tag] and ttl_dict[cde_tag] != "TBD") or ttl_dict[enum_tag] else " .\n"
+				f.write("\t"+f"{key_tag} {''.join([ttl_dict[key_tag], line_end])}")
+			if ttl_dict[cde_tag] and ttl_dict[cde_tag] != "TBD":
+				line_end = ";\n" if ttl_dict[enum_tag] else " .\n"
+				f.write("\t"+f"{cde_tag} {''.join([ttl_dict[cde_tag], line_end])}")
+			if ttl_dict[enum_tag]:
+				line_end = " .\n"
+				f.write("\t"+f"{enum_tag} {''.join([ttl_dict[enum_tag], line_end])}")
+			f.write("\n")
+	
+	print(f"Done ✅")
+	print(f"{out_file} was written with {len(ttl_df)} triples!")
+	
+	g = rdflib.Graph()
+	model_graph = g.parse(out_file, format="turtle")
+	image_path = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.png"])
+
+	if args.build_graph is not None:
+		retry = 0
+		image = None
+		while image is None:
+			if retry == 1:
+				value_tag = rdflib.URIRef("http://syn.org/acceptableValues")
+				model_graph = model_graph.remove((None, value_tag, None))
+			dot_stream = io.StringIO()
+			rdf2dot.rdf2dot(model_graph, dot_stream)
+			dot_string = dot_stream.getvalue()
+			dg = pydot.graph_from_dot_data(dot_string)
+			try:
+				dg[0].write_png(image_path)
+				image = Image.open(image_path)
+				image.show()
+				print(f"Success! Graph visualization is available at {image_path}")
+				image = True
+			except:
+				print("Failed to generate a visualization of the graph. Retrying with fewer triples...")
+				retry += 1
+			
+			if retry == 2:
+				print("Failed to generate a visualization of the graph. Skipping.")
+				break
+		
+	if args.interactive_graph is not None:
+		print("Generating interactive plot...")
+		model_graph = rdflib_to_networkx_multidigraph(model_graph)
+		nx.draw_networkx(model_graph, arrows=False, with_labels=True, font_size=4, node_size=200)
+		plt.show()
+	
+	print(f"Done ✅")
+		
+if __name__ == "__main__":
+    main()
