@@ -122,6 +122,14 @@ def get_args():
         required=False,
 		default=None
     )
+	parser.add_argument(
+        "-s",
+		"--subset",
+        type=str,
+        help="(For schematic models only) The name of one or more data model components to extract from model (Default: None)",
+        required=False,
+		default=None
+    )
 	return parser.parse_args()
 
 
@@ -256,6 +264,24 @@ def convert_gc_column_type(type:str, is_enum:bool) -> str:
 	
 	return out_type
 
+def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
+
+	node_subset_df = pd.DataFrame()
+	
+	nodes = nodes.split(", ")
+	
+	model_df = model_df.set_index("Attribute")
+
+	for node in nodes:
+		node_attributes = str(model_df.loc[node, "DependsOn"]).split(", ")
+		node_attributes.append(node)
+		node_rows = model_df.loc[node_attributes]
+		node_subset_df = pd.concat([node_subset_df, node_rows])
+
+	node_subset_df = node_subset_df.drop_duplicates().reset_index()
+	
+	return node_subset_df
+
 
 def main():
 	
@@ -289,6 +315,8 @@ def main():
 				ref = "crdc"
 		if ref == "schematic":
 			print(f"Processing model based on schematic CSV specification...")
+			if args.subset is not None:
+				model_df = subset_model(model_df, f"{args.subset}")
 			ttl_df, node_name = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
 		if ref == "crdc":
 			print(f"Processing model based on CRDC TSV specification...")
@@ -333,24 +361,43 @@ def main():
 	
 	print(f"Done ✅")
 	print(f"{out_file} was written with {len(ttl_df)} triples!")
-
-	image_path = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.png"])
+	
 	g = rdflib.Graph()
 	model_graph = g.parse(out_file, format="turtle")
-	
+	image_path = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.png"])
+
 	if args.build_graph is not None:
-		dot_stream = io.StringIO()
-		rdf2dot.rdf2dot(model_graph, dot_stream, opts={display})
-		dot_string = dot_stream.getvalue()
-		dg = pydot.graph_from_dot_data(dot_string)
-		dg[0].write_png(image_path)
-		image = Image.open(image_path)
-		image.show()
+		retry = 0
+		image = None
+		while image is None:
+			if retry == 1:
+				value_tag = rdflib.URIRef("http://syn.org/acceptableValues")
+				model_graph = model_graph.remove((None, value_tag, None))
+			dot_stream = io.StringIO()
+			rdf2dot.rdf2dot(model_graph, dot_stream)
+			dot_string = dot_stream.getvalue()
+			dg = pydot.graph_from_dot_data(dot_string)
+			try:
+				dg[0].write_png(image_path)
+				image = Image.open(image_path)
+				image.show()
+				print(f"Success! Graph visualization is available at {image_path}")
+				image = True
+			except:
+				print("Failed to generate a visualization of the graph. Retrying with fewer triples...")
+				retry += 1
+			
+			if retry == 2:
+				print("Failed to generate a visualization of the graph. Skipping.")
+				break
 		
 	if args.interactive_graph is not None:
+		print("Generating interactive plot...")
 		model_graph = rdflib_to_networkx_multidigraph(model_graph)
 		nx.draw_networkx(model_graph, arrows=False, with_labels=True, font_size=4, node_size=200)
 		plt.show()
+	
+	print(f"Done ✅")
 		
 if __name__ == "__main__":
     main()
