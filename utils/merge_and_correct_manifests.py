@@ -168,7 +168,7 @@ def main():
     print(f"\nDatabase read successfully!")
     
     if new_entries is not None:
-        new_entries_df = pd.read_csv(new_entries, keep_default_na=False, index_col=False)
+        new_entries_df = pd.read_csv(new_entries, keep_default_na=False, index_col=False, dtype=str)
         print(f"\nNew_entries read successfully!")
         filtered_entries_df = filter_updated_manifest(new_entries_df, index_col, data_type)
         filtered_entries_df.drop(["entityId", "iconTags", "Source"], axis=1, errors="ignore", inplace=True)
