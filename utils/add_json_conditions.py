@@ -8,7 +8,7 @@ def generate_json_schema(input):
     Corrects conditional logic for arrays.
     """
 
-    output = "".join([pathlib.Path(input).stem, ".updated.json"]) 
+    output = "".join([pathlib.Path(input).stem, "-updated.json"]) 
     
     with open(input, 'r') as i:
         model = json.load(i)
@@ -18,7 +18,7 @@ def generate_json_schema(input):
     for property in conditions:
         for prop in property["if"]["properties"]:
             if property["if"]["properties"][prop]["enum"]:
-                property["if"]["properties"][prop] = { "contains": property["if"]["properties"][prop]}
+                property["if"]["properties"][prop] = {"contains": property["if"]["properties"][prop]}
     
     with open(output, 'w') as f:
         json.dump(model, f, indent=2)
