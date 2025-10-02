@@ -133,13 +133,14 @@ def get_args():
 	return parser.parse_args()
 
 
-def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
+def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> tuple[pd.DataFrame, str, list[str]]:
 	"""Convert schematic model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
 	# Step 1: Identify all node rows (treat rows with non-empty DependsOn as nodes)
-	node_rows = input_df[input_df["DependsOn"].notna()]
-	attribute_rows = input_df[input_df["DependsOn"].isna()].set_index("Attribute")
+	node_rows = input_df[input_df["DependsOn"].str.contains("Component")]
+	node_list = node_rows["Attribute"].to_list()
+	attribute_rows = input_df[~input_df["DependsOn"].str.contains("Component")].set_index("Attribute")
 	attribute_to_node = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in node_rows.iterrows()}
 	
 	
@@ -149,11 +150,11 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 
 	# Step 2: Assign node URI for each attribute
 	out_df["Resolved_Node_URI"] = out_df["Resolved_Node"].apply(
-		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>"
+		lambda x: f"{org_name}:{str(x).strip().lower().replace(' ', '_')}"
 		)
 	
 	# Step 3: Construct term URIs for each attribute
-	out_df["term"] = out_df.apply(lambda row: format_uri(base_tag, row["Resolved_Node"], row["label"], org_name), axis=1)
+	out_df["term"] = out_df.apply(lambda row: format_uri(row["Resolved_Node"], row["label"]), axis=1)
 	
 	# Step 4: Info extraction and TTL-compatible column formatting
 	for _, row in out_df.iterrows():
@@ -162,23 +163,24 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 		out_df.at[_, "node"] = row["Resolved_Node_URI"]
 		out_df.at[_, "is_key"] = "true" if str(attribute_rows.loc[row["label"], "Validation Rules"]).strip().lower() == "unique" else ""
 		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
-		out_df.at[_, "has_enum"] = '"[' + ", ".join(attribute_rows.loc[row["label"], "Valid Values"].split(", ")) + ']"' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
+		out_df.at[_, "has_enum"] = '"[' + ", ".join(str(attribute_rows.loc[row["label"], "Valid Values"]).split(", ")) + ']"' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
 		col_type = attribute_rows.loc[row["label"], "columnType"]
-		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else False
-		out_df.at[_, "type"] = '"' + str(convert_schematic_column_type(col_type, is_enum)) + '"'
+		validation = attribute_rows.loc[row["label"], "Validation Rules"]
+		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "" else False
+		out_df.at[_, "type"] = '"' + convert_schematic_column_type(col_type, validation, is_enum) + '"'
 	
 	out_df["label"] = '"' + out_df["label"].fillna('') + '"'
 	out_df["description"] = '"' + out_df["description"].fillna('').apply(lambda x: x.replace('"', '')) + '"'
 	out_df["maps_to"] = out_df["maps_to"].fillna("")
 
-	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split(":")[-1][:-2]
 	
 	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
-	return out_df[final_cols], node_name
+	return out_df[final_cols], node_name, node_list
 
 
-def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> pd.DataFrame:
+def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> tuple[pd.DataFrame, str, list[str]]:
 	"""Convert CRDC model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
@@ -188,12 +190,13 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 	out_df["description"] = input_df["Description"].fillna("")
 	out_df["node"] = input_df["Node"].apply(
 		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>")
-	out_df["maps_to"] = input_df["CDECode"].fillna("").apply(lambda x: str(x).split(".")[0])
-	out_df["is_key"] = input_df["Key Property"].apply(lambda x: str(x)).replace(["False", "True"], ["", "true"])
+	out_df["maps_to"] = input_df["CDECode"].fillna("").apply(lambda x: ":".join(["CDE", str(x).split(".")[0]]) if x not in ["", "TBD"] else "")
+	out_df["is_key"] = input_df["Key Property"].apply(lambda x: str(x)).replace(["FALSE", "True"], ["", "true"])
 	out_df["required_by"] = input_df["Required"].apply(lambda x: str(x))
 	out_df["type"] = input_df["Type"].apply(lambda x: str(x))
 	out_df["has_enum"] = input_df["Acceptable Values"].fillna("").apply(lambda x: x.split(","))
 	out_df["cde_name"] = input_df["CDEFullName"].apply(lambda x: str(x))
+	node_list = input_df["Node"].to_list()
 
 	for _, row in out_df.iterrows():
 		col_type = row["type"]
@@ -201,34 +204,34 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "type"] = '"' + str(convert_gc_column_type(col_type, is_enum)) + '"'
 		out_df.at[_, "required_by"] = row["node"] if row["required_by"] == "required" else ""
 		out_df.at[_, "has_enum"] = (''.join(['"[', ', '.join(row["has_enum"]).replace('"', '').replace('[', '').replace(']', ''), ']"'])) if is_enum else ""
-		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "nan" else "", row["description"]]).replace('"', '') + '"'
+		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "" else "", row["description"]]).replace('"', '') + '"'
 
-	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split("/")[-1].split(">")[0]
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split(":")[-1]
 	
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
-	return out_df[final_cols], node_name
+	return out_df[final_cols], node_name, node_list
 
 
-def format_uri(base_tag:str, node:str, attribute:str, org_name:str) -> str:
+def format_uri(node:str, attribute:str) -> str:
 	"""Format the URI for a given node and attribute."""
 
-	node_segment = node.strip().lower().replace(" ", "_")
-	attr_segment = attribute.strip().lower().replace(" ", "_")
+	node_segment = str(node).strip().lower().replace(" ", "_").replace('10x_', '')
+	attr_segment = attribute.strip().lower().replace(" ", "_").replace('10x_', '')
     
-	return f"<{base_tag}/{org_name}/{node_segment}/{attr_segment}>"
+	return f"{node_segment}:{attr_segment}"
 
 
-def convert_schematic_column_type(type:str, is_enum:bool) -> str: 
+def convert_schematic_column_type(type:str, validation: str, is_enum:bool) -> str: 
 	"""Convert schematic column type to TTL-compatible format."""
 
-	if type in ["string", "string_list"]:
+	if type in ["string", "string_list"] or validation in ["str", "list like"]:
 		string_type = "string;enum" if is_enum else "string"
-		if type == "string_list":
+		if type == "string_list" or validation == "list like":
 			out_type = f"array[{string_type}]"
 		else:
 			out_type = string_type
 	else:
-		out_type = type
+		out_type = type if type else validation
 	
 	return out_type
 
@@ -287,28 +290,28 @@ def main():
 	base_tag = args.base_tag
 
 	label = "label"
-	desc = "desc"
+	desc = "description"
 	node = "node"
 	type = "type"
-	reqby = "reqby"
-	key = "key"
-	enum = "enum"
-	duo = "duo"
-	cde = "cde"
+	reqby = "requiredBy"
+	key = "isKey"
+	enum = "acceptableValues"
+	duo = "DUO_"
+	cde = "CDE"
+
 	
 	tag_dict = {
-		label : "<http://www.w3.org/2000/01/rdf-schema#label/>",
-		desc : "<http://purl.org/dc/terms/description/>",
-		node : f"<{base_tag}/node/>",
-		type : f"<{base_tag}/type/>",
-		reqby : f"<{base_tag}/requiredBy/>",
-		key : f"<{base_tag}/isKey/>",
-		enum : f"<{base_tag}/acceptableValues/>",
-		duo : f"<http://purl.obolibrary.org/obo/>",
-		cde : f"<{base_tag}/isCDE/>",
+		label : ("rdfs", "<http://www.w3.org/2000/01/rdf-schema#>"),
+		desc : ("purl", "<http://purl.org/dc/terms/>"),
+		node : ("syn", f"<{base_tag}/>"),
+		type : ("syn", f"<{base_tag}/>"),
+		reqby : ("syn", f"<{base_tag}/>"),
+		key : ("syn", f"<{base_tag}/>"),
+		enum : ("syn", f"<{base_tag}/>"),
+		duo : ("obo", "<http://purl.obolibrary.org/obo/>"),
+		cde : ("syn", f"<{base_tag}/>"),
 		}
 	
-
 	if args.mapping:
 		print(f"Processing RDF triples precursor CSV [{args.mapping}]...")
 		ttl_df = pd.read_csv(args.mapping, header=0, keep_default_na=False)
@@ -318,7 +321,7 @@ def main():
 	elif args.model:
 		print(f"Processing model [{args.model}] to RDF triples precursor dataframe...")
 		sep = "," if Path(args.model).suffix == ".csv" else "\t" 
-		model_df = pd.read_csv(args.model, header=0, keep_default_na=True, sep=sep)
+		model_df = pd.read_csv(args.model, header=0, keep_default_na=False, na_values="nan", sep=sep, dtype=str)
 		ref = args.reference_type
 		if ref is None:
 			if str(args.org_name).lower() in ["new_org", "mc2", "nf", "adkp", "htan", "ada"]:
@@ -329,10 +332,12 @@ def main():
 			print(f"Processing model based on schematic CSV specification...")
 			if args.subset is not None:
 				model_df = subset_model(model_df, f"{args.subset}")
-			ttl_df, node_name = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
+			ttl_df, node_name, node_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
 		if ref == "crdc":
 			print(f"Processing model based on CRDC TSV specification...")
-			ttl_df, node_name = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
+			if args.subset is not None:
+				model_df = model_df[model_df["Node"].isin(args.subset.split(", "))]
+			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
 	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
@@ -354,43 +359,51 @@ def main():
 			}
 			
 			if row["maps_to"]:
-				props = {f"{mapping.split(':')[0].lower()}":f"{mapping.split(':')[1]}" for mapping in row["maps_to"].split(", ")}
+				props = {f"{mapping.split(':')[0].upper()}":f"{mapping.split(':')[1]}" for mapping in row["maps_to"].split(", ")}
 				ttl_dict.update(props)
 
 			new_prefixes = [item for item in ttl_dict]
 			prefix_list = prefix_list + new_prefixes
 				
 			f.write("\n")
-			f.write(f"{row['term']} {label} {ttl_dict[label]};"+"\n")
-			f.write("\t"+f"{desc} {ttl_dict[desc]};"+"\n")
-			f.write("\t"+f"{node} {ttl_dict[node]};"+"\n")
-			line_end = ";" if ttl_dict[reqby] or ttl_dict[key] or props or ttl_dict[enum] else " ."
-			f.write("\t"+f"{type} {ttl_dict[type]}{line_end}"+"\n")
+			f.write(f"{row['term']} {tag_dict[label][0]}:{label} {ttl_dict[label]};"+"\n")
+			f.write("\t"+f"{tag_dict[desc][0]}:{desc} {ttl_dict[desc]};"+"\n")
+			f.write("\t"+f"{tag_dict[node][0]}:{node} {ttl_dict[node]};"+"\n")
+			if ttl_dict[type] != "":
+				line_end = ";" if ttl_dict[reqby] or ttl_dict[key] or props or ttl_dict[enum] not in ['"[]"', ""] else " ."
+				f.write("\t"+f"{tag_dict[type][0]}:{type} {ttl_dict[type]}{line_end}"+"\n")
 			if ttl_dict[reqby]:
-				line_end = ";\n" if ttl_dict[key] or props or ttl_dict[enum] else " .\n"
-				f.write("\t"+f"{reqby} {''.join([ttl_dict[reqby], line_end])}")
+				line_end = ";\n" if ttl_dict[key] or props or ttl_dict[enum] not in ['"[]"', ""] else " .\n"
+				f.write("\t"+f"{tag_dict[reqby][0]}:{reqby} {''.join([ttl_dict[reqby], line_end])}")
 			if ttl_dict[key]:
-				line_end = ";\n" if props or ttl_dict[enum] else " .\n"
-				f.write("\t"+f"{key} {''.join([ttl_dict[key], line_end])}")
-			if ttl_dict[enum]:
+				line_end = ";\n" if props or ttl_dict[enum] not in ['"[]"', ""] else " .\n"
+				f.write("\t"+f"{tag_dict[key][0]}:{key} {''.join([ttl_dict[key], line_end])}")
+			if ttl_dict[enum] not in ['"[]"', ""]:
 				line_end = ";\n" if props else " .\n"
-				f.write("\t"+f"{enum} {''.join([ttl_dict[enum], line_end])}")
+				f.write("\t"+f"{tag_dict[enum][0]}:{enum} {''.join([ttl_dict[enum], line_end])}")
 			if props:
 				end = len(props)
 				i = 0
-				for key in props:
+				for prop in props:
 					i += 1
 					line_end = ";\n" if i < end else " .\n"
-					if props[key] and props[key] != "TBD":
-						f.write("\t"+f"{key} {''.join([props[key], line_end])}")
+					if props[prop] and props[prop] != "TBD":
+						f.write("\t"+f"{tag_dict[prop][0]}:{prop} {''.join([props[prop], line_end])}")
 	
 	with open(out_file, "r") as f:
 		current_lines = f.read()
 	
 	with open(out_file, "w+") as f:
 		prefix_set = set(prefix_list)
-		lines = "".join([f"@prefix {prefix}: {tag_dict[prefix]}"+" .\n" for prefix in prefix_set]) + current_lines
-		f.write(lines)
+		node_set = set(node_list)
+		first_lines = [f"@prefix {tag_dict[prefix][0]}: {tag_dict[prefix][1]}"+" .\n" for prefix in prefix_set]
+		org_line = f"@prefix {args.org_name}: syn:{args.org_name} .\n"
+		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_').replace('10x_', '')}: {args.org_name}:{node_type.lower().replace(' ', '_').replace('10x_', '')} .\n" for node_type in node_set])
+		first_lines_set = "".join(set(first_lines))
+		f.write(first_lines_set)
+		f.write(org_line)
+		f.write(node_lines)
+		f.write(current_lines)
 	
 	print(f"Done ✅")
 	print(f"{out_file} was written with {len(ttl_df)} triples!")
@@ -403,7 +416,7 @@ def main():
 		retry = 0
 		image = None
 		while image is None:
-			if retry == 1:
+			if retry > 0:
 				value_tag = rdflib.URIRef("http://syn.org/acceptableValues")
 				model_graph = model_graph.remove((None, value_tag, None))
 			dot_stream = io.StringIO()
@@ -419,10 +432,11 @@ def main():
 			except:
 				print("Failed to generate a visualization of the graph. Retrying with fewer triples...")
 				retry += 1
-			
-			if retry == 2:
-				print("Failed to generate a visualization of the graph. Skipping.")
-				break
+				if retry == 2:
+					print("Failed to generate a visualization of the graph. Skipping.")
+					with open("graph_string_error.txt", "w+") as f:
+						f.write(dg[0].to_string())
+					break
 		
 	if args.interactive_graph is not None:
 		print("Generating interactive plot...")
