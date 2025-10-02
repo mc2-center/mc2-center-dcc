@@ -139,12 +139,17 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	
 	# Step 1: Identify all node rows (treat rows with non-empty DependsOn as nodes)
 	node_rows = input_df[input_df["DependsOn"].str.contains("Component")]
+	attributes_with_deps = input_df[~input_df["DependsOn"].str.contains("^[Component]|\s")]
 	node_list = node_rows["Attribute"].to_list()
 	attribute_rows = input_df[~input_df["DependsOn"].str.contains("Component")].set_index("Attribute")
 	attribute_to_node = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in node_rows.iterrows()}
+	attribute_to_attribute = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in attributes_with_deps.iterrows()}
 	
 	
 	attribute_info = [(attribute, node) for node, attribute_list in attribute_to_node.items() for attribute in attribute_list]
+	if attribute_to_attribute:
+		conditional_attributes = [(attribute, nd) for node, attribute in attribute_to_attribute.items() for att, nd in attribute_info if node == att]
+		attribute_info = attribute_info + conditional_attributes
 	out_df["label"] = [entry[0] for entry in attribute_info]
 	out_df["Resolved_Node"] = [entry[1] for entry in attribute_info]
 
@@ -185,11 +190,11 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 	out_df = pd.DataFrame()
 	
 	out_df["term"] = input_df.apply(
-		lambda row: format_uri(base_tag, row["Node"], row["Property"], org_name), axis=1)
+		lambda row: format_uri(row["Node"], row["Property"]), axis=1)
 	out_df["label"] = '"' + input_df["Property"].fillna('') + '"'
 	out_df["description"] = input_df["Description"].fillna("")
 	out_df["node"] = input_df["Node"].apply(
-		lambda x: f"<{base_tag}/{org_name}/{x.strip().lower().replace(' ', '_')}>")
+		lambda x: f"{org_name}:{x.strip().lower().replace(' ', '_')}")
 	out_df["maps_to"] = input_df["CDECode"].fillna("").apply(lambda x: ":".join(["CDE", str(x).split(".")[0]]) if x not in ["", "TBD"] else "")
 	out_df["is_key"] = input_df["Key Property"].apply(lambda x: str(x)).replace(["FALSE", "True"], ["", "true"])
 	out_df["required_by"] = input_df["Required"].apply(lambda x: str(x))
@@ -206,7 +211,7 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "has_enum"] = (''.join(['"[', ', '.join(row["has_enum"]).replace('"', '').replace('[', '').replace(']', ''), ']"'])) if is_enum else ""
 		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "" else "", row["description"]]).replace('"', '') + '"'
 
-	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split(":")[-1]
+	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split(":")[-1][:-2]
 	
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
 	return out_df[final_cols], node_name, node_list
@@ -276,9 +281,14 @@ def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
 		node_attributes = str(model_df.loc[node, "DependsOn"]).split(", ")
 		node_attributes.append(node)
 		node_rows = model_df.loc[node_attributes]
+		for _, row in node_rows.iterrows():
+			if row["Valid Values"]:
+				for value in row["Valid Values"]:
+					if value in model_df.index and model_df[value, "DependsOn"]:
+						node_rows = pd.concat([node_rows, model_df.loc[value]])
 		node_subset_df = pd.concat([node_subset_df, node_rows])
 
-	node_subset_df = node_subset_df.drop_duplicates().reset_index()
+	node_subset_df = node_subset_df.drop_duplicates().reset_index().fillna("nan")
 	
 	return node_subset_df
 
@@ -331,13 +341,13 @@ def main():
 		if ref == "schematic":
 			print(f"Processing model based on schematic CSV specification...")
 			if args.subset is not None:
-				model_df = subset_model(model_df, f"{args.subset}")
-			ttl_df, node_name, node_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, base_tag)
+				model = subset_model(model_df, f"{args.subset}")
+			ttl_df, node_name, node_list = convert_schematic_model_to_ttl_format(model, args.org_name, base_tag)
 		if ref == "crdc":
 			print(f"Processing model based on CRDC TSV specification...")
 			if args.subset is not None:
-				model_df = model_df[model_df["Node"].isin(args.subset.split(", "))]
-			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
+				model = model_df[model_df["Node"].isin(args.subset.split(", "))]
+			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
 	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
