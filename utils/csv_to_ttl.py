@@ -397,8 +397,8 @@ def main():
 		prefix_set = set(prefix_list)
 		node_set = set(node_list)
 		first_lines = [f"@prefix {tag_dict[prefix][0]}: {tag_dict[prefix][1]}"+" .\n" for prefix in prefix_set]
-		org_line = f"@prefix {args.org_name}: syn:{args.org_name} .\n"
-		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_').replace('10x_', '')}: {args.org_name}:{node_type.lower().replace(' ', '_').replace('10x_', '')} .\n" for node_type in node_set])
+		org_line = f"@prefix {args.org_name}: <syn:{args.org_name}/> .\n"
+		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_').replace('10x_', '')}: <{args.org_name}:{node_type.lower().replace(' ', '_').replace('10x_', '')}/> .\n" for node_type in node_set])
 		first_lines_set = "".join(set(first_lines))
 		f.write(first_lines_set)
 		f.write(org_line)
