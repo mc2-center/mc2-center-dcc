@@ -24,9 +24,17 @@ author: orion.banks
 
 import argparse
 import os
+import io
 import pandas as pd
 from pathlib import Path
 from uuid import uuid4
+from IPython.display import display, Image
+from PIL import Image
+import pydot
+import rdflib
+from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
+from rdflib.tools import rdf2dot
+
 
 def get_args():
 	"""Set up command-line interface and get arguments."""
@@ -92,6 +100,7 @@ def main():
 
 	base_tag = args.base_tag
 	base_ref = args.base_ref
+	build_graph = True
 
 	org_tag = args.org_name
 	conform_tag = "conformsTo"
@@ -166,6 +175,21 @@ def main():
 	
 	print(f"Done ✅")
 	print(f"{out_file} was written with {col_position} attributes!")
+
+	g = rdflib.Graph()
+	model_graph = g.parse(out_file, format="turtle")
+	image_path = "/".join([args.output, f"{args.org_name}_{template_name}_{version}.png"])
+
+	if build_graph is not None:
+		dot_stream = io.StringIO()
+		rdf2dot.rdf2dot(model_graph, dot_stream)
+		dot_string = dot_stream.getvalue()
+		dg = pydot.graph_from_dot_data(dot_string)
+		dg[0].write_png(image_path)
+		image = Image.open(image_path)
+		image.show()
+		print(f"Success! Graph visualization is available at {image_path}")
+		
 
 if __name__ == "__main__":
     main()
