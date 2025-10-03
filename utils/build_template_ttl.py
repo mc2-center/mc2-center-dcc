@@ -4,37 +4,38 @@ build_template_ttl.py
 Converts a metadata template CSV info to a ttl file defining the template.
 ttl file can be used as input for the arachne agent and would be available as a target.
 
-usage: build_template_ttl.py [-h] [-t TEMPLATE] [-o OUTPUT] [-g ORG_NAME] [-p TAG_PREFIX] [-v VERSION]
+usage: build_template_ttl.py [-h] [-t TEMPLATE] [-o OUTPUT] [-g ORG_NAME] [-b BASE_TAG] [-r BASE_REF] [-v VERSION] [-bg]
 
 options:
   -h, --help            show this help message and exit
   -t TEMPLATE, --template TEMPLATE
-                        Path to metadata template CSV
+                        Path to metadata template in tabular format (Default: None)
   -o OUTPUT, --output OUTPUT
-                        Path to folder where graph should be stored
+                        Path to folder where graph should be stored (Default: current directory)
   -g ORG_NAME, --org_name ORG_NAME
-                        Abbreviation for org, used in RDF prefixes
-  -p TAG_PREFIX, --tag_prefix TAG_PREFIX
-                        The tag that will be used as a prefix in RDF
+                        Abbreviation for org, used in RDF prefixes (Default: 'new_org)
+  -b BASE_TAG, --base_tag BASE_TAG
+                        The tag that will be used as a prefix in RDF (Default: 'http://syn.org')
+  -r BASE_REF, --base_ref BASE_REF
+                        The prefix that will be used to represent the base_tag (Default: 'syn')
   -v VERSION, --version VERSION
                         Version applied to output ttl filename (Default: 1.0.0)
+  -bg, --build_graph    Boolean. Pass this flag to generate a PNG of the input model (Default: None)
 
 author: orion.banks
 """
 
 import argparse
-import os
 import io
+import os
 import pandas as pd
-from pathlib import Path
-from uuid import uuid4
-from IPython.display import display, Image
-from PIL import Image
 import pydot
 import rdflib
-from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
-from rdflib.tools import rdf2dot
 
+from pathlib import Path
+from PIL import Image
+from rdflib.tools import rdf2dot
+from uuid import uuid4
 
 def get_args():
 	"""Set up command-line interface and get arguments."""
@@ -43,14 +44,14 @@ def get_args():
         "-t",
 		"--template",
         type=str,
-        help="Path to metadata template CSV",
+        help="Path to metadata template in tabular format (Default: None)",
         required=False
     )
 	parser.add_argument(
         "-o",
 		"--output",
         type=str,
-        help="Path to folder where graph should be stored",
+        help="Path to folder where graph should be stored (Default: current directory)",
         required=False,
 		default=os.getcwd()
     )
@@ -58,7 +59,7 @@ def get_args():
         "-g",
 		"--org_name",
         type=str,
-        help="Abbreviation for org, used in RDF prefixes",
+        help="Abbreviation for org, used in RDF prefixes (Default: 'new_org)",
         required=False,
 		default="new_org"
     )
@@ -66,7 +67,7 @@ def get_args():
         "-b",
 		"--base_tag",
         type=str,
-        help="The tag that will be used as a prefix in RDF",
+        help="The tag that will be used as a prefix in RDF (Default: 'http://syn.org')",
         required=False,
 		default="http://syn.org"
     )
@@ -74,7 +75,7 @@ def get_args():
         "-r",
 		"--base_ref",
         type=str,
-        help="The prefix that will be used to represent the base_tag",
+        help="The prefix that will be used to represent the base_tag (Default: 'syn')",
         required=False,
 		default="syn"
     )
@@ -85,6 +86,14 @@ def get_args():
         help="Version applied to output ttl filename (Default: 1.0.0)",
         required=False,
 		default="1.0.0"
+    )
+	parser.add_argument(
+        "-bg",
+		"--build_graph",
+        help="Boolean. Pass this flag to generate a PNG of the input model (Default: None)",
+		action="store_true",
+        required=False,
+		default=None
     )
 	return parser.parse_args()
 
@@ -100,7 +109,7 @@ def main():
 
 	base_tag = args.base_tag
 	base_ref = args.base_ref
-	build_graph = True
+	build_graph = args.build_graph
 
 	org_tag = args.org_name
 	conform_tag = "conformsTo"
@@ -176,11 +185,10 @@ def main():
 	print(f"Done ✅")
 	print(f"{out_file} was written with {col_position} attributes!")
 
-	g = rdflib.Graph()
-	model_graph = g.parse(out_file, format="turtle")
-	image_path = "/".join([args.output, f"{args.org_name}_{template_name}_{version}.png"])
-
 	if build_graph is not None:
+		g = rdflib.Graph()
+		model_graph = g.parse(out_file, format="turtle")
+		image_path = "/".join([args.output, f"{args.org_name}_{template_name}_{version}.png"])
 		dot_stream = io.StringIO()
 		rdf2dot.rdf2dot(model_graph, dot_stream)
 		dot_string = dot_stream.getvalue()
