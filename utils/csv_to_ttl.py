@@ -182,7 +182,7 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	out_df["description"] = '"' + out_df["description"].fillna('').apply(lambda x: x.replace('"', '')) + '"'
 	out_df["maps_to"] = out_df["maps_to"].fillna("")
 
-	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split(":")[-1][:-2]
+	node_name = "_".join(subset.split(", ")) if subset is not None else "all"
 	
 	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
