@@ -4,6 +4,8 @@ csv_to_ttl.py
 Converts a schematic data model CSV or CRDC data model TSV to RDF triples
 Serialized triples to a ttl file
 ttl file can be used as a graph input for the arachne agent.
+For schematic-based models, conditional dependencies are extracted and added to the data model graph.
+Optionally generates a data model diagram and an interactive model viewer (WIP)
 
 usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-r {schematic,crdc}] [-b BASE_TAG] [-v VERSION]
 
@@ -28,6 +30,8 @@ options:
   						Boolean. Pass this flag to generate a PNG of the input model (Default: None)
   -ig, --interactive_graph
                         Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)
+  -s SUBSET, --subset SUBSET
+                        The name of one or more data types to extract from the model. Provide multiple as a quoted comma-separated list, e.g., 'Study, Biospecimen' (Default: None)
 
 author: orion.banks
 """
@@ -126,7 +130,7 @@ def get_args():
         "-s",
 		"--subset",
         type=str,
-        help="(For schematic models only) The name of one or more data model components to extract from model (Default: None)",
+        help="The name of one or more data types to extract from the model. Provide multiple as a quoted comma-separated list, e.g., 'Study, Biospecimen' (Default: None)",
         required=False,
 		default=None
     )
@@ -292,7 +296,7 @@ def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
 		subset_df.at[node, "DependsOn"] = ", ".join(subset_df.index.drop(node).tolist())
 		out_df_list.append(subset_df)
 
-	node_subset_df = pd.concat(out_df_list).drop_duplicates().reset_index(names="Attribute").fillna("nan")
+	node_subset_df = pd.concat(out_df_list).reset_index(names="Attribute").drop_duplicates().fillna("nan")
 	
 	return node_subset_df
 
