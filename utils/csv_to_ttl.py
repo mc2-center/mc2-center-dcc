@@ -2,12 +2,11 @@
 csv_to_ttl.py
 
 Converts a schematic data model CSV or CRDC data model TSV to RDF triples
-Serialized triples to a ttl file
-ttl file can be used as a graph input for the arachne agent.
+Serializes triples to a ttl file - ttl file can be used as a graph input for the arachne agent.
 For schematic-based models, conditional dependencies are extracted and added to the data model graph.
 Optionally generates a data model diagram and an interactive model viewer (WIP)
 
-usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-r {schematic,crdc}] [-b BASE_TAG] [-v VERSION]
+usage: csv_to_ttl.py [-h] [-m MODEL] [-p MAPPING] [-o OUTPUT] [-g ORG_NAME] [-r {schematic,crdc}] [-b BASE_TAG] [-f BASE_REF] [-v VERSION] [-s SUBSET] [-bg] [-ig]
 
 options:
   -h, --help            show this help message and exit
@@ -20,18 +19,20 @@ options:
   -g ORG_NAME, --org_name ORG_NAME
                         Abbreviation used in the data model name and RDF tags. (Default: 'new_org')
   -r {schematic,crdc}, --reference_type {schematic,crdc}
-                        The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be automatically determined based on
-                        the provided org name (Default: None)
+                        The type of data model reference used as a basis for the input. One of 'schematic' or 'crdc'. If no input is given, the reference type will be
+                        automatically determined based on the provided org name (Default: None)
   -b BASE_TAG, --base_tag BASE_TAG
                         url applied to the beginning of internal tags (Default: 'http://syn.org')
+  -f BASE_REF, --base_ref BASE_REF
+                        Reference tag used to represent base_tag in ttl header (Default: 'syn')
   -v VERSION, --version VERSION
                         Version applied to output ttl filename (Default: None)
-  -bg, --build_graph
-  						Boolean. Pass this flag to generate a PNG of the input model (Default: None)
+  -s SUBSET, --subset SUBSET
+                        The name of one or more data types to extract from the model. Provide multiple as a quoted comma-separated list, e.g., 'Study, Biospecimen' (Default:
+                        None)
+  -bg, --build_graph    Boolean. Pass this flag to generate a PNG of the input model (Default: None)
   -ig, --interactive_graph
                         Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)
-  -s SUBSET, --subset SUBSET
-                        The name of one or more data types to extract from the model. Provide multiple as a quoted comma-separated list, e.g., 'Study, Biospecimen' (Default: None)
 
 author: orion.banks
 """
@@ -103,10 +104,26 @@ def get_args():
 		default="http://syn.org"
     )
 	parser.add_argument(
+        "-f",
+		"--base_ref",
+        type=str,
+        help="Reference tag used to represent base_tag in ttl header (Default: 'syn')",
+        required=False,
+		default="syn"
+    )
+	parser.add_argument(
         "-v",
 		"--version",
         type=str,
         help="Version applied to output ttl filename (Default: None)",
+        required=False,
+		default=None
+    )
+	parser.add_argument(
+        "-s",
+		"--subset",
+        type=str,
+        help="The name of one or more data types to extract from the model. Provide multiple as a quoted comma-separated list, e.g., 'Study, Biospecimen' (Default: None)",
         required=False,
 		default=None
     )
@@ -123,14 +140,6 @@ def get_args():
 		"--interactive_graph",
         help="Boolean. Pass this flag to generate an interactive visualization of the input model (Default: None)",
 		action="store_true",
-        required=False,
-		default=None
-    )
-	parser.add_argument(
-        "-s",
-		"--subset",
-        type=str,
-        help="The name of one or more data types to extract from the model. Provide multiple as a quoted comma-separated list, e.g., 'Study, Biospecimen' (Default: None)",
         required=False,
 		default=None
     )
@@ -189,7 +198,7 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	return out_df[final_cols], node_name, node_list
 
 
-def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> tuple[pd.DataFrame, str, list[str]]:
+def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subset: str) -> tuple[pd.DataFrame, str, list[str]]:
 	"""Convert CRDC model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
@@ -215,7 +224,7 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base
 		out_df.at[_, "has_enum"] = (''.join(['"[', ', '.join(row["has_enum"]).replace('"', '').replace('[', '').replace(']', ''), ']"'])) if is_enum else ""
 		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "" else "", row["description"]]).replace('"', '') + '"'
 
-	node_name = "all" if len(out_df["node"].unique()) > 1 else str(out_df["node"].unique()).split(":")[-1][:-2]
+	node_name = "_".join(subset.split(", ")) if subset is not None else "all"
 	
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
 	return out_df[final_cols], node_name, node_list
@@ -306,6 +315,7 @@ def main():
 	args = get_args()
 
 	base_tag = args.base_tag
+	base_ref = args.base_ref
 
 	label = "label"
 	desc = "description"
@@ -318,16 +328,16 @@ def main():
 	cde = "CDE"
 
 	
-	tag_dict = {
+	tag_dict = {  # Can replace tuples with alternative tag definitions
 		label : ("rdfs", "<http://www.w3.org/2000/01/rdf-schema#>"),
 		desc : ("purl", "<http://purl.org/dc/terms/>"),
-		node : ("syn", f"<{base_tag}/>"),
-		type : ("syn", f"<{base_tag}/>"),
-		reqby : ("syn", f"<{base_tag}/>"),
-		key : ("syn", f"<{base_tag}/>"),
-		enum : ("syn", f"<{base_tag}/>"),
+		node : (base_ref, f"<{base_tag}/>"),
+		type : (base_ref, f"<{base_tag}/>"),
+		reqby : (base_ref, f"<{base_tag}/>"),
+		key : (base_ref, f"<{base_tag}/>"),
+		enum : (base_ref, f"<{base_tag}/>"),
 		duo : ("obo", "<http://purl.obolibrary.org/obo/>"),
-		cde : ("syn", f"<{base_tag}/>"),
+		cde : (base_ref, f"<{base_tag}/>"),
 		}
 	
 	if args.mapping:
@@ -355,7 +365,7 @@ def main():
 			print(f"Processing model based on CRDC TSV specification...")
 			if args.subset is not None:
 				model_df = model_df[model_df["Node"].isin(args.subset.split(", "))]
-			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
+			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name, args.subset)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
 	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
@@ -435,7 +445,7 @@ def main():
 		image = None
 		while image is None:
 			if retry > 0:
-				value_tag = rdflib.URIRef("http://syn.org/acceptableValues")
+				value_tag = rdflib.URIRef(f"{base_tag}/acceptableValues")
 				model_graph = model_graph.remove((None, value_tag, None))
 			dot_stream = io.StringIO()
 			rdf2dot.rdf2dot(model_graph, dot_stream)
