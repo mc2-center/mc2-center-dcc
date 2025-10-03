@@ -133,23 +133,23 @@ def get_args():
 	return parser.parse_args()
 
 
-def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, base_tag: str) -> tuple[pd.DataFrame, str, list[str]]:
+def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subset: None|str) -> tuple[pd.DataFrame, str, list[str]]:
 	"""Convert schematic model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
 	# Step 1: Identify all node rows (treat rows with non-empty DependsOn as nodes)
+	if subset is None:
+		node_rows = input_df[input_df["DependsOn"].str.contains("Component")]
+		node_list = node_rows["Attribute"].to_list()
+		input_df = subset_model(input_df, node_list)
+	
 	node_rows = input_df[input_df["DependsOn"].str.contains("Component")]
-	attributes_with_deps = input_df[~input_df["DependsOn"].str.contains("^[Component]|\s")]
 	node_list = node_rows["Attribute"].to_list()
+	
 	attribute_rows = input_df[~input_df["DependsOn"].str.contains("Component")].set_index("Attribute")
 	attribute_to_node = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in node_rows.iterrows()}
-	attribute_to_attribute = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in attributes_with_deps.iterrows()}
+	attribute_info = set([(attribute, node) for node, attribute_list in attribute_to_node.items() for attribute in attribute_list])
 	
-	
-	attribute_info = [(attribute, node) for node, attribute_list in attribute_to_node.items() for attribute in attribute_list]
-	if attribute_to_attribute:
-		conditional_attributes = [(attribute, nd) for node, attribute in attribute_to_attribute.items() for att, nd in attribute_info if node == att]
-		attribute_info = attribute_info + conditional_attributes
 	out_df["label"] = [entry[0] for entry in attribute_info]
 	out_df["Resolved_Node"] = [entry[1] for entry in attribute_info]
 
@@ -271,24 +271,28 @@ def convert_gc_column_type(type:str, is_enum:bool) -> str:
 
 def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
 
-	node_subset_df = pd.DataFrame()
-	
-	nodes = nodes.split(", ")
+	nodes = nodes.split(", ") if type(nodes)==str else nodes
 	
 	model_df = model_df.set_index("Attribute")
 
-	for node in nodes:
-		node_attributes = str(model_df.loc[node, "DependsOn"]).split(", ")
-		node_attributes.append(node)
-		node_rows = model_df.loc[node_attributes]
-		for _, row in node_rows.iterrows():
-			if row["Valid Values"]:
-				for value in row["Valid Values"]:
-					if value in model_df.index and model_df[value, "DependsOn"]:
-						node_rows = pd.concat([node_rows, model_df.loc[value]])
-		node_subset_df = pd.concat([node_subset_df, node_rows])
+	out_df_list = []
 
-	node_subset_df = node_subset_df.drop_duplicates().reset_index().fillna("nan")
+	for node in nodes:
+		subset_df = pd.DataFrame()
+		node_attributes = model_df.loc[node, "DependsOn"].split(", ")
+		attribute_deps = model_df.loc[model_df["DependsOn"] != ""]
+		attribute_deps = attribute_deps.loc[~attribute_deps["DependsOn"].str.contains("Component", regex=False)]
+		attribute_attributes = attribute_deps["DependsOn"].tolist()
+		node_attributes.append(node)
+		
+		node_rows = model_df.loc[node_attributes]
+		attribute_dep_rows = model_df.loc[attribute_attributes]
+		
+		subset_df = pd.concat([subset_df, node_rows, attribute_dep_rows])
+		subset_df.at[node, "DependsOn"] = ", ".join(subset_df.index.drop(node).tolist())
+		out_df_list.append(subset_df)
+
+	node_subset_df = pd.concat(out_df_list).drop_duplicates().reset_index(names="Attribute").fillna("nan")
 	
 	return node_subset_df
 
@@ -341,13 +345,13 @@ def main():
 		if ref == "schematic":
 			print(f"Processing model based on schematic CSV specification...")
 			if args.subset is not None:
-				model = subset_model(model_df, f"{args.subset}")
-			ttl_df, node_name, node_list = convert_schematic_model_to_ttl_format(model, args.org_name, base_tag)
+				model_df = subset_model(model_df, f"{args.subset}")
+			ttl_df, node_name, node_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, args.subset)
 		if ref == "crdc":
 			print(f"Processing model based on CRDC TSV specification...")
 			if args.subset is not None:
-				model = model_df[model_df["Node"].isin(args.subset.split(", "))]
-			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model, args.org_name, base_tag)
+				model_df = model_df[model_df["Node"].isin(args.subset.split(", "))]
+			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name, base_tag)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 
 	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
