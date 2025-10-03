@@ -146,7 +146,7 @@ def get_args():
 	return parser.parse_args()
 
 
-def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subset: None|str) -> tuple[pd.DataFrame, str, list[str]]:
+def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subset: None|str) -> tuple[pd.DataFrame, list[str]]:
 	"""Convert schematic model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
@@ -190,15 +190,13 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	out_df["label"] = '"' + out_df["label"].fillna('') + '"'
 	out_df["description"] = '"' + out_df["description"].fillna('').apply(lambda x: x.replace('"', '')) + '"'
 	out_df["maps_to"] = out_df["maps_to"].fillna("")
-
-	node_name = "_".join(subset.split(", ")) if subset is not None else "all"
 	
 	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
-	return out_df[final_cols], node_name, node_list
+	return out_df[final_cols], node_list
 
 
-def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subset: str) -> tuple[pd.DataFrame, str, list[str]]:
+def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str) -> tuple[pd.DataFrame, list[str]]:
 	"""Convert CRDC model DataFrame to TTL format."""
 	out_df = pd.DataFrame()
 	
@@ -224,10 +222,8 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subs
 		out_df.at[_, "has_enum"] = (''.join(['"[', ', '.join(row["has_enum"]).replace('"', '').replace('[', '').replace(']', ''), ']"'])) if is_enum else ""
 		out_df.at[_, "description"] = '"' + ''.join([f'{str(row["cde_name"])}: ' if str(row["cde_name"]) != "" else "", row["description"]]).replace('"', '') + '"'
 
-	node_name = "_".join(subset.split(", ")) if subset is not None else "all"
-	
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
-	return out_df[final_cols], node_name, node_list
+	return out_df[final_cols], node_list
 
 
 def format_uri(node:str, attribute:str) -> str:
@@ -282,6 +278,7 @@ def convert_gc_column_type(type:str, is_enum:bool) -> str:
 	
 	return out_type
 
+
 def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
 
 	nodes = nodes.split(", ") if type(nodes)==str else nodes
@@ -327,7 +324,6 @@ def main():
 	duo = "DUO_"
 	cde = "CDE"
 
-	
 	tag_dict = {  # Can replace tuples with alternative tag definitions
 		label : ("rdfs", "<http://www.w3.org/2000/01/rdf-schema#>"),
 		desc : ("purl", "<http://purl.org/dc/terms/>"),
@@ -360,14 +356,15 @@ def main():
 			print(f"Processing model based on schematic CSV specification...")
 			if args.subset is not None:
 				model_df = subset_model(model_df, f"{args.subset}")
-			ttl_df, node_name, node_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, args.subset)
+			ttl_df, node_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, args.subset)
 		if ref == "crdc":
 			print(f"Processing model based on CRDC TSV specification...")
 			if args.subset is not None:
 				model_df = model_df[model_df["Node"].isin(args.subset.split(", "))]
-			ttl_df, node_name, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name, args.subset)
+			ttl_df, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name)
 		print(f"RDF triples will be built from the generated precursor dataframe!")
-
+	
+	node_name = "_".join(args.subset.split(", ")) if args.subset is not None else "all"
 	out_file = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.ttl"])
 
 	prefix_list = []
