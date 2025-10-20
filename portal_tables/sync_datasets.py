@@ -6,10 +6,13 @@ portal table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import re
+import synapseclient
 import utils
 
+from synapseclient.models import Dataset
+
 def add_missing_info(
-    datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
+    syn: synapseclient.Synapse, datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
     datasets["link"] = [
@@ -20,6 +23,7 @@ def add_missing_info(
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
+    datasets["version"] = ""
     for _, row in datasets.iterrows():
         grant_names = []
         themes = set()
@@ -36,6 +40,15 @@ def add_missing_info(
         datasets.at[_, "grantName"] = grant_names
         datasets.at[_, "themes"] = list(themes)
         datasets.at[_, "consortia"] = list(consortia)
+        
+        try:
+            dataset = Dataset(id=row["DatasetAlias"]).get() if re.match(r'syn\d{,9}', row["DatasetAlias"]) is not None else None
+        except synapseclient.core.exceptions.SynapseUnmetAccessRestrictions as e:
+            print(f"Encountered error: {e}")
+            pass
+        version = dataset.version_number if dataset is not None and dataset.version_number is not None else 1
+        datasets.at[_, "version"] = version
+        
         pub_titles = []
         pub_doi = []
         for p in row["PublicationViewKey"].split(","):
@@ -114,7 +127,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "pub",
         "link",
         "DatasetDoi",
-        "iconTags"
+        "iconTags",
+        "version"
     ]
     return df[col_order]
 
@@ -142,7 +156,7 @@ def main():
         "SELECT doi, pubMedId, publicationTitle FROM syn21868591"
     ).asDataFrame()
 
-    database = add_missing_info(manifest, grants, pubs)
+    database = add_missing_info(syn, manifest, grants, pubs)
     final_database = clean_table(database)
     if args.verbose:
         print("\n🔍 Dataset(s) to be synced:\n" + "=" * 72)
