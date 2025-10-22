@@ -175,17 +175,21 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	out_df["term"] = out_df.apply(lambda row: format_uri(row["Resolved_Node"], row["label"]), axis=1)
 	
 	# Step 4: Info extraction and TTL-compatible column formatting
+	key_tuples = []
 	for _, row in out_df.iterrows():
 		out_df.at[_, "description"] = attribute_rows.loc[row["label"], "Description"]
-		out_df.at[_, "maps_to"] = get_reference_id(str(attribute_rows.loc[row["label"], "Properties"]))
+		mappings = get_reference_id(str(attribute_rows.loc[row["label"], "Properties"]))
+		out_df.at[_, "maps_to"] = mappings[0]
 		out_df.at[_, "node"] = row["Resolved_Node_URI"]
-		out_df.at[_, "is_key"] = "true" if str(attribute_rows.loc[row["label"], "Validation Rules"]).strip().lower() == "unique" else ""
+		out_df.at[_, "is_key"] = "true" if "primary_key" in mappings[1] else ""
 		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
 		out_df.at[_, "has_enum"] = '"[' + ", ".join(str(attribute_rows.loc[row["label"], "Valid Values"]).split(", ")) + ']"' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
 		col_type = attribute_rows.loc[row["label"], "columnType"]
 		validation = attribute_rows.loc[row["label"], "Validation Rules"]
 		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "" else False
 		out_df.at[_, "type"] = '"' + convert_schematic_column_type(col_type, validation, is_enum) + '"'
+		for e in mappings[1]:
+			key_tuples.append((e, row["Resolved_Node_URI"], row["term"]))
 	
 	out_df["label"] = '"' + out_df["label"].fillna('') + '"'
 	out_df["description"] = '"' + out_df["description"].fillna('').apply(lambda x: x.replace('"', '')) + '"'
@@ -193,7 +197,7 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	
 	# Final output
 	final_cols = ["term", "label", "description", "node", "type", "required_by", "maps_to", "is_key", "has_enum"]
-	return out_df[final_cols], node_list
+	return out_df[final_cols], node_list, [key_tuple for key_tuple in key_tuples if key_tuple is not None]
 
 
 def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str) -> tuple[pd.DataFrame, list[str]]:
@@ -250,15 +254,17 @@ def convert_schematic_column_type(type:str, validation: str, is_enum:bool) -> st
 	return out_type
 
 
-def get_reference_id(entry: str) -> list[tuple[str, str]]:
+def get_reference_id(entry: str) -> tuple[str, list[str]]:
 	"""Extract CDE ID from Properties entry."""
-	entry = entry.split(", ") if len(entry.split(", ")) > 1 else entry
-	
-	if type(entry) == list:
-		return ", ".join([f"{ref.split(':')[0]}:{ref.split(':')[1]}" for ref in entry])
-	else:
-		return f"{entry.split(':')[0]}:{entry.split(':')[1]}" if len(entry.split(":")) > 1 else ""
+	entry = entry.split(", ") if len(entry.split(", ")) > 1 else [entry]
 
+	refs = [e for e in entry if len(e.split(":")) > 1]
+	keys = [e for e in entry if len(e.split("_")) > 1]
+	
+	ref_out = ", ".join([f"{ref.split(':')[0]}:{ref.split(':')[1]}" for ref in refs])
+	key_out = keys
+
+	return (ref_out, key_out)
 
 def convert_gc_column_type(type:str, is_enum:bool) -> str: 
 	"""Convert GC column type to TTL-compatible format."""
@@ -356,12 +362,13 @@ def main():
 			print(f"Processing model based on schematic CSV specification...")
 			if args.subset is not None:
 				model_df = subset_model(model_df, f"{args.subset}")
-			ttl_df, node_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, args.subset)
+			ttl_df, node_list, key_tuple_list = convert_schematic_model_to_ttl_format(model_df, args.org_name, args.subset)
 		if ref == "crdc":
 			print(f"Processing model based on CRDC TSV specification...")
 			if args.subset is not None:
 				model_df = model_df[model_df["Node"].isin(args.subset.split(", "))]
 			ttl_df, node_list = convert_crdc_model_to_ttl_format(model_df, args.org_name)
+			key_tuple_list = None
 		print(f"RDF triples will be built from the generated precursor dataframe!")
 	
 	node_name = "_".join(args.subset.split(", ")) if args.subset is not None else "all"
@@ -429,6 +436,12 @@ def main():
 		f.write(org_line)
 		f.write(node_lines)
 		f.write(current_lines)
+		f.write("\n")
+		if key_tuple_list is not None:
+			for primary, schema, foreign in key_tuple_list:
+				if "id" in primary.split("_"):
+					line = f"{':'.join([str(primary).split('_')[0].lower(), str(primary).lower()])} {str(schema).lower()} {str(foreign).lower()} .\n"
+					f.write(line)
 	
 	print(f"Done ✅")
 	print(f"{out_file} was written with {len(ttl_df)} triples!")
@@ -449,7 +462,7 @@ def main():
 			dot_string = dot_stream.getvalue()
 			graph = pydotplus.graph_from_dot_data(dot_string)
 			try:
-				graph.write_png(image_path, prog="sfdp")
+				graph.write_png(image_path, prog="dot")
 				image = Image.open(image_path)
 				image.show()
 				print(f"Success! Graph visualization is available at {image_path}")
