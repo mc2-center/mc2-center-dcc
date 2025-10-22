@@ -46,7 +46,7 @@ import os
 import pandas as pd
 from pathlib import Path
 from PIL import Image
-import pydot
+import pydotplus
 import rdflib
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
 from rdflib.tools import rdf2dot
@@ -438,7 +438,7 @@ def main():
 	image_path = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.png"])
 
 	if args.build_graph is not None:
-		retry = 0
+		retry = 1
 		image = None
 		while image is None:
 			if retry > 0:
@@ -447,9 +447,9 @@ def main():
 			dot_stream = io.StringIO()
 			rdf2dot.rdf2dot(model_graph, dot_stream)
 			dot_string = dot_stream.getvalue()
-			dg = pydot.graph_from_dot_data(dot_string)
+			graph = pydotplus.graph_from_dot_data(dot_string)
 			try:
-				dg[0].write_png(image_path)
+				graph.write_png(image_path, prog="sfdp")
 				image = Image.open(image_path)
 				image.show()
 				print(f"Success! Graph visualization is available at {image_path}")
@@ -460,7 +460,7 @@ def main():
 				if retry == 2:
 					print("Failed to generate a visualization of the graph. Skipping.")
 					with open("graph_string_error.txt", "w+") as f:
-						f.write(dg[0].to_string())
+						f.write(graph.to_string())
 					break
 		
 	if args.interactive_graph is not None:
