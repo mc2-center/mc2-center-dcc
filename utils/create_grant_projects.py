@@ -112,16 +112,21 @@ def create_wiki_pages(syn, project_id, grant):
 
 
 def create_folders(syn, project_id):
-    """Create top-levels expected by the DCA.
+    """Create top-levels expected for resource and metadata management.
 
     Folders:
-        - projects
-        - publications
+        - biospecimens
         - datasets
-        - tools
         - education
+        - governance
+        - individuals
+        - models
+        - publications
+        - sharing_plans
+        - studies
+        - tools
     """
-    for name in ["projects", "publications", "datasets", "tools", "education"]:
+    for name in ["biospecimens", "datasets", "education", "governance", "individuals", "models", "publications", "sharing_plans", "studies", "tools"]:
         syn.store(Folder(name, parent=project_id))
 
 
