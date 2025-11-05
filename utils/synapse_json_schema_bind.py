@@ -1,14 +1,10 @@
 """synapse_json_schema_bind.py
 
-This script will create and bind a JSON schema to an entity
-
-Usage: python synapse_json_schema_bind.py -t [Entity Synapse Id] -l [JSON Schema URL] -p [JSON Schema File Path] -n [Organization Name] -ar --no_bind
--t Synapse Id of an entity to which a schema will be bound.
--l URL for the JSON schema to be bound to the requested entity.
--p File path for the JSON schema to be bound to the requested entity.
--n Name of the organization with which the JSON schema should be associated. Default: 'Example Organization'.
--ar Indicates if the schema includes Access Requirement information.
---no_bind Indicates the schema should not be bound to the entity. 
+This script registers and binds a JSON schema to a Synapse entity using the Synapse client.
+It can access the JSON schema from a provided URL or file path, register it under a specified
+organization, and bind it to a target Synapse entity.
+Usage:
+python synapse_json_schema_bind.py [options]
 
 author: orion.banks
 """
@@ -69,8 +65,14 @@ def get_args():
 
 
 def get_schema_organization(service, org_name: str) -> tuple:
-    """Create or access the named Synapse organization,
-    return a tuple of schema service object, organization object, and organization name"""
+    """
+    Access or create a JSON schema organization in Synapse.
+    Args:
+        service: Synapse JSON schema service.
+        org_name (str): Name of the organization.
+    Returns:
+        tuple: (service, schema organization object, organization name)
+    """
     
     print(f"Creating organization: {org_name}")
 
@@ -85,10 +87,20 @@ def get_schema_organization(service, org_name: str) -> tuple:
 
 
 def register_json_schema(org, schema_type: str, schema_json: json, version: str, schema_org_name: str) -> str:
-    """Register or access a previously registered JSON schema and return the uri.
-    If the schema was previously registered, the constructed uri will be returned.
-    uri format: [schema_org_name]-[schema_type]-[num_version]
-    Example uri: ExampleOrganization-CA987654AccessRequirement-2.0.0
+    """
+    Register a JSON schema in Synapse under the specified organization.
+    Args:
+        org: Synapse JSON schema organization object.
+        schema_type (str): Type of the schema (e.g., AccessRequirement, DatasetView).
+        schema_json (json): JSON schema to register.
+        version (str): Version of the schema (e.g., v1.0.0).
+        schema_org_name (str): Name of the organization.
+    Returns:
+        str: Registered schema
+    Notes:
+        Expected uri format: [schema_org_name]-[schema_type]-[num_version]
+    
+        Example uri: ExampleOrganization-CA987654AccessRequirement-2.0.0
     """
     
     num_version = version.split("v")[1]
@@ -109,9 +121,22 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
 
 
 def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, component_type: str, includes_ar: bool):
-    """Associate a registered JSON schema with a Synapse entity.
-    For JSON schemas associated with DUO-based access restrictions, use the REST API and enable derived annotations,
-    For non-AR schemas, use the python client bind_json_schema function"""
+    """
+    Bind a registered JSON schema to a Synapse entity.
+    Args:
+        syn: Synapse client object.
+        service: Synapse JSON schema service.
+        schema_uri (str): URI of the registered JSON schema.
+        entity_id (str): Synapse entity ID to bind the schema to.
+        component_type (str): Type of the schema component.
+        includes_ar (bool): Flag indicating if the schema includes Access Requirement information.
+    Returns:
+        None
+    Note:
+        Access Requirement schemas require a different binding method than other schema types.
+        This includes any schema that has Access Requirement information, even if it is not an Access Requirement schema.
+        Derived annotations must be enabled, to ensure accessRequirementIds can be applied based on annotations.
+    """
 
     if component_type == "AccessRequirement" or includes_ar is not None:
         print(f"\nBinding AR schema {schema_uri}")
@@ -129,12 +154,17 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
         service.bind_json_schema(schema_uri, entity_id)
    
 def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
-    """Access a JSON schema via a provided path or URL.
-    Return request JSON and parsed schema name elements.
-
-    Note that the filename must match expected conventions:
-    Non-AR schema example: mc2.DatasetView-v1.0.0-schema.json
-    AR schema example: MC2.AccessRequirement-CA000001-v3.0.2-schema.json
+    """
+    Access JSON schema from a URL or file path.
+    Args:
+        url (str): URL of the JSON schema.
+        path (str): File path of the JSON schema.
+    Returns:
+        tuple: (schema JSON, component adjusted name, base component name, version)
+    Notes:
+        Filename must match expected conventions:
+        Non-AR schema example: mc2.DatasetView-v1.0.0-schema.json
+        AR schema example: MC2.AccessRequirement-CA000001-v3.0.2-schema.json
     """
 
     if url or path is not None:
@@ -163,7 +193,20 @@ def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
 
 
 def get_register_bind_schema(syn, target: str, schema_org_name: str, org, service, path, url, includes_ar: bool, no_bind: bool):
-    """Access JSON from URL, register the JSON schema, and bind the schema to the target entity."""
+    """
+    Get, register, and bind a JSON schema to a Synapse entity.
+    Args:
+        syn: Synapse client object.
+        target (str): Synapse entity ID to bind the schema to.
+        schema_org_name (str): Name of the organization.
+        org: Synapse JSON schema organization object.
+        service: Synapse JSON schema service.
+        path (str): File path of the JSON schema.
+        url (str): URL of the JSON schema.
+        includes_ar (bool): Flag indicating if the schema includes Access Requirement information.
+        no_bind (bool): Flag indicating if the schema should not be bound to the entity.
+    Returns:
+        None"""
 
     schema_json, component_adjusted, base_component, version = get_schema_from_url(url, path)
     print(f"\nRegistering JSON schema {component_adjusted} {version}\n")
