@@ -1,11 +1,27 @@
+"""
+generate_duo_schema.py
+This script generates a JSON schema defining access requirements based on a CSV file containing annotation-based access restrictions.
+
+Usage:
+python generate_duo_schema.py [CSV file path] [Output JSON schema file path] [Optional parameters]
+
+author: orion.banks
+"""
+
 import pandas as pd
 import json
 import argparse
 from collections import OrderedDict
 
-def build_condition(row, col_names, multi_condition):
+def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> dict:
     """
-    Builds a JSON Schema if-then rule based on a row from the data dictionary.
+    Builds a conditional schema segment based on a row from the CSV file.
+    Args:
+        row (pd.Series): A row from the DataFrame representing access restrictions.
+        col_names (list): List of additional column names to consider for conditions.
+        multi_condition (bool): Flag indicating if multiple conditions should be included.
+    Returns:
+        dict: A dictionary representing the conditional schema segment.
     """
     condition = {
         "if": {
@@ -56,7 +72,25 @@ def build_condition(row, col_names, multi_condition):
 
 def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col, data_type, data_col, species_type, species_col, access_requirement):
     """
-    Generates a JSON Schema from a CSV file containing annotation-based access restrictions.
+    Generates a JSON schema defining access requirements based on a CSV file.
+    Args:
+        csv_path (str): Path to the input CSV file.
+        output_path (str): Path to the output JSON schema file.
+        title (str): Title of the JSON schema.
+        version (str): Version of the JSON schema.
+        org_id (str): Organization ID for the $id field.
+        grant_id (str): Grant number to filter conditions.
+        multi_condition (bool): Flag to generate schema with multiple conditions.
+        study_id (str): Study ID to filter conditions.
+        grant_col (str): Column name for grant identifier.
+        study_col (str): Column name for study identifier.
+        data_type (str): Data type to filter conditions.
+        data_col (str): Column name for data type identifier.
+        species_type (str): Species type to filter conditions.
+        species_col (str): Column name for species type identifier.
+        access_requirement (str): Access requirement ID to filter conditions.
+    Returns:
+        None
     """
     df = pd.read_csv(csv_path, header=0, dtype=str)
 
