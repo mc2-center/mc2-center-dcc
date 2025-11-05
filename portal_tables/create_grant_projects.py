@@ -174,7 +174,7 @@ def create_grant_projects(syn, grants):
     return grant_info_dict
 
 
-def create_grant_projects(new = None, current = None, dryrun = None):
+def process_new_grants(new = None, current = None, dryrun = None):
     """Main function."""
     syn = synapseclient.Synapse()
     syn.login(silent=True)
@@ -242,4 +242,4 @@ def create_grant_projects(new = None, current = None, dryrun = None):
 
 
 if __name__ == "__main__":
-    create_grant_projects()
+    process_new_grants()
