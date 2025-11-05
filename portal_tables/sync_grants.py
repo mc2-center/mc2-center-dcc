@@ -6,14 +6,7 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import utils
-
-
-def add_missing_info(grants: pd.DataFrame) -> pd.DataFrame:
-    """Add missing information into table before syncing."""
-    grants.loc[:, "project_id"] = grants["GrantSynapseProject"].str.extract(
-        r":(syn\d*)/?"
-    )
-    return grants
+from create_grant_projects import process_new_grants
 
 
 def clean_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -21,33 +14,33 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
 
     # Convert string columns to string-list.
     for col in [
-        "GrantThemeName",
-        "GrantInstitutionAlias",
-        "GrantInstitutionName",
-        "GrantConsortiumName",
+        "theme",
+        "institutionAlias",
+        "grantInstitution",
+        "consortium",
     ]:
-        df[col] = utils.convert_to_stringlist(df[col])
+        df[col] = utils.convert_to_stringlist(df[col].apply(lambda x: str(x)))
 
     # Reorder columns to match the table order.
     col_order = [
-        "project_id",
-        "GrantView_id",
-        "GrantName",
-        "GrantNumber",
-        "GrantAbstract",
-        "GrantType",
-        "GrantThemeName",
-        "GrantInstitutionAlias",
-        "GrantInstitutionName",
-        "GrantInvestigator",
-        "GrantConsortiumName",
-        "GrantStartDate",
-        "NIHRePORTERLink",
-        "DurationofFunding",
-        "EmbargoEndDate",
-        "GrantSynapseTeam",
-        "GrantSynapseProject",
-    ]
+        "grantId",
+        "grantViewId",
+        "grantName",
+        "grantNumber",
+        "abstract",
+        "grantType",
+        "theme",
+        "institutionAlias",
+        "grantInstitution",
+        "investigator",
+        "consortium",
+        "grantStartDate",
+        "nihReporterLink",
+        "durationOfFunding",
+        "embargoEndDate",
+        "grantSynapseTeam",
+        "grantSynapseProject"
+        ]
     return df[col_order]
 
 
@@ -59,19 +52,16 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    # TODO: update to pd.read_csv once csv manifest is available.
-    manifest = (
-        syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
-    )
-    manifest.columns = manifest.columns.str.replace(" ", "")
+    manifest = process_new_grants(args.manifest_id, args.portal_table_id, args.dryrun)
+    
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
         print()
 
     print("Processing grant staging database...")
-    database = add_missing_info(manifest)
-    final_database = clean_table(database)
+    final_database = clean_table(manifest)
+
     if args.verbose:
         print("\n🔍 Grant(s) to be synced:\n" + "=" * 72)
         print(final_database)
