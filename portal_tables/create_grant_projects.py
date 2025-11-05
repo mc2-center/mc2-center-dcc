@@ -141,17 +141,21 @@ def create_team(syn, project_id, grant, access_type="edit"):
         syn.setPermissions(
             project_id, principalId=new_team.id, accessType=PERMISSIONS.get(access_type)
         )
+        return new_team.id
     except ValueError as err:
         if err.__context__.response.status_code == 409:
             print(f"Team already exists: {team_name}")
         else:
             print(f"Something went wrong! Team: {team_name}")
+        return None
 
 
 def create_grant_projects(syn, grants):
     """Create a new Synapse project for each grant and populate its Wiki."""
+
+    grant_info_dict = {}
     for _, row in grants.iterrows():
-        name = _syn_prettify(row["grantName"])
+        name = _syn_prettify(row["Grant Name"])
         try:
             project = Project(name)
             project = syn.store(project)
@@ -161,38 +165,81 @@ def create_grant_projects(syn, grants):
 
             create_wiki_pages(syn, project.id, row)
             create_folders(syn, project.id)
-            create_team(syn, project.id, row)
+            team_id = create_team(syn, project.id, row)
+            grant_info_dict[row["GrantView_id"]] = (project.id, team_id)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
+            grant_info_dict[row["GrantView_id"]] = ("None", "None")
+    
+    return grant_info_dict
 
 
-def main():
+def create_grant_projects(new = None, current = None, dryrun = None):
     """Main function."""
     syn = synapseclient.Synapse()
     syn.login(silent=True)
     args = get_args()
+    
+    manifest = new if new is not None else args.manifest
+    portal_table = current if current is not None else args.portal_table
+    dryrun = dryrun if dryrun is not None else args.dryrun
 
-    manifest = syn.tableQuery(f"SELECT * FROM {args.manifest}").asDataFrame()
-    curr_grants = (
-        syn.tableQuery(f"SELECT grantNumber FROM {args.portal_table}")
-        .asDataFrame()
-        .grantNumber.to_list()
-    )
+    manifest = syn.tableQuery(f"SELECT * FROM {manifest}").asDataFrame()
+    curr_manifest = syn.tableQuery(f"SELECT * FROM {portal_table}").asDataFrame()
+    curr_grants = curr_manifest.grantNumber.to_list()
 
+    # Generate manifest containing grants not currently on CCKP
+    new_grants = manifest[~manifest["Grant Number"].isin(curr_grants)]
+    grant_info_dict = {grant : ("None", "None") for grant in new_grants["Grant Number"].to_list() if grant}
+    
     # Only add grants not currently in the Grants table.
-    new_grants = manifest[~manifest.grantNumber.isin(curr_grants)]
     if new_grants.empty:
         print("No new grants found!")
     else:
         print(f"{len(new_grants)} new grants found!\n")
-        if args.dryrun:
+        if dryrun:
             print("\u26A0", "WARNING:", "dryrun is enabled (no updates will be done)\n")
             print(new_grants)
         else:
             print("Adding new grants...")
-            create_grant_projects(syn, new_grants)
+            grant_info_dict = create_grant_projects(syn, new_grants)
+            
+    manifest = manifest.rename(columns={
+        "GrantView_id" : "grantViewId",
+        "Grant Name" : "grantName",
+        "Grant Number" : "grantNumber",
+        "Grant Abstract" : "abstract",
+        "Grant Type" : "grantType",
+        "Grant Theme Name" : "theme",
+        "Grant Institution Name" : "institutionAlias",
+        "Grant Institution Alias" : "grantInstitution",
+        "Grant Investigator" : "investigator",
+        "Grant Consortium Name" : "consortium",
+        "Grant Start Date" : "grantStartDate",
+        "NIH RePORTER Link" : "nihReporterLink",
+        "Duration of Funding" : "durationOfFunding",
+        "Embargo End Date" : "embargoEndDate",
+        "Grant Synapse Team" : "grantSynapseTeam",
+        "Grant Synapse Project" : "grantSynapseProject"
+        })
+    
+    manifest["grantId"] = ""
+
+    # Add new Grant info to current manifest
+    curr_manifest.update(manifest, overwrite=False)
+
+    # Add Project and Team info to updated manifest
+    for _, row in curr_manifest.iterrows():
+        if row["grantId"] == "":  # If row was added via new manifest
+            grantId, teamId = grant_info_dict[row["grantViewId"]]
+            curr_manifest.at[_, "grantId"] = grantId
+            curr_manifest.at[_, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
+            curr_manifest.at[_, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
+            
     print("DONE ✓")
+    
+    return curr_manifest
 
 
 if __name__ == "__main__":
-    main()
+    create_grant_projects()
