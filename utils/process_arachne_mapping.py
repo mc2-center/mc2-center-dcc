@@ -31,8 +31,11 @@ def get_args():
 # Define the mapping configuration
 def build_mapping_config(mapping_file: str) -> dict:
 	"""
-    Reads a mapping JSON file from the arachne agent.
-    Returns a dictionary of the parsed mapping configuration.
+	Build mapping configuration from JSON file.
+	Args:
+		mapping_file (str): Path to the mapping JSON file.
+	Returns:
+		dict: Mapping configuration dictionary.
     """
 	with open(mapping_file, 'r') as mapping_json:
 		mapping = json.load(mapping_json)
@@ -40,6 +43,10 @@ def build_mapping_config(mapping_file: str) -> dict:
 	return mapping
 
 def transform_csv_to_tsv(mapping_config):
+	"""Transform input CSV to TSV based on mapping configuration.
+	Args:
+		mapping_config (dict): Mapping configuration dictionary.
+	"""
 	source_file = mapping_config["source_file"]
 	for target in mapping_config["targets"]:
 		output_file = target["output_file"].replace(".csv", ".tsv")
