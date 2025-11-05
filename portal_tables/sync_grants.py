@@ -48,6 +48,11 @@ def main():
     """Main function."""
     syn = utils.syn_login()
     args = utils.get_args("grant")
+    
+    # Info for table scope updates
+    project_tables = "syn52750482"
+    all_files_table = "syn27210848"
+    table_list = [project_tables, all_files_table]
 
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
@@ -61,6 +66,7 @@ def main():
 
     print("Processing grant staging database...")
     final_database = clean_table(manifest)
+    updated_scope = final_database.grantId.to_list()
 
     if args.verbose:
         print("\n🔍 Grant(s) to be synced:\n" + "=" * 72)
@@ -68,6 +74,13 @@ def main():
         print()
 
     if not args.dryrun:
+        for table in table_list:
+            current_table = syn.get(table)
+            current_scope = current_table.scopeIds
+            updated_scope = [s for s in updated_scope if s not in ["syn" + scope for scope in current_scope]]
+            current_table.add_scope(updated_scope)
+            syn.store(current_table)
+            print(f"Scope updated for table: {current_table.name}")
         utils.update_table(syn, args.portal_table_id, final_database)
         print()
 
