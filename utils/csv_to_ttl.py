@@ -147,7 +147,17 @@ def get_args():
 
 
 def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str, subset: None|str) -> tuple[pd.DataFrame, list[str]]:
-	"""Convert schematic model DataFrame to TTL format."""
+	"""
+	Convert schematic model DataFrame to TTL format.
+	If a subset of nodes is provided, only those nodes and their dependent attributes are included.
+	
+	Args:
+		input_df (pd.DataFrame): Input schematic model DataFrame.
+		org_name (str): Organization name for URI formatting.
+		subset (None|str): Comma-separated list of nodes to include in the output. If None, all nodes are included.
+	Returns:
+		tuple[pd.DataFrame, list[str]]: Output TTL DataFrame and list of node names.
+	"""
 	out_df = pd.DataFrame()
 	
 	# Step 1: Identify all node rows (treat rows with non-empty DependsOn as nodes)
@@ -201,7 +211,14 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 
 
 def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str) -> tuple[pd.DataFrame, list[str]]:
-	"""Convert CRDC model DataFrame to TTL format."""
+	"""
+	Convert CRDC model DataFrame to TTL format.
+	Args:
+		input_df (pd.DataFrame): Input CRDC model DataFrame.
+		org_name (str): Organization name for URI formatting.
+	Returns:
+		tuple[pd.DataFrame, list[str]]: Output TTL DataFrame and list of node names.
+	"""
 	out_df = pd.DataFrame()
 	
 	out_df["term"] = input_df.apply(
@@ -231,7 +248,12 @@ def convert_crdc_model_to_ttl_format(input_df: pd.DataFrame, org_name: str) -> t
 
 
 def format_uri(node:str, attribute:str) -> str:
-	"""Format the URI for a given node and attribute."""
+	"""Format the URI for a given node and attribute.
+	Args:
+		node (str): The node name.
+		attribute (str): The attribute name.
+	Returns:
+		str: Formatted URI string."""
 
 	node_segment = str(node).strip().lower().replace(" ", "_").replace('10x_', '')
 	attr_segment = attribute.strip().lower().replace(" ", "_").replace('10x_', '')
@@ -240,7 +262,13 @@ def format_uri(node:str, attribute:str) -> str:
 
 
 def convert_schematic_column_type(type:str, validation: str, is_enum:bool) -> str: 
-	"""Convert schematic column type to TTL-compatible format."""
+	"""Convert schematic column type to TTL-compatible format.
+	Args:
+		type (str): The column type from the schematic model.
+		validation (str): The validation rules from the schematic model.
+		is_enum (bool): Whether the column has enumerated values.
+	Returns:
+		str: Converted column type in TTL-compatible format."""
 
 	if type in ["string", "string_list"] or validation in ["str", "list like"]:
 		string_type = "string;enum" if is_enum else "string"
@@ -255,7 +283,11 @@ def convert_schematic_column_type(type:str, validation: str, is_enum:bool) -> st
 
 
 def get_reference_id(entry: str) -> tuple[str, list[str]]:
-	"""Extract CDE ID from Properties entry."""
+	"""Extract CDE ID from Properties entry.
+	Args:
+		entry (str): The Properties entry from the schematic model.
+	Returns:
+		tuple[str, list[str]]: Tuple containing reference IDs and key attributes."""
 	entry = entry.split(", ") if len(entry.split(", ")) > 1 else [entry]
 
 	refs = [e for e in entry if len(e.split(":")) > 1]
@@ -267,7 +299,12 @@ def get_reference_id(entry: str) -> tuple[str, list[str]]:
 	return (ref_out, key_out)
 
 def convert_gc_column_type(type:str, is_enum:bool) -> str: 
-	"""Convert GC column type to TTL-compatible format."""
+	"""Convert GC column type to TTL-compatible format.
+	Args:
+		type (str): The column type from the GC model.
+		is_enum (bool): Whether the column has enumerated values.
+	Returns:
+		str: Converted column type in TTL-compatible format."""
 
 	if type in ["string", "list"]:
 		string_type = "string;enum" if is_enum else "string"
@@ -286,6 +323,12 @@ def convert_gc_column_type(type:str, is_enum:bool) -> str:
 
 
 def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
+	"""Subset the model DataFrame to include only specified nodes and their dependent attributes.
+	Args:
+		model_df (pd.DataFrame): The full model DataFrame.
+		nodes (str): Comma-separated list of nodes to include.
+	Returns:
+		pd.DataFrame: Subset of the model DataFrame containing only the specified nodes and their dependent attributes."""
 
 	nodes = nodes.split(", ") if type(nodes)==str else nodes
 	
