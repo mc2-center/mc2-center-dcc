@@ -8,9 +8,11 @@ python generate_duo_schema.py [CSV file path] [Output JSON schema file path] [Op
 author: orion.banks
 """
 
-import pandas as pd
-import json
 import argparse
+import json
+import os
+import pandas as pd
+import synapseclient
 from collections import OrderedDict
 
 def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> dict:
@@ -68,6 +70,124 @@ def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> d
         condition["if"]["required"] = required_fields
 
     return condition
+
+def validate_references(resource_list: list[str], input: list[str], input_type: str = "paths"):
+
+    if input_type == "paths":
+        name_df_tuple_list = [(os.path.basename(file), pd.read_csv(file, header=0)) for file in input]
+
+    if input_type == "folder":
+        name_df_tuple_list = [(file, pd.read_csv(os.path.join(input, file), header=0)) for file in os.listdir(input)]
+    
+    if input_type == "syn_id":
+        syn = synapseclient.login()
+        df_list = [syn.tableQuery(f"SELECT * FROM {table_id}").asDataFrame().fillna("") for table_id in input]
+        name_df_tuple_list = [(df.columns.to_list()[0], df) for df in df_list]
+    
+    validation_dict = {}
+    study_list = None
+    ar_list = None
+
+    for name, df in name_df_tuple_list:
+        if "Resource" in name:
+            resource_df = df[df["Resource_id" in resource_list]]
+            study_list = resource_df["StudyKey"].to_list()
+            ar_list = resource_df["AccessRequirementKey"].to_list()
+        elif "Study" in name and study_list is not None:
+            study_df = df[df["Study_id" in study_list]]
+        elif "AccessRequirement" in name and ar_list is not None:
+            ar_df = df[df["AccessRequirement_id" in study_list]]
+        
+    for _, row in resource_df.iterrows():
+        resource_name = row["Resource_id"]
+        study_keys = row["StudyKey"]
+        ar_keys = row["AccessRequirementKey"]
+        resource_data_use_modifiers = row["dataUseModifiers"]
+        validation_dict[resource_name] = (study_keys, ar_keys, resource_data_use_modifiers)
+    
+    for resource in validation_dict:
+        study, ar, resource_duo = validation_dict[resource]
+        study_duo = study_df.loc[df["Study_id"] in study, ["dataUseModifiers"]].to_list()
+        study_ar_list = study_df.loc[df["Study_id"] in study, ["AccessRequirementKey"]].to_list()
+        ar_duo = ar_df.loc[df["AccessRequirement_id"] in ar, ["dataUseModifiers"]].to_list()
+        ar_study_list = ar_df.loc[df["AccessRequirement_id"] in ar, ["StudyKey"]].to_list()
+        validation_dict[resource] = (study, ar, resource_duo, study_duo, ar_duo, study_ar_list, ar_study_list)
+    
+    for k, v in validation_dict.items():
+        study, ar, resource_duo, study_duo, ar_duo, study_ar_list, ar_study_list = v
+
+        study_ar_validation = [s for s in study if s not in ar_study_list]
+        if study_ar_validation:
+            print(f"\nThe following Study identifiers are not associated with relevant Access Requirements:\n{study_ar_validation}")
+        else:
+            print("\nStudy identifiers match those expected by Access Requirements.")
+        
+        ar_study_validation = [a for a in ar if a not in study_ar_list]
+        if ar_study_validation:
+            print(f"\nThe following Access Requirement identifiers are not associated with relevant Studies:\n{ar_study_validation}")
+        else:
+            print("\nAccess Requirement identifiers match those expected by Studies.")
+        
+        resource_study_duo_validation = [rd for rd in resource_duo if rd not in study_duo]
+        if resource_study_duo_validation:
+            print(f"\nThe following Data Use Modifiers for Resource {k} are not associated with relevant Studies:\n{resource_study_duo_validation}")
+        else:
+            print(f"\nData Use Modifiers for Resource {k} match those expected by Studies.")
+        
+        resource_ar_duo_validation = [rd for rd in resource_duo if rd not in ar_duo]
+        if resource_ar_duo_validation:
+            print(f"\nThe following Data Use Modifiers for Resource {k} are not associated with relevant Access Requirements:\n{resource_ar_duo_validation}")
+        else:
+            print(f"\nData Use Modifiers for Resource {k} match those expected by Access Requirements.")
+        
+        study_resource_duo_validation = [sd for sd in study_duo if sd not in resource_duo]
+        if study_resource_duo_validation:
+            print(f"\nThe following Data Use Modifiers for relevant Studies are not associated with Resource {k}:\n{resource_ar_duo_validation}")
+        else:
+            print(f"\nData Use Modifiers for relevant Studies match those associated with Resource {k}.")
+        
+        study_ar_duo_validation = [sd for sd in study_duo if sd not in ar_duo]
+        if study_ar_duo_validation:
+            print(f"\nThe following Data Use Modifiers for relevant Studies are not associated with a relevant Access Requirement for Resource {k}:\n{study_ar_duo_validation}")
+        else:
+            print(f"\nData Use Modifiers for relevant Studies match those associated with listed Access Requirements for Resource {k}.")
+        
+        ar_resource_duo_validation = [ad for ad in ar_duo if ad not in resource_duo]
+        if ar_resource_duo_validation:
+            print(f"\nThe following Data Use Modifiers for listed Access Requirements are not applicable to Resource {k}:\n{ar_resource_duo_validation}")
+        else:
+            print(f"\nData Use Modifiers for listed Access Requirements match those associated with Resource {k}.")
+        
+        ar_study_duo_validation = [ad for ad in ar_duo if ad not in study_duo]
+        if ar_study_duo_validation:
+            print(f"\nThe following Data Use Modifiers for listed Access Requirements are not associated with a relevant Study for Resource {k}:\n{study_ar_duo_validation}")
+        else:
+            print(f"\nData Use Modifiers for listed Access Requirements match those associated with relevant Studies for Resource {k}.")
+
+    return resource_df
+
+
+def synthesize_input_csv(resource_df):
+    """
+    Can eliminate filtering, since we only have listed the information that is relevant
+    
+    Resource_id
+    AccessRequirementKey
+    dataUseModifiers
+    grantAnnotationKey
+    grantAnnotationValue
+    studyAnnotationKey
+    studyAnnotationValue
+    dataTypeKey
+    dataTypeValue
+    speciesTypeKey
+    speciesTypeValue
+    activatedByAttribute
+    activationValue
+    """
+    resource_csv = resource_df
+
+    return resource_csv
 
 
 def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col, data_type, data_col, species_type, species_col, access_requirement):
