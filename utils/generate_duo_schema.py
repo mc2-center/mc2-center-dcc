@@ -82,7 +82,7 @@ def build_condition(row: pd.Series, col_names: list, condition_tuples: list[tupl
 
     return condition
 
-def validate_references(resource_list: list[str], input: list[str], input_type: str = "paths"):
+def validate_references(resource_list: list[str], input: list[str], input_type: str, output_path, title, version, org_id, grant_id, study_id):
 
     if input_type == "paths":
         name_df_tuple_list = [(os.path.basename(file), pd.read_csv(file, header=0)) for file in input]
@@ -176,7 +176,7 @@ def validate_references(resource_list: list[str], input: list[str], input_type: 
             print(f"\nData Use Modifiers for listed Access Requirements match those associated with relevant Studies for Resource {k}.")
 
     output_name = "-".join([key for key in validation_dict.keys()]) + "-AccessRequirementSchema"
-    generate_json_schema(resource_df, source_type="validation", output_path="./" + output_name + ".json", title=output_name, version="1.0.0", org_id="Sage", grant_id="None", study_id="None")
+    generate_json_schema(resource_df, source_type="validation", output_path=output_path, title=output_name, version=version, org_id=org_id, grant_id=grant_id, study_id=study_id)
 
 
 def generate_json_schema(data, source_type, output_path, title, version, org_id, grant_id, study_id):
@@ -246,23 +246,17 @@ def generate_json_schema(data, source_type, output_path, title, version, org_id,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Access Requirement JSON Schema from Data Dictionary CSV")
-    parser.add_argument("csv_path", help="Path to the data_dictionary.csv. See and example at https://github.com/Sage-Bionetworks/governanceDUO/blob/main/access_requirement_JSON/README.md")
-    parser.add_argument("output_path", help="Path to output directory for the JSON schema")
+    parser.add_argument("input_data", help="Path to directory, list of file paths, or list of Synapse Ids.", required=True)
+    parser.add_argument("input_type", help="Type of input data. One of 'paths', 'folder', or 'syn_id'", required=True)
+    parser.add_argument("output_path", help="Path to output directory for the JSON schema", default=".")
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
     parser.add_argument("-v", "--version", default="v1.0.0", help="Schema version")
-    parser.add_argument("-o", "--org_id", default="DCC", help="Organization ID for $id field")
-    parser.add_argument("-a", "--access_requirement", default=None, help="Access requirement ID to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable conditions listed in the input table.")
-    parser.add_argument("-g", "--grant_id", help="Grant number to select conditions for from reference table. If nothing is provided, the JSON schema will include all conditions listed in the input table.", default="Project")
-    parser.add_argument("-m", "--multi_condition", help="Boolean. Generate schema with multiple conditions defined in the CSV", action="store_true", default=None)
-    parser.add_argument("-gc", "--grant_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the grant", default="grantNumber")
-    parser.add_argument("-s", "--study_id", help="Study ID to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable studies listed in the input table.", default=None)
-    parser.add_argument("-sc", "--study_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the study", default="studyKey")
-    parser.add_argument("-d", "--data_type", help="Data type to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable data types listed in the input table.", default=None)
-    parser.add_argument("-dc", "--data_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the data type", default="dataType")
-    parser.add_argument("-p", "--species_type", help="Species to select conditions for from reference table. If nothing is provided, the JSON schema will include all applicable species listed in the input table.", default=None)
-    parser.add_argument("-pc", "--species_col", help="Name of the column in the DCC AR data dictionary that will contain the identifier for the species", default="speciesType")
+    parser.add_argument("-o", "--org_id", default="Sage", help="Organization ID for $id field")
+    parser.add_argument("-g", "--grant_id", help="Grant number to include in schema$id field.", default="None")
+    parser.add_argument("-s", "--study_id", help="Study ID to include in schema$id field.", default="None")
+    parser.add_argument("-d", "--data_type", help="Data type to select conditions for from reference table.", default=None, required=True)
 
     args = parser.parse_args()
 
-    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id else "Project-", f"{args.study_id}-" if args.study_id else "", f"{args.data_type}-" if args.data_type else "", f"{args.species_type}-" if args.species_type else "", "mc-" if args.multi_condition else "", f"{args.access_requirement}-" if args.access_requirement else "", args.version, "-schema.json"])
-    generate_json_schema(args.csv_path, output_path, args.title, args.version, args.org_id, grant_id = args.grant_id, multi_condition=args.multi_condition, study_id = args.study_id, grant_col=args.grant_col, study_col=args.study_col, data_type = args.data_type, data_col=args.data_col, species_type = args.species_type, species_col=args.species_col, access_requirement=args.access_requirement)
+    output_path = "".join([args.output_path, "/", args.org_id, ".", "AccessRequirement-", f"{args.grant_id}-" if args.grant_id != "None" else "", f"{args.study_id}-" if args.study_id != "None" else "", f"{args.data_type}-", args.version, "-schema.json"])
+    validate_references(args.data_type, args.input_data, args.input_type, output_path, args.title, args.version, args.org_id, args.grant_id, args.study_id)
