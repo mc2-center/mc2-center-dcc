@@ -15,7 +15,7 @@ import pandas as pd
 import synapseclient
 from collections import OrderedDict
 
-def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> dict:
+def build_condition(row: pd.Series, col_names: list, condition_tuples: list[tuple], multi_condition: bool) -> dict:
     """
     Builds a conditional schema segment based on a row from the CSV file.
     Args:
@@ -25,18 +25,29 @@ def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> d
     Returns:
         dict: A dictionary representing the conditional schema segment.
     """
+
+    info_tuples = [([duo for duo in row["DataUseModifiers"].split(", ")], "duo"), ([key for key in row["AccessRequirementKey"].split(", ")], "ar")]
+    info_dict = {"duo" : None, "ar" : None}
+    
+    for list, name in info_tuples:
+        if len(list) > 1:
+            info_dict[name] = '"allOf": [' + ", ".join([f'"const": "{i}"' for i in list]) + " ]"
+        else:
+            info_dict[name] = f'"const": "{''.join(list)}"'
+
+
     condition = {
         "if": {
             "properties": {
-                "dataUseModifiers": {
+                "DataUseModifiers": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     },  
-                    "contains": { "const": row["dataUseModifiers"] }
+                    "contains": { info_dict["duo"] }
                 }
             },
-            "required": ["dataUseModifiers"]
+            "required": ["DataUseModifiers"]
         },
         "then": {
             "properties": {
@@ -45,7 +56,7 @@ def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> d
                     "items": {
                         "type": "string"
                     },
-                    "contains": { "const": int(row["accessRequirementId"]) }
+                    "contains": { info_dict["ar"] }
                 }
             }
         }
@@ -60,10 +71,10 @@ def build_condition(row: pd.Series, col_names: list, multi_condition: bool) -> d
             additional_conditions[row["activatedByAttribute"]] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row["activationValue"] } }
             required_fields.append(row["activatedByAttribute"])
 
-        for col in col_names:
-            if col in row and pd.notna(row[col]):
-                additional_conditions[col] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row[col] } }
-                required_fields.append(col)
+        for key_col, value_col in condition_tuples:
+            if (key_col and value_col in row) and (pd.notna(row[key_col]) and pd.notna(row[value_col])):
+                additional_conditions[row[key_col]] = { "type": "array", "items": { "type": "string" }, "contains": { "const": row[value_col] } }
+                required_fields.append(key_col)
 
     if additional_conditions:
         condition["if"]["properties"].update(additional_conditions)
@@ -164,33 +175,11 @@ def validate_references(resource_list: list[str], input: list[str], input_type: 
         else:
             print(f"\nData Use Modifiers for listed Access Requirements match those associated with relevant Studies for Resource {k}.")
 
-    return resource_df
+    output_name = "-".join([key for key in validation_dict.keys()]) + "-AccessRequirementSchema"
+    generate_json_schema(resource_df, source_type="validation", output_path="./" + output_name + ".json", title=output_name, version="1.0.0", org_id="Sage", grant_id="None", study_id="None")
 
 
-def synthesize_input_csv(resource_df):
-    """
-    Can eliminate filtering, since we only have listed the information that is relevant
-    
-    Resource_id
-    AccessRequirementKey
-    dataUseModifiers
-    grantAnnotationKey
-    grantAnnotationValue
-    studyAnnotationKey
-    studyAnnotationValue
-    dataTypeKey
-    dataTypeValue
-    speciesTypeKey
-    speciesTypeValue
-    activatedByAttribute
-    activationValue
-    """
-    resource_csv = resource_df
-
-    return resource_csv
-
-
-def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id, multi_condition, study_id, grant_col, study_col, data_type, data_col, species_type, species_col, access_requirement):
+def generate_json_schema(data, source_type, output_path, title, version, org_id, grant_id, study_id):
     """
     Generates a JSON schema defining access requirements based on a CSV file.
     Args:
@@ -199,44 +188,53 @@ def generate_json_schema(csv_path, output_path, title, version, org_id, grant_id
         title (str): Title of the JSON schema.
         version (str): Version of the JSON schema.
         org_id (str): Organization ID for the $id field.
-        grant_id (str): Grant number to filter conditions.
+        grant_id (str): Grant number to include in $id field.
         multi_condition (bool): Flag to generate schema with multiple conditions.
-        study_id (str): Study ID to filter conditions.
-        grant_col (str): Column name for grant identifier.
-        study_col (str): Column name for study identifier.
-        data_type (str): Data type to filter conditions.
-        data_col (str): Column name for data type identifier.
-        species_type (str): Species type to filter conditions.
-        species_col (str): Column name for species type identifier.
-        access_requirement (str): Access requirement ID to filter conditions.
+        study_id (str): Study ID to include in $id field.
+        
     Returns:
         None
     """
-    df = pd.read_csv(csv_path, header=0, dtype=str)
+    if source_type == "csv":
+        df = pd.read_csv(data, header=0, dtype=str)
+    if source_type == "validation":
+        df = data
 
     conditions = []
-    base_conditions = ["dataUseModifiers", "accessRequirementId", "activatedByAttribute", "activationValue", "entityIdList"]
+    condition_cols = [  # Columns from the Sage / Governance Data Model element 'Resource'
+        "Resource_id",
+        "AccessRequirementKey",
+        "dataUseModifiers",
+        "grantAnnotationKey",
+        "grantAnnotationValue",
+        "studyAnnotationKey",
+        "studyAnnotationValue",
+        "dataTypeKey",
+        "dataTypeValue",
+        "speciesTypeKey",
+        "speciesTypeValue",
+        "activatedByAttribute",
+        "activationValue"
+        ]
+    condition_tuples = [
+        ("grantAnnotationKey", "grantAnnotationValue"),
+        ("studyAnnotationKey", "studyAnnotationValue"),
+        ("dataTypeKey", "dataTypeValue"),
+        ("speciesTypeKey", "speciesTypeValue")
+    ]
+
+    resource_types = "-".join(df["Resource_id"].tolist())
     col_names = df.columns.tolist()
-    col_names = [col for col in col_names if col not in base_conditions]
+    col_names = [col for col in col_names if col in condition_cols]
     for _, row in df.iterrows():
-        if access_requirement is not None and row["accessRequirementId"] != access_requirement:
-            continue
-        if grant_id != "Project" and row[grant_col] != grant_id:
-            continue
-        if study_id is not None and row[study_col] != study_id:
-            continue
-        if data_type is not None and row[data_col] != data_type:
-            continue
-        if species_type is not None and row[species_col] != species_type:
-            continue
-        condition = build_condition(row, col_names, multi_condition)
+        condition = build_condition(row, col_names, condition_tuples, multi_condition=True)
         conditions.append(condition)
 
     schema = OrderedDict({
         "$schema": "http://json-schema.org/draft-07/schema",
         "title": title,
-        "$id": f"{org_id}-{grant_id}-{study_id + '-' if study_id is not None else ''}{data_type + '-' if data_type is not None else ''}{species_type + '-' if species_type is not None else ''}{'mc-' if multi_condition is not None else ''}AccessRequirementSchema-{access_requirement + '-' if access_requirement is not None else ''}{version}",
-        "description": f"Auto-generated schema that defines access requirements for biomedical data. Organization: {org_id}, Grant number or Project designation: {grant_id}, Study ID: {study_id if study_id else 'N/A'}, Data Type: {data_type if data_type else 'N/A'}, Species Type: {species_type if species_type else 'N/A'}, Multi-condition: {'Yes' if multi_condition else 'No'}, Selected Access Requirement ID: {access_requirement if access_requirement else 'N/A'}",
+        "$id": f"{org_id}-{grant_id}-{study_id}-{resource_types}AccessRequirementSchema-{version}",
+        "description": f"Auto-generated schema that defines access requirements for biomedical data. Organization: {org_id}, Grant number or Project designation: {grant_id}, Study ID: {study_id}, Data Type: {resource_types}",
         "allOf": conditions
     })
 
