@@ -189,7 +189,6 @@ def generate_json_schema(data, source_type, output_path, title, version, org_id,
         version (str): Version of the JSON schema.
         org_id (str): Organization ID for the $id field.
         grant_id (str): Grant number to include in $id field.
-        multi_condition (bool): Flag to generate schema with multiple conditions.
         study_id (str): Study ID to include in $id field.
         
     Returns:
@@ -201,6 +200,7 @@ def generate_json_schema(data, source_type, output_path, title, version, org_id,
         df = data
 
     conditions = []
+    
     condition_cols = [  # Columns from the Sage / Governance Data Model element 'Resource'
         "Resource_id",
         "AccessRequirementKey",
@@ -216,6 +216,7 @@ def generate_json_schema(data, source_type, output_path, title, version, org_id,
         "activatedByAttribute",
         "activationValue"
         ]
+    
     condition_tuples = [
         ("grantAnnotationKey", "grantAnnotationValue"),
         ("studyAnnotationKey", "studyAnnotationValue"),
@@ -246,7 +247,7 @@ def generate_json_schema(data, source_type, output_path, title, version, org_id,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate Access Requirement JSON Schema from Data Dictionary CSV")
-    parser.add_argument("input_data", help="Path to directory, list of file paths, or list of Synapse Ids.", required=True)
+    parser.add_argument("input_data", help="Path to directory, list of file paths, or list of Synapse Ids containing the required metadata package.", required=True)
     parser.add_argument("input_type", help="Type of input data. One of 'paths', 'folder', or 'syn_id'", required=True)
     parser.add_argument("output_path", help="Path to output directory for the JSON schema", default=".")
     parser.add_argument("-t", "--title", default="AccessRequirementSchema", help="Schema title")
@@ -254,7 +255,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--org_id", default="Sage", help="Organization ID for $id field")
     parser.add_argument("-g", "--grant_id", help="Grant number to include in schema$id field.", default="None")
     parser.add_argument("-s", "--study_id", help="Study ID to include in schema$id field.", default="None")
-    parser.add_argument("-d", "--data_type", help="Data type to select conditions for from reference table.", default=None, required=True)
+    parser.add_argument("-d", "--data_type", help="Data type to select conditions for from Resource reference table.", default=None, required=True)
 
     args = parser.parse_args()
 
