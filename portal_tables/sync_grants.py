@@ -20,7 +20,10 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "grantInstitution",
         "consortium",
     ]:
-        df[col] = utils.convert_to_stringlist(df[col].apply(lambda x: str(x)))
+        if "['[" in "".join(df[col].to_string()):
+            df[col] = utils.convert_to_stringlist(df[col].apply(lambda x: ", ".join(re.findall(r"'(.*?)'", "".join(x)))))
+        else:
+            df[col] = utils.convert_to_stringlist(df[col].apply(lambda x: str(x)))
 
     # Reorder columns to match the table order.
     col_order = [
@@ -82,7 +85,7 @@ def main():
             current_table.add_scope(updated_scope)
             syn.store(current_table)
             print(f"Scope updated for table: {current_table.name}")
-        utils.update_table(syn, args.portal_table_id, final_database)
+        utils.update_table(syn, args.portal_table_id.split(".")[0], final_database)
         print()
 
     if not args.noprint:
