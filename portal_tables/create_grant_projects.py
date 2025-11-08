@@ -6,6 +6,7 @@ team with "Can edit" permissions.
 """
 
 import argparse
+import pandas as pd
 
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
@@ -74,11 +75,11 @@ def create_wiki_pages(syn, project_id, grant):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant["grantConsortiumName"]
-    grant_type = grant["grantType"]
-    title = grant["grantInstitutionAlias"]
-    institutions = grant["grantInstitutionName"]
-    desc = grant["grantAbstract"] or ""
+    consortium = grant["Grant Consortium Name"]
+    grant_type = grant["Grant Type"]
+    title = grant["Grant Institution Alias"]
+    institutions = grant["Grant Institution Name"]
+    desc = grant["Grant Abstract"] or ""
 
     content = f"""### The {consortium} {grant_type} Research Project \@ {title}
 
@@ -96,11 +97,11 @@ def create_wiki_pages(syn, project_id, grant):
         "&url=https%3A%2F%2Fwww%2Esynapse%2Eorg%2F%23%21Synapse%3Asyn7080714%2F}"
         "<-"
     )
-    main_wiki = Wiki(title=grant["grantName"], owner=project_id, markdown=content)
+    main_wiki = Wiki(title=grant["Grant Name"], owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
-    pis = [pi.strip(" ") for pi in grant["grantInvestigator"].split(",")]
+    pis = [pi.strip(" ") for pi in grant["Grant Investigator"].split(",")]
     pi_markdown = "* " + "\n* ".join(pis)
     pi_wiki = Wiki(
         title="Project Investigators",
@@ -132,9 +133,9 @@ def create_folders(syn, project_id):
 
 def create_team(syn, project_id, grant, access_type="edit"):
     """Create team for new grant project."""
-    consortia = _join_listlike_col(grant["grantConsortiumName"])
-    center = _join_listlike_col(grant["grantInstitutionAlias"])
-    team_name = f"{consortia} {center} {grant['grantType']} {grant['grantNumber']}"
+    consortia = _join_listlike_col(grant["Grant Consortium Name"])
+    center = _join_listlike_col(grant["Grant Institution Alias"])
+    team_name = f"{consortia} {center} {grant['Grant Type']} {grant['Grant Number']}"
     try:
         new_team = Team(name=team_name, canPublicJoin=False)
         new_team = syn.store(new_team)
@@ -226,19 +227,40 @@ def process_new_grants(new = None, current = None, dryrun = None):
     manifest["grantId"] = ""
 
     # Add new Grant info to current manifest
-    curr_manifest.update(manifest, overwrite=False)
+    col_order = [
+        "grantId",
+        "grantViewId",
+        "grantName",
+        "grantNumber",
+        "abstract",
+        "grantType",
+        "theme",
+        "institutionAlias",
+        "grantInstitution",
+        "investigator",
+        "consortium",
+        "grantStartDate",
+        "nihReporterLink",
+        "durationOfFunding",
+        "embargoEndDate",
+        "grantSynapseTeam",
+        "grantSynapseProject"
+        ]
+    manifest = manifest[col_order]
+    
+    new_manifest = pd.concat([curr_manifest, manifest]).drop_duplicates(subset=["grantViewId"]).reset_index()
 
     # Add Project and Team info to updated manifest
-    for _, row in curr_manifest.iterrows():
+    for _, row in new_manifest.iterrows():
         if row["grantId"] == "":  # If row was added via new manifest
             grantId, teamId = grant_info_dict[row["grantViewId"]]
-            curr_manifest.at[_, "grantId"] = grantId
-            curr_manifest.at[_, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
-            curr_manifest.at[_, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
+            new_manifest.at[_, "grantId"] = grantId
+            new_manifest.at[_, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
+            new_manifest.at[_, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
             
     print("DONE ✓")
     
-    return curr_manifest
+    return new_manifest
 
 
 if __name__ == "__main__":
