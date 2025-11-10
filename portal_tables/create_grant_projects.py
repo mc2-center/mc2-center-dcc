@@ -7,6 +7,7 @@ team with "Can edit" permissions.
 
 import argparse
 import pandas as pd
+import re
 
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
@@ -252,6 +253,10 @@ def process_new_grants(new = None, current = None, dryrun = None):
 
     # Add Project and Team info to updated manifest
     for _, row in new_manifest.iterrows():
+        for col in ["theme", "institutionAlias", "grantInstitution", "consortium"]:
+            values = re.findall(r"\'(.*?)\'", "".join(row[col])) # extract values from string lists
+            value_string = ", ".join(values) if values else ", ".join(row[col])
+            new_manifest.at[_, col] = value_string
         if row["grantId"] == "":  # If row was added via new manifest
             grantId, teamId = grant_info_dict[row["grantViewId"]]
             new_manifest.at[_, "grantId"] = grantId
