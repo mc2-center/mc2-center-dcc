@@ -39,7 +39,7 @@ def generate_json_schema(input: str, ar_schema: str) -> None:
                 condition["if"]["properties"][prop] = {"contains": condition["if"]["properties"][prop]}
     
     for attribute in properties:
-        properties[attribute]["title"] = f"{''.join(attribute[:]).capitalize()}"
+        properties[attribute]["title"] = f"{attribute}"
     
     ref_conditions = {"$ref": f"{ar_schema}"} if ar_schema is not None else None
 
