@@ -11,6 +11,9 @@ author: orion.banks
 import synapseclient
 import argparse
 import pandas as pd
+import re
+
+from synapseclient.models import RecordSet
 
 
 def get_args():
@@ -57,17 +60,35 @@ def get_args():
         required=False,
         default=None,
     )
+    parser.add_argument(
+        "-g",
+        type=str,
+        help="Synapse Id of a table containing ADA-PSI Study metadata.",
+        required=False,
+        default=None,
+    )
     return parser.parse_args()
 
 
-def get_table(syn, source_id: str, cols: str | list = "*") -> pd.DataFrame:
+def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool = False) -> pd.DataFrame:
     """Collect columns from a Synapse table entity and return as a Dataframe."""
 
-    if type(cols) == list:
+    if type(cols) == list and is_record_set is False:
         cols = ", ".join(["".join(['"', col, '"']) for col in cols])
-
-    query = f"SELECT {cols} FROM {source_id}"
-    table = syn.tableQuery(query).asDataFrame().fillna("")
+    
+    if is_record_set:
+        file = RecordSet(source_id).get()
+        data = file.path
+        table = pd.read_csv(data, header=0).fillna("")
+        table = table[cols]
+        for _, row in table.iterrows():
+            for col in cols:
+                entry = re.findall(r'"(.*?)"', row[col])
+                table.at[_, col] = entry if len(entry) > 0 else row[col]
+    else:
+        query = f"SELECT {cols} FROM {source_id}"
+        table = syn.tableQuery(query).asDataFrame().fillna("")
+    
     print(f"Data acquired from Synapse table {source_id}")
 
     return table
@@ -143,7 +164,7 @@ def collect_record_annotations(
     apply annotations to each file"""
 
     component, table_id, column_list = info_tuple
-    key_column = f"{component}_id"
+    key_column = f"{component}_id" 
     data_table = get_table(syn, table_id, column_list).set_index(key_column)
     column_list.pop(0)  # remove Component_id from list of columns, since it is now the index
     table_keys = set(tuple_dict.values())
@@ -161,22 +182,31 @@ def collect_record_annotations(
     print(f"{component} annotations applied to {count} entities")
 
 
-def collect_dataset_annotations(
-    syn, dataset_id: str, info_tuple: tuple[str, str, list[str]], keys_to_drop: list[str]
+def collect_database_annotations(
+    syn, target_id: str, info_tuple: tuple[str, str, list[str]], keys_to_drop: list[str], is_record_set: bool = False
 ):
-    """Collect all entries from a DatasetView Synapse table,
-    select entry where input table Synapse Id matches DatasetView_id,
+    """Collect all entries from a Synapse table or RecordSet,
+    select entry where input table Synapse Id matches Component_id,
     apply annotations to the Dataset"""
 
     component, table_id, column_list = info_tuple
-    key_column = f"{component}_id"
-    data_table = get_table(syn, table_id, column_list).set_index(key_column)
-    column_list.pop(0)  # remove DatasetView_id from list of columns, since it is now the index
-    if dataset_id in data_table.index:
-        metadata = data_table.loc[dataset_id]
-        annotations = list(zip(column_list, metadata.tolist()))
-        apply_annotations_to_entity(syn, component, dataset_id, annotations, keys_to_drop)
-
+    
+    data_table = get_table(syn, table_id, column_list, is_record_set)
+    
+    if component == "DatasetView":
+        key_column = f"{component}_id"
+        data_table.set_index(key_column, inplace=True)
+        if target_id in data_table.index:
+            metadata = data_table.loc[target_id]
+    if component == "Study":
+        key_column = f"{component.lower()}Id"
+        data_table["StudyProjectIdentifier"] = data_table["StudyProjectIdentifier"].apply(lambda x: "".join(x) if isinstance(x, list) else x)
+        data_table.set_index(key_column, inplace=True)
+        metadata = data_table.loc[data_table["StudyProjectIdentifier"] == target_id].to_numpy()
+    
+    column_list.pop(0)  # remove id from list of columns, since it is now the index
+    annotations = list(zip(column_list, metadata.tolist()))
+    apply_annotations_to_entity(syn, component, target_id, annotations, keys_to_drop)
 
 def apply_annotations_to_entity(
     syn,
@@ -212,8 +242,11 @@ def main():
         datasetview_table,
         file_table, specimen_table,
         individual_table,
-        model_table
-    ) = (args.t, args.v, args.f, args.s, args.i, args.m)
+        model_table,
+        ada_psi_study_table,
+    ) = (args.t, args.v, args.f, args.s, args.i, args.m, args.g)
+
+    duo_only = True
 
     biospecimen_columns = [
         "Biospecimen_id",
@@ -329,11 +362,67 @@ def main():
         "Data Use Codes",
     ]
 
+    ada_psi_study_columns = [
+        "studyId",
+        "StudyProjectIdentifier",
+        "GrantNumber",
+        "StudyName",
+        "AccessRequirementKey",
+        "StudyDescription",
+        "StudyInvestigator",
+        "StudyParticipantNumber",
+        "StudySampleNumber",
+        "StudyDeidentificationType",
+        "StudyDeidentificationMethodDescription",
+        "StudyDeidentificationMethodSoftware",
+        "StudyDbgapAccessionId",
+        "StudyIndexDate",
+        "DataUseModifiers",
+        "Attribution",
+        "CollaborationRequired",
+        "DataPermission",
+        "DataTier",
+        "DeidentificationType",
+        "DiseaseSpecificResearch",
+        "GeographicalRestriction",
+        "InstitutionSpecificRestriction",
+        "License",
+        "PopulationType",
+        "PublicationMoratorium",
+        "ResearchSpecificRestrictions",
+        "SourceGeography",
+        "TimeLimitOnUse",
+        "UserSpecificRestriction",
+    ]
+
+    study_duo_only_columns = [
+        "studyId",
+        "StudyProjectIdentifier",
+        "DataUseModifiers",
+        "Attribution",
+        "CollaborationRequired",
+        "DataPermission",
+        "DataTier",
+        "DeidentificationType",
+        "DiseaseSpecificResearch",
+        "GeographicalRestriction",
+        "InstitutionSpecificRestriction",
+        "License",
+        "PopulationType",
+        "PublicationMoratorium",
+        "ResearchSpecificRestrictions",
+        "SourceGeography",
+        "TimeLimitOnUse",
+        "UserSpecificRestriction",
+    ]
+
     specimen_info_tuple = ("Biospecimen", specimen_table, biospecimen_columns)
     individual_info_tuple = ("Individual", individual_table, individual_columns)
     model_info_tuple = ("Model", model_table, model_columns)
     dataset_info_tuple = ("DatasetView", datasetview_table, datasetview_columns)
-    keys_to_drop = ["Study Key"]
+    ada_psi_study_info_tuple = ("Study", ada_psi_study_table, ada_psi_study_columns)
+    duo_ada_psi_study_info_tuple = ("Study", ada_psi_study_table, study_duo_only_columns)
+    keys_to_drop = ["Study Key", "StudyProjectIdentifier"]
 
     if file_table is not None:
         files = get_table(syn, target, cols="id")["id"].tolist()
@@ -353,8 +442,13 @@ def main():
             collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop)
 
     if datasetview_table is not None:
-        collect_dataset_annotations(syn, target, dataset_info_tuple, keys_to_drop=None)
-
+        collect_database_annotations(syn, target, dataset_info_tuple, keys_to_drop=None)
+    
+    if ada_psi_study_table is not None:
+        if duo_only is True:
+            collect_database_annotations(syn, target, duo_ada_psi_study_info_tuple, keys_to_drop, is_record_set=True)
+        else:
+            collect_database_annotations(syn, target, ada_psi_study_info_tuple, keys_to_drop, is_record_set=True)
 
 if __name__ == "__main__":
     main()
