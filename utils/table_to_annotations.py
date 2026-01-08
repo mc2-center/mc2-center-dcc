@@ -2,9 +2,17 @@
 
 This script will query a Synapse table for metadata and apply it to an entity as annotations.
 
-Usage:
-python table_to_annotations.py -t [Dataset Synapse Id] -f [File View metadata table Synapse Id] -s [Biospecimen metadata table Synapse Id] -i [Individual metadata table Synapse Id] -m [Model metadata table Synapse Id]
+usage: table_to_annotations.py [-h] -t T [-v V] [-f F] [-s S] [-i I] [-m M] [-g G]
 
+options:
+  -h, --help  show this help message and exit
+  -t T        Synapse Id of a dataset with files to annotate
+  -v V        Synapse Id of a table containing DatasetView metadata
+  -f F        Synapse Id of a table containing File View metadata.
+  -s S        Synapse Id of a table containing Biospecimen metadata.
+  -i I        Synapse Id of a table containing Individual metadata.
+  -m M        Synapse Id of a table containing Model metadata.
+  -g G        Synapse Id of a table containing ADA-PSI Study metadata.
 author: orion.banks
 """
 
