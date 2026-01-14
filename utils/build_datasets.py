@@ -59,6 +59,13 @@ def get_args():
         required=False,
         default=1
     )
+    parser.add_argument(
+        "-r",
+        type=str,
+        help="Path to a CSV with column 'files', listing all Synapse IDs to remove from scopes. Default: None",
+        required=False,
+        default=None
+    )
     return parser.parse_args()
 
 
@@ -161,13 +168,13 @@ def main():
 
     args = get_args()
 
-    dsp, new_name, filter_by_date, after_date, default_version = args.d, args.n, args.f, args.a, args.c
+    dsp, new_name, filter_by_date, after_date, default_version, files_to_remove = args.d, args.n, args.f, args.a, args.c, args.r
     
     update_dsp_sheet = None
     create_dataset = False
     multi_dataset = False
     check_version = True if default_version == 0 else False
-    file_max = 5000  # maximum number of files per Dataset; set to 5000 to avoid web page latency issues
+    file_max = 20000  # maximum number of files per Dataset; set to 5000 to avoid web page latency issues
 
     if os.path.exists(dsp):
         dsp_df = pd.read_csv(dsp, keep_default_na=False, header=0)
@@ -218,6 +225,11 @@ def main():
                 print(f"--> Only version {default_version} files will be added to dataset.\n--> If mixed file versions are expected, pass '-c 0' at runtime.")
             
             scope_files = filter_files_in_folder(syn, scope_id, formats, folder_or_files, cutoff_date, after_date, check_version, default_version)
+            if files_to_remove is not None:
+                files_to_remove_df = pd.read_csv(files_to_remove, header=0)
+                files_to_remove_list = files_to_remove_df["files"].tolist()
+                scope_files = [synId for synId in scope_files if synId["entityId"] not in files_to_remove_list]
+                print(f"--> Requested files removed from scope!")
             print(f"--> Scope processing complete!")
             
             if len(scope_files) > file_max:
