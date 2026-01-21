@@ -264,13 +264,14 @@ def main():
                     print(f"--> {len(scope)} files added to new Dataset {dataset.id}")
                     dataset_id_list.append(dataset.id)
                     dataset_name_list.append(dataset.name)
+                    dataset_total += 1
             
             count += 1
 
             dataset_tuples = zip(dataset_id_list, dataset_name_list)
 
             if update_dsp_sheet is not None:
-                print(f"Adding information for {new_dataset_count} Datasets ")
+                print(f"Adding information for {dataset_total - 1} Datasets ")
                 for populated_dataset_id, name in dataset_tuples:
                     temp_df = dsp_df.copy()
                     temp_df.iloc[[_]] = row
