@@ -86,7 +86,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "Publication Accessibility",
         "iconTags"
     ]
-    return df[col_order]
+    return df[col_order].sort_values(by="Publication Year", ascending=False)
 
 
 def main():
