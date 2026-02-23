@@ -53,6 +53,10 @@ def add_missing_info(
         pub_doi = []
         for p in row["PublicationViewKey"].split(","):
             p = p.strip()  # Remove leading/trailing whitespace, if any
+            if len(p) < 4:
+                pmid_list = [e for elem in "".join(row["PublicationViewKey"].split(",")) for e in elem.split()]
+                p = "".join(pmid_list[0:8])
+                datasets.at[_, "PublicationViewKey"] = p
             try:
                 pub_titles.append(
                     pubs[pubs.pubMedId == int(p)]["publicationTitle"]
@@ -130,6 +134,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "iconTags",
         "version"
     ]
+
+    df = df.sort_values(by="DatasetPubmedId", ascending=False)
+
     return df[col_order]
 
 
@@ -141,7 +148,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest = pd.read_csv(syn.get(args.manifest_id).path, dtype=str).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
