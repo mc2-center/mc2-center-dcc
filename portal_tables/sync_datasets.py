@@ -75,6 +75,13 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
+        d = row["DataUseCodes"].split(",")
+        try:
+            d = [utils.translate_duo(code.strip()) for code in d]
+        except KeyError as e:
+            continue
+        d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
+        datasets.at[_, "DataUseCodes"] = ",".join(d)
     return datasets
 
 
@@ -96,7 +103,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetTumorType",
         "DatasetGrantNumber",
         "DatasetPubmedId",
-        "iconTags"
+        "iconTags",
+        "DataUseCodes"
     ]
     
     for col in cols:
@@ -132,7 +140,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "link",
         "DatasetDoi",
         "iconTags",
-        "version"
+        "version",
+        "DataUseCodes"
     ]
 
     df = df.sort_values(by="DatasetPubmedId", ascending=False)
