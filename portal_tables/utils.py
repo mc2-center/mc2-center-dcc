@@ -20,6 +20,17 @@ CONFIG = {
     "project": {"manifest": "syn59074382", "portal_table": "syn21868602"}
 }
 
+DUO_DICT = {
+    "GRU" : "Data access is allowed for any research purpose",
+    "IRB" : "Requestor must provide documentation of local IRB/ERB approval to access data",
+    "NCU" : "Data access is limited to not-for-profit use",
+    "NPU" : "Data access is limited to not-for-profit organizations",
+    "NPUNCU" : "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",
+    "NRES" : "There are no restrictions on the use of this data",
+    "RS" : "Data access is limited to use in specific types of research",
+    "RTN" : "Derived/enriched data must be returned to the database/resource repository",
+    "Pending Annotation" : "Access information was not provided for this dataset"
+}
 
 def syn_login() -> synapseclient.Synapse:
     """Log into Synapse. If env variables not found, prompt user."""
@@ -116,3 +127,7 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
 def get_manifest(resource: str) -> dict[str, dict[str, str]]:
     """Get the config dictionary for the portal tables."""
     return CONFIG.get(resource).get("manifest")
+
+def translate_duo(code: str, dict: dict[str, str] = DUO_DICT) -> str:
+    """Get the definition of a DUO code."""
+    return dict[code]
