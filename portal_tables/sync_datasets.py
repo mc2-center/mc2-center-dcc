@@ -24,6 +24,7 @@ def add_missing_info(
     datasets["consortia"] = ""
     datasets["pub"] = ""
     datasets["version"] = ""
+    datasets["sourceRepository"] = ""
     for _, row in datasets.iterrows():
         grant_names = []
         themes = set()
@@ -82,6 +83,8 @@ def add_missing_info(
             continue
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         datasets.at[_, "DataUseCodes"] = ",".join(d)
+        source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
+        datasets.at[_, "sourceRepository"] = source_repo
     return datasets
 
 
@@ -141,7 +144,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetDoi",
         "iconTags",
         "version",
-        "DataUseCodes"
+        "DataUseCodes",
+        "sourceRepository"
     ]
 
     df = df.sort_values(by="DatasetPubmedId", ascending=False)
