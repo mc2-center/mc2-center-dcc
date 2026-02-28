@@ -168,7 +168,7 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     """Extract distinctive link elements and map to a repository name."""
     extracted_link = re.fullmatch(regex, link) if link != "Pending Annotation" else None
     core_link = "".join([g for g in extracted_link.groups()[3:] if g is not None]) if extracted_link is not None else "No extracted content"
-    source_repo_link, source_repo_alias, source_repo_link_list, source_repo_alias_list, source_repo = None, None, [], [], None
+    source_repo_link_list, source_repo_alias_list, source_repo = [], [], None
     
     for repo in dict.keys():
         if type(dict[repo]) == list:
@@ -192,17 +192,17 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
                     if pattern is not None and pattern.strip() in alias:
                         source_repo_alias_list.append(repo)
     
-    source_repo_link_list = set([s for s in source_repo_link_list if s is not None])
-    source_repo_alias_list = set([s for s in source_repo_alias_list if s is not None])
+    source_repo_link_set = set([s for s in source_repo_link_list if s is not None])
+    source_repo_alias_set = set([s for s in source_repo_alias_list if s is not None])
     
-    source_repo = "".join([r for r in source_repo_link_list if r is not None])
+    source_repo = "".join([r for r in source_repo_link_set if r is not None])
     if len(source_repo_alias_list) > 0:
-        if source_repo not in source_repo_alias_list:
-            print(f"\nRepository identification pattern mismatch:\nlink: {link}\nlink repository: {source_repo}\nalias: {alias}\nalias repositories: {source_repo_alias_list}\nUsing repo specified by link")
+        if source_repo not in source_repo_alias_set:
+            print(f"\nRepository identification pattern mismatch:\nlink: {link}\nlink repository: {source_repo}\nalias: {alias}\nalias repositories: {source_repo_alias_set}\nUsing repo specified by link")
     else:
         print(f"\nRepository identification:\nlink: {link}\nalias: {alias}\nrepository: {source_repo}")
 
-    if len(source_repo_link_list) == 0:
+    if len(source_repo_link_set) == 0:
         source_repo = "No repository information provided"
         print(f"\nNo pattern match found for:\nlink: {link}\nalias: {alias}")
     
