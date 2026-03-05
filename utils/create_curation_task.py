@@ -63,10 +63,10 @@ def get_args():
 		default=None,
 	),
 	parser.add_argument(
-		"-r",
-		"--record_view_name",
+		"-t",
+		"--data_type",
 		type=str,
-		help="Name to be applied to the FileView or RecordSet",
+		help="Type of metadata associated with the FileView or RecordSet",
 		required=False,
 		default=None,
 	),
@@ -76,15 +76,7 @@ def get_args():
 		type=str,
 		help="Description to be applied to a RecordSet",
 		required=False,
-		default=None,
-	),
-	parser.add_argument(
-		"-t",
-		"--task_name",
-		type=str,
-		help="Name to be applied to the curation task.",
-		required=False,
-		default=None,
+		default="Example description.",
 	),
 	parser.add_argument(
 		"-k",
@@ -100,7 +92,7 @@ def get_args():
 		type=str,
 		help="Directions to be associated with the curation task.",
 		required=False,
-		default=None,
+		default="Example instructions.",
 	),
 	parser.add_argument(
 		"-uri",
@@ -135,6 +127,14 @@ def get_args():
 		required=False,
 		default=None,
 	),
+	parser.add_argument(
+		"-v",
+		"--version",
+		type=str,
+		help="Schema version",
+		required=False,
+		default="1.0.0",
+	),
 	return parser.parse_args()
 
 def main():
@@ -143,16 +143,19 @@ def main():
 
 	args = get_args()
 
-	project, folder, record_view_name, record_desc, task_name, primary_keys, instructions, schema_uri, schema_path, task_type, sheet = args.project, args.folder, args.record_view_name, args.record_description, args.task_name, args.primary_keys, args.instructions, args.schema_uri, args.schema_path, args.task_type, args.input_path
+	project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, sheet, version = args.project, args.folder, args.data_type, args.record_description, args.primary_keys, args.instructions, args.schema_uri, args.schema_path, args.task_type, args.input_path, args.version
+	org = "MC2Center"
+	record_view_name = "_".join([org, data_type, "RecordSet"])
+	task_name = "_".join([org, data_type, "CurationTask"])
 
 	if sheet is not None:
 		input_sheet = pd.read_csv(sheet, header=0)
 		# assign content as libary of tuples, per row
 
 	if schema_path is not None:
-		schema_uri = synapse_json_schema_bind.synapse_json_schema_bind(target=None, url=None, path=schema_path, org_name="MC2Center", includes_ar=None, no_bind=True)
+		schema_uri = synapse_json_schema_bind.synapse_json_schema_bind(target=None, url=None, path=schema_path, org_name="MC2Center", includes_ar=None, no_bind=True, version=f"v{version}")
 
-	if task_type == "record":
+	if task_type.capitalize() == "Record":
 		record_set, curation_task, data_grid = create_record_based_metadata_task(
 			synapse_client=syn,
 			project_id=project,
@@ -170,7 +173,7 @@ def main():
 		print(f"  RecordSet: {record_set.id}")
 		print(f"  CurationTask: {curation_task.task_id}")
 
-	elif task_type == "file":
+	elif task_type.capitalize() == "File":
 		entity_view_id, task_id = create_file_based_metadata_task(
 			synapse_client=syn,
 			folder_id=folder,
