@@ -143,54 +143,91 @@ def main():
 
 	args = get_args()
 
-	project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, sheet, version = args.project, args.folder, args.data_type, args.record_description, args.primary_keys, args.instructions, args.schema_uri, args.schema_path, args.task_type, args.input_path, args.version
+	sheet = args.input_path
+	input_tuples_list = []
+	
+	if sheet is not None:
+		input_sheet = pd.read_csv(sheet, header=0)
+		for _,row in input_sheet.iterrows():
+			project = row["project"]
+			folder = row["folder"] 
+			data_type = row["data_type"]
+			record_desc = row["record_desc"]
+			primary_keys = row["primary_keys"]
+			instructions = row["instructions"]
+			schema_uri = row["schema_uri"] if row["schema_uri"] != "" else None
+			schema_path = row["schema_path"] if row["schema_path"] != "" else None
+			task_type = row["task_type"]
+			version = row["version"]
+			input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
+	else:
+		project = args.project
+		folder = args.folder 
+		data_type = args.data_type
+		record_desc = args.record_description
+		primary_keys = args.primary_keys
+		instructions = args.instructions
+		schema_uri = args.schema_uri
+		schema_path = args.schema_path
+		task_type = args.task_type
+		version = args.version
+		input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
+	
 	org = "MC2Center"
 	record_view_name = "_".join([org, data_type, "RecordSet"])
 	task_name = "_".join([org, data_type, "CurationTask"])
 
-	if sheet is not None:
-		input_sheet = pd.read_csv(sheet, header=0)
-		# assign content as libary of tuples, per row
+	for input_tuple in input_tuples_list:
+		project = input_tuple[0]
+		folder = input_tuple[1]
+		data_type = input_tuple[2]
+		record_desc = input_tuple[3]
+		primary_keys = input_tuple[4]
+		instructions = input_tuple[5]
+		schema_uri = input_tuple[6]
+		schema_path = input_tuple[7]
+		task_type = input_tuple[8]
+		version = input_tuple[9]
+	
+		if schema_path is not None:
+			schema_uri = synapse_json_schema_bind.synapse_json_schema_bind(target=None, url=None, path=schema_path, org_name="MC2Center", includes_ar=None, no_bind=True, version=f"v{version}")
 
-	if schema_path is not None:
-		schema_uri = synapse_json_schema_bind.synapse_json_schema_bind(target=None, url=None, path=schema_path, org_name="MC2Center", includes_ar=None, no_bind=True, version=f"v{version}")
+		if task_type.capitalize() == "Record":
+			record_set, curation_task, data_grid = create_record_based_metadata_task(
+				synapse_client=syn,
+				project_id=project,
+				folder_id=folder,
+				record_set_name=record_view_name,
+				record_set_description=record_desc,
+				curation_task_name=task_name,
+				upsert_keys=primary_keys,
+				instructions=instructions,
+				schema_uri=schema_uri,
+				bind_schema_to_record_set=True
+			)
 
-	if task_type.capitalize() == "Record":
-		record_set, curation_task, data_grid = create_record_based_metadata_task(
-			synapse_client=syn,
-			project_id=project,
-			folder_id=folder,
-			record_set_name=record_view_name,
-			record_set_description=record_desc,
-			curation_task_name=task_name,
-			upsert_keys=primary_keys,
-			instructions=instructions,
-			schema_uri=schema_uri,
-			bind_schema_to_record_set=True
-		)
+			print(f"Record-based workflow created:")
+			print(f"  RecordSet: {record_set.id}")
+			print(f"  CurationTask: {curation_task.task_id}")
 
-		print(f"Record-based workflow created:")
-		print(f"  RecordSet: {record_set.id}")
-		print(f"  CurationTask: {curation_task.task_id}")
+		elif task_type.capitalize() == "File":
+			entity_view_id, task_id = create_file_based_metadata_task(
+				synapse_client=syn,
+				folder_id=folder,
+				curation_task_name=task_name,
+				instructions=instructions,
+				attach_wiki=True,
+				entity_view_name=record_view_name,
+				schema_uri=schema_uri
+			)
 
-	elif task_type.capitalize() == "File":
-		entity_view_id, task_id = create_file_based_metadata_task(
-			synapse_client=syn,
-			folder_id=folder,
-			curation_task_name=task_name,
-			instructions=instructions,
-			attach_wiki=True,
-			entity_view_name=record_view_name,
-			schema_uri=schema_uri
-		)
+			print(f"File-based workflow created:")
+			print(f"  EntityView: {entity_view_id}")
+			print(f"  CurationTask: {task_id}")
 
-		print(f"File-based workflow created:")
-		print(f"  EntityView: {entity_view_id}")
-		print(f"  CurationTask: {task_id}")
-
-	else:
-		print(f"Task type {task_type} not recognized. Exiting.")
-		quit()
+		else:
+			print(f"Task type {task_type} not recognized. Skipping.")
+			continue
 
 if __name__ == "__main__":
     main()
