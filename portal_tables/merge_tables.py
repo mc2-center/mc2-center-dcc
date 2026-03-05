@@ -20,7 +20,6 @@ from synapseclient import MaterializedViewSchema
 from synapseclient.models import RecordSet, SchemaStorageStrategy, Table
 import argparse
 import pandas as pd
-import re
 
 
 def get_args():
@@ -90,7 +89,7 @@ def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org =
     
     project_ids = syn.tableQuery(f"SELECT 'grantId' FROM {source}")
     
-    record_df = pd.DataFrame(data=["syn71723047"], columns=["grantId"]) #pd.DataFrame(project_ids)
+    record_df = pd.DataFrame(project_ids)
     record_df["recordId"] = ""
     record_name = "_".join([org, record_type])
 
@@ -98,8 +97,7 @@ def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org =
         folder_id = syn.findEntityId(name=folder_name, parent=row["grantId"])
         record_id = syn.findEntityId(name=record_name, parent=folder_id)
         record_set = RecordSet(id=record_id).get()
-        record_set_df = pd.read_csv(record_set.path, header=0)
-        #apply sorting, column naming, extraction, etc.
+        record_set_df = pd.read_csv(record_set.path, header=0)  # apply sorting, column naming, extraction, etc. as needed
         record_set_table = Table(name=f"{record_name}_table", parent_id=row["grantId"]).store()
         record_set_table.store_rows(values=record_set_df, schema_storage_strategy=SchemaStorageStrategy.INFER_FROM_DATA)
         record_df.at[_,"recordId"] = record_set_table.id
