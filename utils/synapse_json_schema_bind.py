@@ -153,7 +153,7 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
         print(f"\nBinding non-AR schema {schema_uri}")
         service.bind_json_schema(schema_uri, entity_id)
    
-def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
+def get_schema_from_url(url: str, path: str, version: str = None) -> tuple[any, str, str, str]:
     """
     Access JSON schema from a URL or file path.
     Args:
@@ -166,7 +166,9 @@ def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
         Non-AR schema example: mc2.DatasetView-v1.0.0-schema.json
         AR schema example: MC2.AccessRequirement-CA000001-v3.0.2-schema.json
     """
-
+    sep = "-" if version is None else "_"
+    base = 1 if version is None else 0
+    
     if url or path is not None:
         if url is not None:
             schema = url
@@ -178,21 +180,21 @@ def get_schema_from_url(url: str, path: str) -> tuple[any, str, str, str]:
             schema_json = json.load(source_schema)
             
         schema_info = schema.split("/")[-1]
-        base_component = schema_info.split(".")[1].split("-")[0]
+        base_component = schema_info.split(".")[base].split(sep)[0]
         
         if base_component == "AccessRequirement":
             component = "".join(schema_info.split("-")[0:-2]).split(".")[1]
             version = schema_info.split("-")[-2]
         else:
             component = base_component
-            version = schema_info.split("-")[1]
+            version = schema_info.split(sep)[1] if version is None else version
 
     print(f"\nJSON schema {component} {version} successfully acquired from repository")
 
     return schema_json, component, base_component, version
 
 
-def get_register_bind_schema(syn, target: str, schema_org_name: str, org, service, path, url, includes_ar: bool, no_bind: bool) -> str:
+def get_register_bind_schema(syn, target: str, schema_org_name: str, org, service, path, url, includes_ar: bool, no_bind: bool, version: str) -> str:
     """
     Get, register, and bind a JSON schema to a Synapse entity.
     Args:
@@ -205,10 +207,11 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
         url (str): URL of the JSON schema.
         includes_ar (bool): Flag indicating if the schema includes Access Requirement information.
         no_bind (bool): Flag indicating if the schema should not be bound to the entity.
+        version (str): Version number for schema
     Returns:
         None"""
 
-    schema_json, component_adjusted, base_component, version = get_schema_from_url(url, path)
+    schema_json, component_adjusted, base_component, version = get_schema_from_url(url, path, version)
     print(f"\nRegistering JSON schema {component_adjusted} {version}\n")
 
     uri = register_json_schema(org, component_adjusted, schema_json, version, schema_org_name)
@@ -224,13 +227,12 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
     return uri
         
 
-def synapse_json_schema_bind(target = None, url = None, path = None, org_name = None, includes_ar = None, no_bind = None):
+def synapse_json_schema_bind(target = None, url = None, path = None, org_name = None, includes_ar = None, no_bind = None, version = None):
 
-    args = get_args()
-    
     syn = synapseclient.login()
 
     if path is None:
+        args = get_args()
         target, url, path, org_name, includes_ar, no_bind = args.t, args.l, args.p, args.n, args.ar, args.no_bind
 
     if no_bind is not None:
@@ -245,7 +247,7 @@ def synapse_json_schema_bind(target = None, url = None, path = None, org_name = 
 
     service, org, schema_org_name = get_schema_organization(schema_service, org_name)
     
-    registered_uri = get_register_bind_schema(syn, target, schema_org_name, org, service, path, url, includes_ar, no_bind)
+    registered_uri = get_register_bind_schema(syn, target, schema_org_name, org, service, path, url, includes_ar, no_bind, version)
 
     return registered_uri
 
