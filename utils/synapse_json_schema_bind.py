@@ -163,11 +163,13 @@ def get_schema_from_url(url: str, path: str, version: str = None) -> tuple[any, 
         tuple: (schema JSON, component adjusted name, base component name, version)
     Notes:
         Filename must match expected conventions:
-        Non-AR schema example: mc2.DatasetView-v1.0.0-schema.json
-        AR schema example: MC2.AccessRequirement-CA000001-v3.0.2-schema.json
+        Non-AR schema example: path/MC2Center.DatasetView-v1.0.0-schema.json
+        Non-AR, no version schema example (for Curator): path/DatasetView_validation_schema.json
+        AR schema example: path/MC2.AccessRequirement-CA000001-v3.0.2-schema.json
     """
-    sep = "-" if version is None else "_"
-    base = 1 if version is None else 0
+    # version is only passed as an arg if working on a curator task
+    sep = "-" if version is None else "_"  # curator task uses _ in schema name
+    base = 1 if version is None else 0  # curator task doesn't include org, so data type is the first split value
     
     if url or path is not None:
         if url is not None:
