@@ -22,15 +22,6 @@ import argparse
 import pandas as pd
 
 
-### Login to Synapse ###
-def login():
-
-    syn = synapseclient.Synapse()
-    syn.login()
-
-    return syn
-
-
 def get_args():
 
     parser = argparse.ArgumentParser(
@@ -66,23 +57,12 @@ def get_table_ids(syn, source_id, table_type, column_name):
 
     table_id_df = pd.DataFrame(table_id_sheet)
 
-    table_id_list = table_id_df[0].to_list()
-
-    return table_id_list
+    return table_id_df[0].to_list()
 
 
 def build_query(table_ids):
-
-    operation_list = []
-
-    for id in table_ids:
-
-        operation = f"SELECT * FROM {id}"
-        operation_list.append(operation)
-
-    full_query = " UNION ".join(operation_list)
-
-    return full_query
+    
+    return " UNION ".join([f"SELECT * FROM {id}" for id in table_ids])
 
 
 def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org = "MC2Center"):
@@ -104,9 +84,11 @@ def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org =
     
     return record_df
 
+
 def main():
 
-    syn = login()
+    syn = synapseclient.Synapse()
+    syn.login()
     args = get_args()
     source, target, table_type, record_sets = args.s, args.t, args.n, args.target_record_set
 
@@ -146,7 +128,7 @@ def main():
 
     table = MaterializedViewSchema(name=label, parent=target, definingSQL=table_query)
 
-    merged_table = syn.store(table)
+    syn.store(table)
 
 
 if __name__ == "__main__":
