@@ -104,6 +104,7 @@ def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org =
     
     return record_df
 
+
 def main():
 
     syn = synapseclient.Synapse()
