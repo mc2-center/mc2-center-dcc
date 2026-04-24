@@ -48,6 +48,12 @@ def get_args():
         required=False
     )
     parser.add_argument(
+        "-v",
+        help="Version number to apply to registered schema.",
+        required=False,
+        default=None
+    )
+    parser.add_argument(
         "-ar",
         action="store_true",
         help="Indicates if the schema includes Access Requirement information.",
@@ -236,6 +242,7 @@ def synapse_json_schema_bind(target = None, url = None, path = None, org_name = 
     if path is None:
         args = get_args()
         target, url, path, org_name, includes_ar, no_bind = args.t, args.l, args.p, args.n, args.ar, args.no_bind
+        version = args.v if args.v is not None else version
 
     if no_bind is not None:
         print(f"Warning ❗❗❗ Schema will not be bound to the entity if one was provided.\n")
