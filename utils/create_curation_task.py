@@ -149,16 +149,16 @@ def main():
 	if sheet is not None:
 		input_sheet = pd.read_csv(sheet, header=0)
 		for _,row in input_sheet.iterrows():
-			project = row["project"]
+			project = str(row["project"])
 			folder = row["folder"] 
 			data_type = row["data_type"]
 			record_desc = row["record_desc"]
-			primary_keys = row["primary_keys"]
+			primary_keys = str(row["primary_keys"]).split(", ")
 			instructions = row["instructions"]
 			schema_uri = row["schema_uri"] if row["schema_uri"] != "" else None
 			schema_path = row["schema_path"] if row["schema_path"] != "" else None
-			task_type = row["task_type"]
-			version = row["version"]
+			task_type = str(row["task_type"])
+			version = str(row["version"])
 			input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
 	else:
 		project = args.project
