@@ -25,6 +25,7 @@ def add_missing_info(
     datasets["pub"] = ""
     datasets["version"] = ""
     datasets["sourceRepository"] = ""
+    datasets["indexedBySynapse"] = ""
     for _, row in datasets.iterrows():
         grant_names = []
         themes = set()
@@ -82,9 +83,17 @@ def add_missing_info(
         except KeyError as e:
             continue
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
-        datasets.at[_, "DataUseCodes"] = ",".join(d)
+        datasets.at[_, "DatasetDataUseCodes"] = ",".join(d)
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
         datasets.at[_, "sourceRepository"] = source_repo
+        for primary_key in row["DatasetView_id"]:
+            entity = syn.get(primary_key, downloadFile=False)
+            if entity.entityType == "Dataset":
+                indexed = True
+            else:
+                indexed = False
+        datasets.at[_, "indexedBySynapse"] = indexed
+
     return datasets
 
 
@@ -107,7 +116,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetGrantNumber",
         "DatasetPubmedId",
         "iconTags",
-        "DataUseCodes"
+        "DatasetDataUseCodes"
     ]
     
     for col in cols:
@@ -144,8 +153,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetDoi",
         "iconTags",
         "version",
-        "DataUseCodes",
-        "sourceRepository"
+        "DatasetDataUseCodes",
+        "sourceRepository",
+        "indexedBySynapse"
     ]
 
     df = df.sort_values(by="DatasetPubmedId", ascending=False)
