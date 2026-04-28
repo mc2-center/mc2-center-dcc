@@ -141,3 +141,4 @@ annotations/inputs/*
 annotations/outputs/*
 annotations/output/*
 utils/example_files/*
+local_inputs/*

@@ -21,6 +21,8 @@ def get_args():
         "-m",
         type=str,
         help="path to manifest listing file paths and target folders in csv format",
+        required=False,
+        default=None
     )
     parser.add_argument(
         "-t",
@@ -28,29 +30,46 @@ def get_args():
         choices=["DatasetView", "EducationalResource", "PublicationView", "ToolView"],
         help="Type of manifest being submitted",
     )
+    parser.add_argument(
+        "-n",
+        type=str,
+        help="Name of the entity link that will be created.",
+    )
+    parser.add_argument(
+        "-l",
+        type=str,
+        help="URL for the resource to be stored as a link entity.",
+    )
+    parser.add_argument(
+        "-p",
+        type=str,
+        help="Synapse ID for the parent entity (Project or Folder) in which the link entity will be stored.",
+    )
+    parser.add_argument(
+        "-d",
+        type=str,
+        help="The path to a csv containing metadata of the type indicated.",
+    )
     return parser.parse_args()
 
 
-def get_names(manifest: str, name_column: str, target_column: str, link_column: str) -> list[tuple[str, str, str, str]]:
+def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
 
     path_name_link_target = []
 
-    paths_sheet = pd.read_csv(manifest)
+    if manifest is not None:
+        paths_sheet = pd.read_csv(manifest)
+        paths = paths_sheet["File Paths"].tolist()
+        targets = paths_sheet[f"{target}"].tolist()
+        df_path_target_list = [(pd.read_csv(p), p, t) for p, t in zip(paths, targets)]
 
-    paths = paths_sheet["File Paths"].tolist()
+    elif data is not None:
+        df_path_target_list = [(pd.read_csv(data), data, target)]
 
-    targets = paths_sheet[f"{target_column}"].tolist() 
-
-    for path, target in zip(paths, targets):
-
-        df = pd.read_csv(path)
+    for df, path, target in zip(df_path_target_list):
         names = df[f"{name_column}"].tolist()
         links = df[f"{link_column}"].tolist()
-
-        for name, link in zip(names, links):
-
-            folder_info = (path, name, link, target)
-            path_name_link_target.append(folder_info)
+        path_name_link_target = path_name_link_target + [(path, name, link, target) for name, link in zip(names, links)]
 
     return path_name_link_target
 
@@ -79,11 +98,9 @@ def add_ids_to_manifests(path_name_id: list[tuple[str, str, str]], name_column: 
     df_to_merge = pd.DataFrame.from_records(
         path_name_id, columns=["File Paths", f"{name_column}", f"{primary_key}"]
     )
-    
 
     path_groups = df_to_merge.groupby(["File Paths"], sort=False)
     
-
     for name, group in path_groups:
         
         name_path = name[0]
@@ -101,7 +118,7 @@ def main():
 
     args = get_args()
 
-    manifest, data_type = args.m, args.t
+    manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p, 
 
     if data_type == "DatasetView":
 
@@ -124,25 +141,23 @@ def main():
         link_column = "Resource Link"
         target_column = "folderIdEducation"
 
-
-    print("Capturing information from " + data_type + " manifests...")
-    pnt = get_names(manifest, name_column, target_column, link_column)
+    if manifest is not None:
+        print("Capturing information from " + data_type + " manifests...")
+        pnt = get_names(name_column, target_column, link_column, manifest=manifest)
+    elif data is not None:
+        pnt = get_names(name_column, target_column, link_column, data=data)
+    
+    else:
+        pnt = list((None, name, link, target))
 
     print("Generating Synapse Link Entities for each set of " + data_type + " entries...")
     pni = create_links(syn, pnt)
+    print(f"The following link entities were created:\n{[i for tup in pni for p,n,i in tup]}")
 
-    print(
-        "Adding Synapse IDs to "
-        + primary_key
-        + " column of "
-        + data_type
-        + " manifests"
-    )
-    
-    add_ids_to_manifests(pni, name_column, primary_key)
-
-    print("Manifests have been populated with Synapse IDs!")
-
+    if manifest is not None or data is not None:
+        print(f"Adding Synapse IDs to {primary_key} column of {data_type} manifests")
+        add_ids_to_manifests(pni, name_column, primary_key)
+        print("Manifest(s) have been populated with Synapse IDs for link entities!")
 
 if __name__ == "__main__":
     main()
