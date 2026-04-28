@@ -1,3 +1,15 @@
+"""
+list_curation_tasks.py
+
+This script uses the synapse client to list curation tasks for a given Synapse Project.
+
+Usage:
+
+python list_curation_tasks.py [PROJECT_SYNAPSE_ID]
+
+Prints Task ID, Data Type, and Instructions for the task to stdout.
+"""
+
 from synapseclient import Synapse
 from synapseclient.models import CurationTask
 import sys
