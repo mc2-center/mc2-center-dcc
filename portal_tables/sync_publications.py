@@ -86,6 +86,10 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "Publication Accessibility",
         "iconTags"
     ]
+
+    # Show most recent publications at the top of the table
+    df = df.sort_values(by=["Publication Year", "Pubmed Id"], ascending=False)
+    
     return df[col_order]
 
 

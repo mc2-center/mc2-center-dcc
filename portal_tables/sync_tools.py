@@ -128,6 +128,9 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "ToolEntityRole",
         "iconTags"
     ]
+
+    df = df.sort_values(by="ToolPubmedId", ascending=False)
+
     return df[col_order]
 
 

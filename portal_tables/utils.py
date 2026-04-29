@@ -7,12 +7,13 @@ from datetime import datetime
 
 import synapseclient
 import pandas as pd
+import re
 
 
 # Manifest and portal table synIDs of each resource type.
 CONFIG = {
     "publication": {"manifest": "syn53478776", "portal_table": "syn21868591"},
-    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968"},
+    "dataset": {"manifest": "syn53478774.22", "portal_table": "syn21897968"},
     "tool": {"manifest": "syn53479671", "portal_table": "syn26127427"},
     "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
     "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
@@ -20,6 +21,48 @@ CONFIG = {
     "project": {"manifest": "syn59074382", "portal_table": "syn21868602"}
 }
 
+DUO_DICT = {
+    "GRU" : "Data access is allowed for any research purpose",
+    "IRB" : "Requestor must provide documentation of local IRB/ERB approval to access data",
+    "NCU" : "Data access is limited to not-for-profit use",
+    "NPU" : "Data access is limited to not-for-profit organizations",
+    "NPUNCU" : "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",
+    "NRES" : "There are no restrictions on the use of this data",
+    "RS" : "Data access is limited to use in specific types of research",
+    "RTN" : "Derived/enriched data must be returned to the database/resource repository",
+    "Pending Annotation" : "Access information was not provided for this dataset"
+}
+
+REPO_DICT = {
+    "CBioPortal" : [("cbioportal"), (None)],
+    "Dryad" : [("dryad"), ("dryad")],
+    "Harvard Dataverse" : [("dataverse"), (None)], 
+    "Mendeley" : [("mendeley"), ("10.17632")],
+    "EBI ArrayExpress" : [("arrayexpress"), ("E-MTAB")],
+    "EBI Electron Microscopy Data Bank (EMDB)" : [("emdb"), ("EMD")],
+    "EBI European Nucleotide Archive (ENA)" : [("ena"), ("PRJE")],
+    "EBI Proteomics Identifications Database (PRIDE) - ProteomeXchange member" : [("pride"), ("PXD")],
+    "EBI BioImages" : [("BioImages"), ("S-B")],
+    "European Genome-phenome Archive (EGA)" : [("ega"), ("EGAD", "EGAS")],
+    "FigShare" : [("figshare"), (None)],
+    "Flow Repository" : [("flowrepository"), ("FR-")],
+    "GitHub" : [("github"), (None)],
+    "UCSD MassIVE" : [("massive"), ("MSV")],
+    "Metabolomics Workbench" : [("metabolomicsworkbench"), ("PR")],
+    "NCBI Bioprojects" : [("bioproject"), ("GSE", "PRJNA")],
+    "NCBI Gene Expression Omnibus (GEO)" : [("geo"), ("GSE", "PRJNA")],
+    "NCBI Sequence Read Archive (SRA)" : [("sra", "trace"), ("SRP")],
+    "NCBI Nucleotide database" : [("nuccore"), ("OK", "SAMN")],
+    "NCBI Database of Genotypes and Phenotypes (dbGaP)" : [("gap"), ("phs", "PRJNA")],
+    "Cytoscape Consortium Network Data Exchange (NDEx)" : [("ndexbio"), (None)],
+    "Proteome Central - ProteomeXchange member" : [("proteomecentral"), ("PXD")],
+    "Synapse" : [("synapse"), ("syn")],
+    "Harvard Tissue Atlas" : [("tissue-atlas"), (None)],
+    "Zenodo" : [("zenodo"), ("zenodo")],
+    "None" : "No repository designated"
+}
+
+REPO_REGEX = r"(https|http)(:\/\/)(www\.|)(.*\/)(.*?)(\/|)|(Pending Annotation)"
 
 def syn_login() -> synapseclient.Synapse:
     """Log into Synapse. If env variables not found, prompt user."""
@@ -116,3 +159,84 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
 def get_manifest(resource: str) -> dict[str, dict[str, str]]:
     """Get the config dictionary for the portal tables."""
     return CONFIG.get(resource).get("manifest")
+
+def translate_duo(code: str, dict: dict[str, str] = DUO_DICT) -> str:
+    """Get the definition of a DUO code."""
+    return dict[code]
+
+def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DICT, regex: str = REPO_REGEX):
+    """Extract distinctive link elements and map to a repository name."""
+    extracted_link = re.fullmatch(regex, link) if link != "Pending Annotation" else None
+    core_link = "".join([g for g in extracted_link.groups()[3:] if g is not None]) if extracted_link is not None else "No extracted content"
+    source_repo_link_list, source_repo_alias_list, source_repo = [], [], None
+    
+    for repo in dict.keys():
+        if type(dict[repo]) == list:
+            link_patterns, alias_patterns = dict[repo]
+            
+            link_patterns = link_patterns.split(",") if type(link_patterns) == str else link_patterns
+            link_patterns = list(link_patterns) if type(link_patterns) == tuple else link_patterns
+            link_patterns = [None] if link_patterns == None else link_patterns
+            
+            alias_patterns = alias_patterns.split(",") if type(alias_patterns) == str else alias_patterns
+            alias_patterns = list(alias_patterns) if type(alias_patterns) == tuple else alias_patterns
+            alias_patterns = [None] if alias_patterns == None else alias_patterns
+            
+            if link_patterns != [None]:
+                for pattern in link_patterns:
+                    if pattern is not None and pattern.strip() in core_link:
+                        source_repo_link_list.append(repo)
+            
+            if alias_patterns != [None]:
+                for pattern in alias_patterns:
+                    if pattern is not None and pattern.strip() in alias:
+                        source_repo_alias_list.append(repo)
+    
+    source_repo_link_set = set([s for s in source_repo_link_list if s is not None])
+    source_repo_alias_set = set([s for s in source_repo_alias_list if s is not None])
+    
+    source_repo = "".join([r for r in source_repo_link_set])
+    if source_repo not in source_repo_alias_set:
+        print(f"\nRepository identification pattern mismatch:\nlink: {link}\nlink repository: {source_repo}\nalias: {alias}\nalias repositories: {source_repo_alias_set}\nUsing repo specified by link")
+    else:
+        print(f"\nRepository identification:\nlink: {link}\nalias: {alias}\nrepository: {source_repo}")
+
+    if len(source_repo_link_set) == 0:
+        source_repo = "No repository information provided"
+        print(f"\nNo pattern match found for:\nlink: {link}\nalias: {alias}")
+    
+    return source_repo
+
+def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_repo: str):
+    """Determine download type and return download id if Synapse hosted or indexed"""
+
+    entity_id = row["DatasetView_id"].split(",")[0]
+
+    try:
+        entity = syn.get(entity_id, downloadFile=False)
+        entity_type = entity.concreteType
+    except synapseclient.core.exceptions.SynapseHTTPError as e:
+        entity_type = None
+
+    if entity_type == "org.sagebionetworks.repo.model.table.Dataset":
+        indexed = True
+        download_id = entity_id
+    else:
+        indexed = False
+        download_id = None
+
+    if source_repo == "Synapse":
+        if indexed is True:
+            download_type = "Synapse Hosted"
+        if indexed is False:
+            download_type = "Not Available for Download"
+    else:
+        if indexed is True:
+            download_type = "Synapse Indexed"
+        else:
+            download_type = "Externally Hosted"
+    
+    print(f"Dataset is {download_type}")
+
+    return download_type, download_id
+    
