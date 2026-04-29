@@ -207,3 +207,25 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
         print(f"\nNo pattern match found for:\nlink: {link}\nalias: {alias}")
     
     return source_repo
+
+def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_repo: str):
+    """Determine download type and return download id if Synapse hosted or indexed"""
+
+    entity = syn.get(row["DatasetView_id"], downloadFile=False)
+
+    if entity.entityType == "Dataset":
+        indexed = True
+        download_id = row["DatasetView_id"]
+    else:
+        indexed = False
+        download_id = None
+    
+    if source_repo == "Synapse" and indexed is True:
+        download_type = "Synapse Hosted"
+    elif source_repo != "Synapse" and indexed is True:
+        download_type = "Synapse Indexed"
+    elif source_repo != "Synapse" and indexed is False:
+        download_type = "Externally Hosted"
+    
+    return download_type, download_id
+    
