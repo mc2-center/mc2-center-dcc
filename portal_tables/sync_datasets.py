@@ -80,13 +80,13 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
-        d = row["DatasetDataUseCodes"].split(",")
+        d = row["DataUseCodes"].split(",")
         try:
             d = [utils.translate_duo(code.strip()) for code in d]
         except KeyError as e:
             continue
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
-        datasets.at[_, "DatasetDataUseCodes"] = ",".join(d)
+        datasets.at[_, "DataUseCodes"] = ",".join(d)
         
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
         download_type, download_id = utils.identify_download_type(syn, row, source_repo)
@@ -117,7 +117,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetGrantNumber",
         "DatasetPubmedId",
         "iconTags",
-        "DatasetDataUseCodes"
+        "DataUseCodes"
     ]
     
     for col in cols:
@@ -154,7 +154,7 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetDoi",
         "iconTags",
         "version",
-        "DatasetDataUseCodes",
+        "DataUseCodes",
         "sourceRepository",
         "downloadType",
         "downloadSynId"     
