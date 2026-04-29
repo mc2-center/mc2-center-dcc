@@ -13,7 +13,7 @@ import re
 # Manifest and portal table synIDs of each resource type.
 CONFIG = {
     "publication": {"manifest": "syn53478776", "portal_table": "syn21868591"},
-    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968"},
+    "dataset": {"manifest": "syn53478774.22", "portal_table": "syn21897968"},
     "tool": {"manifest": "syn53479671", "portal_table": "syn26127427"},
     "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
     "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
@@ -195,10 +195,9 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     source_repo_link_set = set([s for s in source_repo_link_list if s is not None])
     source_repo_alias_set = set([s for s in source_repo_alias_list if s is not None])
     
-    source_repo = "".join([r for r in source_repo_link_set if r is not None])
-    if len(source_repo_alias_list) > 0:
-        if source_repo not in source_repo_alias_set:
-            print(f"\nRepository identification pattern mismatch:\nlink: {link}\nlink repository: {source_repo}\nalias: {alias}\nalias repositories: {source_repo_alias_set}\nUsing repo specified by link")
+    source_repo = "".join([r for r in source_repo_link_set])
+    if source_repo not in source_repo_alias_set:
+        print(f"\nRepository identification pattern mismatch:\nlink: {link}\nlink repository: {source_repo}\nalias: {alias}\nalias repositories: {source_repo_alias_set}\nUsing repo specified by link")
     else:
         print(f"\nRepository identification:\nlink: {link}\nalias: {alias}\nrepository: {source_repo}")
 
@@ -211,21 +210,33 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
 def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_repo: str):
     """Determine download type and return download id if Synapse hosted or indexed"""
 
-    entity = syn.get(row["DatasetView_id"], downloadFile=False)
+    entity_id = row["DatasetView_id"].split(",")[0]
 
-    if entity.entityType == "Dataset":
+    try:
+        entity = syn.get(entity_id, downloadFile=False)
+        entity_type = entity.concreteType
+    except synapseclient.core.exceptions.SynapseHTTPError as e:
+        entity_type = None
+
+    if entity_type == "org.sagebionetworks.repo.model.table.Dataset":
         indexed = True
-        download_id = row["DatasetView_id"]
+        download_id = entity_id
     else:
         indexed = False
         download_id = None
+
+    if source_repo == "Synapse":
+        if indexed is True:
+            download_type = "Synapse Hosted"
+        if indexed is False:
+            download_type = "Not Available for Download"
+    else:
+        if indexed is True:
+            download_type = "Synapse Indexed"
+        else:
+            download_type = "Externally Hosted"
     
-    if source_repo == "Synapse" and indexed is True:
-        download_type = "Synapse Hosted"
-    elif source_repo != "Synapse" and indexed is True:
-        download_type = "Synapse Indexed"
-    elif source_repo != "Synapse" and indexed is False:
-        download_type = "Externally Hosted"
-    
+    print(f"Dataset is {download_type}")
+
     return download_type, download_id
     
