@@ -19,13 +19,16 @@ def add_missing_info(
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
+    
     datasets["grantName"] = ""
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
     datasets["version"] = ""
     datasets["sourceRepository"] = ""
-    datasets["indexedBySynapse"] = ""
+    datasets["downloadType"] = ""
+    datasets["downloadSynId"] = ""
+    
     for _, row in datasets.iterrows():
         grant_names = []
         themes = set()
@@ -77,22 +80,20 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
-        d = row["DataUseCodes"].split(",")
+        d = row["DatasetDataUseCodes"].split(",")
         try:
             d = [utils.translate_duo(code.strip()) for code in d]
         except KeyError as e:
             continue
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         datasets.at[_, "DatasetDataUseCodes"] = ",".join(d)
+        
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
+        download_type, download_id = utils.identify_download_type(syn, row, source_repo)
+        
         datasets.at[_, "sourceRepository"] = source_repo
-        for primary_key in row["DatasetView_id"]:
-            entity = syn.get(primary_key, downloadFile=False)
-            if entity.entityType == "Dataset":
-                indexed = True
-            else:
-                indexed = False
-        datasets.at[_, "indexedBySynapse"] = indexed
+        datasets.at[_, "downloadType"] = download_type
+        datasets.at[_, "downloadSynId"] = download_id
 
     return datasets
 
@@ -155,7 +156,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "version",
         "DatasetDataUseCodes",
         "sourceRepository",
-        "indexedBySynapse"
+        "downloadType",
+        "downloadSynId"     
     ]
 
     df = df.sort_values(by="DatasetPubmedId", ascending=False)
