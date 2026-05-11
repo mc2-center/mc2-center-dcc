@@ -21,6 +21,12 @@ def add_missing_info(
     ]
 
     pattern = re.compile(r"(')([\s\w/-]+)(')")
+
+    for _, row in pubs.iterrows():
+        datasets = row["Publication Dataset Alias"]
+        final_datasets = [d for d in datasets.split(", ") if d.startswith("SRX") is False]
+        pubs.at[_, "Publication Dataset Alias"] = ", ".join(final_datasets)
+
     for col in new_cols:
         pubs[col] = ""
         for row in pubs.itertuples():
