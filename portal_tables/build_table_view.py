@@ -71,6 +71,9 @@ def main():
     elif args.c == "file":
         view_type = EntityViewType.FILE
 
+    elif args.c == "project":
+        view_type = EntityViewType.PROJECT
+
     new_view = build_schema(args.n, args.p, args.s, view_type, args.a)
 
     new_view = syn.store(new_view)

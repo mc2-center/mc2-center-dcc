@@ -19,11 +19,16 @@ def add_missing_info(
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
+    
     datasets["grantName"] = ""
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
     datasets["version"] = ""
+    datasets["sourceRepository"] = ""
+    datasets["downloadType"] = ""
+    datasets["downloadSynId"] = ""
+    
     for _, row in datasets.iterrows():
         grant_names = []
         themes = set()
@@ -53,6 +58,10 @@ def add_missing_info(
         pub_doi = []
         for p in row["PublicationViewKey"].split(","):
             p = p.strip()  # Remove leading/trailing whitespace, if any
+            if len(p) < 4:
+                pmid_list = [e for elem in "".join(row["PublicationViewKey"].split(",")) for e in elem.split()]
+                p = "".join(pmid_list[0:8])
+                datasets.at[_, "PublicationViewKey"] = p
             try:
                 pub_titles.append(
                     pubs[pubs.pubMedId == int(p)]["publicationTitle"]
@@ -71,6 +80,21 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
+        d = row["DataUseCodes"].split(",")
+        try:
+            d = [utils.translate_duo(code.strip()) for code in d]
+        except KeyError as e:
+            continue
+        d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
+        datasets.at[_, "DataUseCodes"] = ",".join(d)
+        
+        source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
+        download_type, download_id = utils.identify_download_type(syn, row, source_repo)
+        
+        datasets.at[_, "sourceRepository"] = source_repo
+        datasets.at[_, "downloadType"] = download_type
+        datasets.at[_, "downloadSynId"] = download_id
+
     return datasets
 
 
@@ -92,7 +116,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetTumorType",
         "DatasetGrantNumber",
         "DatasetPubmedId",
-        "iconTags"
+        "iconTags",
+        "DataUseCodes"
     ]
     
     for col in cols:
@@ -128,8 +153,15 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "link",
         "DatasetDoi",
         "iconTags",
-        "version"
+        "version",
+        "DataUseCodes",
+        "sourceRepository",
+        "downloadType",
+        "downloadSynId"     
     ]
+
+    df = df.sort_values(by="DatasetPubmedId", ascending=False)
+
     return df[col_order]
 
 
@@ -141,7 +173,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest = pd.read_csv(syn.get(args.manifest_id).path, dtype=str).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
