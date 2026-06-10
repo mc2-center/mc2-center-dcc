@@ -51,8 +51,8 @@ def add_missing_info(
         except synapseclient.core.exceptions.SynapseUnmetAccessRestrictions as e:
             print(f"Encountered error: {e}")
             pass
-        version = dataset.version_number if dataset is not None and dataset.version_number is not None else 1
-        datasets.at[_, "version"] = int(version) - 1
+        version = int(dataset.version_number) - 1 if dataset is not None and dataset.version_number is not None else 1
+        datasets.at[_, "version"] = version
         
         pub_titles = []
         pub_doi = []
