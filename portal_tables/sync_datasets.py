@@ -52,7 +52,7 @@ def add_missing_info(
             print(f"Encountered error: {e}")
             pass
         version = dataset.version_number if dataset is not None and dataset.version_number is not None else 1
-        datasets.at[_, "version"] = int(version)
+        datasets.at[_, "version"] = int(version) - 1
         
         pub_titles = []
         pub_doi = []
