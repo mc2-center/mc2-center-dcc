@@ -174,8 +174,6 @@ def main():
 		input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
 	
 	org = "MC2Center"
-	record_view_name = "_".join([org, data_type, "RecordSet"])
-	task_name = "_".join([org, data_type, "CurationTask"])
 
 	for input_tuple in input_tuples_list:
 		project = input_tuple[0]
@@ -188,8 +186,11 @@ def main():
 		schema_path = input_tuple[7]
 		task_type = input_tuple[8]
 		version = input_tuple[9]
+
+		record_view_name = "_".join([org, data_type, "RecordSet"])
+		task_name = "_".join([org, data_type, "CurationTask"])
 	
-		if schema_path is not None:
+		if schema_path is not None and schema_uri is None:
 			schema_uri = synapse_json_schema_bind.synapse_json_schema_bind(target=None, url=None, path=schema_path, org_name="MC2Center", includes_ar=None, no_bind=True, version=f"v{version}")
 
 		if task_type.capitalize() == "Record":
