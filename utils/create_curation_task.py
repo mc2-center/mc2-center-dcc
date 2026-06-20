@@ -40,7 +40,7 @@ from synapseclient.extensions.curator import (
 	create_file_based_metadata_task,
 	query_schema_registry
 )
-from synapseclient import Synapse
+from synapseclient import Folder, Synapse
 import synapse_json_schema_bind
 
 def get_args():
@@ -146,6 +146,7 @@ def main():
 	sheet = args.input_path
 	org = "MC2Center"
 	input_tuples_list = []
+	folder_count = 1
 	
 	if sheet is not None:
 		print("Reading input sheet...")
@@ -153,7 +154,7 @@ def main():
 		print("Sheet read!\nBuilding input tuples...")
 		for _,row in input_sheet.iterrows():
 			project = str(row["project"])
-			folder = row["folder"] 
+			folder = str(row["folder"]) if row["folder"] != "" else None
 			data_type = row["data_type"]
 			record_desc = row["record_desc"]
 			primary_keys = str(row["primary_keys"]).split(", ")
@@ -177,6 +178,7 @@ def main():
 		task_type = args.task_type
 		version = args.version
 		input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
+	
 	print("Done!")
 
 	for input_tuple in input_tuples_list:
@@ -193,6 +195,11 @@ def main():
 
 		record_view_name = "_".join([org, data_type, "RecordSet"])
 		task_name = "_".join([org, data_type, "CurationTask"])
+
+		if folder is None:
+			new_folder = Folder(name=f"{data_type}", parent=project)
+			new_folder = syn.store(new_folder)
+			folder = new_folder.id
 
 		print(f"Creating curation task {task_name}...")
 
