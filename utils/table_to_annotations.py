@@ -106,7 +106,7 @@ def collect_fileview_annotations(syn, files: list, fileview_id: str) -> dict:
     """Collect all Biospecimen and File identifiers from a File View metadata table,
     return a File Synapse Id: Biospecimen Key dictionary"""
 
-    fileview_columns = ["FileView_id", "Biospecimen Key"]
+    fileview_columns = ["FileAlias", "BiospecimenKey"]
 
     fileview_table = get_table(syn, fileview_id, fileview_columns)
 
@@ -136,7 +136,7 @@ def collect_biospecimen_annotations(
     model_dict = {}
 
     component, table_id, column_list = specimen_info_tuple
-    data_table = get_table(syn, table_id, column_list).set_index("Biospecimen_id")
+    data_table = get_table(syn, table_id, column_list).set_index("BiospecimenId")
     column_list.pop(0)  # remove Biospecimen_id from list of columns, since it is now the index
     biospecimen_ids = set(file_biospecimen_dict.values())
     filtered_metadata = data_table[data_table.index.isin(biospecimen_ids)]
@@ -144,8 +144,8 @@ def collect_biospecimen_annotations(
     for file_id, biospecimen_key in file_biospecimen_dict.items():
         if biospecimen_key in filtered_metadata.index:
             metadata = filtered_metadata.loc[biospecimen_key]
-            individual_id = metadata["Individual Key"]
-            model_id = metadata["Model Key"]
+            individual_id = metadata["IndividualKey"]
+            model_id = metadata["ModelKey"]
             individual_dict[file_id] = individual_id
             model_dict[file_id] = model_id
             biospecimen_annotations = list(zip(column_list, metadata.tolist()))
@@ -172,7 +172,7 @@ def collect_record_annotations(
     apply annotations to each file"""
 
     component, table_id, column_list = info_tuple
-    key_column = f"{component}_id" 
+    key_column = f"{component}Id" 
     data_table = get_table(syn, table_id, column_list).set_index(key_column)
     column_list.pop(0)  # remove Component_id from list of columns, since it is now the index
     table_keys = set(tuple_dict.values())
@@ -257,98 +257,98 @@ def main():
     duo_only = True
 
     biospecimen_columns = [
-        "Biospecimen_id",
-        "Study Key",
-        "Individual Key",
-        "Model Key",
-        "Parent Biospecimen Key",
-        "Biospecimen Type Category",
-        "Biospecimen Type",
-        "Biospecimen Tumor Status",
-        "Biospecimen Acquisition Method",
-        "Biospecimen Incidence Type",
-        "Biospecimen Stain",
-        "Biospecimen Species",
-        "Biospecimen Sex",
-        "Biospecimen Age at Collection",
-        "Biospecimen Age at Collection Unit",
-        "Biospecimen Disease Type",
-        "Biospecimen Primary Site",
-        "Biospecimen Primary Diagnosis",
-        "Biospecimen Site of Origin",
-        "Biospecimen Tumor Subtype",
-        "Biospecimen Tumor Grade",
-        "Biospecimen Known Metastasis Sites",
-        "Biospecimen Tumor Morphology",
-        "Biospecimen Composition",
-        "Biospecimen Preservation Method",
-        "Biospecimen Fixative",
-        "Biospecimen Embedding Medium",
-        "Biospecimen Anatomic Site",
-        "Biospecimen Site of Resection or Biopsy",
-        "Biospecimen Timepoint Type",
-        "Biospecimen Timepoint Offset",
-        "Biospecimen Collection Site",
-        "Biospecimen Treatment Type",
-        "Biospecimen Therapeutic Agent",
-        "Biospecimen Treatment Response",
-        "Biospecimen Last Known Disease Status",
-        "Biospecimen BioSample Identifier",
-        "Biospecimen Description",
+        "BiospecimenId",
+        "StudyKey",
+        "IndividualKey",
+        "ModelKey",
+        "ParentBiospecimenKey",
+        "BiospecimenTypeCategory",
+        "BiospecimenType",
+        "BiospecimenTumorStatus",
+        "BiospecimenAcquisitionMethod",
+        "BiospecimenIncidenceType",
+        "BiospecimenStain",
+        "BiospecimenSpecies",
+        "BiospecimenSex",
+        "BiospecimenAgeatCollection",
+        "BiospecimenAgeatCollectionUnit",
+        "BiospecimenDiseaseType",
+        "BiospecimenPrimarySite",
+        "BiospecimenPrimaryDiagnosis",
+        "BiospecimenSiteofOrigin",
+        "BiospecimenTumorSubtype",
+        "BiospecimenTumorGrade",
+        "BiospecimenKnownMetastasisSites",
+        "BiospecimenTumorMorphology",
+        "BiospecimenComposition",
+        "BiospecimenPreservationMethod",
+        "BiospecimenFixative",
+        "BiospecimenEmbeddingMedium",
+        "BiospecimenAnatomicSite",
+        "BiospecimenSiteofResectionorBiopsy",
+        "BiospecimenTimepointType",
+        "BiospecimenTimepointOffset",
+        "BiospecimenCollectionSite",
+        "BiospecimenTreatmentType",
+        "BiospecimenTherapeuticAgent",
+        "BiospecimenTreatmentResponse",
+        "BiospecimenLastKnownDiseaseStatus",
+        "BiospecimenBioSampleIdentifier",
+        "BiospecimenDescription",
     ]
 
     individual_columns = [
-        "Individual_id",
-        "Study Key",
-        "Individual dbGaP Subject Id",
-        "Individual Sex",
-        "Individual Gender",
-        "Individual Age at Diagnosis",
-        "Individual Disease Type",
-        "Individual Primary Diagnosis",
-        "Individual Primary Site",
-        "Individual Primary Tumor Stage",
-        "Individual Site of Origin",
-        "Individual Tumor Subtype",
-        "Individual Tumor Grade",
-        "Individual Tumor Lymph Node Stage",
-        "Individual Known Metastasis Sites",
-        "Individual Metastasis Stage",
-        "Individual Treatment Type",
-        "Individual Therapeutic Agent",
-        "Individual Days to Treatment",
-        "Individual Treatment Response",
-        "Individual Days to Last Followup",
-        "Individual Recurrence Status",
-        "Individual Days To Recurrence",
-        "Individual Days to Last Known Disease Status",
-        "Individual Last Known Disease Status",
-        "Individual Vital Status",
+        "IndividualId",
+        "StudyKey",
+        "IndividualdbGaPSubjectId",
+        "IndividualSex",
+        "IndividualGender",
+        "IndividualAgeatDiagnosis",
+        "IndividualDiseaseType",
+        "IndividualPrimaryDiagnosis",
+        "IndividualPrimarySite",
+        "IndividualPrimaryTumorStage",
+        "IndividualSiteofOrigin",
+        "IndividualTumorSubtype",
+        "IndividualTumorGrade",
+        "IndividualTumorLymphNodeStage",
+        "IndividualKnownMetastasisSites",
+        "IndividualMetastasisStage",
+        "IndividualTreatmentType",
+        "IndividualTherapeuticAgent",
+        "IndividualDaystoTreatment",
+        "IndividualTreatmentResponse",
+        "IndividualDaystoLastFollowup",
+        "IndividualRecurrenceStatus",
+        "IndividualDaysToRecurrence",
+        "IndividualDaystoLastKnownDiseaseStatus",
+        "IndividualLastKnownDiseaseStatus",
+        "IndividualVitalStatus",
     ]
 
     model_columns = [
-        "Model_id",
-        "Study Key",
-        "Individual Key",
-        "Model Age",
-        "Model Age Unit",
-        "Model Sex",
-        "Model Disease Type",
-        "Model Primary Diagnosis",
-        "Model Primary Site",
-        "Model Site of Origin",
-        "Model Tumor Subtype",
-        "Model Species",
-        "Model Type",
-        "Model Method",
-        "Model Source",
-        "Model Acquisition Type",
-        "Model Graft Source",
-        "Model Genotype",
-        "Model Treatment Type",
-        "Model Therapeutic Agent",
-        "Model Days to Treatment",
-        "Model Treatment Response",
+        "ModelId",
+        "StudyKey",
+        "IndividualKey",
+        "ModelAge",
+        "ModelAgeUnit",
+        "ModelSex",
+        "ModelDisease Type",
+        "ModelPrimary Diagnosis",
+        "ModelPrimary Site",
+        "ModelSite of Origin",
+        "ModelTumor Subtype",
+        "ModelSpecies",
+        "ModelType",
+        "ModelMethod",
+        "ModelSource",
+        "ModelAcquisitionType",
+        "ModelGraftSource",
+        "ModelGenotype",
+        "ModelTreatmentType",
+        "ModelTherapeuticAgent",
+        "ModelDaystoTreatment",
+        "ModelTreatmentResponse",
     ]
 
     datasetview_columns = [
@@ -430,7 +430,7 @@ def main():
     dataset_info_tuple = ("DatasetView", datasetview_table, datasetview_columns)
     ada_psi_study_info_tuple = ("Study", ada_psi_study_table, ada_psi_study_columns)
     duo_ada_psi_study_info_tuple = ("Study", ada_psi_study_table, study_duo_only_columns)
-    keys_to_drop = ["Study Key", "StudyProjectIdentifier"]
+    keys_to_drop = ["Study Key", "StudyKey", "StudyProjectIdentifier"]
 
     if file_table is not None:
         files = get_table(syn, target, cols="id")["id"].tolist()
