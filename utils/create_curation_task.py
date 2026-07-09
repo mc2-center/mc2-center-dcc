@@ -40,7 +40,7 @@ from synapseclient.extensions.curator import (
 	create_file_based_metadata_task,
 	query_schema_registry
 )
-from synapseclient import Synapse
+from synapseclient import Folder, Synapse
 import synapse_json_schema_bind
 
 def get_args():
@@ -144,23 +144,29 @@ def main():
 	args = get_args()
 
 	sheet = args.input_path
+	org = "MC2Center"
 	input_tuples_list = []
+	folder_count = 1
 	
 	if sheet is not None:
-		input_sheet = pd.read_csv(sheet, header=0)
+		print("Reading input sheet...")
+		input_sheet = pd.read_csv(sheet, header=0, keep_default_na=False, dtype=str)
+		print("Sheet read!\nBuilding input tuples...")
 		for _,row in input_sheet.iterrows():
 			project = str(row["project"])
-			folder = row["folder"] 
+			folder = str(row["folder"]) if row["folder"] != "" else None
 			data_type = row["data_type"]
 			record_desc = row["record_desc"]
 			primary_keys = str(row["primary_keys"]).split(", ")
 			instructions = row["instructions"]
-			schema_uri = row["schema_uri"] if row["schema_uri"] != "" else None
+			schema_uri = str(row["schema_uri"]) if row["schema_uri"] != "" else None
 			schema_path = str(row["schema_path"]) if row["schema_path"] != "" else None
 			task_type = str(row["task_type"])
 			version = str(row["version"])
 			input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
+		
 	else:
+		print("Building input tuples...")
 		project = args.project
 		folder = args.folder 
 		data_type = args.data_type
@@ -173,9 +179,7 @@ def main():
 		version = args.version
 		input_tuples_list.append((project, folder, data_type, record_desc, primary_keys, instructions, schema_uri, schema_path, task_type, version))
 	
-	org = "MC2Center"
-	record_view_name = "_".join([org, data_type, "RecordSet"])
-	task_name = "_".join([org, data_type, "CurationTask"])
+	print("Done!")
 
 	for input_tuple in input_tuples_list:
 		project = input_tuple[0]
@@ -188,8 +192,19 @@ def main():
 		schema_path = input_tuple[7]
 		task_type = input_tuple[8]
 		version = input_tuple[9]
-	
-		if schema_path is not None:
+
+		record_view_name = "_".join([org, data_type, "RecordSet"])
+		task_name = "_".join([org, data_type, "CurationTask"])
+
+		if folder is None:
+			new_folder = Folder(name=f"{data_type}", parent=project)
+			new_folder = syn.store(new_folder)
+			folder = new_folder.id
+
+		print(f"Creating curation task {task_name}...")
+
+		if schema_uri is None:
+			print(f"Registering JSON schema: {schema_path}\nVersion: {version}")
 			schema_uri = synapse_json_schema_bind.synapse_json_schema_bind(target=None, url=None, path=schema_path, org_name="MC2Center", includes_ar=None, no_bind=True, version=f"v{version}")
 
 		if task_type.capitalize() == "Record":
