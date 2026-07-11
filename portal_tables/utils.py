@@ -160,6 +160,10 @@ def get_manifest(resource: str) -> dict[str, dict[str, str]]:
     """Get the config dictionary for the portal tables."""
     return CONFIG.get(resource).get("manifest")
 
+def get_portal_tables(resource: str) -> dict[str, dict[str, str]]:
+    """Get the config dictionary for the portal tables."""
+    return CONFIG.get(resource).get('portal_table')
+
 def translate_duo(code: str, dict: dict[str, str] = DUO_DICT) -> str:
     """Get the definition of a DUO code."""
     return dict[code]
