@@ -36,9 +36,9 @@ def get_col_values(syn, source_id, column_name):
         f"SELECT {column_name} FROM {source_id}"
     )
 
-    table_id_df = pd.DataFrame(table_id_sheet, columns=["row", "name", "col"]).drop(columns=["row", "col"])
+    table_id_df = pd.DataFrame(table_id_sheet, columns=["row", "col", "name"]).drop(columns=["row", "col"])
 
-    return pd.DataFrame(table_id_df["name"].str.split(",").explode(ignore_index=True))
+    return pd.DataFrame(table_id_df["name"].explode(ignore_index=True).drop_duplicates())
 
 
 def main():
@@ -56,7 +56,7 @@ def main():
     }
 
     term_df_list = [get_col_values(syn, utils.get_portal_tables(k), v) for k,v in folder_map.items()]
-    term_df = pd.concat(term_df_list)
+    term_df = pd.concat(term_df_list).drop_duplicates().reset_index(drop=True)
     table = Table(name="TEST_search_suggestions", parent_id=target).store()
     table.store_rows(values=term_df, schema_storage_strategy=SchemaStorageStrategy.INFER_FROM_DATA)
 
