@@ -207,18 +207,31 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     
     return source_repo
 
+_DATASET_CONCRETE_TYPE = "org.sagebionetworks.repo.model.table.Dataset"
+
+
 def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_repo: str):
-    """Determine download type and return download id if Synapse hosted or indexed"""
+    """Determine download type and return download id if Synapse hosted or indexed.
 
-    entity_id = row["DatasetView_id"].split(",")[0]
+    When DatasetView_id points to a Synapse Dataset entity (created by the
+    geo_dataset_creation bulk indexing pipeline), download_type is set to
+    "Synapse Indexed" and download_id is set to that entity's synID. The portal
+    uses download_id as downloadSynId to surface per-run download links.
 
-    try:
-        entity = syn.get(entity_id, downloadFile=False)
-        entity_type = entity.concreteType
-    except synapseclient.core.exceptions.SynapseHTTPError as e:
-        entity_type = None
+    DatasetView_id may contain a comma-separated list of synIDs from legacy
+    manifest entries; only the first is used.
+    """
+    entity_id = row["DatasetView_id"].split(",")[0].strip()
 
-    if entity_type in ["org.sagebionetworks.repo.model.table.Dataset", "org.sagebionetworks.repo.model.table.DatasetCollection"]:
+    entity_type = None
+    if entity_id:
+        try:
+            entity = syn.get(entity_id, downloadFile=False)
+            entity_type = entity.concreteType
+        except Exception:
+            entity_type = None
+
+    if entity_type == _DATASET_CONCRETE_TYPE:
         indexed = True
         download_id = entity_id
     else:
@@ -226,16 +239,10 @@ def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_re
         download_id = None
 
     if source_repo == "Synapse":
-        if indexed is True:
-            download_type = "Synapse Hosted"
-        if indexed is False:
-            download_type = "Not Available for Download"
+        download_type = "Synapse Hosted" if indexed else "Not Available for Download"
     else:
-        if indexed is True:
-            download_type = "Synapse Indexed"
-        else:
-            download_type = "Externally Hosted"
-    
+        download_type = "Synapse Indexed" if indexed else "Externally Hosted"
+
     print(f"Dataset is {download_type}")
 
     return download_type, download_id
