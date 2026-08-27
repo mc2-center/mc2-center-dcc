@@ -218,7 +218,7 @@ def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_re
     except synapseclient.core.exceptions.SynapseHTTPError as e:
         entity_type = None
 
-    if entity_type == "org.sagebionetworks.repo.model.table.Dataset":
+    if entity_type in ["org.sagebionetworks.repo.model.table.Dataset", "org.sagebionetworks.repo.model.table.DatasetCollection"]:
         indexed = True
         download_id = entity_id
     else:
