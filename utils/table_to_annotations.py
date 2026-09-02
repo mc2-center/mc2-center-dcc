@@ -76,6 +76,13 @@ def get_args():
         default=None,
     )
     parser.add_argument(
+            "-c",
+            type=str,
+            help="Synapse Id of a table containing Imaging Channel metadata.",
+            required=False,
+            default=None,
+        )
+    parser.add_argument(
         "--use_tables",
         action="store_true",
         help="Boolean. If provided, Synapse Ids will be used to query tables instead of download RecordSets. ",
@@ -113,7 +120,7 @@ def collect_fileview_annotations(syn, files: list, fileview_id: str) -> dict:
     """Collect all Biospecimen and File identifiers from a File View metadata table,
     return a File Synapse Id: Biospecimen Key dictionary"""
 
-    fileview_columns = ["id", "FileAlias", "BiospecimenKey"]
+    fileview_columns = ["id", "FileAlias", "BiospecimenKey", "ImagingChannelKey"]
 
     fileview_table = get_table(syn, fileview_id, fileview_columns)
 
@@ -123,7 +130,13 @@ def collect_fileview_annotations(syn, files: list, fileview_id: str) -> dict:
         if row["id"] in files
     }
 
-    return file_biospecimen_mapping
+    file_channel_mapping = {
+            row["id"]: row["ImagingChannelKey"]
+            for _, row in fileview_table.iterrows()
+            if row["id"] in files
+        }
+
+    return file_biospecimen_mapping, file_channel_mapping
 
 
 def collect_biospecimen_annotations(
@@ -261,8 +274,9 @@ def main():
         individual_table,
         model_table,
         ada_psi_study_table,
+        channel_table,
         use_tables
-    ) = (args.t, args.v, args.f, args.s, args.i, args.m, args.g, args.use_tables)
+    ) = (args.t, args.v, args.f, args.s, args.i, args.m, args.g, args.c, args.use_tables)
 
     duo_only = True
 
@@ -363,6 +377,36 @@ def main():
         "ModelTreatmentResponse",
     ]
 
+    channel_columns = [
+       "StudyKey",
+       "ChannelName",
+       "ChannelPassedQC",
+       "ImagingChannelId",
+       "ChannelIdentifier",
+       "ChannelResourceID",
+       "ChannelTargetName",
+       "ChannelAntibodyLot",
+       "ChannelCycleNumber",
+       "ChannelFluorophore",
+       "ChannelMetalSymbol",
+       "ChannelAntibodyName",
+       "ChannelAntibodyRole",
+       "ChannelMetalIsotope",
+       "ChannelAntibodyClone",
+       "ChannelAntibodyVendor",
+       "ChannelSubcycleNumber",
+       "ChannelEmissionBandwidth",
+       "ChannelEmissionWavelength",
+       "ChannelProbeConcentration",
+       "ChannelProbeDilutionRatio",
+       "ChannelExcitationBandwidth",
+       "ChannelExcitationWavelength",
+       "ChannelAntibodyCatalogNumber",
+       "ChannelOligoBarcodeLowerStrand",
+       "ChannelOligoBarcodeUpperStrand",
+       "ChannelSub-cycleNumber",
+    ]
+
     datasetview_columns = [
         "DatasetView_id",
         "GrantView Key",
@@ -439,6 +483,7 @@ def main():
     specimen_info_tuple = ("Biospecimen", specimen_table, biospecimen_columns)
     individual_info_tuple = ("Individual", individual_table, individual_columns)
     model_info_tuple = ("Model", model_table, model_columns)
+    image_channel_tuple = ("ImagingChannel", channel_table, channel_columns)
     dataset_info_tuple = ("DatasetView", datasetview_table, datasetview_columns)
     ada_psi_study_info_tuple = ("Study", ada_psi_study_table, ada_psi_study_columns)
     duo_ada_psi_study_info_tuple = ("Study", ada_psi_study_table, study_duo_only_columns)
@@ -446,11 +491,11 @@ def main():
 
     if file_table is not None:
         files = get_table(syn, target, cols="id")["id"].tolist()
-        file_view_out = collect_fileview_annotations(syn, files, file_table)
+        specimen_dict, channel_dict = collect_fileview_annotations(syn, files, file_table)
 
         if specimen_table is not None:
             ind_dict, model_dict = collect_biospecimen_annotations(
-                syn, file_view_out, specimen_info_tuple, keys_to_drop, is_record_set
+                syn, specimen_dict, specimen_info_tuple, keys_to_drop, is_record_set
             )
 
         if individual_table is not None:
@@ -460,6 +505,9 @@ def main():
 
         if model_table is not None:
             collect_record_annotations(syn, model_info_tuple, model_dict, keys_to_drop, is_record_set)
+
+        if channel_table is not None:
+            collect_record_annotations(syn, image_channel_tuple, channel_dict, keys_to_drop, is_record_set)
 
     if datasetview_table is not None:
         collect_database_annotations(syn, target, dataset_info_tuple, keys_to_drop=None, is_record_set=is_record_set)
