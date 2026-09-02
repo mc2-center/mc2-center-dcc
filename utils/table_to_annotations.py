@@ -202,13 +202,13 @@ def collect_record_annotations(
     count = 0
     for file_id, table_key in tuple_dict.items():
         keys = table_key.split(", ")
-        #if all(key in filtered_metadata.index for key in keys):
-        metadata = filtered_metadata.loc[keys].aggregate(lambda x: ", ".join(x))
-        annotations = list(zip(column_list, metadata.tolist()))
-        apply_annotations_to_entity(
-            syn, component, file_id, annotations, keys_to_drop
-        )
-        count += 1
+        if all(key in filtered_metadata.index for key in keys):
+            metadata = filtered_metadata.loc[keys].aggregate(lambda x: ", ".join(x))
+            annotations = list(zip(column_list, metadata.tolist()))
+            apply_annotations_to_entity(
+                syn, component, file_id, annotations, keys_to_drop
+            )
+            count += 1
 
     print(f"{component} annotations applied to {count} entities")
 
