@@ -197,17 +197,18 @@ def collect_record_annotations(
     key_column = f"{component}Id" 
     data_table = get_table(syn, table_id, column_list, is_record_set).set_index(key_column)
     column_list.pop(0)  # remove Component_id from list of columns, since it is now the index
-    table_keys = set(tuple_dict.values())
+    table_keys = set([v for entry in tuple_dict.values() for v in entry.split(", ")])
     filtered_metadata = data_table[data_table.index.isin(table_keys)]
     count = 0
     for file_id, table_key in tuple_dict.items():
-        if table_key in filtered_metadata.index:
-            metadata = filtered_metadata.loc[table_key]
-            annotations = list(zip(column_list, metadata.tolist()))
-            apply_annotations_to_entity(
-                syn, component, file_id, annotations, keys_to_drop
-            )
-            count += 1
+        keys = table_key.split(", ")
+        #if all(key in filtered_metadata.index for key in keys):
+        metadata = filtered_metadata.loc[keys].aggregate(lambda x: ", ".join(x))
+        annotations = list(zip(column_list, metadata.tolist()))
+        apply_annotations_to_entity(
+            syn, component, file_id, annotations, keys_to_drop
+        )
+        count += 1
 
     print(f"{component} annotations applied to {count} entities")
 
@@ -253,7 +254,7 @@ def apply_annotations_to_entity(
     storing modified annotation object in Synapse."""
 
     entity_annotations = syn.get_annotations(entity_id)
-    filtered_annotations = [tup for tup in new_annotations if len(tup[1]) > 0]
+    filtered_annotations = [tup for tup in new_annotations if len(tup[1]) > 0 and tup[1] != ", "]
     for key, annot in filtered_annotations:
         if key not in keys_to_drop:
             entity_annotations[key.replace(" ", "")] = annot
@@ -378,10 +379,10 @@ def main():
     ]
 
     channel_columns = [
+       "ImagingChannelId",
        "StudyKey",
        "ChannelName",
        "ChannelPassedQC",
-       "ImagingChannelId",
        "ChannelIdentifier",
        "ChannelResourceID",
        "ChannelTargetName",
