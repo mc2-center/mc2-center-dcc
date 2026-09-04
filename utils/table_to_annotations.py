@@ -233,7 +233,9 @@ def collect_database_annotations(
         key_column = f"{component.lower()}Id"
         data_table["StudyProjectIdentifier"] = data_table["StudyProjectIdentifier"].apply(lambda x: "".join(x) if isinstance(x, list) else x)
         data_table.set_index(key_column, inplace=True)
-        metadata = data_table.loc[data_table["StudyProjectIdentifier"] == target_id].to_numpy()
+        matches = data_table.loc[data_table["StudyProjectIdentifier"] == target_id]
+        if not matches.empty:
+            metadata = matches.iloc[0]
 
     column_list.pop(0)  # remove id from list of columns, since it is now the index
     annotations = list(zip(column_list, metadata.tolist()))
