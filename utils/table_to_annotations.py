@@ -106,7 +106,7 @@ def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool =
         for _, row in table.iterrows():
             for col in cols:
                 entry = re.findall(r'"(.*?)"', row[col])
-                table.at[_, col] = entry if len(entry) > 0 else row[col]
+                table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
     else:
         query = f"SELECT {cols} FROM {source_id}"
         table = syn.tableQuery(query).asDataFrame().fillna("")
@@ -221,9 +221,9 @@ def collect_database_annotations(
     apply annotations to the Dataset"""
 
     component, table_id, column_list = info_tuple
-    
+
     data_table = get_table(syn, table_id, column_list, is_record_set)
-    
+
     if component == "DatasetView":
         key_column = f"{component}_id"
         data_table.set_index(key_column, inplace=True)
@@ -234,7 +234,7 @@ def collect_database_annotations(
         data_table["StudyProjectIdentifier"] = data_table["StudyProjectIdentifier"].apply(lambda x: "".join(x) if isinstance(x, list) else x)
         data_table.set_index(key_column, inplace=True)
         metadata = data_table.loc[data_table["StudyProjectIdentifier"] == target_id].to_numpy()
-    
+
     column_list.pop(0)  # remove id from list of columns, since it is now the index
     annotations = list(zip(column_list, metadata.tolist()))
     apply_annotations_to_entity(syn, component, target_id, annotations, keys_to_drop)
