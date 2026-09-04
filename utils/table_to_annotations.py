@@ -223,6 +223,7 @@ def collect_database_annotations(
     component, table_id, column_list = info_tuple
 
     data_table = get_table(syn, table_id, column_list, is_record_set)
+    metadata = None
 
     if component == "DatasetView":
         key_column = f"{component}_id"
@@ -236,6 +237,10 @@ def collect_database_annotations(
         matches = data_table.loc[data_table["StudyProjectIdentifier"] == target_id]
         if not matches.empty:
             metadata = matches.iloc[0]
+
+    if metadata is None:
+        print(f"Metadata not found for: {target_id}")
+        return
 
     column_list.pop(0)  # remove id from list of columns, since it is now the index
     annotations = list(zip(column_list, metadata.tolist()))
