@@ -261,7 +261,11 @@ def apply_annotations_to_entity(
     storing modified annotation object in Synapse."""
 
     entity_annotations = syn.get_annotations(entity_id)
-    filtered_annotations = [tup for tup in new_annotations if len(tup[1]) > 0 and tup[1] != ", "]
+    filtered_annotations = [
+        tup
+        for tup in new_annotations
+        if not all(item.strip() == "" for item in tup[1].split(","))
+    ]
     for key, annot in filtered_annotations:
         if key not in keys_to_drop:
             entity_annotations[key.replace(" ", "")] = annot
@@ -412,7 +416,7 @@ def main():
        "ChannelAntibodyCatalogNumber",
        "ChannelOligoBarcodeLowerStrand",
        "ChannelOligoBarcodeUpperStrand",
-       "ChannelSub-cycleNumber",
+       "ChannelSubcycleNumber1",
     ]
 
     datasetview_columns = [
