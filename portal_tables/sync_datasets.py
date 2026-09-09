@@ -64,9 +64,9 @@ def add_missing_info(
         dataset_id = row["DatasetView_id"].split(",")[0]
         try:
             dataset = Dataset(id=dataset_id).get() if re.match(r'syn\d{,9}', dataset_id) is not None else None
-        except synapseclient.core.exceptions.SynapseUnmetAccessRestrictions as e:
+        except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
             print(f"Encountered error: {e}")
-            pass
+            dataset = None
         # Prefer the Croissant-processed version so the portal button appears
         # correctly. Fall back to (version_number - 1) for datasets not yet
         # in the Croissant table.
