@@ -58,15 +58,18 @@ def add_missing_info(
         datasets.at[_, "themes"] = list(themes)
         datasets.at[_, "consortia"] = list(consortia)
 
+        # Use the actual Synapse entity ID (DatasetView_id), not DatasetAlias,
+        # since DatasetAlias is often an external accession (e.g. a GEO
+        # GSE ID) rather than a syn ID for externally-hosted datasets.
+        dataset_id = row["DatasetView_id"].split(",")[0]
         try:
-            dataset = Dataset(id=row["DatasetAlias"]).get() if re.match(r'syn\d{,9}', row["DatasetAlias"]) is not None else None
+            dataset = Dataset(id=dataset_id).get() if re.match(r'syn\d{,9}', dataset_id) is not None else None
         except synapseclient.core.exceptions.SynapseUnmetAccessRestrictions as e:
             print(f"Encountered error: {e}")
             pass
         # Prefer the Croissant-processed version so the portal button appears
         # correctly. Fall back to (version_number - 1) for datasets not yet
         # in the Croissant table.
-        dataset_id = row["DatasetAlias"]
         if dataset_id in croissant_versions:
             version = int(croissant_versions[dataset_id])
         else:
