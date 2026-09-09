@@ -9,8 +9,6 @@ import re
 import synapseclient
 import utils
 
-from synapseclient.models import Dataset
-
 def _get_croissant_versions(syn: synapseclient.Synapse) -> dict:
     """Return a dict mapping dataset synID -> latest Croissant dataset_version."""
     df = syn.tableQuery(
@@ -63,17 +61,23 @@ def add_missing_info(
         # GSE ID) rather than a syn ID for externally-hosted datasets.
         dataset_id = row["DatasetView_id"].split(",")[0]
         try:
-            dataset = Dataset(id=dataset_id).get() if re.match(r'syn\d{,9}', dataset_id) is not None else None
+            # Plain syn.get() handles any entity type (File, Folder, Dataset,
+            # etc.), unlike the Dataset model's .get(), which errors out on
+            # DatasetView_ids that reference non-Dataset entities.
+            entity = syn.get(dataset_id, downloadFile=False) if re.match(r'syn\d{,9}', dataset_id) is not None else None
         except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
             print(f"Encountered error: {e}")
-            dataset = None
+            entity = None
         # Prefer the Croissant-processed version so the portal button appears
-        # correctly. Fall back to (version_number - 1) for datasets not yet
+        # correctly. Fall back to (versionNumber - 1) for datasets not yet
         # in the Croissant table.
         if dataset_id in croissant_versions:
             version = int(croissant_versions[dataset_id])
         else:
-            version = int(dataset.version_number) - 1 if dataset is not None and dataset.version_number is not None else 1
+            # Not every entity type carries a version (e.g. Folder), so fall
+            # back to the default rather than assuming the attribute exists.
+            entity_version = getattr(entity, "versionNumber", None) if entity is not None else None
+            version = int(entity_version) - 1 if entity_version is not None else 1
         datasets.at[_, "version"] = version
         
         pub_titles = []
