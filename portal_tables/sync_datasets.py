@@ -30,6 +30,7 @@ def add_missing_info(
     datasets["themes"] = ""
     datasets["consortia"] = ""
     datasets["pub"] = ""
+    datasets["pubYear"] = None
     datasets["version"] = ""
     datasets["sourceRepository"] = ""
     datasets["downloadType"] = ""
@@ -82,6 +83,7 @@ def add_missing_info(
         
         pub_titles = []
         pub_doi = []
+        pub_years = []
         for p in row["PublicationViewKey"].split(","):
             p = p.strip()  # Remove leading/trailing whitespace, if any
             if len(p) < 4:
@@ -98,9 +100,15 @@ def add_missing_info(
                     pubs[pubs.pubMedId == int(p)]["doi"]
                     .values[0]
                 )
+                pub_years.append(
+                    int(pubs[pubs.pubMedId == int(p)]["publicationYear"].values[0])
+                )
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
         datasets.at[_, "pub"] = list(set(pub_titles))
+        # Use the most recent linked publication's year as the dataset's
+        # release date for sorting; leave as None if no publication matched.
+        datasets.at[_, "pubYear"] = max(pub_years) if pub_years else None
         if not row["DatasetDoi"]:  # If dataset does not have a pre-curated DOI, add a publication DOI
             try:
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
@@ -158,6 +166,47 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
     # for more context.
     df["DatasetView_id"] = df["DatasetView_id"].str[0]
 
+    # Rank rows by how many content fields are still unannotated, so that
+    # complete entries sort ahead of incomplete ones within the same
+    # publication year.
+    content_cols = [
+        "DatasetDescription",
+        "DatasetDesign",
+        "DatasetFileFormats",
+        "DatasetAssay",
+        "DatasetSpecies",
+        "DatasetTissue",
+        "themes",
+        "DatasetTumorType",
+        "consortia",
+        "DatasetGrantNumber",
+        "grantName",
+        "DatasetPubmedId",
+        "pub",
+        "DatasetDoi",
+        "iconTags",
+        "DataUseCodes",
+    ]
+
+    def _is_incomplete(value) -> bool:
+        """A field is incomplete if it's empty or only holds 'Pending Annotation'."""
+        if isinstance(value, list):
+            return not [v for v in value if v not in ("", "Pending Annotation")]
+        return value in (None, "", "Pending Annotation") or pd.isna(value)
+
+    df["_incompleteCount"] = df[content_cols].apply(
+        lambda row: sum(_is_incomplete(v) for v in row), axis=1
+    )
+
+    # Order by publication release date (most recent first), with datasets
+    # that have no linked publication placed at the end, then by completeness
+    # (fewer unannotated fields first) to break ties.
+    df = df.sort_values(
+        by=["pubYear", "_incompleteCount"],
+        ascending=[False, True],
+        na_position="last",
+    )
+
     # Reorder columns to match the table order.
     col_order = [
         "DatasetView_id",
@@ -186,8 +235,6 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "downloadSynId"     
     ]
 
-    df = df.sort_values(by="DatasetPubmedId", ascending=False)
-
     return df[col_order]
 
 
@@ -211,7 +258,7 @@ def main():
         "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
     ).asDataFrame()
     pubs = syn.tableQuery(
-        "SELECT doi, pubMedId, publicationTitle FROM syn21868591"
+        "SELECT doi, pubMedId, publicationTitle, publicationYear FROM syn21868591"
     ).asDataFrame()
 
     database = add_missing_info(syn, manifest, grants, pubs)

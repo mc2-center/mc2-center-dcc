@@ -152,6 +152,17 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
     current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
     print(f"Syncing table with latest data (new_rows={len(df) - len(current_rows)})...\n")
     syn.delete(current_rows)
+
+    # Strip embedded newlines/carriage returns from free-text cells. A literal
+    # line break inside a quoted CSV field survives synapseclient's row
+    # serialization (csv.writer with QUOTE_NONNUMERIC), but Synapse's
+    # server-side bulk CSV ingestion splits large uploads by scanning for
+    # newlines rather than parsing quotes, which corrupts the batch containing
+    # that row into blank rows (only the unquoted INTEGER `version` column
+    # survives). See row-version 2230/2231 duplicated blank rows in syn21897968.
+    df = df.map(
+        lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
+    )
     new_rows = df.values.tolist()
     syn.store(synapseclient.Table(table_id, new_rows))
 
