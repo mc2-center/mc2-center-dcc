@@ -19,7 +19,8 @@ import os
 import csv
 import pandas as pd
 import sys
-import synapseclient
+from synapseclient import Synapse
+from synapseclient.models import Table
 from datetime import datetime
 
 
@@ -27,21 +28,24 @@ def query_synapse_for_folder_info(
     ref_path: str, data_type: str, folder_id_column_name: str, grant_id_column_name: str
 ) -> pd.DataFrame:
 
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     grant_table = (
-        syn.tableQuery(
-            f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972'
+        Table(id="syn21918972")
+        .query(
+            query=f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972',
+            synapse_client=syn,
         )
-        .asDataFrame()
         .fillna("")
     )
 
     folder_table = (
-        syn.tableQuery(
-            f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId"
+        Table(id="syn27210848")
+        .query(
+            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId",
+            synapse_client=syn,
         )
-        .asDataFrame()
         .fillna("")
     )
 
