@@ -10,7 +10,6 @@ author: orion.banks
 """
 
 import pandas as pd
-import synapseclient
 import multiprocessing
 import subprocess
 import sys
@@ -45,13 +44,6 @@ def get_args():
         help="Boolean; if this flag is provided, validation will be skipped. Only use if your manifests have been previously validated.",
     )
     return parser.parse_args()
-
-
-def login():
-    """Login to Synapse"""
-    syn = synapseclient.Synapse()
-    syn.login()
-    return syn
 
 
 def validate_entry_worker(args, cf, mt, valid_only):
@@ -117,7 +109,6 @@ def submit_entry_worker(args, cf):
 
 def main():
 
-    # syn = login()
     args = get_args()
     csv_file = args.m if args.m else "input.csv"
     config_file = args.c
