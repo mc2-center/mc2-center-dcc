@@ -7,18 +7,21 @@ portal table, by first truncating the table, then re-adding the rows.
 import pandas as pd
 import re
 import synapseclient
+from synapseclient import Synapse, operations
+from synapseclient.models import Table
 import utils
 
-def _get_croissant_versions(syn: synapseclient.Synapse) -> dict:
+def _get_croissant_versions(syn: Synapse) -> dict:
     """Return a dict mapping dataset synID -> latest Croissant dataset_version."""
-    df = syn.tableQuery(
-        "SELECT dataset, dataset_version FROM syn65903895"
-    ).asDataFrame()
+    df = Table(id="syn65903895").query(
+        query="SELECT dataset, dataset_version FROM syn65903895",
+        synapse_client=syn,
+    )
     return df.groupby("dataset")["dataset_version"].max().to_dict()
 
 
 def add_missing_info(
-    syn: synapseclient.Synapse, datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
+    syn: Synapse, datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
     datasets["link"] = [
@@ -62,22 +65,32 @@ def add_missing_info(
         # GSE ID) rather than a syn ID for externally-hosted datasets.
         dataset_id = row["DatasetView_id"].split(",")[0]
         try:
-            # Plain syn.get() handles any entity type (File, Folder, Dataset,
-            # etc.), unlike the Dataset model's .get(), which errors out on
-            # DatasetView_ids that reference non-Dataset entities.
-            entity = syn.get(dataset_id, downloadFile=False) if re.match(r'syn\d{,9}', dataset_id) is not None else None
+            # operations.get() looks up the entity's actual type on Synapse
+            # first and dispatches to the matching model (File, Folder,
+            # Dataset, etc.), unlike the Dataset model's .get() directly,
+            # which errors out on DatasetView_ids that reference non-Dataset
+            # entities.
+            entity = (
+                operations.get(
+                    dataset_id,
+                    file_options=operations.FileOptions(download_file=False),
+                    synapse_client=syn,
+                )
+                if re.match(r'syn\d{,9}', dataset_id) is not None
+                else None
+            )
         except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
             print(f"Encountered error: {e}")
             entity = None
         # Prefer the Croissant-processed version so the portal button appears
-        # correctly. Fall back to (versionNumber - 1) for datasets not yet
+        # correctly. Fall back to (version_number - 1) for datasets not yet
         # in the Croissant table.
         if dataset_id in croissant_versions:
             version = int(croissant_versions[dataset_id])
         else:
             # Not every entity type carries a version (e.g. Folder), so fall
             # back to the default rather than assuming the attribute exists.
-            entity_version = getattr(entity, "versionNumber", None) if entity is not None else None
+            entity_version = getattr(entity, "version_number", None) if entity is not None else None
             version = int(entity_version) - 1 if entity_version is not None else 1
         datasets.at[_, "version"] = version
         
@@ -246,7 +259,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(syn.get(args.manifest_id).path, dtype=str).fillna("")
+    manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path, dtype=str).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
@@ -254,12 +267,14 @@ def main():
         print()
 
     print("Processing dataset staging database...")
-    grants = syn.tableQuery(
-        "SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972"
-    ).asDataFrame()
-    pubs = syn.tableQuery(
-        "SELECT doi, pubMedId, publicationTitle, publicationYear FROM syn21868591"
-    ).asDataFrame()
+    grants = Table(id="syn21918972").query(
+        query="SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972",
+        synapse_client=syn,
+    )
+    pubs = Table(id="syn21868591").query(
+        query="SELECT doi, pubMedId, publicationTitle, publicationYear FROM syn21868591",
+        synapse_client=syn,
+    )
 
     database = add_missing_info(syn, manifest, grants, pubs)
     final_database = clean_table(database)
