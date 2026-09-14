@@ -13,8 +13,8 @@ from datetime import datetime
 import requests
 
 import pandas as pd
-import synapseclient
-from synapseclient import File
+from synapseclient import Synapse
+from synapseclient.models import File, Table
 
 sys.path.insert(0, "./annotations")
 from attribute_dictionary import PUBLICATION_DICT
@@ -55,12 +55,12 @@ def get_args():
     return parser.parse_args()
 
 
-def status_check(syn, query, colname, email, publication_dict):
+def status_check(syn, table_id, query, colname, email, publication_dict):
     """
     Check availability of publications and return df of open/accessible
     publications and their current annotations on the portal.
     """
-    df = syn.tableQuery(query).asDataFrame()
+    df = Table(id=table_id).query(query=query, synapse_client=syn)
     doi_list = df[~df[colname].isnull()]["doi"]
     ready_for_review = []
     with requests.Session() as session:
@@ -103,15 +103,15 @@ def upload_results(syn, results, parent):
     """Upload results to Synapse as CSV file."""
     output_file = f"status_check_{datetime.today().strftime('%Y-%m-%d')}.csv"
     results.to_csv(output_file, index=False)
-    results_file = File(output_file, parent=parent)
-    results_file = syn.store(results_file)
+    results_file = File(path=output_file, parent_id=parent).store(synapse_client=syn)
     os.remove(output_file)  # Clean up file.
     return results_file.id
 
 
 def main():
     """Main function."""
-    syn = synapseclient.login(silent=True)
+    syn = Synapse()
+    syn.login(silent=True)
     args = get_args()
 
     query = (
@@ -119,7 +119,9 @@ def main():
         f"WHERE accessibility = 'Restricted Access'"
     )
     email = "mc2center@sagebase.org"
-    ready_for_review = status_check(syn, query, args.colname, email, PUBLICATION_DICT)
+    ready_for_review = status_check(
+        syn, args.portal_table, query, args.colname, email, PUBLICATION_DICT
+    )
 
     file_id = upload_results(syn, ready_for_review, args.folder_id)
     print(f"Results ID: {file_id}")
