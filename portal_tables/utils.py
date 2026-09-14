@@ -5,7 +5,9 @@ import argparse
 from getpass import getpass
 from datetime import datetime
 
-import synapseclient
+from synapseclient import Synapse, operations
+from synapseclient.core.exceptions import SynapseNoCredentialsError
+from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
 
@@ -64,18 +66,19 @@ REPO_DICT = {
 
 REPO_REGEX = r"(https|http)(:\/\/)(www\.|)(.*\/)(.*?)(\/|)|(Pending Annotation)"
 
-def syn_login() -> synapseclient.Synapse:
+def syn_login() -> Synapse:
     """Log into Synapse. If env variables not found, prompt user."""
+    syn = Synapse()
     try:
-        syn = synapseclient.login(silent=True)
-    except synapseclient.core.exceptions.SynapseNoCredentialsError:
+        syn.login(silent=True)
+    except SynapseNoCredentialsError:
         print(
             ".synapseConfig not found; please manually provide your",
             "Synapse Personal Access Token (PAT). You can generate"
             "one at https://www.synapse.org/#!PersonalAccessTokens:0",
         )
         pat = getpass("Your Synapse PAT: ")
-        syn = synapseclient.login(authToken=pat, silent=True)
+        syn.login(authToken=pat, silent=True)
     return syn
 
 
@@ -136,7 +139,7 @@ def convert_to_stringlist(col: pd.Series) -> pd.Series:
     return col.str.replace(", ", ",").str.split(",")
 
 
-def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) -> None:
+def update_table(syn: Synapse, table_id: str, df: pd.DataFrame) -> None:
     """Update the portal table.
 
     Steps include:
@@ -144,14 +147,15 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
         - truncating the table
         - sync over rows from the latest manifest
     """
+    table = Table(id=table_id)
 
     today = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
     print(f"Creating new table version with label: {today}...")
-    syn.create_snapshot_version(table_id, label=today)
+    table.snapshot(label=today, synapse_client=syn)
 
-    current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
+    current_rows = table.query(query=f"SELECT * FROM {table_id}", synapse_client=syn)
     print(f"Syncing table with latest data (new_rows={len(df) - len(current_rows)})...\n")
-    syn.delete(current_rows)
+    table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
 
     # Strip embedded newlines/carriage returns from free-text cells. A literal
     # line break inside a quoted CSV field survives synapseclient's row
@@ -163,8 +167,7 @@ def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) ->
     df = df.map(
         lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
     )
-    new_rows = df.values.tolist()
-    syn.store(synapseclient.Table(table_id, new_rows))
+    table.store_rows(values=df, synapse_client=syn)
 
 
 def get_manifest(resource: str) -> dict[str, dict[str, str]]:
@@ -218,10 +221,7 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     
     return source_repo
 
-_DATASET_CONCRETE_TYPE = "org.sagebionetworks.repo.model.table.Dataset"
-
-
-def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_repo: str):
+def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
     """Determine download type and return download id if Synapse hosted or indexed.
 
     When DatasetView_id points to a Synapse Dataset entity (created by the
@@ -234,15 +234,24 @@ def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_re
     """
     entity_id = row["DatasetView_id"].split(",")[0].strip()
 
-    entity_type = None
+    is_dataset = False
     if entity_id:
         try:
-            entity = syn.get(entity_id, downloadFile=False)
-            entity_type = entity.concreteType
+            # operations.get() looks up the entity's actual type on Synapse
+            # first, then dispatches to the matching model (File, Folder,
+            # Dataset, ...) -- so, unlike calling the Dataset model's
+            # .get() directly, it handles any entity type without erroring
+            # out on DatasetView_ids that reference non-Dataset entities.
+            entity = operations.get(
+                entity_id,
+                file_options=operations.FileOptions(download_file=False),
+                synapse_client=syn,
+            )
+            is_dataset = isinstance(entity, Dataset)
         except Exception:
-            entity_type = None
+            is_dataset = False
 
-    if entity_type == _DATASET_CONCRETE_TYPE:
+    if is_dataset:
         indexed = True
         download_id = entity_id
     else:
