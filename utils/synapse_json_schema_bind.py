@@ -9,9 +9,10 @@ python synapse_json_schema_bind.py [options]
 author: orion.banks
 """
 
-import synapseclient
+from synapseclient import Synapse, operations
+from synapseclient.core.exceptions import SynapseHTTPError
+from synapseclient.models import JSONSchema, SchemaOrganization
 import argparse
-import pandas as pd
 import requests
 import json
 
@@ -70,32 +71,32 @@ def get_args():
     return parser.parse_args()
 
 
-def get_schema_organization(service, org_name: str) -> tuple:
+def get_schema_organization(syn, org_name: str) -> "SchemaOrganization":
     """
     Access or create a JSON schema organization in Synapse.
     Args:
-        service: Synapse JSON schema service.
+        syn: Synapse client object.
         org_name (str): Name of the organization.
     Returns:
-        tuple: (service, schema organization object, organization name)
+        SchemaOrganization: the organization object.
     """
-    
+
     print(f"Creating organization: {org_name}")
 
     try:
-        schema_org = service.JsonSchemaOrganization(name = org_name)
-        schema_org.create()
-    except synapseclient.core.exceptions.SynapseHTTPError:
+        schema_org = SchemaOrganization(name=org_name).store(synapse_client=syn)
+    except SynapseHTTPError:
         print(f"\nOrganization {org_name} already exists, getting info now...")
-        schema_org = service.get_organization(organization_name = org_name)
-    
-    return service, schema_org, org_name
+        schema_org = SchemaOrganization(name=org_name).get(synapse_client=syn)
+
+    return schema_org
 
 
-def register_json_schema(org, schema_type: str, schema_json: json, version: str, schema_org_name: str) -> str:
+def register_json_schema(syn, org: "SchemaOrganization", schema_type: str, schema_json: json, version: str, schema_org_name: str) -> str:
     """
     Register a JSON schema in Synapse under the specified organization.
     Args:
+        syn: Synapse client object.
         org: Synapse JSON schema organization object.
         schema_type (str): Type of the schema (e.g., AccessRequirement, DatasetView).
         schema_json (json): JSON schema to register.
@@ -105,33 +106,34 @@ def register_json_schema(org, schema_type: str, schema_json: json, version: str,
         str: Registered schema
     Notes:
         Expected uri format: [schema_org_name]-[schema_type]-[num_version]
-    
+
         Example uri: ExampleOrganization-CA987654AccessRequirement-2.0.0
     """
-    
+
     num_version = version.split("v")[1]
 
     uri = "-".join([schema_org_name.replace(" ", ""), schema_type,num_version])
 
     try:
-        schema = org.create_json_schema(schema_json, schema_type, semantic_version=num_version)
+        schema = JSONSchema(organization_name=org.name, name=schema_type).store(
+            schema_body=schema_json, version=num_version, synapse_client=syn
+        )
         uri = schema.uri
         print(f"JSON schema {uri} was successfully registered.")
-    except synapseclient.core.exceptions.SynapseHTTPError as error:
+    except SynapseHTTPError as error:
         print(error)
         print(f"JSON schema {uri} was previously registered and will not be updated.\n")
-    
+
     print(f"\nSchema is available at https://repo-prod.prod.sagebase.org/repo/v1/schema/type/registered/{uri}\nThe schema can be referenced using the id: {uri}")
-    
+
     return uri
 
 
-def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, component_type: str, includes_ar: bool):
+def bind_schema_to_entity(syn, schema_uri: str, entity_id: str, component_type: str, includes_ar: bool):
     """
     Bind a registered JSON schema to a Synapse entity.
     Args:
         syn: Synapse client object.
-        service: Synapse JSON schema service.
         schema_uri (str): URI of the registered JSON schema.
         entity_id (str): Synapse entity ID to bind the schema to.
         component_type (str): Type of the schema component.
@@ -144,20 +146,16 @@ def bind_schema_to_entity(syn, service, schema_uri: str, entity_id: str, compone
         Derived annotations must be enabled, to ensure accessRequirementIds can be applied based on annotations.
     """
 
-    if component_type == "AccessRequirement" or includes_ar is not None:
-        print(f"\nBinding AR schema {schema_uri}")
-        request_body = {
-            "entityId": entity_id,
-            "schema$id": schema_uri,
-            "enableDerivedAnnotations": True
-            }
-        syn.restPUT(
-            f"/entity/{entity_id}/schema/binding", body=json.dumps(request_body)
-        )
-    
-    else:
-        print(f"\nBinding non-AR schema {schema_uri}")
-        service.bind_json_schema(schema_uri, entity_id)
+    enable_derived_annotations = component_type == "AccessRequirement" or includes_ar is not None
+    print(f"\nBinding {'AR' if enable_derived_annotations else 'non-AR'} schema {schema_uri}")
+
+    # operations.get() looks up the entity's actual type first and dispatches
+    # to the matching model; File, Folder, Project, EntityView, and Table all
+    # support .bind_schema(), so no type-specific branching is needed here.
+    entity = operations.get(entity_id, synapse_client=syn)
+    entity.bind_schema(
+        schema_uri, enable_derived_annotations=enable_derived_annotations, synapse_client=syn
+    )
    
 def get_schema_from_url(url: str, path: str, version: str = None) -> tuple[any, str, str, str]:
     """
@@ -202,7 +200,7 @@ def get_schema_from_url(url: str, path: str, version: str = None) -> tuple[any, 
     return schema_json, component, base_component, version
 
 
-def get_register_bind_schema(syn, target: str, schema_org_name: str, org, service, path, url, includes_ar: bool, no_bind: bool, version: str) -> str:
+def get_register_bind_schema(syn, target: str, schema_org_name: str, org, path, url, includes_ar: bool, no_bind: bool, version: str) -> str:
     """
     Get, register, and bind a JSON schema to a Synapse entity.
     Args:
@@ -210,7 +208,6 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
         target (str): Synapse entity ID to bind the schema to.
         schema_org_name (str): Name of the organization.
         org: Synapse JSON schema organization object.
-        service: Synapse JSON schema service.
         path (str): File path of the JSON schema.
         url (str): URL of the JSON schema.
         includes_ar (bool): Flag indicating if the schema includes Access Requirement information.
@@ -222,14 +219,14 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
     schema_json, component_adjusted, base_component, version = get_schema_from_url(url, path, version)
     print(f"\nRegistering JSON schema {component_adjusted} {version}\n")
 
-    uri = register_json_schema(org, component_adjusted, schema_json, version, schema_org_name)
+    uri = register_json_schema(syn, org, component_adjusted, schema_json, version, schema_org_name)
 
     if no_bind is None and target is not None:
-        bind_schema_to_entity(syn, service, uri, target, base_component, includes_ar)
+        bind_schema_to_entity(syn, uri, target, base_component, includes_ar)
         print(f"\nSchema {component_adjusted} {version} successfully bound to entity {target}")
     else:
         print("\nSchema was not bound to an entity.")
-    
+
     print("\nDONE ✅")
 
     return uri
@@ -237,7 +234,8 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, servic
 
 def synapse_json_schema_bind(target = None, url = None, path = None, org_name = None, includes_ar = None, no_bind = None, version = None):
 
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     if path is None:
         args = get_args()
@@ -249,14 +247,10 @@ def synapse_json_schema_bind(target = None, url = None, path = None, org_name = 
 
     if target is None:
         print(f"Warning ❗❗❗ No entity id provided. Schema will only be registered.\n")
-    
-    syn.get_available_services()
 
-    schema_service = syn.service("json_schema")
+    org = get_schema_organization(syn, org_name)
 
-    service, org, schema_org_name = get_schema_organization(schema_service, org_name)
-    
-    registered_uri = get_register_bind_schema(syn, target, schema_org_name, org, service, path, url, includes_ar, no_bind, version)
+    registered_uri = get_register_bind_schema(syn, target, org_name, org, path, url, includes_ar, no_bind, version)
 
     return registered_uri
 
