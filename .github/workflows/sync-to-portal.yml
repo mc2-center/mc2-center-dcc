@@ -20,7 +20,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install synapseclient pandas
+        pip install -r requirements.txt
 
     - name: Sync publications to portal
       run: python portal_tables/sync_publications.py --noprint
