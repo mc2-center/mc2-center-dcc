@@ -4,9 +4,10 @@ This script will get a count of themes across the grants and
 consortiums in the CCKP. (Based on James' `nbs/portal_summary.Rmd`)
 """
 
-import os
+import re
 
-import synapseclient
+from synapseclient import Synapse
+from synapseclient.models import Table
 import pandas as pd
 
 # Source table IDs
@@ -39,8 +40,8 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
     if clause:
         query += " WHERE portalDisplay = true"
     return (
-        syn.tableQuery(query)
-        .asDataFrame()
+        Table(id=table_id)
+        .query(query=query, synapse_client=syn)
         .explode("theme")
         .groupby("theme")
         .count()
@@ -116,29 +117,38 @@ def tally_by_group(syn, themes):
 
 def update_table(syn, table_id, updated_table):
     """Truncate table then add new rows."""
-    current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
-    syn.delete(current_rows)
-    updated_table.to_csv("rows.csv")
-    updated_rows = synapseclient.Table(table_id, "rows.csv")
-    syn.store(updated_rows)
-    os.remove("rows.csv")
+    table = Table(id=table_id)
+    table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
+
+    # Strip embedded newlines/carriage returns from free-text cells. A literal
+    # line break inside a quoted CSV field survives synapseclient's row
+    # serialization (csv.writer with QUOTE_NONNUMERIC), but Synapse's
+    # server-side bulk CSV ingestion splits large uploads by scanning for
+    # newlines rather than parsing quotes, which corrupts the batch containing
+    # that row into blank rows. See the same fix in portal_tables/utils.py
+    # (row-version 2230/2231 duplicated blank rows in syn21897968).
+    updated_table = updated_table.map(
+        lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
+    )
+    table.store_rows(values=updated_table, synapse_client=syn)
 
 
 def main():
     """Main function."""
-    syn = synapseclient.Synapse()
+    syn = Synapse()
     syn.login(silent=True)
 
     # Table of theme names and their descriptions.
     themes = (
-        syn.tableQuery(f"SELECT displayName, description FROM {THEMES}")
-        .asDataFrame()
+        Table(id=THEMES)
+        .query(query=f"SELECT displayName, description FROM {THEMES}", synapse_client=syn)
         .rename(columns={"displayName": "theme", "description": "themeDescription"})
         .set_index("theme")
     )
-    grants = syn.tableQuery(
-        f"SELECT grantId, grantNumber, consortium, theme FROM {GRANTS}"
-    ).asDataFrame()
+    grants = Table(id=GRANTS).query(
+        query=f"SELECT grantId, grantNumber, consortium, theme FROM {GRANTS}",
+        synapse_client=syn,
+    )
 
     consortium_counts = tally_by_consortium(grants)
     theme_consortium_counts = tally_by_theme_consortium(grants, themes)
