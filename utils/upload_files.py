@@ -13,7 +13,7 @@ python upload_files.py -m <path to TSV manifest>
 author: orion.banks
 """
 
-import synapseclient
+from synapseclient import Synapse
 import synapseutils
 import argparse
 
@@ -31,9 +31,8 @@ def get_args():
 
 def main():
 
-    syn = (
-        synapseclient.login()
-    )  # you can pass your username and password directly to this function
+    syn = Synapse()
+    syn.login()
 
     args = get_args()
 
