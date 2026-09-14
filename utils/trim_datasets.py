@@ -13,8 +13,8 @@ author: orion.banks
 import argparse
 import os
 import pandas as pd
-import synapseclient
-from synapseclient import Dataset
+from synapseclient import Synapse, operations
+from synapseclient.models import EntityRef, Table
 
 
 def get_args():
@@ -34,7 +34,7 @@ def get_table(syn, source_id: str) -> pd.DataFrame:
     """Collect a Synapse table entity and return as a Dataframe."""
 
     query = f"SELECT * FROM {source_id}"
-    table = syn.tableQuery(query).asDataFrame().fillna("")
+    table = Table(id=source_id).query(query=query, synapse_client=syn).fillna("")
 
     return table
 
@@ -42,18 +42,23 @@ def get_table(syn, source_id: str) -> pd.DataFrame:
 def remove_files_from_dataset(syn, dataset: str, files: list[str]) -> tuple[str, list]:
     """Get files in dataset and remove if in input list of file Synapse IDs"""
 
-    dataset_entity = syn.get(dataset, downloadFile=False)
-    dataset_files = pd.DataFrame(dataset_entity.properties.datasetItems)
+    dataset_entity = operations.get(
+        dataset,
+        file_options=operations.FileOptions(download_file=False),
+        synapse_client=syn,
+    )
+    dataset_files = pd.DataFrame([{"entityId": item.id} for item in dataset_entity.items])
     files_to_remove = [file for file in files if file in dataset_files["entityId"].to_list()]
     for file in files_to_remove:
-        dataset_entity.remove_item(file)
-    syn.store(dataset_entity)
+        dataset_entity.remove_item(EntityRef(id=file), synapse_client=syn)
+    dataset_entity.store(synapse_client=syn)
 
     return dataset_entity.id, files_to_remove
 
 def main():
 
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     args = get_args()
 
