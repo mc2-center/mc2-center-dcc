@@ -1,5 +1,5 @@
-import synapseclient
-from synapseclient import Table
+from synapseclient import Synapse
+from synapseclient.models import Table
 import argparse
 import requests
 from time import sleep
@@ -8,7 +8,7 @@ from time import sleep
 ### Login to Synapse ###
 def login():
 
-    syn = synapseclient.Synapse()
+    syn = Synapse()
     syn.login()
 
     return syn
@@ -26,8 +26,13 @@ def get_args():
 
 def get_df(syn, publications_table_id):
 
-    pubs_query = f"SELECT pubMedId, abstract FROM {publications_table_id}"
-    pubs_df = syn.tableQuery(pubs_query).asDataFrame().fillna("")
+    # NOTE: selecting all columns (not just pubMedId/abstract) is deliberate.
+    # Table.store_rows() does a full-row replacement -- any column not present
+    # in the DataFrame gets nulled out on the updated rows. The legacy
+    # `syn.store(Table(table_id, df))` this replaced tolerated a partial
+    # column set; store_rows() does not.
+    pubs_query = f"SELECT * FROM {publications_table_id}"
+    pubs_df = Table(id=publications_table_id).query(query=pubs_query, synapse_client=syn).fillna("")
 
     return pubs_df
 
@@ -66,7 +71,7 @@ def get_abstracts(pmid_list, pubs_df):
 
 def store_edited_publications(syn, table_id, pubs_df):
 
-    syn.store(Table(table_id, pubs_df))
+    Table(id=table_id).store_rows(values=pubs_df, synapse_client=syn)
 
     print("\n\nPublications have been updated with Abstracts!")
 
