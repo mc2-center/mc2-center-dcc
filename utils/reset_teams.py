@@ -11,7 +11,8 @@ ID (-t), with the exception of:
 import argparse
 from typing import List
 
-import synapseclient
+from synapseclient import Synapse
+from synapseclient.models import Table, Team
 
 
 def get_args():
@@ -29,41 +30,46 @@ def get_args():
     return parser.parse_args()
 
 
-def truncate_members(syn: synapseclient.Synapse, team_id: str) -> None:
+def truncate_members(syn: Synapse, team_id: str) -> None:
     """Remove all non-manager Synapse users from given team."""
 
     # Synapse user IDs for Amber, Ashley, and Verena - DO NOT REMOVE FROM TEAM!
     manager_ids = ["3408068", "3419821", "3393723"]
 
     count = 0
-    team_members = [m.get("member") for m in syn.getTeamMembers(team_id)]
-    for user in team_members:
-        user_id = user.get("ownerId")
+    team_members = Team(id=team_id).members(synapse_client=syn)
+    for member in team_members:
+        user_id = str(member.member.owner_id)
         if user_id not in manager_ids:
+            # No OOP equivalent exists for team-member removal; the Team
+            # model has no remove-member method, so this stays a raw REST call.
             syn.restDELETE(f"/team/{team_id}/member/{user_id}")
             count += 1
 
     # Output mini-summary report.
-    team = syn.getTeam(team_id)
-    print(f"Removed {count} members from team: {team.get('name')}")
+    team = Team(id=team_id).get(synapse_client=syn)
+    print(f"Removed {count} members from team: {team.name}")
 
 
-def reset_teams(syn: synapseclient.Synapse, teams: List[str]) -> None:
+def reset_teams(syn: Synapse, teams: List[str]) -> None:
     """Reset teams by removing all non-manager members."""
     for team in teams:
         truncate_members(syn, team)
 
 
-def get_teams(syn: synapseclient.Synapse, table_id: str) -> List[str]:
+def get_teams(syn: Synapse, table_id: str) -> List[str]:
     """Return a list of team IDs."""
     return (
-        syn.tableQuery(f"SELECT team_id FROM {table_id}").asDataFrame().team_id.tolist()
+        Table(id=table_id)
+        .query(query=f"SELECT team_id FROM {table_id}", synapse_client=syn)
+        .team_id.tolist()
     )
 
 
 def main():
     """Main function."""
-    syn = synapseclient.login(silent=True)
+    syn = Synapse()
+    syn.login(silent=True)
     args = get_args()
 
     teams = get_teams(syn, args.table_id)
