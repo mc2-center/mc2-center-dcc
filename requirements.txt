@@ -10,7 +10,7 @@ pydotplus>=2.0.2
 python-dateutil>=2.9.0.post0
 rdflib>=6.3.2
 requests>=2.32.5
-synapseclient>=4.10.0
+synapseclient>=4.13.0
 click>=8.3.3
 cryptography>=48.0.1
 geo-synapse @ git+https://github.com/sagebio-ada/geo_dataset_creation.git@main
