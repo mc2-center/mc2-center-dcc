@@ -40,7 +40,8 @@ from synapseclient.extensions.curator import (
 	create_file_based_metadata_task,
 	query_schema_registry
 )
-from synapseclient import Folder, Synapse
+from synapseclient import Synapse
+from synapseclient.models import Folder
 import synapse_json_schema_bind
 
 def get_args():
@@ -197,8 +198,7 @@ def main():
 		task_name = "_".join([org, data_type, "CurationTask"])
 
 		if folder is None:
-			new_folder = Folder(name=f"{data_type}", parent=project)
-			new_folder = syn.store(new_folder)
+			new_folder = Folder(name=f"{data_type}", parent_id=project).store(synapse_client=syn)
 			folder = new_folder.id
 
 		print(f"Creating curation task {task_name}...")
