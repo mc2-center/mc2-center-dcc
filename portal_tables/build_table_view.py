@@ -8,16 +8,15 @@ Inputs:
 - name for the view
 
 Outputs:
-- an EntityViewSchema table stored in Synapse
+- an EntityView table stored in Synapse
 - if table exists, scope will be updated and table will be regenerated in-place
 
 author: orion.banks
 """
 
 import argparse
-import synapseclient
-from synapseclient import EntityViewSchema, EntityViewType
-import argparse
+from synapseclient import Synapse
+from synapseclient.models import EntityView, ViewTypeMask
 
 
 def get_args():
@@ -48,35 +47,35 @@ def get_args():
 
 
 def build_schema(view_name, view_parent, view_scope, view_types, view_default):
-    view = EntityViewSchema(
+    view = EntityView(
         name=view_name,
-        parent=view_parent,
-        scopes=view_scope,
-        includeEntityTypes=[view_types],
-        addDefaultViewColumns=view_default,
+        parent_id=view_parent,
+        scope_ids=set(view_scope),
+        view_type_mask=view_types,
+        include_default_columns=view_default,
     )
     return view
 
 
 def main():
 
-    syn = synapseclient.Synapse()
+    syn = Synapse()
 
     syn.login()
     args = get_args()
 
     if args.c == "table":
-        view_type = EntityViewType.TABLE
+        view_type = ViewTypeMask.TABLE
 
     elif args.c == "file":
-        view_type = EntityViewType.FILE
+        view_type = ViewTypeMask.FILE
 
     elif args.c == "project":
-        view_type = EntityViewType.PROJECT
+        view_type = ViewTypeMask.PROJECT
 
     new_view = build_schema(args.n, args.p, args.s, view_type, args.a)
 
-    new_view = syn.store(new_view)
+    new_view = new_view.store(synapse_client=syn)
 
 
 if __name__ == "__main__":
