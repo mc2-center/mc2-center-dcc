@@ -14,7 +14,8 @@ CSV can be passed at run time for validation, merging, and trimming
 author: orion.banks
 """
 
-import synapseclient
+from synapseclient import Synapse, operations
+from synapseclient.models import Table
 import argparse
 import pandas as pd
 from pathlib import Path
@@ -71,13 +72,13 @@ def get_args():
     return parser.parse_args()
 
 
-def get_tables(syn: synapseclient.login, tableIdList: list[str], mergeFlag: bool) -> list[tuple[pd.DataFrame | str, str]]:
+def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tuple[pd.DataFrame | str, str]]:
 
     tables = []  # set up lists to store info
     names = []
 
     for tableId in tableIdList:  # pull table from Synapse
-        table = syn.tableQuery(f"SELECT * FROM {tableId}").asDataFrame().fillna("")
+        table = Table(id=tableId).query(query=f"SELECT * FROM {tableId}", synapse_client=syn).fillna("")
         name = table.iat[1, 0]  # grab name of data type from table, assumes "Component" is first column in table
         manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
         manifestPath.parent.mkdir(parents=True, exist_ok=True)  # create folder to store CSVs
@@ -128,7 +129,7 @@ def combine_rows(args: list[tuple[pd.DataFrame | str, str]], mapping: pd.DataFra
     return list(zip(groups, names))
 
 
-def get_ref_tables(syn: synapseclient.login, args: list[tuple[Path, str]]) -> list[tuple[Path, Path, str]]:
+def get_ref_tables(syn: Synapse, args: list[tuple[Path, str]]) -> list[tuple[Path, Path, str]]:
 
     tables, names = zip(*args)
 
@@ -142,7 +143,11 @@ def get_ref_tables(syn: synapseclient.login, args: list[tuple[Path, str]]) -> li
             shortName = "education"
 
         ref = utils.get_manifest(shortName)
-        ref_table = syn.get(ref, downloadLocation=f"output/{name}")
+        ref_table = operations.get(
+            ref,
+            file_options=operations.FileOptions(download_location=f"output/{name}"),
+            synapse_client=syn,
+        )
         ref_paths.append(ref_table.path)
         table_paths.append(table)
         ref_names.append(name)
@@ -295,7 +300,8 @@ def trim_tables(args: list[tuple[str, Path, str]]) -> list[Path]:
 def main():
 
     args = get_args()
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     inputList, config, attributeMap, trimList, inputManifest, merge, trim, strict, debug = (
         args.l,
