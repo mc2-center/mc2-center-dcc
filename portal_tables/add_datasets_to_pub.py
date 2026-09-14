@@ -7,7 +7,7 @@ the latest datasets information.
 import argparse
 
 import numpy as np
-import synapseclient
+from synapseclient.models import Table
 import utils
 
 
@@ -36,7 +36,7 @@ def sync_table(datasets, pubs):
     """Add dataset IDs to publications table, then return."""
     curr_dataset_pmids = set(datasets["pubMedId"].to_list()) - {np.nan}
 
-    df = pubs.asDataFrame()
+    df = pubs
     for _, row in df.iterrows():
         pmid = str(row.pubMedId)
         if pmid in curr_dataset_pmids:
@@ -55,18 +55,25 @@ def main():
     syn = utils.syn_login()
     args = get_args()
 
-    datasets = (
-        syn.tableQuery(f"SELECT datasetAlias, pubMedId FROM {args.dataset_table}")
-        .asDataFrame()
-        .explode("pubMedId")
+    datasets = Table(id=args.dataset_table).query(
+        query=f"SELECT datasetAlias, pubMedId FROM {args.dataset_table}",
+        synapse_client=syn,
+    ).explode("pubMedId")
+
+    # NOTE: selecting all columns (not just pubMedId/dataset) is deliberate.
+    # Table.store_rows() does a full-row replacement -- any column not
+    # present in the DataFrame gets nulled out on the updated rows. The
+    # legacy `syn.store(Table(pubs_table, df, etag=...))` this replaced
+    # tolerated a partial column set; store_rows() does not.
+    pubs = Table(id=args.pubs_table).query(
+        query=f"SELECT * FROM {args.pubs_table}", synapse_client=syn
     )
-    pubs = syn.tableQuery(f"SELECT pubMedId, dataset FROM {args.pubs_table}")
 
     updated = sync_table(datasets, pubs)
     if args.dryrun:
         print(updated)
     else:
-        syn.store(synapseclient.Table(args.pubs_table, updated, etag=pubs.etag))
+        Table(id=args.pubs_table).store_rows(values=updated, synapse_client=syn)
     print("DONE ✓")
 
 
