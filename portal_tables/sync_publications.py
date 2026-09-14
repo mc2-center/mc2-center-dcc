@@ -8,6 +8,8 @@ import re
 from typing import List
 
 import pandas as pd
+from synapseclient import operations
+from synapseclient.models import Table
 import utils
 
 
@@ -112,16 +114,17 @@ def main():
             "\n\nDatabase will NOT be updated.",
         )
 
-    manifest = pd.read_csv(syn.get(args.manifest_id).path, header=0).fillna("")
+    manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path, header=0).fillna("")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
         print()
 
     print("\nProcessing publications staging database...")
-    grants = syn.tableQuery(
-        f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972"
-    ).asDataFrame()
+    grants = Table(id="syn21918972").query(
+        query=f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972",
+        synapse_client=syn,
+    )
 
     database = add_missing_info(manifest, grants, new_cols)
     final_database = clean_table(database)
