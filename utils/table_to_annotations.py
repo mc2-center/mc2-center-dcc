@@ -16,12 +16,12 @@ options:
 author: orion.banks
 """
 
-import synapseclient
+from synapseclient import Synapse, operations
 import argparse
 import pandas as pd
 import re
 
-from synapseclient.models import RecordSet
+from synapseclient.models import RecordSet, Table
 
 
 def get_args():
@@ -99,7 +99,7 @@ def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool =
         cols = ", ".join(["".join(['"', col, '"']) for col in cols])
     
     if is_record_set:
-        file = RecordSet(source_id).get()
+        file = RecordSet(id=source_id).get(synapse_client=syn)
         data = file.path
         table = pd.read_csv(data, header=0, dtype=str).fillna("")
         table = table[cols]
@@ -109,7 +109,7 @@ def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool =
                 table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
     else:
         query = f"SELECT {cols} FROM {source_id}"
-        table = syn.tableQuery(query).asDataFrame().fillna("")
+        table = Table(id=source_id).query(query=query, synapse_client=syn).fillna("")
     
     print(f"Data acquired from Synapse table {source_id}")
 
@@ -260,7 +260,7 @@ def apply_annotations_to_entity(
     converting new_annotations tuple to key:value pairs within the retrieved annotation object,
     storing modified annotation object in Synapse."""
 
-    entity_annotations = syn.get_annotations(entity_id)
+    entity = operations.get(entity_id, synapse_client=syn)
     filtered_annotations = [
         tup
         for tup in new_annotations
@@ -268,14 +268,15 @@ def apply_annotations_to_entity(
     ]
     for key, annot in filtered_annotations:
         if key not in keys_to_drop:
-            entity_annotations[key.replace(" ", "")] = annot
-    syn.set_annotations(entity_annotations)
+            entity.annotations[key.replace(" ", "")] = annot
+    entity.store(synapse_client=syn)
     print(f"{component} annotations applied to Synapse entity: {entity_id}\n")
 
 
 def main():
 
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     args = get_args()
 
