@@ -1,3 +1,4 @@
 -r requirements-ci.txt
 # Private repo; only annotations/create_entity_links.py needs it.
 geo-synapse @ git+https://github.com/sagebio-ada/geo_dataset_creation.git@main
+anyio==4.14.2
