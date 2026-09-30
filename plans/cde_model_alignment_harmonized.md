@@ -3,6 +3,7 @@
 This combines two plans:
 - **[U]**: `mc2-center/data-models` → `plans/cde_model_revisions_integration.md`, the upstream integration plan written from the data-models side.
 - **[D]**: `mc2-center-dcc` → `plans/model_alignment.md` (commit `d4659ec`), the downstream alignment plan written from the DCC side. It includes live reads of Synapse.
+- **[C]**: the companion plan `plans/ai_curation_pipeline_alignment.md` for `mc2-center/ai-curation-pipeline`. Its X1 finding (schema enum and key labels) is folded in below.
 
 Each item below is tagged with where it came from ([U], [D] or [U+D]) and which repo or system it touches:
 - **[DM]**: data-models
@@ -35,6 +36,7 @@ Evidence that this breaks consumers:
 1. **Portal columns.** Portal table columns keep their camelCase names as a presentation layer. One versioned crosswalk maps schema keys to portal columns [D].
 2. **Consortium values.** Portal consortium columns keep display names (`CSBC`), resolved from `Consortium Key` through the Consortium table [D].
 3. **Validation happens upstream.** Synapse JSON-schema binding validates entity annotations, not table rows. So validation happens upstream (RecordSets or curation tasks bound to schemas), and portal tables are derived from validated records [D].
+4. **Schemas use display labels (X1)** [C]. Generate and register the JSON schemas with `data_model_labels="display_label"`, so enum values are spaced (`RNA Sequencing`, not `RNASequencing`) and property keys equal the template display names (`Assay`, `GrantView Key`, `DatasetView_id`). This is adopted, pending O7.
 
 ### Open decisions (need an owner)
 | # | Decision | From |
@@ -45,6 +47,7 @@ Evidence that this breaks consumers:
 | O4 | Sign-off from the curation QA owner on relaxing closed lists to reference validation. | U |
 | O5 | Whether to restore a CI gate for `make all` and `kg-pipeline` in data-models. | U |
 | O6 | Legacy study-license tokens (`CC_BY`, `Apache_2`, `GPL_3` and 7 others) are dropped from the merged `License`. Map them to SPDX equivalents, or keep them as legacy values. | D (resolves U A.3) |
+| O7 | Do Synapse RecordSets, Grid and curation tasks (`synapseclient.extensions.curator`) accept schema property keys that contain spaces (`GrantView Key`)? If yes, use `display_label` as is. If no, the fallback is `class_label` keys with display-form enums. That needs a curator option or a post-processing step, which requires explicit approval (no silent workaround). **This blocks 1.1.** | C |
 
 ## Where the two plans disagreed, and how it's resolved
 
@@ -55,6 +58,7 @@ Evidence that this breaks consumers:
 | `License` values dropped? (U A.3) | Confirm the superset | The old union had 336 values, the new list 326. **10 dropped**, all of them legacy Study short tokens. | Closed as a finding. Needs O6. |
 | Biospecimen acquisition-method renames (U B.2) | Listed `Coreneedlebiopsy→BoneMarrowAspiration` and `ForcepsBiopsy→NeedleBiopsy` (enum-symbol forms) | CSV labels: `Blood draw→Blood Draw`, `Fine needle aspirate→Aspiration`. `Core needle biopsy`, `Forceps Biopsy`, `Punch biopsy` and `Shave biopsy` are removed; `Needle Biopsy`, `Bone Marrow Aspiration` and `Tumor Resection` are added (20→10 values). | Base the live-data audit (Phase 4) on the CSV labels, not the enum-symbol pairs. Treat the old-to-new mapping as a curator decision, not an assumed 1:1 rename. |
 | DCC `schematic` usage (U C.2) | 5 files | [D] listed 2 | Use the U list: `upload-manifests.py`, `upload-workflow.sh`, `union_qc.py`, `utils/csv_to_ttl.py`, `curator_tools/create_file_based_metadata_task.py`. |
+| Schema key and enum format (X1) | Not examined | [C]: generated **and registered** schemas (`MC2Center-PublicationView-13.0.0` and `-15.0.0`) squash enum values to camelCase (`RNASequencing`), while every data source uses the spaced form. The cause is the default `class_label` in `create_json_from_model.py`. `display_label` (tested in a scratchpad) produces spaced enums and display-name keys. | Adopted as decision 4 and item 0.11. It rewrites the key names in 2a and 2c, and O7 has to be checked first. |
 | DCC TTL tooling overlap with kg-pipeline (U follow-up) | Unread | `utils/csv_to_ttl.py` converts a **model** (schematic CSV or CRDC TSV) to RDF for several orgs (mc2, nf, htan, crdc, and others). `build_template_ttl.py` converts template headers to TTL. Neither builds instance data. | Different purpose from kg-pipeline's portal-instance KG, which overlaps only with its Stage 0 (model→OWL). Keep both, but check `csv_to_ttl.py` still parses the revised `Properties` CDE tags (Phase 2). |
 | Portal-table live audit (U out-of-scope) | Not done | Done for the portal tables: 69 invalid values (Phase 4) | Portal tables are covered. The Biospecimen, Individual and Model annotation audit is **still open**. |
 | JSON schema names (U C.4) | Visium rename is cosmetic | The registered `MC2Center` schemas still use the old `VisiumRNALevel*` names. Version ordering is broken (PublicationView `15.0.0` > `13.0.0`). | Not cosmetic in the registry. See Phase 1. |
@@ -76,9 +80,12 @@ Evidence that this breaks consumers:
   - The 18 `templates/*.csv` files have renamed headers.
 - **0.9 Tag the release** (e.g. `v14.0.0`) so that DCC can pin `all_valid_values.csv` and the schemas to it [D].
 - **0.10 Build checks** [U]. `make all` (root) and `make schema && make test` (kg-pipeline) pass from a clean clone. Decide O5.
+- **0.11 Generate schemas with display labels** [C] (X1). In `create_json_from_model.py`, pass `data_model_labels="display_label"` to `generate_jsonschema`. Regenerate `json_schemas/`. Check O7 by validating one RecordSet or curation task against a display-label schema in a scratch Synapse project. Confirm that `required` lists and enums come out in display form.
 
 ## Phase 1: Clean up the schema registry [SYN] (Opus runs it, with explicit approval)
-- **1.1 Register at 16.0.0** [D]. Register every schema from this release at **16.0.0**, above the stale PublicationView `15.0.0`, so "highest version" is unambiguous.
+- **1.1 Register at 16.0.0** [D+C]. Register every schema from this release, **generated with display labels (0.11)**, at **16.0.0**. This waits on O7.
+  - 16.0.0 is above the stale PublicationView `15.0.0`, so "highest version" is unambiguous.
+  - Every registered version up to 15.0.0 has camelCase enums, so none of them can validate existing data. Deprecate them all in syn69735275.
 - **1.2 Register the renamed schemas** [U+D]:
   - Register `10xVisium*`.
   - Mark `VisiumRNALevel1-4` and `VisiumAuxiliaryFiles` deprecated in the registry table syn69735275; do not delete them.
@@ -94,6 +101,7 @@ Evidence that this breaks consumers:
 
 - **2a. Crosswalk module** [D]: `portal_tables/crosswalk.py`.
   - For each component: an ordered mapping of schema key → portal column, plus the model version it targets.
+  - Schema keys are the **display labels** (decision 4): `Assay`, `Tumor Type`, `GrantView Key`, `DatasetView_id`. They are not class labels (`TumorType`, `DatasetViewId`).
   - It replaces the scattered rename maps and `annotations/attribute_dictionary.py`. This is the key U D-list file.
   - `check_crosswalk(table_id, component)` asserts the live Synapse column order before any write.
 - **2b. Consortium lookup** [D]: `consortium_display_names(syn, ids)` in `portal_tables/utils.py`. It fails loudly on unknown IDs.
@@ -101,14 +109,17 @@ Evidence that this breaks consumers:
 
 | Script | Changes |
 |---|---|
-| `sync_publications.py` | `Publication Assay/Tumor Type/Tissue` become `Assay`, `Tumor Type`, `Tissue`. Replace positional `row[4]` with `row["GrantView Key"]`. |
-| `sync_datasets.py` | `DatasetAssay/Species/Tissue/TumorType` become the shared keys. `DatasetView_id` becomes `DatasetViewId`. An unknown DUO code at `:117-123` must no longer skip the download fields. |
-| `sync_tools.py` / `sync_education.py` | `ToolLicense` / `ResourceLicense` become `License`, as a string list. |
+| `sync_publications.py` | `Publication Assay/Tumor Type/Tissue` become `Assay`, `Tumor Type`, `Tissue`. Replace positional `row[4]` with `row["GrantView Key"]`. It already uses display-label keys. |
+| `sync_datasets.py` | Currently reads **class-label** keys. Move it to display labels: `DatasetAssay/DatasetSpecies/DatasetTissue/DatasetTumorType` become `Assay`, `Species`, `Tissue`, `Tumor Type`. `GrantViewKey`, `PublicationViewKey` and `DataUseCodes` become `GrantView Key`, `PublicationView Key`, `Data Use Codes`, and the other `Dataset*` keys become `Dataset Name` and so on. `DatasetView_id` **stays**. An unknown DUO code at `:117-123` must no longer skip the download fields. |
+| `sync_tools.py` / `sync_education.py` | Class-label keys become display labels (`ToolName` → `Tool Name`, `ResourceTitle` → `Resource Title`, …). `ToolLicense` / `ResourceLicense` become `License`, as a string list. |
 | `sync_grants.py`, `create_grant_projects.py` | `Grant Investigator` becomes `Investigator`, as a list. `Grant Consortium Name` becomes `Consortium Key`, resolved via 2b. Fix the shared `updated_scope` list at `sync_grants.py:81`. |
-| `sync_projects.py` | `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantViewKey`. Consortia come via 2b. Add `projectShortName`. |
-| `sync_people.py` | `personConsortiumName` becomes `ConsortiumKey`, resolved via 2b. `personGrantNumber` becomes `GrantViewKey`. |
+| `sync_projects.py` | `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantView Key`. Consortia come from `Consortium Key` via 2b. Add `Project Short Name`, going to `projectShortName`. The other class-label keys become display labels. |
+| `sync_people.py` | `personConsortiumName` becomes `Consortium Key`, resolved via 2b. `personGrantNumber` becomes `GrantView Key`. The PersonView manifest table's camelCase columns are renamed to display labels in Phase 3. |
+
+If O7 forces the class-label fallback, 2a and 2c use class-label keys (`TumorType`, `DatasetViewId`) instead. Only the crosswalk's key column changes; the rest of the design stays the same.
 
 - **2d. Annotation and utility scripts** [U+D]:
+  - `processing-splits.py` is simplified together with [C] P1. The curation pipeline will emit schema-key headers directly (`GrantView Key` in place of `Publication Grant Number`, and no consortium or theme columns). So `processing-splits.py` only splits by component; it no longer renames or drops columns.
   - Scripts: `annotations/processing-splits.py` (including `"Tool License"`), `add_cols.py`, `schema_update.py`, `edit_legacy_annotations.py`, `split_manifest_grants.py`, `utils/merge_and_correct_manifests.py`, `utils/table_to_annotations.py`, `utils/check_publications_status.py`.
   - Change: rename via `crosswalk.py`.
   - Pin the `all_valid_values.csv` URL to the release tag.
@@ -138,10 +149,10 @@ Evidence that this breaks consumers:
   - `Project Consortium Name` becomes `Consortium Key`.
   - `Project Grant Number` becomes `GrantView Key`.
   - Add `PersonView Key` and `Project Short Name`.
-- PersonView syn38301033:
-  - `personConsortiumName` becomes `ConsortiumKey`.
-  - `personGrantNumber` becomes `GrantViewKey`.
-  - Add `InstitutionKey`.
+- PersonView syn38301033: move all columns to display-label keys (decision 4).
+  - `personConsortiumName` becomes `Consortium Key`.
+  - `personGrantNumber` becomes `GrantView Key`.
+  - Add `Institution Key`.
 - Manifest CSVs syn53478776, syn53478774, syn53479671 and syn53651540: regenerate them with the new keys.
 
 **Bindings:** bind 16.0.0 to the RecordSets and folders that feed each manifest. Portal tables stay unbound.
@@ -176,11 +187,12 @@ Evidence that this breaks consumers:
 ---
 
 ## Sequencing
-1. Phase 0 is done and #262 is ready. **Don't merge it yet.**
+0. **Now:** [C] P0, the curation-pipeline vocabulary hardening. It has to land **before #262 merges**: once #262 merges, the pipeline's vocabulary loader returns 0 terms without any error.
+1. Phase 0 is done (including 0.11 and O7) and #262 is ready. **Don't merge it yet.**
 2. The DCC Phase 2 PR is reviewed and passes its dry runs against a clone of #262.
 3. Phase 4.2 is triaged.
 4. Merge #262, tag the release, then run Phase 1 (registry).
-5. Merge the DCC PR, **before the next `0 0 1 * *` cron**.
+5. Merge the DCC PR, **before the next `0 0 1 * *` cron**. [C] P1 (the curation pipeline's output headers) merges in the same window, tested against the same fixture outputs as 2d.
 6. Phase 3 (Synapse tables), then the first sync with `sync-to-portal.yml`.
 7. Phase 4.1 curation, then re-sync.
 
@@ -194,6 +206,7 @@ Evidence that this breaks consumers:
 - **Dry-run diffs.** Each `sync_*.py --dryrun` against the regenerated manifests produces `--output_csv`. Its diff against a snapshot of the pre-change portal table shows only the intended type and value changes [D].
 - **Column order.** `check_crosswalk()` passes for all 7 portal tables [D].
 - **Validation.** Manifests and RecordSets validate against 16.0.0 through `synapseclient.extensions.curator`. The only errors are the known Phase 4 items. Where schematic remains, it validates against the curator-generated `mc2.model.jsonld` [U C.2].
+- **Enums and keys (X1).** Every 16.0.0 schema's enums are in display form: spot-check that `RNA Sequencing` and `Acinar Cell Carcinoma` are present and `RNASequencing` is absent. Its property keys equal the template display names. Existing portal values from Phase 4.1's clean set validate against it [C].
 - **Registry.** `POST /schema/version/list` shows 16.0.0 as the highest version for every MC2Center schema, and syn69735275 has matching rows [D].
 - **Builds.** `make all` and `make schema && make test` in kg-pipeline pass from a clean clone [U].
 - **dca_config.** `dca_config/dca-template-config.json` has been read and confirmed or updated [U].
@@ -203,4 +216,5 @@ Evidence that this breaks consumers:
 ## Evidence
 - **[D] session reports:** the scratchpad files `model_diff.md`, `dcc_inventory.md` and `synapse_cols.json` (session-local; the key numbers are restated above).
 - **[U] upstream plan:** `data-models/plans/cde_model_revisions_integration.md`.
+- **[C] companion plan:** `plans/ai_curation_pipeline_alignment.md`. The X1 evidence is in there: the registered 13.0.0 and 15.0.0 enums, plus `class_label` vs `display_label` generation with synapseclient 4.13.0 `[curator]`.
 - **Source plans:** both remain in place. This document supersedes them for execution order.
