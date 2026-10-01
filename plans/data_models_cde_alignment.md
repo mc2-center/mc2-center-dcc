@@ -12,6 +12,7 @@
 | DM-13 | Open, deferred: issue #274. |
 | DM-14 | **New, open:** a patch. See below. |
 | DM-15 | **New, low priority**: issue #275. See below. |
+| DM-16 | **New:** no `templates/*.csv` for ProjectView, Consortium, Institution or Theme. `make templates` should cover every class in `DATA` that has a manifest, or document the exclusions as `check_template_list.py` does. |
 
 Items DM-1 to DM-12 below are kept as the record of what was asked; the report documents how each was done and where it differed.
 
@@ -53,7 +54,7 @@ PR #262 consolidates about 70 per-entity attributes into shared ones: `Assay`, `
   |---|---|---|
   | `CC0` | `CC0-1.0` | |
   | `CC_BY` | `CC-BY-4.0` | Matches the existing CV's own `SPDX:CC-BY-4.0` |
-  | `CC_BY_NC` | `CC-BY-NC-4.0` | The existing CV says `SPDX:CC-BY-NC-3.0`. **Curator confirms the version** before it's applied. |
+  | `CC_BY_NC` | `CC-BY-NC-4.0` | The existing CV says `SPDX:CC-BY-NC-3.0`. Owner-confirmed `CC-BY-NC-4.0`. |
   | `CC_BY_ND` | `CC-BY-ND-4.0` | |
   | `CC_BY_SA` | `CC-BY-SA-4.0` | |
   | `CC_BY_NC_ND` | `CC-BY-NC-ND-4.0` | |
@@ -124,7 +125,7 @@ PR #262 consolidates about 70 per-entity attributes into shared ones: `Assay`, `
   - The Visium renames (DM-6).
   - The DCA removal (DM-9).
   - `make all` now runs `convert`.
-  - `schematicpy` and `qc_model`/`make qc` are removed.
+  - `schematicpy` and the `make qc` target are removed. `qc_model/qc_attribute_mapping.csv` stays, because `union_qc.py` uses it.
   - The 18 `templates/*.csv` files have renamed headers.
 - **Tag and handoff.** Tag the release `v14.0.0`. Registering the schemas at `14.0.0` happens downstream, in master plan S1.
 

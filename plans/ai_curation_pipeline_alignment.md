@@ -55,8 +55,8 @@ Companion to `plans/cde_model_alignment_harmonized.md`, referred to below as **[
 ### P0 — Incident fix: harden vocabulary loading (do now; #262 is already merged)
 Small and backward-compatible. It closes the silent-failure window whichever order things merge in.
 - **Field-name fallback.** `_extract_jsonld_terms` callers try the revised field name first, then the legacy one: `("Assay", "Publication Assay")`, `("Tissue", "Publication Tissue")`, `("Tumor Type", "Publication Tumor Type")`. Put this behind one helper in `parse_publication_pdfs.py`, reused by both call sites (`parse_publication_pdfs.py:549-553`, `run_publication_pipeline.py:937-943`).
-- **Fail loudly.** If any vocabulary loads fewer than N terms (e.g. under 50 for Assay), exit non-zero with a message naming the source and the field. Never run with an empty vocabulary.
-- **Pin the model source.** The default URL points at a data-models **tag**, not `main`. Add a `MC2_MODEL_REF` env var or CLI override next to the existing `--model-jsonld`.
+- **Fail loudly.** If any vocabulary loads fewer than N terms (minimums are in the implementation plan, P0: Assay 300, Tissue 80, Tumor Type 150), exit non-zero with a message naming the source and the field. Never run with an empty vocabulary.
+- **Pin the model source.** The default URL points at a pinned data-models ref, not `main`: `c234c467` until `v14.0.0` is tagged. Add a `MC2_MODEL_REF` env var or CLI override next to the existing `--model-jsonld`.
 - **Tests.** `tests/test_vocab_jsonld.py` gets revised-shape fixtures (`bts:Assay`), plus a test that an empty vocabulary raises.
 - **Alias check.** Add a unit test that every `_SUPPLEMENTAL_*_ALIASES` target and every noise or collapse term is in the loaded vocabulary. Run it against a vendored copy of the pinned JSON-LD, so a later model change fails in CI, not in production.
 
@@ -74,7 +74,7 @@ Template headers at `v14.0.0` are the contract, with no renames downstream. Keep
 - **ToolView (`TOOL_FIELDNAMES`, `repo_metadata.py`):**
   - Headers are exactly `templates/ToolView.csv`, so `Tool License` becomes `License`.
   - Normalize license values to SPDX IDs. Leave the value blank rather than emit a non-SPDX name; the GitLab and Bitbucket name fallback gives names like "MIT License".
-  - Emit multiple licenses as a list-formatted cell.
+  - Emit multiple licenses as one comma-joined cell.
 - **Define the columns once.** Move the fieldname lists into `ai_curation_pipeline/manifest_fields.py`, stamped `model_version="14.0.0"`.
 - **ToolView xlsx template.** It must be regenerated from `templates/ToolView.csv` at `v14.0.0`, or replaced by P3.
 

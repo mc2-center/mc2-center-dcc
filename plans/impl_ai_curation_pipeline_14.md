@@ -85,7 +85,7 @@ P4 (branches/docs): before any unmerged branch merges
 - **Depends on** P1. Use the `v14.0.0` `json_schemas/*.json` files at `MODEL_REF` until infrastructure step I2 registers 14.0.0; after that, switch the default to `GET /schema/type/registered/MC2Center-<Type>-14.0.0`.
 - **Spec:**
   1. Convert template headers to schema keys through `mc2.model.jsonld` (`sms:displayName` → `rdfs:label`). That's the same mapping as DCC `model_contract`; share the code when `cckp_metadata` exists.
-  2. Split list fields on `, `.
+  2. Split on `, ` **only** for keys whose schema type is `array`. `GrantView Key` is a comma-joined `string` (data-models DM-15) and must stay unsplit.
   3. Validate each row with `jsonschema`.
   4. Write `validation_report.csv` (row key, field, message).
   5. **Flag failing rows, don't drop them.**

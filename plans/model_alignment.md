@@ -1,5 +1,7 @@
 # Plan: Align mc2-center-dcc and CCKP Synapse tables with the CDE-revised data models
 
+> **SUPERSEDED.** This was the first-pass plan. Decisions and details changed later: the version is 14.0.0 not 16.0.0, there are no `10x` names, the license attributes are merged, the DUO fields stay off the portal, and `curator_tools/` is ignored. Use `plans/cde_model_alignment_harmonized.md` and the `plans/impl_*.md` specs instead.
+
 ## Context
 data-models branch `cde-model-revisions` (PR #262, `major`; local checkout `kg-docs-restructure`) changes about 70 attributes compared with `origin/main`:
 - Per-entity prefixes are dropped: `Publication/Dataset Assay` → `Assay`, `Dataset Species` → `Species`, `Tool/Resource License` → `License`, `Grant/Project Investigator` → `Investigator`.
