@@ -5,10 +5,21 @@ with their updated annotations after they have become 'Open Access'
 """
 
 import argparse
+import importlib.util
+import os
 from synapseclient import Synapse
 from synapseclient.models import Table
 import pandas as pd
 from attribute_dictionary import PUBLICATION_DICT
+
+# portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+strip_newlines = _portal_utils.strip_newlines
 
 
 def login():
@@ -108,15 +119,31 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     # Create a new dictionary with column names as keys anve values as data types
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
-    # Fix data types in annots_df to match synapse table
+    # Strip embedded newlines first (df.map would turn Int64 columns into float).
+    final_df = strip_newlines(final_df)
+
+    # Fix data types in annots_df to match synapse table.
+    # ROW_ID/ROW_VERSION are kept in the frame (store_rows needs them to update
+    # rows in place) but are not table columns, so skip them here.
     for column_name in final_df:
-        if col_types_dict[column_name] == list:
-            final_df[column_name] = final_df[column_name].str.split(", ")
+        if column_name in ("ROW_ID", "ROW_VERSION"):
+            continue
+        col_type = col_types_dict[column_name]
+        if col_type == list:
+            # Only split strings; STRING_LIST columns not in the manifest are
+            # already Python lists. Empty values become None (null).
+            final_df[column_name] = final_df[column_name].map(
+                lambda v: (v.split(", ") if v else None) if isinstance(v, str) else v
+            )
+        elif col_type in (int, float):
+            # fillna("") left "" in numeric columns; convert it back to null.
+            final_df[column_name] = pd.to_numeric(
+                final_df[column_name].where(final_df[column_name] != "", pd.NA)
+            )
+            if col_type == int:
+                final_df[column_name] = final_df[column_name].astype("Int64")
         else:
-            for k, v in col_types_dict.items():
-                final_df[column_name] = final_df[column_name].astype(
-                    col_types_dict[column_name]
-                )
+            final_df[column_name] = final_df[column_name].astype(col_type)
 
     if dryrun:
         final_df.to_csv("updated_annotations.csv", index=False)
