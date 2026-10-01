@@ -5,16 +5,27 @@ with their updated annotations after they have become 'Open Access'
 """
 
 import argparse
-import synapseclient
-from synapseclient import Table, RowSet
+import importlib.util
+import os
+from synapseclient import Synapse
+from synapseclient.models import Table
 import pandas as pd
 from attribute_dictionary import PUBLICATION_DICT
+
+# portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+strip_newlines = _portal_utils.strip_newlines
 
 
 def login():
     """Login to Synapse"""
 
-    syn = synapseclient.Synapse()
+    syn = Synapse()
     syn.login()
 
     return syn
@@ -54,20 +65,23 @@ def get_annotations(table_id, updated_df, syn):
     pubmed_string = ", ".join(pubmed_list)
     print(f"list of pubmeds to be updated: {pubmed_string}")
 
-    annots_query = syn.tableQuery(
-        (
-            "SELECT pubMedId, assay, tumorType, tissue, dataset, accessibility"
-            f" FROM {table_id} WHERE pubMedId IN ({pubmed_string})"
-        )
+    # NOTE: selecting all columns (not just the ones being edited) is
+    # deliberate. Table.store_rows() does a full-row replacement -- any
+    # column not present in the DataFrame gets nulled out on the updated
+    # rows. The legacy `syn.store(Table(table_id, df, etag=...))` this
+    # replaced tolerated a partial column set; store_rows() does not.
+    annots_df = Table(id=table_id).query(
+        query=f"SELECT * FROM {table_id} WHERE pubMedId IN ({pubmed_string})",
+        synapse_client=syn,
     )
 
-    return annots_query
+    return annots_df
 
 
 def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
 
-    # Convert annotations to data frame
-    annots_df = annots_query.asDataFrame().fillna("")
+    # annots_query is already a DataFrame (Table.query() returns one directly).
+    annots_df = annots_query.fillna("")
     # preserve original index
     index_rows = dict(zip(annots_df.pubMedId, annots_df.index))
 
@@ -88,11 +102,8 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     final_df.set_index(keys="index", inplace=True)
 
     # Get column data types from synapse table
-    cols = syn.getTableColumns(table_id)
-    col_dict = {}
-    for col in cols:
-        col_name = col["name"]
-        col_dict[col_name] = col["columnType"]
+    table = Table(id=table_id).get(include_columns=True, synapse_client=syn)
+    col_dict = {name: col.column_type for name, col in table.columns.items()}
 
     data_type_dict = {
         "STRING": str,
@@ -108,15 +119,31 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     # Create a new dictionary with column names as keys anve values as data types
     col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
 
-    # Fix data types in annots_df to match synapse table
+    # Strip embedded newlines first (df.map would turn Int64 columns into float).
+    final_df = strip_newlines(final_df)
+
+    # Fix data types in annots_df to match synapse table.
+    # ROW_ID/ROW_VERSION are kept in the frame (store_rows needs them to update
+    # rows in place) but are not table columns, so skip them here.
     for column_name in final_df:
-        if col_types_dict[column_name] == list:
-            final_df[column_name] = final_df[column_name].str.split(", ")
+        if column_name in ("ROW_ID", "ROW_VERSION"):
+            continue
+        col_type = col_types_dict[column_name]
+        if col_type == list:
+            # Only split strings; STRING_LIST columns not in the manifest are
+            # already Python lists. Empty values become None (null).
+            final_df[column_name] = final_df[column_name].map(
+                lambda v: (v.split(", ") if v else None) if isinstance(v, str) else v
+            )
+        elif col_type in (int, float):
+            # fillna("") left "" in numeric columns; convert it back to null.
+            final_df[column_name] = pd.to_numeric(
+                final_df[column_name].where(final_df[column_name] != "", pd.NA)
+            )
+            if col_type == int:
+                final_df[column_name] = final_df[column_name].astype("Int64")
         else:
-            for k, v in col_types_dict.items():
-                final_df[column_name] = final_df[column_name].astype(
-                    col_types_dict[column_name]
-                )
+            final_df[column_name] = final_df[column_name].astype(col_type)
 
     if dryrun:
         final_df.to_csv("updated_annotations.csv", index=False)
@@ -125,12 +152,12 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
         return final_df
 
 
-def manifest_upload(syn, table_id, final_df, annots_query):
+def manifest_upload(syn, table_id, final_df):
 
     columns = final_df.columns
     print(columns)
 
-    syn.store(Table(table_id, final_df, etag=annots_query.etag))
+    Table(id=table_id).store_rows(values=final_df, synapse_client=syn)
 
     print("\nAnnotations Updated")
 
@@ -153,7 +180,7 @@ def main():
             update_df, annots_results, syn, args.table_id, args.dryrun
         )
 
-        manifest_upload(syn, args.table_id, final_df, annots_results)
+        manifest_upload(syn, args.table_id, final_df)
 
     elif choice == "n":
         print("\n\nPlease validate first, then rerun this script to upload!")

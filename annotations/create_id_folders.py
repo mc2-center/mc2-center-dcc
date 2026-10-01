@@ -7,9 +7,8 @@ This script will:
 author: orion.banks
 """
 
-import synapseclient
-from synapseclient import Folder
-import synapseutils
+from synapseclient import Synapse
+from synapseclient.models import Folder
 import argparse
 import pandas as pd
 import numpy as np
@@ -65,12 +64,11 @@ def add_folders(syn, path_name_target):
 
         n = n.translate(str.maketrans("", "", "[]:/!@#$<>"))
 
-        folder = Folder(n, parent=t)
-        folder = syn.store(folder)
+        folder = Folder(name=n, parent_id=t).store(synapse_client=syn)
         id = folder.id
         info = (p, n, id)
         path_name_id.append(info)
-        syn.delete(id)
+        folder.delete(synapse_client=syn)
 
     return path_name_id
 
@@ -98,9 +96,8 @@ def add_ids_to_manifests(path_name_id, name_column, primary_key):
 
 def main():
 
-    syn = (
-        synapseclient.login()
-    )  # you can pass your username and password directly to this function
+    syn = Synapse()
+    syn.login()
 
     args = get_args()
 

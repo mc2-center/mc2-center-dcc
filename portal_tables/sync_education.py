@@ -6,6 +6,7 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import re
+from synapseclient import operations
 import utils
 
 def add_missing_info(
@@ -110,7 +111,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(syn.get(args.manifest_id).path).fillna("")
+    manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)

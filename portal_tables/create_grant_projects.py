@@ -11,6 +11,7 @@ import re
 
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
+from synapseclient.models import Table
 
 PERMISSIONS = {
     "view": ["READ"],
@@ -176,18 +177,27 @@ def create_grant_projects(syn, grants):
     return grant_info_dict
 
 
-def process_new_grants(new = None, current = None, dryrun = None):
+def process_new_grants(new = None, current = None, dryrun = None, synapse_client = None):
     """Main function."""
-    syn = synapseclient.Synapse()
-    syn.login(silent=True)
-    args = get_args()
-    
-    manifest = new if new is not None else args.manifest
-    portal_table = current if current is not None else args.portal_table
-    dryrun = dryrun if dryrun is not None else args.dryrun
+    syn = synapse_client
+    if syn is None:
+        syn = synapseclient.Synapse()
+        syn.login(silent=True)
 
-    manifest = syn.tableQuery(f"SELECT * FROM {manifest}").asDataFrame()
-    curr_manifest = syn.tableQuery(f"SELECT * FROM {portal_table}").asDataFrame()
+    # Only parse CLI args when the caller (e.g. sync_grants.py) hasn't
+    # already supplied all three values -- avoids re-parsing the caller's
+    # own CLI flags when this is used as a library function.
+    if new is None or current is None or dryrun is None:
+        args = get_args()
+        manifest = new if new is not None else args.manifest
+        portal_table = current if current is not None else args.portal_table
+        dryrun = dryrun if dryrun is not None else args.dryrun
+    else:
+        manifest = new
+        portal_table = current
+
+    manifest = Table(id=manifest).query(query=f"SELECT * FROM {manifest}", synapse_client=syn)
+    curr_manifest = Table(id=portal_table).query(query=f"SELECT * FROM {portal_table}", synapse_client=syn)
     curr_grants = curr_manifest.grantNumber.to_list()
 
     # Generate manifest containing grants not currently on CCKP

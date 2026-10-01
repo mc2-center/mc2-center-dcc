@@ -5,6 +5,7 @@ table, by first truncating the table, then re-adding the rows.
 """
 
 import pandas as pd
+from synapseclient.models import Table
 import utils
 
 
@@ -69,9 +70,9 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = (
-        syn.tableQuery(f"SELECT * FROM {args.manifest_id}").asDataFrame().fillna("")
-    )
+    manifest = Table(id=args.manifest_id).query(
+        query=f"SELECT * FROM {args.manifest_id}", synapse_client=syn
+    ).fillna("")
     manifest.columns = manifest.columns.str.replace(" ", "")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
@@ -79,9 +80,10 @@ def main():
         print()
 
     print("Processing project staging database...")
-    grants = syn.tableQuery(
-        "SELECT grantId, grantNumber, grantName, theme, consortium, grantType FROM syn21918972"
-    ).asDataFrame()
+    grants = Table(id="syn21918972").query(
+        query="SELECT grantId, grantNumber, grantName, theme, consortium, grantType FROM syn21918972",
+        synapse_client=syn,
+    )
 
     database = add_missing_info(manifest, grants)
     final_database = clean_table(database)
