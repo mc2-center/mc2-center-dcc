@@ -9,7 +9,7 @@ python synapse_json_schema_bind.py [options]
 author: orion.banks
 """
 
-from synapseclient import Synapse, operations
+from synapseclient import Synapse
 from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import JSONSchema, SchemaOrganization
 import argparse
@@ -118,7 +118,7 @@ def register_json_schema(syn, org: "SchemaOrganization", schema_type: str, schem
         schema = JSONSchema(organization_name=org.name, name=schema_type).store(
             schema_body=schema_json, version=num_version, synapse_client=syn
         )
-        uri = schema.uri
+        # schema.uri has no version suffix, so keep the versioned uri built above
         print(f"JSON schema {uri} was successfully registered.")
     except SynapseHTTPError as error:
         print(error)
@@ -149,14 +149,17 @@ def bind_schema_to_entity(syn, schema_uri: str, entity_id: str, component_type: 
     enable_derived_annotations = component_type == "AccessRequirement" or includes_ar is not None
     print(f"\nBinding {'AR' if enable_derived_annotations else 'non-AR'} schema {schema_uri}")
 
-    # operations.get() looks up the entity's actual type first and dispatches
-    # to the matching model; File, Folder, Project, EntityView, and Table all
-    # support .bind_schema(), so no type-specific branching is needed here.
-    entity = operations.get(entity_id, synapse_client=syn)
-    entity.bind_schema(
-        schema_uri, enable_derived_annotations=enable_derived_annotations, synapse_client=syn
+    # The REST binding endpoint works for every entity type (File, RecordSet,
+    # Dataset, MaterializedView, ...), and nothing is fetched or downloaded.
+    request_body = {
+        "entityId": entity_id,
+        "schema$id": schema_uri,
+        "enableDerivedAnnotations": enable_derived_annotations,
+    }
+    syn.restPUT(
+        f"/entity/{entity_id}/schema/binding", body=json.dumps(request_body)
     )
-   
+
 def get_schema_from_url(url: str, path: str, version: str = None) -> tuple[any, str, str, str]:
     """
     Access JSON schema from a URL or file path.
