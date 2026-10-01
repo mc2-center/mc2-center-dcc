@@ -13,7 +13,7 @@ Companion to `plans/cde_model_alignment_harmonized.md`, referred to below as **[
   - Claude is constrained to "values that appear verbatim in the vocab lists", so it has nothing valid to return.
   - Alias matching falls back to only the hardcoded supplemental aliases.
   - Every run after the merge would quietly produce blank or near-blank Assay, Tissue and Tumor Type.
-- **Output headers are the downstream contract.** The pipeline's output CSV and XLSX files are the input to DCC's `annotations/processing-splits.py` and then the `sync_*.py` scripts. They use the old attribute names, so they must change in step with [H] Phase 2.
+- **Output headers are the downstream contract.** The pipeline's output CSV and XLSX files are the input to DCC's `annotations/processing-splits.py` and then the `sync_*.py` scripts. They use the old attribute names, so they must change in step with [H] section B.
 - **The registered schemas can't validate what the pipeline produces (cross-cutting).** See X1 below. It affects [H] as much as this pipeline.
 
 ## Where the pipeline depends on the model
@@ -45,15 +45,11 @@ Companion to `plans/cde_model_alignment_harmonized.md`, referred to below as **[
   - Enums in spaced form: `10-cell RNA Sequencing`, `Direct Long-Read RNA Sequencing`.
   - Property keys equal to the template display names: `Assay`, `GrantView Key`, `Publication Doi`, `PublicationView_id`, `Pubmed Id`.
   - `required` lists that match.
-- **Recommendation.** Treat this as a canonical fix, not a workaround. Generate and register every schema with `display_label`. Then:
-  - The pipeline's output headers, DCC's schematic-style manifests and `sync_publications.py` (which already uses display names) all line up with the schema keys directly.
-  - The pipeline can read its vocabulary from the registered schema itself.
-- **Proposed changes to [H]:**
-  - **Phase 0:** add item 0.11, "generate JSON schemas with `data_model_labels="display_label"`; confirm that curator validation, RecordSets and curation tasks accept spaced property keys."
-  - **Phase 2a:** schema keys in the crosswalk become the display names.
-  - **Phase 2c:** `sync_datasets.py`, `sync_tools.py` and `sync_education.py` currently read class-label keys (`DatasetAssay`, `ToolLicense`). They switch to display names (`Assay`, `License`) rather than class labels (`TumorType`), and `DatasetView_id` stays as it is instead of becoming `DatasetViewId`.
-  - **Phase 1:** registration at 16.0.0 uses the display-label schemas.
-  - **Open question for [H] (O7):** whether Synapse RecordSets and Grid handle property keys that contain spaces. If they don't, the fallback is `class_label` keys with display-form enums. That needs a curator option or a post-processing step, which requires explicit approval per the no-silent-workarounds rule.
+- **Superseded by the master plan (decision 4, O7 and O8).** Curator doesn't allow spaces in property keys, so `display_label` can't be used as it is. Schema **keys stay `class_label`** (`Assay`, `TumorType`, `GrantViewKey`, `PublicationViewId`). **Enums must be in display form**, which is O8: an upstream curator option, and/or an approved interim post-processing step (data-models DM-7).
+- **What this means for the pipeline:**
+  - The output headers use the class-label keys (P1).
+  - The vocabulary can still be read from the registered schema (P3), once its enums are in display form.
+- **Version:** registration happens at **14.0.0** (release-aligned; [H] S1), not 14.0.0.
 
 ---
 
@@ -67,30 +63,30 @@ Small and backward-compatible. It closes the silent-failure window whichever ord
 - **Tests.** `tests/test_vocab_jsonld.py` gets revised-shape fixtures (`bts:Assay`), plus a test that an empty vocabulary raises.
 - **Alias check.** Add a unit test that every `_SUPPLEMENTAL_*_ALIASES` target and every noise or collapse term is in the loaded vocabulary. Run it against a vendored copy of the pinned JSON-LD, so a later model change fails in CI, not in production.
 
-### P1 — Output contract (merge **together with** [H] Phase 2, after #262)
-The pipeline emits headers that equal the registered schema's property keys, which are display labels under X1.
+### P1 — Output contract (merge **together with** [H] B2/B4, after #262)
+The pipeline emits headers that equal the registered schema's property keys, which are **class labels** ([H] decision 4).
 - **PublicationView rows:**
-  - `Publication Assay/Tumor Type/Tissue` become `Assay`, `Tumor Type`, `Tissue`.
-  - Emit `GrantView Key` (the joined related grants) directly in place of `Publication Grant Number`.
+  - All headers become class-label keys: `PublicationDoi`, `PubmedId`, and so on. `Publication Assay/Tumor Type/Tissue` become `Assay`, `TumorType`, `Tissue`.
+  - Emit `GrantViewKey` (the joined related grants) directly in place of `Publication Grant Number`.
   - Stop emitting `Publication Consortium Name` and `Publication Theme Name`. The portal sync derives these from the grants table (`sync_publications.add_missing_info`).
-  - Add `Study Key` as a blank column for template parity.
-  - This lets [H] 2d reduce `processing-splits.py` to splitting only: no renames, no drops.
+  - Add `StudyKey` as a blank column for template parity.
+  - This lets [H] B4 reduce `processing-splits.py` to splitting only: no renames, no drops.
 - **DatasetView (`DATASET_FIELDNAMES`):**
-  - `Dataset Assay`, `Dataset Species`, `Dataset Tumor Type` and `Dataset Tissue` become `Assay`, `Species`, `Tumor Type`, `Tissue`.
-  - Keep `DatasetView_id` (display label).
+  - All headers become class-label keys. `Dataset Assay`, `Dataset Species`, `Dataset Tumor Type` and `Dataset Tissue` become `Assay`, `Species`, `TumorType`, `Tissue`.
+  - `DatasetView_id` becomes `DatasetViewId`.
   - Leave the new DUO and `License` columns out, or blank. Never infer data-use conditions.
 - **ToolView (`TOOL_FIELDNAMES`, `repo_metadata.py`):**
-  - `Tool License` becomes `License`.
+  - `Tool License` becomes `License`, and the other headers become class-label keys (`ToolName`, …).
   - Normalize license values to SPDX IDs (a small name→SPDX map for the GitLab/Bitbucket fallback). Leave the value blank rather than emit a non-SPDX name.
   - Emit multiple licenses as a list-formatted cell.
-- **Define the columns once.** Move `DATASET_FIELDNAMES`, `TOOL_FIELDNAMES` and the PublicationView keys into one module (e.g. `ai_curation_pipeline/manifest_fields.py`). Stamp the model version they target, matching [H] 2a's crosswalk version.
+- **Define the columns once.** Move `DATASET_FIELDNAMES`, `TOOL_FIELDNAMES` and the PublicationView keys into one module (e.g. `ai_curation_pipeline/manifest_fields.py`). Stamp the model version they target, matching [H] B1's crosswalk version.
 
 ### P2 — Validate against the source of truth before hand-off
-- **New step.** After Steps 3–5, validate `publication_metadata.csv`, `datasets_publication_metadata.csv` and `tools_*.xlsx` against the registered `MC2Center` 16.0.0 schemas, fetched with `GET /schema/type/registered/MC2Center-<Type>-16.0.0`. Use the `jsonschema` library, row by row.
+- **New step.** After Steps 3–5, validate `publication_metadata.csv`, `datasets_publication_metadata.csv` and `tools_*.xlsx` against the registered `MC2Center` 14.0.0 schemas, fetched with `GET /schema/type/registered/MC2Center-<Type>-14.0.0`. Use the `jsonschema` library, row by row.
 - **Report.** Write a per-row `validation_report.csv` next to the outputs. Rows that fail validation are flagged, not dropped, so they feed the review app's flagged queue on `feature/manifest-review-app`.
 - **Dependency.** This depends on X1, because validating spaced values against camelCase enums would flag every row.
 
-### P3 — Vocabulary from the registered schema (after X1 is fixed and 16.0.0 is registered)
+### P3 — Vocabulary from the registered schema (after X1 is fixed and 14.0.0 is registered)
 - **Primary source.** Switch the vocabulary to the registered schema's `enum` lists: Assay, Tissue, Tumor Type and Species from PublicationView and DatasetView, and the ToolView enums.
 - **Fallback.** Keep the JSON-LD path (`--model-jsonld`) as an offline fallback.
 - **Drop the xlsx dependency.** Tool valid values come from the ToolView schema, which removes the silent "no `Tool_manifest*.xlsx` in CWD → skip Step 5" failure. The template xlsx becomes optional, used for output formatting only.
@@ -101,10 +97,10 @@ The pipeline emits headers that equal the registered schema's property keys, whi
 
 ## Sequencing relative to [H]
 1. **P0:** now, independent of everything.
-2. **X1:** proposed as [H] 0.11; decide O7 alongside it.
+2. **X1:** now [H] decision 4 and O8, carried out as data-models DM-7.
 3. **#262 merges** and the release is tagged. Bump the P0 pin to the tag.
-4. **P1:** in the same release window as the DCC [H] Phase 2 PR. Pipeline output and `processing-splits.py` must change together. Run P1 and DCC 2d against the same fixture outputs.
-5. **P2 and P3:** after [H] Phase 1 registers 16.0.0.
+4. **P1:** in the same release window as the DCC [H] section B PR. Pipeline output and `processing-splits.py` must change together. Run P1 and DCC B4 against the same fixture outputs.
+5. **P2 and P3:** after [H] S1 registers 14.0.0.
 6. **P4:** before any of those branches merge.
 
 ## Delegation

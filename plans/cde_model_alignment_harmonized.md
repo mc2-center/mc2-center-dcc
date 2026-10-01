@@ -1,220 +1,272 @@
-# Harmonized plan: land the CDE model revisions (data-models PR #262) across data-models, mc2-center-dcc, and CCKP Synapse
+# Master plan: land the CDE model revisions (data-models PR #262 → release 14.0.0) across data-models, mc2-center-dcc and CCKP Synapse
 
-This combines two plans:
-- **[U]**: `mc2-center/data-models` → `plans/cde_model_revisions_integration.md`, the upstream integration plan written from the data-models side.
-- **[D]**: `mc2-center-dcc` → `plans/model_alignment.md` (commit `d4659ec`), the downstream alignment plan written from the DCC side. It includes live reads of Synapse.
-- **[C]**: the companion plan `plans/ai_curation_pipeline_alignment.md` for `mc2-center/ai-curation-pipeline`. Its X1 finding (schema enum and key labels) is folded in below.
+**Sources:**
+- **[U]** `data-models/plans/cde_model_revisions_integration.md`
+- **[D]** `plans/model_alignment.md`
+- **[C]** `plans/ai_curation_pipeline_alignment.md`
+- the owner's review notes on the previous revision of this file, captured in the decision log below
+- the code merged into `model-alignment` from the `synapse-client-oop-refresh` and `build-cli-tool` branches (`plans/synapseclient_oop_migration*.md`, `plans/cckp_metadata_and_cli_consolidation.md`)
 
-Each item below is tagged with where it came from ([U], [D] or [U+D]) and which repo or system it touches:
-- **[DM]**: data-models
-- **[DCC]**: this repo
-- **[SYN]**: Synapse
+**Structure:**
+- **Section A: data-models.** Summary only. The work plan is its own document, **`plans/data_models_cde_alignment.md`**, to be carried out in that repo.
+- **Section B: mc2-center-dcc code.**
+- **Section C: Synapse tables and operations.**
 
-It also carries forward what each source plan left open, and resolves the items the other plan's evidence settles.
+The cross-repo sequencing and verification come after section C.
 
 ## Context
+PR #262 makes three kinds of change:
+- It consolidates about 70 per-entity attributes into shared ones.
+- It moves sample and assay fields to NCIt or UBERON reference validation.
+- It adds foreign keys: `Consortium Key` (whose values are now `program.*` IDs), `Institution Key` and `PersonView Key`.
 
-PR #262 (`cde-model-revisions`, labelled `major`) makes three kinds of change [U]:
-1. **Consolidation.** About 70 attributes with per-entity prefixes are collapsed into shared attributes: `Assay`, `Species`, `Tissue`, `Tumor Type`, `License`, `Investigator`, `Sex`, `Data Use Codes`, `grantNumber`, and others.
-2. **From closed lists to references.** Some closed lists are replaced by NCIt/UBERON reference validation or a `^UBERON:\d+$` pattern: therapeutic agent, primary site and diagnosis, metastasis sites, anatomic sites, and event type.
-3. **Curator migration.** Model generation moves from `schematicpy` to `synapseclient.extensions.curator`.
+It also moves model generation to `synapseclient.extensions.curator`.
 
-It also changes key structure:
-- **Consortium becomes an ID.** `consortium_name.csv` is replaced by `consortium_id.csv`, whose values are `program.*` IDs. The `Consortium Key` foreign key is added to Grant, Person and Project.
-- **New foreign keys:** `Institution Key`, `PersonView Key` and `Project Short Name` are added.
+Target state:
+- The data-models schemas are registered in Synapse (org `MC2Center`, version **14.0.0**, matching the release) as the source of truth.
+- The DCC sync pipeline and the AI curation pipeline read the new attribute keys.
+- The portal tables hold values that are valid against the schemas, with no change to the portal app config.
 
-Target end state [D]:
-- All schemas are registered in Synapse (org `MC2Center`) as the source of truth.
-- The DCC sync pipeline reads the new attribute keys.
-- The CCKP portal tables hold values that are valid against the schemas, with no change to the portal app config.
-
-Evidence that this breaks consumers:
-- Upstream: `kg-pipeline/crosswalk_scdm.py` broke when `consortium_name.csv` was deleted (fixed in `191c8f1`) [U].
-- DCC: 9+ scripts and 3 manifest tables still use the old names [U+D].
-
-### Decisions already made
-1. **Portal columns.** Portal table columns keep their camelCase names as a presentation layer. One versioned crosswalk maps schema keys to portal columns [D].
-2. **Consortium values.** Portal consortium columns keep display names (`CSBC`), resolved from `Consortium Key` through the Consortium table [D].
-3. **Validation happens upstream.** Synapse JSON-schema binding validates entity annotations, not table rows. So validation happens upstream (RecordSets or curation tasks bound to schemas), and portal tables are derived from validated records [D].
-4. **Schemas use display labels (X1)** [C]. Generate and register the JSON schemas with `data_model_labels="display_label"`, so enum values are spaced (`RNA Sequencing`, not `RNASequencing`) and property keys equal the template display names (`Assay`, `GrantView Key`, `DatasetView_id`). This is adopted, pending O7.
-
-### Open decisions (need an owner)
-| # | Decision | From |
+## Decision log
+| # | Decision | Status |
 |---|---|---|
-| O1 | "No grant" sentinel: `Affiliated/Non-Grant Associated` fails `^CA\d{6}$`, and `sync_projects.py`, `sync_people.py` and `gen-mp-csv.py` use it. Either allow it explicitly or model it as an empty `GrantView Key`. | D |
-| O2 | `ImagingChannel.json`: add it to the Makefile `DATA` list (the class is still `IsTemplate: True`), or intentionally leave it out and deprecate the registered `MC2Center/ImagingChannel`. | U + D |
-| O3 | Whether the portal shows the 15 new DatasetView DUO fields plus `License` (new portal columns). | D |
-| O4 | Sign-off from the curation QA owner on relaxing closed lists to reference validation. | U |
-| O5 | Whether to restore a CI gate for `make all` and `kg-pipeline` in data-models. | U |
-| O6 | Legacy study-license tokens (`CC_BY`, `Apache_2`, `GPL_3` and 7 others) are dropped from the merged `License`. Map them to SPDX equivalents, or keep them as legacy values. | D (resolves U A.3) |
-| O7 | Do Synapse RecordSets, Grid and curation tasks (`synapseclient.extensions.curator`) accept schema property keys that contain spaces (`GrantView Key`)? If yes, use `display_label` as is. If no, the fallback is `class_label` keys with display-form enums. That needs a curator option or a post-processing step, which requires explicit approval (no silent workaround). **This blocks 1.1.** | C |
-
-## Where the two plans disagreed, and how it's resolved
-
-| Topic | [U] said | [D] found | Resolution |
-|---|---|---|---|
-| `grantNumber` "went from a closed list to empty" (U A.1) | Confirm it's intentional | The legacy `Dataset/Publication/... Grant Number` attributes had a closed list of 155 values but weren't in any portal template. The templates already linked through `GrantView Key`. `Grant View`'s `Grant Number` was already `^CA\d{6}$` on `main`. | Intentional, and it has no portal-sync impact. The only real consequence is the sentinel (O1). |
-| `Assay` values dropped? (U A.2) | Diff the sets | Old union of 381 values vs new 391: **0 dropped** | Closed. The same holds for `Tumor Type` (186→186), `Tissue` (114→114) and `Species` (29→32). |
-| `License` values dropped? (U A.3) | Confirm the superset | The old union had 336 values, the new list 326. **10 dropped**, all of them legacy Study short tokens. | Closed as a finding. Needs O6. |
-| Biospecimen acquisition-method renames (U B.2) | Listed `Coreneedlebiopsy→BoneMarrowAspiration` and `ForcepsBiopsy→NeedleBiopsy` (enum-symbol forms) | CSV labels: `Blood draw→Blood Draw`, `Fine needle aspirate→Aspiration`. `Core needle biopsy`, `Forceps Biopsy`, `Punch biopsy` and `Shave biopsy` are removed; `Needle Biopsy`, `Bone Marrow Aspiration` and `Tumor Resection` are added (20→10 values). | Base the live-data audit (Phase 4) on the CSV labels, not the enum-symbol pairs. Treat the old-to-new mapping as a curator decision, not an assumed 1:1 rename. |
-| DCC `schematic` usage (U C.2) | 5 files | [D] listed 2 | Use the U list: `upload-manifests.py`, `upload-workflow.sh`, `union_qc.py`, `utils/csv_to_ttl.py`, `curator_tools/create_file_based_metadata_task.py`. |
-| Schema key and enum format (X1) | Not examined | [C]: generated **and registered** schemas (`MC2Center-PublicationView-13.0.0` and `-15.0.0`) squash enum values to camelCase (`RNASequencing`), while every data source uses the spaced form. The cause is the default `class_label` in `create_json_from_model.py`. `display_label` (tested in a scratchpad) produces spaced enums and display-name keys. | Adopted as decision 4 and item 0.11. It rewrites the key names in 2a and 2c, and O7 has to be checked first. |
-| DCC TTL tooling overlap with kg-pipeline (U follow-up) | Unread | `utils/csv_to_ttl.py` converts a **model** (schematic CSV or CRDC TSV) to RDF for several orgs (mc2, nf, htan, crdc, and others). `build_template_ttl.py` converts template headers to TTL. Neither builds instance data. | Different purpose from kg-pipeline's portal-instance KG, which overlaps only with its Stage 0 (model→OWL). Keep both, but check `csv_to_ttl.py` still parses the revised `Properties` CDE tags (Phase 2). |
-| Portal-table live audit (U out-of-scope) | Not done | Done for the portal tables: 69 invalid values (Phase 4) | Portal tables are covered. The Biospecimen, Individual and Model annotation audit is **still open**. |
-| JSON schema names (U C.4) | Visium rename is cosmetic | The registered `MC2Center` schemas still use the old `VisiumRNALevel*` names. Version ordering is broken (PublicationView `15.0.0` > `13.0.0`). | Not cosmetic in the registry. See Phase 1. |
+| 1 | Portal tables keep their camelCase columns. A versioned crosswalk maps schema keys to portal columns. | Decided |
+| 2 | Portal consortium columns keep display names, resolved from `Consortium Key` through the Consortium table. | Decided |
+| 3 | Validation happens upstream (RecordSets and curation tasks bound to schemas). Portal tables are derived from validated records and aren't bound. | Decided |
+| 4 | **Schema property keys are `class_label`** (`DatasetViewId`, `GrantViewKey`, `TumorType`), because curator doesn't allow spaces in keys (O7). **Enums must be in display form** (X1); how is decided in O8. This replaces the earlier `display_label` decision. | Decided (O8 open) |
+| O1 | The "no grant" sentinel is allowed explicitly: pattern `^(CA\d{6}\|Affiliated/Non-Grant Associated)$`. | Decided → DM-4 |
+| O2 | Add `ImagingChannel` to the Makefile `DATA` list, and make the CSV's template flags consistent. | Decided → DM-5 |
+| O3 | The portal doesn't get the 15 new DatasetView DUO fields. `sync_datasets.py` keeps deriving portal access info from DUO codes (`DUO_DICT`). | Decided → B3 |
+| O4 | Reference validation is accepted. **Checked:** it affects only Biospecimen, Individual, Model, File View and the assay templates, with no portal template involved. | Decided, verified |
+| O5 | Restore a CI gate in data-models, after the higher-priority work. | Decided, deferred → DM-13 |
+| O6 | Map legacy license tokens to SPDX. | Decided → DM-3, S4.3 |
+| O7 | Curator doesn't allow spaces in property keys. | Answered → decision 4 |
+| O8 | **Enums in display form, keys as class labels.** Curator 4.13 has a single `use_display_labels` flag for keys and enums. **Decision (owner): add the post-processing step** to `create_json_from_model.py`, which rewrites each enum from its class label to its `sms:displayName`. Filing an upstream synapsePythonClient request for a separate enum-label option is an optional follow-up, so the step can be retired later. | Decided → DM-7 |
+| O9 | **Which ≥14.0.0 versions to delete.** **Decision (owner):** delete the stray data-model versions (PublicationView 15.0.0; Biospecimen, Model and SequencingRNALevel1 15.0.0 and 15.0.1), plus **`StudyAR`** (14.0.0–30.0.0) and **`AccessRequirementCA123`** (17.0.0–18.0.0). **Keep every `AccessRequirementCA261841` schema.** Before the delete, confirm whether "remove" means only their ≥14.0.0 versions or the whole schemas: `StudyAR` also has 1.0.0–3.0.0, and lower `AccessRequirementCA123` versions may exist. | Decided → S1.1 (scope confirmed at execution) |
+| 0.2 / 0.3 | `license` merges into `License`. `dataCatalogLicense` stays a separate annotation on the SPDX list. | Decided → DM-2, DM-3 |
+| 0.6 | DCA is deprecated; remove it. | Decided → DM-9 |
+| 1.2 | No `10x*` schema names. Drop `10x` at the source. | Decided → DM-6 |
+| 1.4 | Ignore `curator_tools/`. The OOP refresh and the CLI plan cover schema tooling; the CLI plan deletes `curator_tools/`. | Decided → B6 |
 
 ---
 
-## Phase 0: Pre-merge gates in data-models [DM]
-- **0.1 Fix Species enforcement** [D]. `Species` is Required in the CSV but missing from `required` in DatasetView, FileView, Biospecimen, Model and Sequencing*.json. Find why the curator generation drops it.
-- **0.2 Fix the key collision** [D]. `license` (the DUOPlus6 row) and `License` both become the JSON key `License` in DataCatalog.json and Study.json. Rename one of them.
-- **0.3 Align the DataCatalog license list** [D]. `dataCatalogLicense` still uses the 11-token `studyLicense.csv`. Align it with SPDX, or document why it differs; tie this to O6.
-- **0.4 Resolve O1 and O2.**
-- **0.5 Generate the missing schemas** [D]. Generate JSON schemas for Person, Project, Consortium, Institution and Theme. None exist yet, so those tables have no source of truth.
-- **0.6 Check the dca_config file** [U A.8]. Read `dca_config/dca-template-config.json` by hand against the renamed and removed schema names.
-- **0.7 Confirm nothing uses the deleted consortium file** [U A.5]. Search the repo for any remaining reference to `consortium_name.csv`.
-- **0.8 Release notes** [U C.1]:
-  - `make all` now includes `convert`, so `mc2.model.jsonld` is regenerated.
-  - `schematicpy` is dropped.
-  - `qc_model` and `make qc` are removed (they were already broken).
-  - The 18 `templates/*.csv` files have renamed headers.
-- **0.9 Tag the release** (e.g. `v14.0.0`) so that DCC can pin `all_valid_values.csv` and the schemas to it [D].
-- **0.10 Build checks** [U]. `make all` (root) and `make schema && make test` (kg-pipeline) pass from a clean clone. Decide O5.
-- **0.11 Generate schemas with display labels** [C] (X1). In `create_json_from_model.py`, pass `data_model_labels="display_label"` to `generate_jsonschema`. Regenerate `json_schemas/`. Check O7 by validating one RecordSet or curation task against a display-label schema in a scratch Synapse project. Confirm that `required` lists and enums come out in display form.
+## Section A: data-models (the work plan is `plans/data_models_cde_alignment.md`)
+Summary of the items, all of which must be done before the `v14.0.0` tag:
 
-## Phase 1: Clean up the schema registry [SYN] (Opus runs it, with explicit approval)
-- **1.1 Register at 16.0.0** [D+C]. Register every schema from this release, **generated with display labels (0.11)**, at **16.0.0**. This waits on O7.
-  - 16.0.0 is above the stale PublicationView `15.0.0`, so "highest version" is unambiguous.
-  - Every registered version up to 15.0.0 has camelCase enums, so none of them can validate existing data. Deprecate them all in syn69735275.
-- **1.2 Register the renamed schemas** [U+D]:
-  - Register `10xVisium*`.
-  - Mark `VisiumRNALevel1-4` and `VisiumAuxiliaryFiles` deprecated in the registry table syn69735275; do not delete them.
-  - Handle `ImagingChannel` according to O2.
-- **1.3 Move registration into a tracked target** [D]. The untracked `local_inputs/Makefile` hardcodes `CURRENT_VERSION := 13.0.0`. Replace it with a tracked `make register-json VERSION=…` that wraps `utils/synapse_json_schema_bind.py --no_bind`.
-- **1.4 Fill the registry ID** [D]. Set `SCHEMA_REGISTRY_TABLE_ID` in `curator_tools/query_schema_registry.py` to syn69735275, and make sure registry rows are added for the new versions.
+| Item | What |
+|---|---|
+| DM-1 | Restore `Species` in `required` |
+| DM-2 | Merge `license` into `License` (clears the duplicate key) |
+| DM-3 | SPDX list for `License` and `dataCatalogLicense`; legacy tokens recorded as Nonpreferred Terms |
+| DM-4 | Sentinel allowed in the grant-number pattern |
+| DM-5 | `ImagingChannel` added to `DATA`; `IsTemplate` matches `DATA`. **Found:** `10x Visium RNA Level 1` is generated but not flagged as a template. |
+| DM-6 | Drop `10x` from the Visium template names at the source |
+| DM-7 | Display-form enums with class-label keys, via a post-processing step (O8) |
+| DM-8 | Generate PersonView, ProjectView, Consortium, Institution and Theme schemas |
+| DM-9 | Remove DCA |
+| DM-10 | Check for leftover `consortium_name` references |
+| DM-11 | Release notes; tag `v14.0.0` |
+| DM-12 | Build and schema checks: no duplicate keys, no spaces, no leading digits, display enums, `required` matches the CSV |
+| DM-13 | CI gate (deferred; merged with the CLI plan's CI Phase 0) |
 
-## Phase 2: DCC code [DCC] (Sonnet SMEs, parallel after 2a/2b)
-**Pattern:**
-- Replace old attribute keys with new ones in the rename maps, the string-list column lists and `col_order`.
-- Keep the camelCase portal targets and the positional order, because `utils.update_table` writes `df.values.tolist()`.
-- Reuse the existing helpers in `portal_tables/utils.py`: `convert_to_stringlist`, `update_table`, `get_args` and `syn_login`.
+---
 
-- **2a. Crosswalk module** [D]: `portal_tables/crosswalk.py`.
-  - For each component: an ordered mapping of schema key → portal column, plus the model version it targets.
-  - Schema keys are the **display labels** (decision 4): `Assay`, `Tumor Type`, `GrantView Key`, `DatasetView_id`. They are not class labels (`TumorType`, `DatasetViewId`).
-  - It replaces the scattered rename maps and `annotations/attribute_dictionary.py`. This is the key U D-list file.
-  - `check_crosswalk(table_id, component)` asserts the live Synapse column order before any write.
-- **2b. Consortium lookup** [D]: `consortium_display_names(syn, ids)` in `portal_tables/utils.py`. It fails loudly on unknown IDs.
-- **2c. Sync scripts** [U+D]:
+## Section B: mc2-center-dcc code
+Everything below runs against the code **as merged**, after the synapseclient OOP migration. The old positional `df.values.tolist()` write no longer exists.
+
+### B0. Hotfix: `update_table` now matches columns by name (**done**, in the commit that follows this plan revision)
+- **What changed.** `portal_tables/utils.py:update_table` now calls `Table.store_rows(values=df)`. synapseclient uploads the DataFrame as CSV **with a header row**, via `_chunk_and_upload_df`, `header=(start == 0)`. Synapse then matches columns **by name**, not by position.
+- **What that breaks.** Before, positional writes let the scripts keep manifest-style names in `col_order`. Comparing each script's `col_order` with the live portal columns:
+
+  | Script | Names that match the live table |
+  |---|---|
+  | `sync_publications.py` | 3 of 20 (`Publication Doi` vs `doi`) |
+  | `sync_datasets.py` | 5 of 24 (`DatasetView_id` vs `datasetId`) |
+  | `sync_tools.py` | 3 of 46 |
+  | `sync_education.py` | 1 of 27 |
+  | `sync_projects.py` | 2 of 9 |
+  | `sync_people.py` | 12 of 18 (the table has 20 columns) |
+  | `sync_grants.py` | 17 of 17 (fine) |
+
+- **Why it's dangerous.** `update_table` **deletes every row first**, then stores. So the first non-dryrun run of any of those six scripts empties the portal table, and the store then fails or maps columns wrongly. Only the snapshot `update_table` takes first would allow recovery. The OOP migration report itself notes that this write path was never exercised live, and its dry runs skip it.
+- **Fix:**
+  1. In `update_table`, read the live column names (`Table(id).get(include_columns=True)`).
+  2. Rename `df` columns to them explicitly. For now, assert the column counts are equal and map by position; once B1 lands, use the crosswalk.
+  3. Do this **before** truncating, and raise an error if it fails.
+  4. Tables with extra columns (`test_publicationId` and `test_toolId` in People) are left blank, not an error.
+- **Why order was already right but the write still breaks.** The `col_order` lists already put columns in the live table's order, but they're labelled with manifest-style names. The old `syn.store(Table(id, df.values.tolist()))` sent rows with no header, so only order mattered. `store_rows(df)` sends the DataFrame's column names as a header, so the labels now matter too. The fix relabels by position, using the hardcoded order the scripts already maintain.
+- **Status: fixed.** `update_table` reads the live columns first. It refuses, before the snapshot or truncate, if the DataFrame has more columns than the table. Otherwise it relabels the DataFrame columns by position to the live names; trailing live columns it doesn't cover are left empty, as before.
+- **Verified:**
+  - Dry-run outputs of publications, tools, education, projects, people and grants were passed through `update_table`, with snapshot, delete and store mocked and the real live column fetch. Every row and value came through, and the columns arrived under the live names.
+  - A forced extra column raised an error before `delete_rows`.
+  - `sync_datasets.py` was checked statically only (24 columns, matching the live table); its full dry run takes about 25 minutes.
+- **Still to check:** one real non-dryrun write to a **scratch copy** of a portal table, to confirm Synapse accepts the header-matched upload end to end. This needs go-ahead to create, and later delete, the scratch table.
+
+### B1. Crosswalk and consortium lookup
+- **Crosswalk.** A new `portal_tables/crosswalk.py` holds, per component, an ordered mapping from schema key (**class label**, decision 4) to portal column, plus the model version it targets.
+  - It replaces the scattered rename maps and `annotations/attribute_dictionary.py`.
+  - `check_crosswalk(table_id, component)` asserts the live column order. B0's rename uses it.
+  - It moves into `mc2dcc/sync/_shared.py` when the CLI plan's Phase 2 lands.
+- **Consortium lookup.** `consortium_display_names(syn, ids)` goes in `portal_tables/utils.py`, reads the Consortium table, and fails loudly on an unknown ID.
+- **Reuse:** `portal_tables/utils.py` `convert_to_stringlist`, `update_table`, `get_args`, `syn_login` (now on the OOP `Synapse().login()`).
+
+### B2. Sync scripts: move input keys to class labels
+Several scripts already normalize manifest headers with `manifest.columns.str.replace(" ", "")`: `sync_datasets.py:263`, `sync_education.py:115` and `sync_people.py:84`. That produces nearly the class label, except `DatasetView_id` becomes `DatasetViewId` in the class label. Replace the space-stripping with the crosswalk's key mapping.
 
 | Script | Changes |
 |---|---|
-| `sync_publications.py` | `Publication Assay/Tumor Type/Tissue` become `Assay`, `Tumor Type`, `Tissue`. Replace positional `row[4]` with `row["GrantView Key"]`. It already uses display-label keys. |
-| `sync_datasets.py` | Currently reads **class-label** keys. Move it to display labels: `DatasetAssay/DatasetSpecies/DatasetTissue/DatasetTumorType` become `Assay`, `Species`, `Tissue`, `Tumor Type`. `GrantViewKey`, `PublicationViewKey` and `DataUseCodes` become `GrantView Key`, `PublicationView Key`, `Data Use Codes`, and the other `Dataset*` keys become `Dataset Name` and so on. `DatasetView_id` **stays**. An unknown DUO code at `:117-123` must no longer skip the download fields. |
-| `sync_tools.py` / `sync_education.py` | Class-label keys become display labels (`ToolName` → `Tool Name`, `ResourceTitle` → `Resource Title`, …). `ToolLicense` / `ResourceLicense` become `License`, as a string list. |
-| `sync_grants.py`, `create_grant_projects.py` | `Grant Investigator` becomes `Investigator`, as a list. `Grant Consortium Name` becomes `Consortium Key`, resolved via 2b. Fix the shared `updated_scope` list at `sync_grants.py:81`. |
-| `sync_projects.py` | `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantView Key`. Consortia come from `Consortium Key` via 2b. Add `Project Short Name`, going to `projectShortName`. The other class-label keys become display labels. |
-| `sync_people.py` | `personConsortiumName` becomes `Consortium Key`, resolved via 2b. `personGrantNumber` becomes `GrantView Key`. The PersonView manifest table's camelCase columns are renamed to display labels in Phase 3. |
+| `sync_publications.py` | Read class-label keys: `Assay`, `TumorType`, `Tissue`, `GrantViewKey`. `PublicationAssay` and the other prefixed keys become the shared keys. Replace positional `row[4]` with `row["GrantViewKey"]`. |
+| `sync_datasets.py` | `DatasetAssay`, `DatasetSpecies`, `DatasetTissue` and `DatasetTumorType` become `Assay`, `Species`, `Tissue`, `TumorType`. `DatasetView_id` becomes `DatasetViewId`. Fix the unknown-DUO-code `continue` at `:117-123` that skips `sourceRepository`, `downloadType` and `downloadSynId`. |
+| `sync_tools.py` / `sync_education.py` | `ToolLicense` / `ResourceLicense` become `License`, as a string list. |
+| `sync_grants.py`, `create_grant_projects.py` | `Grant Investigator` becomes `Investigator`, as a list. `Grant Consortium Name` becomes `ConsortiumKey`, resolved via B1. The shared `updated_scope` bug is fixed on the `EntityView` OOP path from the OOP refresh; recheck it. |
+| `sync_projects.py` | `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantViewKey`. Consortia come via B1. Add `ProjectShortName`, going to `projectShortName`. |
+| `sync_people.py` | `personConsortiumName` becomes `ConsortiumKey`, resolved via B1. `personGrantNumber` becomes `GrantViewKey`. |
 
-If O7 forces the class-label fallback, 2a and 2c use class-label keys (`TumorType`, `DatasetViewId`) instead. Only the crosswalk's key column changes; the rest of the design stays the same.
+### B3. Datasets: access info stays DUO-derived (O3)
+- No new portal columns.
+- `DUO_DICT` stays the source for `accessInformation` / `sourceRepository`.
+- Log unknown DUO codes, and don't let them skip the row (the fix is in B2).
 
-- **2d. Annotation and utility scripts** [U+D]:
-  - `processing-splits.py` is simplified together with [C] P1. The curation pipeline will emit schema-key headers directly (`GrantView Key` in place of `Publication Grant Number`, and no consortium or theme columns). So `processing-splits.py` only splits by component; it no longer renames or drops columns.
-  - Scripts: `annotations/processing-splits.py` (including `"Tool License"`), `add_cols.py`, `schema_update.py`, `edit_legacy_annotations.py`, `split_manifest_grants.py`, `utils/merge_and_correct_manifests.py`, `utils/table_to_annotations.py`, `utils/check_publications_status.py`.
-  - Change: rename via `crosswalk.py`.
-  - Pin the `all_valid_values.csv` URL to the release tag.
-  - Also fix the existing bugs found along the way:
-    - `table_to_annotations.py:525` `keys_to_drop=None` TypeError.
-    - `pubMedUrl` should be `pubMedLink`.
-- **2e. File-level annotations** [U B.4]. `File Assay Category` is now split out of `Assay`. Confirm that any DCC script touching File-level annotations writes each value to the correct field.
-- **2f. Retire schematic** [U C.2 + D]. Move `upload-manifests.py`, `upload-workflow.sh` and `union_qc.py` from the `schematic` CLI to validation through `synapseclient.extensions.curator` against 16.0.0, matching `utils/create_curation_task.py`. Where a step has no curator equivalent, first verify that schematic still accepts the curator-generated `mc2.model.jsonld` (U C.2's check). Then flag the remaining schematic use for approval; don't leave it in place silently.
-- **2g. `csv_to_ttl.py`** [U follow-up]. Check that it still parses the revised model's `Properties` (CDE tags) and `DependsOn`. Fix its `is_enum` inconsistency (lines 196 and 199).
-- **2h. Workflows** [U]. `update-theme-graphs.yml` and `publications-status-check.yml` run on the `0 0 1 * *` cron. The scripts they call must ship in the same PR, **before the first of the month after #262 merges**.
+### B4. Annotation and utility scripts
+- **Scripts:** `annotations/processing-splits.py` (including `"Tool License"`), `add_cols.py` (the CLI plan flags it as possibly dead; confirm before editing), `schema_update.py`, `edit_legacy_annotations.py`, `split_manifest_grants.py`, `utils/merge_and_correct_manifests.py`, `utils/table_to_annotations.py`, `utils/check_publications_status.py`.
+- **Change:** rename via `crosswalk.py`.
+- **Pin** the `all_valid_values.csv` URL (`split_manifest_grants.py:117`, `edit_legacy_annotations.py:38`) to `v14.0.0`.
+- **`processing-splits.py`** only splits by component once the curation pipeline emits schema-key headers ([C] P1).
+- **Existing bugs to fix:**
+  - `table_to_annotations.py:525` `keys_to_drop=None` TypeError.
+  - `check_publications_status.py`: `pubMedUrl` should be `pubMedLink`.
+  - `File Assay Category` is now split out of `Assay`. Check any File-level annotation writes.
 
-## Phase 3: Synapse table changes [SYN] (Opus runs it with explicit approval; snapshot each table first)
-**Portal tables** (keep names, fix types) [D]:
+### B5. `csv_to_ttl.py`
+- Check that it still parses the revised `Properties` (CDE tags) and `DependsOn`.
+- Remove the `10x_` stripping at lines 258-259 and 476 once DM-6 lands.
+- Fix the `is_enum` inconsistency (lines 196 and 199).
+
+### B6. Schema tooling: follow the OOP refresh and CLI plan; ignore `curator_tools/` (decision 1.4)
+- **Registration** uses the rewritten `utils/synapse_json_schema_bind.py`, now on the JSON Schema OOP models. Add a tracked `register-json VERSION=14.0.0` entry point for it (a Makefile target now, `mc2dcc curation register` later). This replaces the untracked `local_inputs/Makefile`, which hardcodes 13.0.0.
+- **Validation:** manifest validation moves off `schematic` through the CLI plan's `cckp_metadata` jsonschema validator (`union_qc.py`, `upload-manifests.py`, `upload-workflow.sh`). Don't build a separate curator-validation path here.
+
+### B7. Workflows
+- **Cron deadline.** `update-theme-graphs.yml` and `publications-status-check.yml` run on `0 0 1 * *`, and now `pip install -r requirements.txt`. The scripts they call must be updated **before the first of the month after the 14.0.0 cutover**.
+- **Cron scripts are untested.** `tally_themes.py` and `check_publications_status.py` have no `--dryrun` and weren't run live after the OOP migration. Add a `--dryrun` to each before the first cron run.
+
+### B8. Order relative to the CLI consolidation plan
+- **Model alignment lands first**, in the current scripts: B0–B5 are urgent (B0 and the cron deadline) and small.
+- **Then the CLI moves the aligned code.** The CLI plan's Phase 2 (`mc2dcc sync …`) moves the aligned scripts over; it doesn't rewrite the model logic.
+- **The crosswalk becomes shared** as `mc2dcc/sync/_shared.py` at that point.
+
+### B9. AI curation pipeline (companion plan [C])
+- **Now:** P0, vocabulary hardening. It can land now, and **must land before #262 merges**.
+- **With B2:** P1, the output headers. Update P1 to emit **class-label** keys per decision 4, replacing the display-label headers.
+- **Later:** P2 and P3 follow the S1 registration.
+
+---
+
+## Section C: Synapse tables and operations (Opus runs these with explicit approval; snapshot first)
+
+### S0. Before anything else
+- **B0 has to ship before anyone runs a non-dryrun sync.**
+- `sync-to-portal.yml` is `workflow_dispatch` only. Tell the people who run it to hold off until B0 is merged.
+
+### S1. Schema registry (`MC2Center`)
+- **S1.1 Delete** the stray data-model versions ≥14.0.0:
+  - `PublicationView` 15.0.0
+  - `Biospecimen` 15.0.0 and 15.0.1
+  - `Model` 15.0.0 and 15.0.1
+  - `SequencingRNALevel1` 15.0.0 and 15.0.1
+  - `StudyAR` 14.0.0–30.0.0 and `AccessRequirementCA123` 17.0.0–18.0.0 (O9). Confirm at execution whether their lower versions go too.
+  - **Keep** every `AccessRequirementCA261841` version.
+  - This needs explicit go-ahead; deletion can't be undone.
+- **S1.2 Register** every schema from the `v14.0.0` tag at **14.0.0**: keys are class labels and enums are in display form (DM-7). Use the B6 entry point.
+  - Visium schemas register under the names without `10x` (DM-6), continuing the existing `VisiumRNALevel*` names.
+  - `ImagingChannel` gets a 14.0.0 version (DM-5).
+  - PersonView, ProjectView, Consortium, Institution and Theme are new (DM-8).
+- **S1.3 Registry table.** Add 14.0.0 rows to syn69735275, and mark earlier data-model versions superseded (their enums are camelCase, so they can't validate current data).
+
+### S2. Table changes
+**Portal tables** (names stay; decision 1):
 - `license` in Tools syn26127427 and Education syn51497305: STRING becomes STRING_LIST. Split the 4 comma-joined tool values.
 - `investigator` in Grants syn21918972 and Projects syn21868602: STRING becomes STRING_LIST.
 - Projects: add `projectShortName`.
-- `consortium` columns: unchanged (decision 2).
-- Datasets: per O3.
+- `consortium`: unchanged (decision 2).
+- Datasets: unchanged (O3).
+- B0's rename works against these names; after S2, update the crosswalk to the changed types.
 
-**Manifest tables** [D]: rename them to match the schema keys, or replace them with RecordSets bound to 16.0.0 (preferred).
+**Manifest tables:** keys are class labels (decision 4). The preferred path is to replace them with RecordSets bound to 14.0.0.
 - Grant syn53259587:
   - `Grant Investigator` becomes `Investigator`.
-  - `Grant Consortium Name` becomes `Consortium Key`, with values mapped to `program.*`.
-  - Add `Institution Key` and `PersonView Key`.
+  - `Grant Consortium Name` becomes `ConsortiumKey`, with values mapped to `program.*`.
+  - Add `InstitutionKey` and `PersonViewKey`.
+  - The remaining spaced columns become class labels.
 - Project syn59074382:
   - `Project Investigator` becomes `Investigator`.
-  - `Project Consortium Name` becomes `Consortium Key`.
-  - `Project Grant Number` becomes `GrantView Key`.
-  - Add `PersonView Key` and `Project Short Name`.
-- PersonView syn38301033: move all columns to display-label keys (decision 4).
-  - `personConsortiumName` becomes `Consortium Key`.
-  - `personGrantNumber` becomes `GrantView Key`.
-  - Add `Institution Key`.
-- Manifest CSVs syn53478776, syn53478774, syn53479671 and syn53651540: regenerate them with the new keys.
+  - `Project Consortium Name` becomes `ConsortiumKey`.
+  - `Project Grant Number` becomes `GrantViewKey`.
+  - Add `PersonViewKey` and `ProjectShortName`.
+- PersonView syn38301033:
+  - `personConsortiumName` becomes `ConsortiumKey`.
+  - `personGrantNumber` becomes `GrantViewKey`.
+  - Add `InstitutionKey`.
+- Manifest CSVs syn53478776, syn53478774, syn53479671 and syn53651540: regenerate them with class-label keys.
 
-**Bindings:** bind 16.0.0 to the RecordSets and folders that feed each manifest. Portal tables stay unbound.
+### S3. Bindings
+- Bind 14.0.0 to the RecordSets and folders that feed each manifest.
+- Portal tables stay unbound (decision 3).
 
-## Phase 4: Live-data audit and curation [SYN, curation]
-- **4.1 Portal tables** (done for audit, still needs fixing) [D]. Values that fail the new enums:
-  - Publications `assay`: 60 values (typos, leading spaces, synonyms like `ChIP-seq`).
-  - Publications `tissue`: 5 values (e.g. `Not Applicale`).
-  - Publications `tumorType`: 1 value (`Pan-Cancer`).
-  - Datasets `assay`: 3 values (`ELISpot`, `Micro-CT`, `snATAC-seq`).
+### S4. Live-data audit and curation
+- **S4.1 Portal values that fail the new enums** (already audited):
+  - Publications `assay`: 60 values.
+  - Publications `tissue`: 5 values.
+  - Publications `tumorType`: 1 value.
+  - Datasets `assay`: 3 values.
   - Tools `license`: 4 comma-joined values.
   - For each, fix the source record or propose adding the term to the model.
-- **4.2 Assay-level annotations** (open) [U B.1/B.2]:
+- **S4.2 Assay-level annotations** (still open; blocks the 14.0.0 cutover):
   - Scope: Biospecimen, Individual and Model annotations in the MC2 assay file views.
   - What to check:
-    - `Sex`: 9 values become 3.
+    - Sex: 9 values become 3.
     - Acquisition Method: 20 become 10.
     - Composition: 21 become 11.
     - Preservation Method: 20 become 14.
     - Preservation Medium: 24 become 17.
     - Tumor Grade: `G1` becomes `G1 Low Grade`.
-    - Old labels in the fields that moved to UBERON or NCIt references.
-  - Output: a mapping worklist.
-  - Blocks merge unless every violation is triaged, either re-annotated or accepted as a legacy value.
-- **4.3 Study-license tokens:** remap according to O6.
-- **4.4 Worklist:** a Haiku SME can generate the mechanical correction CSV. A curator reviews it, and it's applied with batch edits in the style of `annotations/update_pending_annotations.py`.
+    - Labels in the fields that now need UBERON or NCIt IDs.
+  - Map acquisition methods by the CSV labels, not assumed one-to-one renames. `Core needle biopsy`, `Forceps Biopsy`, `Punch biopsy` and `Shave biopsy` were removed outright, so a curator decides where they go.
+- **S4.3 Legacy licenses.** Remap the study-license tokens with DM-3's Nonpreferred Terms. A curator confirms the `CC_BY_NC` version.
+- **S4.4 Worklists.** A Haiku SME generates the correction CSVs, a curator reviews them, and they're applied with batch edits in the style of `update_pending_annotations.py`, now on the OOP API.
 
-## Phase 5: Communication
-- **5.1 Curators** [U B.6]. Warn active curators about the 18 renamed template headers, so in-progress local templates don't mismatch.
-- **5.2 Owners** [U C.5/C.7]. Tell the data-models owners that kg-pipeline has no CI coverage, as input to O5.
+### S5. Communication
+- **Curators:** the 18 renamed template headers, the Visium renames, and DCA's removal.
+- **Whoever runs the syncs:** hold until B0.
+- **Data-models owners:** the CI gap (O5).
 
 ---
 
-## Sequencing
-0. **Now:** [C] P0, the curation-pipeline vocabulary hardening. It has to land **before #262 merges**: once #262 merges, the pipeline's vocabulary loader returns 0 terms without any error.
-1. Phase 0 is done (including 0.11 and O7) and #262 is ready. **Don't merge it yet.**
-2. The DCC Phase 2 PR is reviewed and passes its dry runs against a clone of #262.
-3. Phase 4.2 is triaged.
-4. Merge #262, tag the release, then run Phase 1 (registry).
-5. Merge the DCC PR, **before the next `0 0 1 * *` cron**. [C] P1 (the curation pipeline's output headers) merges in the same window, tested against the same fixture outputs as 2d.
-6. Phase 3 (Synapse tables), then the first sync with `sync-to-portal.yml`.
-7. Phase 4.1 curation, then re-sync.
+## Cross-repo sequencing
+1. **Now, in parallel:**
+   - B0 hotfix (DCC).
+   - [C] P0, curation-pipeline vocabulary hardening.
+   - DM-7 post-processing step (O8), in data-models.
+   - Optional: file the upstream enum-label request.
+2. **data-models:** DM-1 to DM-10 and DM-12. #262 is ready. **Don't merge yet.**
+3. **DCC and pipeline:** B1–B5 and [C] P1 on branches, dry-run against a clone of #262. S4.2 is triaged.
+4. **data-models:** merge #262, then DM-11 (tag `v14.0.0`).
+5. **Synapse registry:** S1 (delete, then register 14.0.0).
+6. **Merge:** the DCC PR and [C] P1, **before the next `0 0 1 * *` cron**.
+7. **Synapse tables:** S2 and S3, then the first non-dryrun sync (`sync-to-portal.yml`).
+8. **Curation:** S4.1, S4.3 and S4.4, then re-sync.
+9. **Later:** the CLI plan's Phase 2 moves the aligned scripts; DM-13 CI gate; [C] P2 and P3.
 
 ## Delegation
-- **[DM] Phase 0:** a Sonnet SME opens a PR in data-models.
-- **Phase 2:** 2a and 2b are one Sonnet task. Then 2c, 2d and 2e–2g run as parallel Sonnet tasks on `model-alignment`. Each script group is its own commit.
-- **Phases 1 and 3:** Synapse writes. Opus does these directly, with explicit go-ahead.
+- **data-models:** Sonnet SMEs, following `plans/data_models_cde_alignment.md`.
+- **DCC:** B0 is one small Sonnet task, done first, with Opus reviewing it against a scratch table. B1 is one Sonnet task. B2–B5 run as parallel Sonnet tasks, one commit per script group.
+- **Synapse writes (S1–S3):** Opus, with explicit go-ahead each time.
 - **Before any `gh pr create`:** an independent code review.
 
 ## Verification
-- **Dry-run diffs.** Each `sync_*.py --dryrun` against the regenerated manifests produces `--output_csv`. Its diff against a snapshot of the pre-change portal table shows only the intended type and value changes [D].
-- **Column order.** `check_crosswalk()` passes for all 7 portal tables [D].
-- **Validation.** Manifests and RecordSets validate against 16.0.0 through `synapseclient.extensions.curator`. The only errors are the known Phase 4 items. Where schematic remains, it validates against the curator-generated `mc2.model.jsonld` [U C.2].
-- **Enums and keys (X1).** Every 16.0.0 schema's enums are in display form: spot-check that `RNA Sequencing` and `Acinar Cell Carcinoma` are present and `RNASequencing` is absent. Its property keys equal the template display names. Existing portal values from Phase 4.1's clean set validate against it [C].
-- **Registry.** `POST /schema/version/list` shows 16.0.0 as the highest version for every MC2Center schema, and syn69735275 has matching rows [D].
-- **Builds.** `make all` and `make schema && make test` in kg-pipeline pass from a clean clone [U].
-- **dca_config.** `dca_config/dca-template-config.json` has been read and confirmed or updated [U].
-- **Assay-level audit.** The Phase 4.2 audit has zero untriaged violations [U].
-- **Workflows.** `sync-to-portal.yml` is run first against a staging copy of one portal table. The Publications, Datasets, Tools and Grants facets on the portal still render [D].
-
-## Evidence
-- **[D] session reports:** the scratchpad files `model_diff.md`, `dcc_inventory.md` and `synapse_cols.json` (session-local; the key numbers are restated above).
-- **[U] upstream plan:** `data-models/plans/cde_model_revisions_integration.md`.
-- **[C] companion plan:** `plans/ai_curation_pipeline_alignment.md`. The X1 evidence is in there: the registered 13.0.0 and 15.0.0 enums, plus `class_label` vs `display_label` generation with synapseclient 4.13.0 `[curator]`.
-- **Source plans:** both remain in place. This document supersedes them for execution order.
+- **B0:** a non-dryrun write to scratch copies of all 7 portal tables leaves row counts and values identical to `--output_csv`, and a forced column mismatch raises an error **before** truncation.
+- **Dry runs:** `sync_*.py --dryrun` against the regenerated manifests shows only the intended type and value changes against pre-change snapshots. `check_crosswalk()` passes on all 7 tables.
+- **Registry:** `POST /schema/version/list` shows 14.0.0 as the highest version for every data-model schema. No `10x*` names. Enums are spot-checked for display form (`RNA Sequencing`).
+- **Validation:** manifests and RecordSets validate against 14.0.0 through `cckp_metadata`, or jsonschema until that exists. The only errors are known S4 items.
+- **data-models:** DM-12 passes, and `make all` plus kg-pipeline `make test` pass from a clean clone.
+- **Workflows:** the cron scripts' new `--dryrun` runs cleanly. After S2, `sync-to-portal.yml` runs against a staging copy first. Portal facets for Publications, Datasets, Tools and Grants still render.
