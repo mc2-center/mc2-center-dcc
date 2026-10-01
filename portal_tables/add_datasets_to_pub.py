@@ -73,7 +73,7 @@ def main():
     if args.dryrun:
         print(updated)
     else:
-        Table(id=args.pubs_table).store_rows(values=updated, synapse_client=syn)
+        Table(id=args.pubs_table).store_rows(values=utils.strip_newlines(updated), synapse_client=syn)
     print("DONE ✓")
 
 

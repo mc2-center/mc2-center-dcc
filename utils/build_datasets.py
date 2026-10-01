@@ -73,7 +73,9 @@ def get_table(syn, source_id: str) -> pd.DataFrame:
     """Collect a Synapse table entity and return as a Dataframe."""
 
     query = f"SELECT * FROM {source_id}"
-    table = Table(id=source_id).query(query=query, synapse_client=syn).fillna("")
+    table = Table(id=source_id).query(
+        query=query, include_row_id_and_row_version=False, synapse_client=syn
+    ).fillna("")
 
     return table
 
@@ -96,7 +98,7 @@ def filter_files_in_folder(syn, scope: str, formats: list[str], folder_or_files:
                     file_options=operations.FileOptions(download_file=False),
                     synapse_client=syn,
                 )
-                current_version, created_on_date = file_info.version_label, file_info.created_on
+                current_version, created_on_date = file_info.version_number, file_info.created_on
             if cutoff_date is not None:
                 add_file = filter_files_by_date(created_on_date, cutoff_date, after_date)
                 if add_file is False:
@@ -144,7 +146,9 @@ def create_dataset_entity(syn, name: str, grant: str, multi_dataset: bool, scope
     Return the Dataset object."""
 
     query = f"SELECT grantId FROM syn21918972 WHERE grantViewId='{grant}'"
-    project_id = Table(id="syn21918972").query(query=query, synapse_client=syn).iat[0, 0]
+    project_id = Table(id="syn21918972").query(
+        query=query, include_row_id_and_row_version=False, synapse_client=syn
+    )["grantId"].iat[0]
     if multi_dataset:
         name = f"{name}-{random.randint(1000, 9999)}"  # append random number to name for multi-dataset
     items = [EntityRef(id=item["entityId"], version=int(item["versionNumber"])) for item in scope]
@@ -261,7 +265,12 @@ def main():
                 dataset_name_list.append(dataset.name)
                 # OOP Dataset.add_item() takes one EntityRef at a time (no bulk
                 # equivalent to the legacy add_items(force=True)); loop instead.
+                # add_item() appends a second ref if the id is already present at
+                # another version, so drop any existing ref for the id first
+                # (legacy force=True replaced it).
                 for item in file_scope_list[0]:
+                    for ref in [r for r in dataset.items if r.id == item["entityId"]]:
+                        dataset.remove_item(ref, synapse_client=syn)
                     dataset.add_item(
                         EntityRef(id=item["entityId"], version=int(item["versionNumber"])),
                         synapse_client=syn,
