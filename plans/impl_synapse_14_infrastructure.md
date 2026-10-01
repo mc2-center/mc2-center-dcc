@@ -23,7 +23,7 @@
 ## Current state (read-only checks, 2026-10-01)
 | Item | State |
 |---|---|
-| `MC2Center` registry | 37 schemas; no 14.0.0 versions. Stray versions ≥14 exist. Live data-model versions have **camelCase enums**. |
+| `MC2Center` registry | 38 schemas; no 14.0.0 versions. Stray versions ≥14 exist. Live data-model versions have **camelCase enums**. |
 | Grant-level tables (project_tables view syn52750482) | 532 tables: 151 `publicationview_…`, 141 `grantview_…`, 111 `datasetview_…`, 74 `toolview_…`, 4 each of educationalresource, fileview, study and biospecimen `_synapse_storage_manifest_table`. Checked a sample of 30 publication tables: one identical 13.1.0 display-name schema, mostly STRING. |
 | RecordSets | **None** found (`MC2Center_PublicationView_RecordSet` was searched for in all 160 grants' `publications` folders). |
 | Admin manifests | Grant syn53259587 (table, display names), Project syn59074382 (table), PersonView syn38301033 (table, camelCase). Merged CSV files: publications syn53478776, datasets syn53478774 (`DatasetView_tagged_Assay_20261001.csv`; DUO short codes `RTN` ×5, `NPUNCU` ×5, the rest `Pending Annotation`), tools syn53479671, education syn53651540. |
@@ -111,7 +111,7 @@ I5 + I6 + I4 + D* merged ─ I9 first sync + verification ─ I10 comms ─ I11 
 - **Run it** one type at a time. After each type, run D12's RecordSet-mode union and compare its row count and IDs with the legacy MaterializedView union for that type. They must be equal.
 - **Admin tables:**
   - Grant syn53259587, Project syn59074382 and PersonView syn38301033 become RecordSets the same way. Project gets `PersonView Key` and `Project Short Name`. PersonView moves from camelCase to the template headers.
-  - Point `portal_tables/utils.py` `CONFIG` at them.
+  - Point `portal_tables/utils.py` `CONFIG` at them. This needs D16, because the sync scripts read these with SQL today.
 - **Check:** for every type, union row count and primary keys equal the legacy union. The only validation failures are known I8 items.
 
 ### I5b. Grant-level migration in place (G1 = tables)

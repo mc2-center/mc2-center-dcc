@@ -1,6 +1,6 @@
 # Implementation plan: mc2-center-dcc alignment with data model 14.0.0
 
-**Repo:** `mc2-center/mc2-center-dcc`, branch `model-alignment` (B0 already landed as `3b35c2b`).
+**Repo:** `mc2-center/mc2-center-dcc`, branch `model-alignment`. B0 has landed and is hardened: a column check before truncating, and a restore if the upload fails. The OOP-migration review fixes are merged in from `synapse-client-oop-refresh`.
 **Master plan:** `plans/cde_model_alignment_harmonized.md` (decisions 1–5, O1–O10). Synapse writes and migrations live in `plans/impl_synapse_14_infrastructure.md`. The curation pipeline is in `plans/impl_ai_curation_pipeline_14.md`.
 **Deadline:** merge before **2026-11-01**, the first monthly cron after #262.
 
@@ -20,6 +20,7 @@ D1 ─┬─ D2 ─┬─ D3, D4, D5, D6, D7   (sync scripts, parallel)
     ├─ D8 (hand-off: split / processing-splits)  ── pairs with pipeline P1
     ├─ D9 (other annotation/utils renames)
     └─ D11 (RecordSet upload path)  ← blocked on infra I3 (RecordSet spike)
+    └─ D16 (manifest readers for tables/RecordSets) ← before infra I5a
 D10 (cron --dryrun), D13 (csv_to_ttl), D14 (register entry point): independent
 D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
 ```
@@ -55,6 +56,10 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
     | PersonView | `Person Consortium Name` | `Consortium Key` |
 
     New in 14.0.0, with no 13.1.0 equivalent: GrantView `Institution Key` and `PersonView Key`; PersonView `Institution Key`. These are used by the migration (infrastructure plan I5) and by the legacy-input fallback in D8.
+  - `LEGACY_ADMIN_HEADERS`: today's admin manifests don't use 13.1.0 template headers, so `normalize_headers` would reject them. Map them explicitly:
+    - **PersonView syn38301033 (camelCase):** `personGrantNumber` → `GrantView Key`, `personConsortiumName` → `Consortium Key`, `name` → `Name`, `alternativeNames` → `Alternative Names`, and so on. Build the full map from the live columns, read-only.
+    - **Project syn59074382:** `Project Investigator` → `Investigator`, `Project Consortium Name` → `Consortium Key`, `Project Grant Number` → `GrantView Key`.
+  - **There's no `templates/ProjectView.csv`** at `c234c467`; there are 33 templates, and ProjectView, Consortium, Institution and Theme have none. For those components, `template_headers()` falls back to the schema's property order mapped back to display names. The missing templates are reported upstream (data-models follow-up).
 - **Importing it from `annotations/` and `utils/`.** Those scripts add `portal_tables` to `sys.path` with a three-line shim, commented `# removed when the mc2dcc package (CLI consolidation plan) lands`. `model_contract` is a unique module name, so this doesn't collide with the `utils/` package or `portal_tables/utils.py`.
 - **Checks.** `pytest tests/test_model_contract.py`:
   - a round trip of display → keys → display over all 33 vendored template headers
@@ -70,8 +75,8 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
     - `source` is a class-label key, or `derived:<name>` for enrichment columns the sync script computes (`theme`, `consortium`, `grantName`, `link`, `iconTags`, `version`, `sourceRepository`, `downloadType`, `downloadSynId`, `pub`, and so on).
     - `kind` is one of `string`, `list` or `int`.
     - Build it from each sync script's current `col_order` and the live column lists (`synapse_cols.json` in the session scratchpad, re-fetched read-only). It covers the 7 portal tables.
-  - `check_crosswalk(syn, table_id, component)` asserts that the live column names and order equal the crosswalk's `portal_column` list. It returns `{portal_column: live_column_type}`.
-  - `to_portal(df, component, live_types)` renames to the portal columns, orders them, and converts `list`-kind columns with `utils.convert_to_stringlist` **only when the live type is `STRING_LIST`**. That keeps the code correct both before and after the infrastructure plan's I4 type changes (license, investigator).
+  - `check_crosswalk(syn, table_id, component)` asserts that the live column names and order equal the crosswalk's `portal_column` list. It tolerates trailing live columns listed in `utils.OPTIONAL_TRAILING_COLUMNS`, and crosswalk entries marked `optional` (e.g. `projectShortName`) that don't exist yet. It returns `{portal_column: live_column_type}`.
+  - `to_portal(df, component, live_types)` renames to the portal columns, orders them, and converts `list`-kind columns **only when the live type is `STRING_LIST`**. It converts only string cells; cells that are already lists (from datasets, people or RecordSet input) pass through. `utils.convert_to_stringlist` uses `.str` and would turn them into NaN. That keeps the code correct both before and after the infrastructure plan's I4 type changes (license, investigator).
   - `portal_tables/utils.py`:
     - `update_table` gets an optional `component` argument. If given, it calls `check_crosswalk` instead of B0's positional rename. B0 stays as the fallback when `component` is None.
     - Add `consortium_display_names(syn, ids) -> list[str]`, reading the Consortium table. Find its ID in the portal project, read-only, and record it in `CONFIG`. It raises on an unknown `program.*` ID.
@@ -94,11 +99,21 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
 
 | Task | Script | Specific changes |
 |---|---|---|
-| D3 | `sync_publications.py` | `PublicationAssay`, `PublicationTumorType` and `PublicationTissue` become `Assay`, `TumorType`, `Tissue`. Replace positional `row[4]` (`:34`) with `row["GrantViewKey"]`. Drop the `"GrantView Key" → "Publication Grant Number"` rename; the crosswalk maps `GrantViewKey` to `grantNumber`. |
+| D3 | `sync_publications.py` | `PublicationAssay`, `PublicationTumorType` and `PublicationTissue` become `Assay`, `TumorType`, `Tissue`. Replace positional `row[4]` (`:36`) with `row["GrantViewKey"]`. Drop the `"GrantView Key" → "Publication Grant Number"` rename; the crosswalk maps `GrantViewKey` to `grantNumber`. |
 | D4 | `sync_datasets.py` | `DatasetAssay`, `DatasetSpecies`, `DatasetTissue` and `DatasetTumorType` become `Assay`, `Species`, `Tissue`, `TumorType`. `DataUseCodes` becomes `DatasetDataUseCodes`. `DatasetView_id` becomes `DatasetViewId`. **DUO (O10):** translate each code with `duo_id_to_code()` first; short codes pass through during the transition. Then look up `DUO_DICT`. Replace `except KeyError: continue` (`:131-134`) with a logged warning plus the fallback text `"Access information not mapped: <code>"`, and keep processing the row so the repository and download fields are still set. Add `DUO_DICT` entries, or the fallback, for `DUOPlus*`. Extra check: a fixture row with an unknown code still gets `sourceRepository` and `downloadType`. |
 | D5 | `sync_tools.py`, `sync_education.py` | `ToolLicense` / `ResourceLicense` become `License` (`list` kind). Any other class-label input keys come from normalization. |
 | D6 | `sync_grants.py`, `create_grant_projects.py` | `Grant Investigator` becomes `Investigator` (`list` kind). `Grant Consortium Name` becomes `ConsortiumKey`, resolved with `consortium_display_names()` into the `consortium` column (display names, decision 2). The grant manifest is a table (syn53259587) with display-name columns today; normalize it the same way. Recheck the `updated_scope` handling on the OOP `EntityView` path. |
-| D7 | `sync_projects.py`, `sync_people.py` | Projects: `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantViewKey`. Consortia come from `ConsortiumKey` via the lookup. `ProjectShortName` goes to `projectShortName`, mapped only once that column exists (infrastructure plan I4); until then the crosswalk marks it `optional`. People: `personConsortiumName` becomes `ConsortiumKey`, through the lookup. `personGrantNumber` becomes `GrantViewKey`. Leave `InstitutionKey` unmapped for now; there's no portal column for it. |
+| D7 | `sync_projects.py`, `sync_people.py` | Both manifests are tables with non-template headers today, so normalize them through `LEGACY_ADMIN_HEADERS` (D1) until infrastructure step I5 regenerates them. Projects: `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantViewKey`. Consortia come from `ConsortiumKey` via the lookup. `ProjectShortName` goes to `projectShortName`, mapped only once that column exists (infrastructure plan I4); until then the crosswalk marks it `optional`. People: `personConsortiumName` becomes `ConsortiumKey`, through the lookup. `personGrantNumber` becomes `GrantViewKey`. Leave `InstitutionKey` unmapped for now; there's no portal column for it. |
+
+### D16. Manifest readers that work for tables and RecordSets
+- **Depends on** D1. **Needed before** infrastructure step I5a points `CONFIG` at RecordSets.
+- **Why.** `sync_people.py`, `sync_projects.py`, `sync_grants.py` and `create_grant_projects.py` read their manifests with `Table(id).query`, but a RecordSet can't be queried with SQL.
+- **Spec:** add `model_contract.read_manifest(syn, entity_id) -> DataFrame`.
+  - **Table:** `Table.query(include_row_id_and_row_version=False)`.
+  - **RecordSet:** download its CSV.
+  - **File:** read the CSV, as the publications, datasets, tools and education syncs do now.
+  - All sync scripts call it.
+- **Check:** unit tests with a mocked entity of each type.
 
 ### D8. Hand-off from the AI curation pipeline (`annotations/split_manifest_grants.py`, `annotations/processing-splits.py`)
 - **Depends on** D1. **Pairs with pipeline task P1;** test both against the same fixture.
@@ -121,12 +136,11 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
 ### D9. Other annotation and utility scripts
 - **Depends on** D1 and D2.
 - **Files:**
-  - `annotations/edit_legacy_annotations.py`: pin the CV URL via `model_contract`.
+  - `annotations/edit_legacy_annotations.py`: pin the CV URL (`:41`) via `model_contract`.
   - `annotations/schema_update.py`: column names via `RENAMES_13_TO_14`. The migration (infrastructure plan I5) also uses it.
   - `utils/merge_and_correct_manifests.py`, `utils/table_to_annotations.py` (also fix `:525` `keys_to_drop=None` → `[]`).
   - `utils/check_publications_status.py`:
     - `Publication Grant Number` becomes `GrantView Key`.
-    - `pubMedUrl` becomes `pubMedLink`.
     - Replace `PUBLICATION_DICT` with the crosswalk.
   - Delete `annotations/attribute_dictionary.py`.
 - **`annotations/add_cols.py`:** the CLI plan flags it as possibly dead. **Don't edit it**; list it in the report for the owner to decide.

@@ -3,7 +3,13 @@
 **Status as of 2026-10-01:**
 - **PR #262 is merged** into `data-models/main` (`c234c467`, labelled `major`). It includes all the DM-1–DM-10 and DM-12 work: `plans/data_models_cde_alignment_report.md` in data-models, with the checks re-run against `main`. **No `14.0.0` tag or release exists yet**; the latest is `v13.1.0`.
 - **Synapse:** the `MC2Center` registry is unchanged. Nothing is deleted and nothing is registered at 14.0.0.
-- **mc2-center-dcc:** only B0 (`3b35c2b`) has landed.
+- **mc2-center-dcc:** B0 has landed and is hardened. The pre-PR review of the OOP refresh also fixed a set of OOP-migration regressions on `synapse-client-oop-refresh`, merged into `model-alignment`:
+  - row-id columns in read-only queries
+  - schema-URI versions and binding
+  - dataset items
+  - newline stripping on writebacks
+  - CI requirements without the private `geo-synapse` repo
+  - pandas capped below 3
 - **ai-curation-pipeline:** P0 has **not** landed (`main` is still `fa7b977`). Its vocabulary loader now reads 0 terms (see B9).
 
 **Sources:**
@@ -82,14 +88,15 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 ---
 
 ## Section B: mc2-center-dcc code
-### B0. `update_table` column-name alignment: **done** (`3b35c2b`)
-- **What changed.** `Table.store_rows(df)` matches columns by name. The fix relabels the DataFrame's columns by position to the live column names, and stops before the snapshot or truncate if there are too many columns.
-- **Verified:** mocked writes for publications, tools, education, projects, people and grants.
-- **Still to check:** one real write to a scratch copy of a portal table. This needs go-ahead to create and delete the scratch table.
+### B0. `update_table` column-name alignment and safety: **done**
+- **What changed.** `Table.store_rows(df)` matches columns by name. `update_table` reads the live columns, and **refuses before the snapshot or truncate** unless the DataFrame covers every live column. The only exceptions are known unpopulated trailing columns (`OPTIONAL_TRAILING_COLUMNS`: People's `test_publicationId` and `test_toolId`).
+- **How it writes.** It relabels positionally to the live names and strips newlines. If `store_rows` is rejected after `delete_rows`, it **re-stores the previous rows** and then re-raises.
+- **Verified:** mocked writes for publications, tools, education, projects, people and grants. A dropped column raises before delete. A store failure triggers the restore.
+- **Still to check:** one real write to a scratch copy of a portal table (infrastructure plan I9).
 
 ### B1. Header normalization, crosswalk and consortium lookup
 - **Header normalization (decision 5).** One function, `normalize_headers(df, component)`, maps template display names to class labels. It uses the display name ↔ label pairs from `mc2.model.jsonld`, pinned to `v14.0.0`.
-  - It replaces the ad hoc `manifest.columns.str.replace(" ", "")` in `sync_datasets.py:263`, `sync_education.py:115` and `sync_people.py:84`. That rule happens to work for most headers but gives `DatasetView_id`, where the label is `DatasetViewId`.
+  - It replaces the ad hoc `manifest.columns.str.replace(" ", "")` in `sync_datasets.py:268`, `sync_tools.py:148`, `sync_education.py:115`, `sync_people.py:84` and `sync_projects.py:76`. That rule happens to work for most headers but gives `DatasetView_id`, where the label is `DatasetViewId`.
   - It moves to `cckp_metadata` when the CLI plan's Phase 1 lands.
 - **Crosswalk.** `portal_tables/crosswalk.py` gives, per component, an ordered class-label → portal-column map, stamped `model_version="14.0.0"`.
   - It replaces the scattered rename maps and `annotations/attribute_dictionary.py`.
@@ -104,7 +111,7 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 | `sync_tools.py` / `sync_education.py` | `ToolLicense` / `ResourceLicense` become `License`, as a string list. |
 | `sync_grants.py`, `create_grant_projects.py` | `Grant Investigator` becomes `Investigator`, as a list. `Grant Consortium Name` becomes `ConsortiumKey`, resolved via B1. Recheck the `updated_scope` handling on the OOP `EntityView` path. |
 | `sync_projects.py` | `ProjectInvestigator` becomes `Investigator`. `ProjectGrantNumber` becomes `GrantViewKey`. Consortia come via B1. Add `ProjectShortName`, going to `projectShortName`. |
-| `sync_people.py` | `personConsortiumName` becomes `ConsortiumKey`. `personGrantNumber` becomes `GrantViewKey`. Add `InstitutionKey`. |
+| `sync_people.py` | `personConsortiumName` becomes `ConsortiumKey`. `personGrantNumber` becomes `GrantViewKey`. `InstitutionKey` is read but not mapped; there's no portal column for it (D7). |
 
 ### B3. Dataset access info: DUO IDs in, existing portal text out (O3, O10)
 - **Translate IDs.** Build an ID → short-code map from `modules/shared/duo.csv`, pinned to `v14.0.0`, which records each short code in its `Properties` column (`DUO:0000042` → `GRU`). Then use the existing `DUO_DICT` text.
@@ -119,7 +126,6 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 - **`processing-splits.py`** only splits by component once the pipeline emits template headers ([C] P1).
 - **Existing bugs to fix:**
   - `table_to_annotations.py:525` `keys_to_drop=None`.
-  - `pubMedUrl` should be `pubMedLink`.
   - Check File-level writes against the new `File Assay Category` field.
 
 ### B5. `csv_to_ttl.py`
@@ -141,6 +147,12 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 - Model alignment lands in the current scripts first.
 - `mc2dcc sync …` then moves the aligned code over.
 - `normalize_headers` and the crosswalk move to `cckp_metadata` and `mc2dcc/sync/_shared.py` respectively.
+
+### B9. AI curation pipeline (companion plan [C]): **now urgent**
+- **What's broken.** `ai-curation-pipeline` reads `data-models/main/mc2.model.jsonld` without a pinned version, asking for `Publication Assay`, `Publication Tissue` and `Publication Tumor Type`. Against the current `main` that returns **0** terms; `Assay`, `Tissue` and `Tumor Type` return 391, 114 and 186. **Every pipeline run since #262 merged produces empty or near-empty annotations, with no error.**
+- **P0 is now an incident fix:** the field-name fallback, a hard failure on an empty vocabulary, and a pinned model ref.
+- **Until P0 ships,** run the pipeline only with `--model-jsonld` pointing at a `v13.1.0` copy of `mc2.model.jsonld`.
+- **P1** is revised by decision 5: output headers equal `templates/*.csv` exactly.
 
 ### B10. The curation hand-off chain (from AI pipeline output to grant-level uploads)
 - **The pipeline writes one file per type covering all grants:**
@@ -168,17 +180,12 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
   - The per-grant mirror tables get a duplicate copy appended every run.
   - `INFER_FROM_DATA` infers different column types per grant, which breaks the UNION.
 
-### B9. AI curation pipeline (companion plan [C]): **now urgent**
-- **What's broken.** `ai-curation-pipeline` reads `data-models/main/mc2.model.jsonld` without a pinned version, asking for `Publication Assay`, `Publication Tissue` and `Publication Tumor Type`. Against the current `main` that returns **0** terms; `Assay`, `Tissue` and `Tumor Type` return 391, 114 and 186. **Every pipeline run since #262 merged produces empty or near-empty annotations, with no error.**
-- **P0 is now an incident fix:** the field-name fallback, a hard failure on an empty vocabulary, and a pinned model ref.
-- **Until P0 ships,** run the pipeline only with `--model-jsonld` pointing at a `v13.1.0` copy of `mc2.model.jsonld`.
-- **P1** is revised by decision 5: output headers equal `templates/*.csv` exactly.
 
 ---
 
 ## Section C: Synapse tables and operations (Opus runs these with explicit approval; snapshot first)
 ### S0. Holds
-- **No non-dryrun syncs** until B1–B3 merge. B0 makes the write safe, but the 14.0.0 manifests won't map correctly yet.
+- **No non-dryrun syncs** until B1–B3 merge. B0 makes a failed write recoverable (it checks columns before truncating and restores on failure), but the 14.0.0 manifests won't map correctly until B1–B3.
 - **Don't run the AI curation pipeline** without the v13.1.0 `--model-jsonld` workaround (B9).
 
 ### S1. Schema registry (`MC2Center`), after the `v14.0.0` tag
