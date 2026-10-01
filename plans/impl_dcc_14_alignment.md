@@ -22,6 +22,7 @@ D1 ─┬─ D2 ─┬─ D3, D4, D5, D6, D7   (sync scripts, parallel)
     └─ D11 (RecordSet upload path)  ← blocked on infra I3 (RecordSet spike)
     └─ D16 (manifest readers for tables/RecordSets) ← before infra I5a
 D10 (cron --dryrun), D13 (csv_to_ttl), D14 (register entry point): independent
+D17 (removals/consolidation): D17a approved; deletions whose replacements are planned (upload-workflow.sh → D15, attribute_dictionary.py → D9, upload_validation.py → D11) wait for them. D17b after D2/D16 and D3–D7
 D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
 ```
 
@@ -195,8 +196,47 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
 - **Later home:** this becomes `mc2dcc annotations upload-workflow` in the CLI plan.
 - **Check:** a dry run end to end on the D8 fixtures.
 
+### D17. Remove and consolidate dead or duplicate code
+- **Goal:** trim the repo before the CLI consolidation plan (`plans/cckp_metadata_and_cli_consolidation.md`) moves scripts into `mc2dcc`, so dead code doesn't get carried over.
+- **Evidence:** `git grep` for references (callers, workflows, `run_sync.sh`, READMEs), last-change dates, and reading each file.
+- **The owner approved every D17a deletion on 2026-10-01** (marked ✅). A subagent may prepare the deletion commits; Opus reviews them before they're pushed.
+
+**D17a. Remove: dead or superseded files**
+
+| File | Evidence | Action |
+|---|---|---|
+| `portal_tables/unify_grant_tables.py` | Unreferenced; last changed 2024-02. Legacy grant-table discovery by name substring, replaced by the grant views and `merge_tables.py`. The CLI plan already marks it confirmed unused. | ✅ Delete |
+| `utils/reset_wg_members.sh` | Calls `python/reset_team_members.py`, which doesn't exist. `utils/reset_teams.py` is the working tool. Last changed 2022. | ✅ Delete. Move its team-ID list into a `reset_teams.py` input CSV or the docs if it's still wanted. |
+| `annotations/add_cols.py` | Unreferenced; last changed 2024-02. Its only job (rename `Publication TumorType`, add missing columns) is done by `processing-splits.py`, and after D8, by the template-driven ordering. | ✅ Delete |
+| `annotations/create_id_folders.py`, `utils/create_id_folders.py` | A near-copy of `utils/create_id_folders.py` (≈35 differing lines: stale column names and debug prints). The CLI plan names the `utils/` copy as canonical. | ✅ Delete the `annotations/` copy. Also delete `utils/create_id_folders.py` (approved): `create_entity_links.py` now creates the ID-bearing entities. |
+| `curator_tools/` (5 files) | **Nothing imports it.** `utils/create_curation_task.py`, `list_curation_tasks.py` and `delete_curation_task.py` call `synapseclient.extensions.curator` and `CurationTask` directly. Two files only demonstrate library calls. Master decision 1.4 is to ignore it, and the CLI plan deletes it. | ✅ Delete, after re-running `create_curation_task.py --help` and `list_curation_tasks.py` once as the CLI plan requires. |
+| `annotations/upload-workflow.sh` | Broken: it passes a folder to `processing-splits.py`, and hardcodes one past run's file names plus a personal config path. | ✅ Delete once D15's `upload_workflow.py` lands. |
+| `annotations/attribute_dictionary.py` | Replaced by the D2 crosswalk. | ✅ Delete in D9 (already planned). |
+| `annotations/upload_validation.py` | Unreferenced. Its upload branch can't be reached, and it checks whether manifests reached Synapse by looking at folders. | ✅ Delete once D11's RecordSet validation report covers it; otherwise fix the unreachable branch. |
+| `portal_tables/add_datasets_to_pub.py` | It writes the Publications table's `dataset` column, but every `sync_publications.py` run rewrites that column from the manifest's `Publication Dataset Alias`. So its edits only last until the next sync. | ✅ Delete (approved). If the dataset ↔ publication linking is still wanted, it belongs in the manifest step (curation pipeline P1 already fills `Publication Dataset Alias` from NCBI elink; or `create_entity_links.py`), where the sync keeps it. |
+
+**D17b. Consolidate duplicate helpers (no file deletions)**
+- **Synapse login:** there are about 25 separate login implementations (`def login()` or `Synapse().login()` copies in most `utils/`, `annotations/` and `curator_tools/` scripts). Use the single `portal_tables/utils.syn_login()`, moved to `cckp_metadata` later per the CLI plan. Same behavior: config file first, then the PAT prompt.
+- **Table readers:** `get_table()` is defined three times (`utils/build_datasets.py:72`, `utils/trim_datasets.py:33`, `utils/table_to_annotations.py:95`). Replace them with D16's `model_contract.read_manifest()`, or a shared `read_table()` with `include_row_id_and_row_version=False`.
+- **`utils/tally_themes.py:123` `update_table`:** a second copy of the portal `update_table`, without the snapshot, the column check or the restore-on-failure. Call `portal_tables/utils.update_table`. Its column names already match the live count tables, so the check passes.
+- **Newline stripping:** `utils/get_abstracts.py` has an inline copy of `strip_newlines`, and `annotations/update_pending_annotations.py` loads `portal_tables/utils.py` through an `importlib` path shim. Both exist only because the `utils/` package name collides with `portal_tables/utils.py`. Keep them until `mc2dcc` packaging; then import normally.
+- **`portal_tables/utils.py`:**
+  - Delete the unused `sort_and_stringify_col` (no callers).
+  - `convert_to_stringlist` is replaced by D2's `to_portal` list handling; remove it once D3–D7 are merged.
+- **Grant curation:** `utils/reporter_project_query.py` (NIH RePORTER query) and `utils/clean_reporter_results.py` are one two-step workflow; merge them into one command. `clean_reporter_results.py`'s argparse description ("Access and validate tables from Synapse") is wrong.
+- **Small admin scripts:** `utils/get_entity_ids.py`, `utils/make_folders.py`, `utils/check_cert.py` and `utils/change_entity_parent.sh` each have their own login and argparse. Group them under one admin module (the CLI plan's `mc2dcc admin …`); no behavior change.
+- **Sync entry points:** `run_sync.sh` duplicates the steps of `sync-to-portal.yml`. Keep a single list of steps by having the workflow call `run_sync.sh`, until `mc2dcc sync` replaces both.
+
+**Out of scope for D17, so keep:** `utils/csv_to_ttl.py`, `utils/build_template_ttl.py`, `build_ttl_*.sh` (model/template → TTL, a separate purpose from kg-pipeline), `utils/process_arachne_mapping.py` (General Commons export), `utils/upload_files.py`, `utils/reset_teams.py`.
+
+- **Checks:**
+  - `git grep` shows no remaining references to deleted files or functions.
+  - `py_compile` passes on every touched file.
+  - The sync dry runs (D3–D7 checks) and the cron `--dryrun`s (D10) still pass.
+- **Commits:** one per D17a deletion and one per D17b consolidation.
+
 ## Done when
-- D1–D10 and D13–D14 are merged on `model-alignment`.
+- D1–D10, D13–D14 and D17 are merged on `model-alignment`.
 - D11, D12 (RecordSet mode) and D15 are merged, or explicitly deferred, depending on the I3 result.
 - All dry runs and tests pass.
 - An independent code review has run before `gh pr create`; opening the PR needs the owner's go-ahead.
