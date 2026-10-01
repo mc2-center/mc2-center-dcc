@@ -4,6 +4,17 @@
 **Why this plan exists:** it holds the data-models part of `mc2-center-dcc/plans/cde_model_alignment_harmonized.md`, the master plan, as a plan that can be executed on its own in this repo. Downstream work in `mc2-center-dcc`, the curation pipeline, and on Synapse waits on the release this plan produces.
 **Related plans in this repo:** `plans/cde_model_revisions_integration.md`, the upstream integration plan, and `plans/cckp_metadata_and_cli_consolidation.md`, the future `cckp_metadata` package that will absorb `create_json_from_model.py` and related scripts. Make the changes below in the current scripts now; the package absorbs them later.
 
+## Status as of 2026-10-01: `main` after #262 (`c234c467`)
+| Item | Status |
+|---|---|
+| DM-1 to DM-10, DM-12 | **Done.** Recorded in `plans/data_models_cde_alignment_report.md` in data-models. Re-checked on `main`: `scripts/check_json_schemas.py` finds 0 failures across 38 schemas. |
+| DM-11 | **Open.** The notes are in `plans/release_14.0.0_notes.md`. Tag `v14.0.0` and publish the release (owner's go-ahead). |
+| DM-13 | Open, deferred. |
+| DM-14 | **New, open:** a patch. See below. |
+| DM-15 | **New, low priority.** See below. |
+
+Items DM-1 to DM-12 below are kept as the record of what was asked; the report documents how each was done and where it differed.
+
 ## Context
 PR #262 consolidates about 70 per-entity attributes into shared ones: `Assay`, `Species`, `Tissue`, `Tumor Type`, `License`, `Investigator`, `Sex`, and others. It moves sample and assay fields to NCIt or UBERON reference validation, adds foreign keys (`Consortium Key`, `Institution Key`, `PersonView Key`), and moves model generation to `synapseclient.extensions.curator`. Review across repos found defects and gaps that must be fixed **before** the JSON schemas are registered in Synapse as the source of truth. The latest tag is `13.1.0` and #262 is labelled `major`, so this release is **14.0.0**. The Synapse schema version must match the release version.
 
@@ -129,11 +140,21 @@ PR #262 consolidates about 70 per-entity attributes into shared ones: `Assay`, `
 ### DM-13 CI gate (O5, deferred until DM-1 to DM-12 are done)
 - **Work.** A workflow that runs `make all`, the DM-12 check script, and `kg-pipeline`'s `make test` on PRs. Coordinate with Phase 0 of `cckp_metadata_and_cli_consolidation.md`, which adds pytest and ruff CI in this repo, so it's one workflow, not two.
 
+### DM-14 Fix the `qc_attribute_mapping.csv` DatasetView row (new)
+- **Problem.** The DatasetView row in `qc_model/qc_attribute_mapping.csv` still says `Data Use Codes`, but on `main` the DatasetView template uses `Dataset Data Use Codes`. `mc2-center-dcc/portal_tables/union_qc.py` reads this file (`-p`) to aggregate duplicate rows, so it won't aggregate that column.
+- **Work.** Rename the attribute in that row, and leave its `"",".join` mapping as is.
+- **Check.** Extend `scripts/check_template_list.py`, or add a small test, so that every `qc_attribute_mapping.csv` attribute (apart from the `entityId` bookkeeping column) is a header in `templates/<component>.csv`. Today that check finds exactly this one mismatch.
+
+### DM-15 Make `GrantView Key` a list (new, low priority, for a later release)
+- **Problem.** `GrantView Key` is a `string` holding comma-separated grant numbers, with the unanchored pattern `(CA\d{6}|Affiliated/Non-Grant Associated)`. JSON Schema patterns are unanchored, so any string that *contains* one valid number passes, e.g. `CA123456, junk`.
+- **Option.** Make it a `string_list` with an anchored per-item pattern.
+- **Why later.** This changes its type in every portal template's schema and in downstream parsing, so it goes in a future release, not a patch.
+
 ## Order of work
 1. DM-1, DM-2, DM-3, DM-4, DM-5, DM-6, DM-8, DM-9 and DM-10 are independent CSV and Makefile edits. They can go to parallel Sonnet tasks, one commit each. DM-2 and DM-3 both touch `mapping.yaml`, so the same agent does them.
 2. DM-7, the post-processing step (O8 decided). Do it after DM-2 and DM-6, which change labels it maps.
 3. Regenerate everything (`make all`), then run DM-12.
-4. DM-11: release notes, then tag `v14.0.0` (needs explicit go-ahead).
+4. DM-11: release notes are done; tag `v14.0.0` (needs explicit go-ahead). **This is the next step.** DM-14 can go in before the tag or as 14.0.1.
 5. DM-13 comes later.
 
 ## What happens after the tag (not this repo)
