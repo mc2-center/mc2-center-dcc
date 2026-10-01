@@ -143,11 +143,28 @@ def update_table(syn: Synapse, table_id: str, df: pd.DataFrame) -> None:
     """Update the portal table.
 
     Steps include:
+        - aligning DataFrame column names to the live table's columns
         - creating a new table version
         - truncating the table
         - sync over rows from the latest manifest
     """
-    table = Table(id=table_id)
+    table = Table(id=table_id).get(include_columns=True, synapse_client=syn)
+
+    # store_rows() uploads the DataFrame as a CSV with a header row, and
+    # Synapse matches that header to table columns by name. The sync scripts
+    # build their col_order lists with manifest-style names (e.g.
+    # "Publication Doi") laid out in the portal table's column order, which
+    # the previous positional row store relied on. Rename to the live column
+    # names by position here, and fail before the table is truncated if the
+    # shapes can't line up. Trailing live columns the DataFrame doesn't cover
+    # are left empty, matching the old positional behavior.
+    live_columns = list(table.columns.keys())
+    if len(df.columns) > len(live_columns):
+        raise ValueError(
+            f"{table_id} has {len(live_columns)} columns but {len(df.columns)} "
+            f"were provided; refusing to truncate the table."
+        )
+    df = df.set_axis(live_columns[: len(df.columns)], axis="columns")
 
     today = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
     print(f"Creating new table version with label: {today}...")
