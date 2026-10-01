@@ -8,10 +8,10 @@
 | Item | Status |
 |---|---|
 | DM-1 to DM-10, DM-12 | **Done.** Recorded in `plans/data_models_cde_alignment_report.md` in data-models. Re-checked on `main`: `scripts/check_json_schemas.py` finds 0 failures across 38 schemas. |
-| DM-11 | **Open.** The notes are in `plans/release_14.0.0_notes.md`. Tag `v14.0.0` and publish the release (owner's go-ahead). |
-| DM-13 | Open, deferred. |
+| DM-11 | **Open**: issue #273. The notes are in `plans/release_14.0.0_notes.md`. Tag `v14.0.0` and publish the release (owner's go-ahead). |
+| DM-13 | Open, deferred: issue #274. |
 | DM-14 | **New, open:** a patch. See below. |
-| DM-15 | **New, low priority.** See below. |
+| DM-15 | **New, low priority**: issue #275. See below. |
 
 Items DM-1 to DM-12 below are kept as the record of what was asked; the report documents how each was done and where it differed.
 
