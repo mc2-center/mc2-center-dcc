@@ -90,7 +90,12 @@ def add_missing_info(
         else:
             # Not every entity type carries a version (e.g. Folder), so fall
             # back to the default rather than assuming the attribute exists.
-            entity_version = getattr(entity, "version_number", None) if entity is not None else None
+            # operations.get() returns a dict bundle for some types (e.g.
+            # RecordSet); the version is then under entity["entity"].
+            if isinstance(entity, dict):
+                entity_version = (entity.get("entity") or {}).get("versionNumber")
+            else:
+                entity_version = getattr(entity, "version_number", None) if entity is not None else None
             version = int(entity_version) - 1 if entity_version is not None else 1
         datasets.at[_, "version"] = version
         

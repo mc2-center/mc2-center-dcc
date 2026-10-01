@@ -60,7 +60,9 @@ def status_check(syn, table_id, query, colname, email, publication_dict):
     Check availability of publications and return df of open/accessible
     publications and their current annotations on the portal.
     """
-    df = Table(id=table_id).query(query=query, synapse_client=syn)
+    df = Table(id=table_id).query(
+        query=query, include_row_id_and_row_version=False, synapse_client=syn
+    )
     doi_list = df[~df[colname].isnull()]["doi"]
     ready_for_review = []
     with requests.Session() as session:

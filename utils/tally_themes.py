@@ -41,7 +41,7 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
         query += " WHERE portalDisplay = true"
     return (
         Table(id=table_id)
-        .query(query=query, synapse_client=syn)
+        .query(query=query, include_row_id_and_row_version=False, synapse_client=syn)
         .explode("theme")
         .groupby("theme")
         .count()
@@ -49,9 +49,14 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
     )
 
 
+def _join_or_missing(col):
+    """Join list cells with ", "; empty lists/strings become NaN (dropped by groupby)."""
+    return col.str.join(", ").replace("", pd.NA)
+
+
 def tally_by_consortium(grants):
     """Portal - Consortium Counts (syn21641485)"""
-    grants["consortium"] = grants["consortium"].str.join(", ")
+    grants["consortium"] = _join_or_missing(grants["consortium"])
     return (
         grants[["grantId", "consortium"]]
         .groupby("consortium")
@@ -141,12 +146,17 @@ def main():
     # Table of theme names and their descriptions.
     themes = (
         Table(id=THEMES)
-        .query(query=f"SELECT displayName, description FROM {THEMES}", synapse_client=syn)
+        .query(
+            query=f"SELECT displayName, description FROM {THEMES}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        )
         .rename(columns={"displayName": "theme", "description": "themeDescription"})
         .set_index("theme")
     )
     grants = Table(id=GRANTS).query(
         query=f"SELECT grantId, grantNumber, consortium, theme FROM {GRANTS}",
+        include_row_id_and_row_version=False,
         synapse_client=syn,
     )
 

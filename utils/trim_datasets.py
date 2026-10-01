@@ -14,7 +14,7 @@ import argparse
 import os
 import pandas as pd
 from synapseclient import Synapse, operations
-from synapseclient.models import EntityRef, Table
+from synapseclient.models import Table
 
 
 def get_args():
@@ -49,8 +49,10 @@ def remove_files_from_dataset(syn, dataset: str, files: list[str]) -> tuple[str,
     )
     dataset_files = pd.DataFrame([{"entityId": item.id} for item in dataset_entity.items])
     files_to_remove = [file for file in files if file in dataset_files["entityId"].to_list()]
-    for file in files_to_remove:
-        dataset_entity.remove_item(EntityRef(id=file), synapse_client=syn)
+    # remove_item() needs a full EntityRef (id + version); match refs by id only
+    # like the legacy remove_item(id).
+    for ref in [r for r in dataset_entity.items if r.id in files_to_remove]:
+        dataset_entity.remove_item(ref, synapse_client=syn)
     dataset_entity.store(synapse_client=syn)
 
     return dataset_entity.id, files_to_remove
