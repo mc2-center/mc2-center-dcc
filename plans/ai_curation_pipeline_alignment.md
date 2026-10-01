@@ -1,5 +1,7 @@
 # Companion plan: align `mc2-center/ai-curation-pipeline` with the CDE-revised data models
 
+> **The implementation spec is `plans/impl_ai_curation_pipeline_14.md`.** This file keeps the analysis; where they differ, the implementation plan wins.
+
 Companion to `plans/cde_model_alignment_harmonized.md`, referred to below as **[H]**, whose phase numbers are referenced below. The pipeline was reviewed at `main` @ `fa7b977`, read-only. Its unmerged branches were checked for coupling only. **Revised 2026-10-01** against `data-models/main` after #262 merged (`c234c467`). The pipeline's `main` is unchanged since `fa7b977`.
 
 ## Verdict: the pipeline is broken now, and updates are required

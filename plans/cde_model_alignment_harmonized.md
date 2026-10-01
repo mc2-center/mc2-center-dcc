@@ -14,6 +14,14 @@
 - the owner's review notes on earlier revisions (decision log)
 - the merged synapseclient OOP migration and CLI consolidation plans
 
+**Implementation plans (executable specs, one per area):**
+- `plans/impl_dcc_14_alignment.md`: mc2-center-dcc code (D1–D15).
+- `plans/impl_synapse_14_infrastructure.md`: Synapse and infrastructure (I0–I11), including the grant-level manifest layer.
+- `plans/impl_ai_curation_pipeline_14.md`: ai-curation-pipeline (P0–P4).
+- data-models has `plans/data_models_cde_alignment.md` (DM items) plus GitHub issues #273 (DM-11 release), #274 (DM-13 CI) and #275 (DM-15).
+
+This master plan keeps the decisions, the reasoning, and the order across repos. **Where they disagree, the implementation plans win on detail.**
+
 **Structure:** section A covers data-models (work plan: `plans/data_models_cde_alignment.md`), section B the mc2-center-dcc code, and section C Synapse tables and operations. The cross-repo order and the checks follow.
 
 ## Context
@@ -134,6 +142,32 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 - `mc2dcc sync …` then moves the aligned code over.
 - `normalize_headers` and the crosswalk move to `cckp_metadata` and `mc2dcc/sync/_shared.py` respectively.
 
+### B10. The curation hand-off chain (from AI pipeline output to grant-level uploads)
+- **The pipeline writes one file per type covering all grants:**
+  - `publication_metadata.csv`: crawler-shaped 13.1.0 columns plus `keywords` and the `_…` bookkeeping columns.
+  - `datasets_publication_metadata.csv` and `tools_<stem>.xlsx`: already in 13.1.0 template shape.
+- **Then `annotations/` runs:**
+  1. `split_manifest_grants.py`: one file per grant. It fetches `all_valid_values.csv` from `main` without a pinned version, and reads only CSV.
+  2. `gen-mp-csv.py`: works out each file's target grant folder.
+  3. `processing-splits.py`: reshapes to a **hardcoded 13.1.0** column order with `df[col_order]`, which silently drops non-template columns; also applies the 500 → 400-character cap.
+  4. `schema_update.py`: changes grant-table column types.
+  5. `create_entity_links.py`: creates link or Dataset entities and fills the ID columns.
+  6. `upload-manifests.py`: `schematic submit -mrt table_and_file -tcn display_name` into the grant's data-type folder and its `*_synapse_storage_manifest_table`.
+- **What 14.0.0 breaks.** `processing-splits.py` raises `KeyError` on 14.0.0-shaped input. So the pipeline's template-exact output (P1) and the template-driven `processing-splits.py` (D8) ship together.
+- **`upload-workflow.sh` is already broken**, separate from 14.0.0: it passes a folder where a CSV is expected, and hardcodes past file names and a personal config path. Replacing it is D15.
+
+### B11. Grant-level layer, RecordSets and `merge_tables.py`
+- **Today.** There are 532 grant-level tables, all with identical 13.1.0 display-name schemas. That's what lets `merge_tables.py` build its `SELECT * UNION` MaterializedView per type. These tables have to move to 14.0.0 all at once for each type (infrastructure plan I5).
+- **RecordSets are the target (agreed), with caveats:**
+  - Synapse can't query them; no SQL or MaterializedView over a RecordSet. So unions are built in Python from the RecordSet CSVs (D12).
+  - Nothing uploads into them today; that's D11.
+  - Behavior when a new CSV version is stored (binding, curation task, Grid) is unverified; the infrastructure plan's I3 spike settles it, and gate G1 chooses between RecordSets and migrating the tables in place.
+- **Existing bugs in `merge_tables.py`'s RecordSet path** (fixed in D12):
+  - `SELECT 'grantId'` is a string literal, so it returns the text `grantId` for every row.
+  - Missing folders or RecordSets crash it.
+  - The per-grant mirror tables get a duplicate copy appended every run.
+  - `INFER_FROM_DATA` infers different column types per grant, which breaks the UNION.
+
 ### B9. AI curation pipeline (companion plan [C]): **now urgent**
 - **What's broken.** `ai-curation-pipeline` reads `data-models/main/mc2.model.jsonld` without a pinned version, asking for `Publication Assay`, `Publication Tissue` and `Publication Tumor Type`. Against the current `main` that returns **0** terms; `Assay`, `Tissue` and `Tumor Type` return 391, 114 and 186. **Every pipeline run since #262 merged produces empty or near-empty annotations, with no error.**
 - **P0 is now an incident fix:** the field-name fallback, a hard failure on an empty vocabulary, and a pinned model ref.
@@ -181,6 +215,12 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
   - Add `PersonView Key` and `Project Short Name`.
 - **PersonView syn38301033:** move to the PersonView template headers (`Consortium Key`, `GrantView Key`, `Institution Key`, …). Its columns are camelCase today.
 - **Dataset, publication, tool and education manifest CSVs:** syn53478774 (now `DatasetView_tagged_Assay_20261001.csv`), syn53478776, syn53479671 and syn53651540. Regenerate them with the 14.0.0 template headers. For datasets, `Data Use Codes` becomes `Dataset Data Use Codes`.
+
+### S2b. Grant-level manifest layer (see infrastructure plan I3, I5, I11)
+- **Spike first.** The RecordSet spike (I3) decides gate G1.
+- **G1 = RecordSets:** migrate each grant table to a bound `MC2Center_<Type>_RecordSet`, type by type, with the I8 value mappings applied (I5a). Then archive the old tables (I11).
+- **G1 = tables:** rename all 532 grant tables' columns in place with `schema_update.py`, one fixed schema per type, and rebuild the MaterializedViews (I5b).
+- **Either way,** the admin manifests (Grant, Project, PersonView) and the merged manifest files that the sync scripts read are regenerated with 14.0.0 headers (I6).
 
 ### S3. Bindings
 - Bind 14.0.0 to the RecordSets and folders that feed each manifest.
