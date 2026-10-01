@@ -35,6 +35,7 @@ def query_synapse_for_folder_info(
         Table(id="syn21918972")
         .query(
             query=f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972',
+            include_row_id_and_row_version=False,
             synapse_client=syn,
         )
         .fillna("")
@@ -44,6 +45,7 @@ def query_synapse_for_folder_info(
         Table(id="syn27210848")
         .query(
             query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId",
+            include_row_id_and_row_version=False,
             synapse_client=syn,
         )
         .fillna("")

@@ -109,7 +109,15 @@ def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool =
                 table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
     else:
         query = f"SELECT {cols} FROM {source_id}"
-        table = Table(id=source_id).query(query=query, synapse_client=syn).fillna("")
+        table = (
+            Table(id=source_id)
+            .query(
+                query=query,
+                include_row_id_and_row_version=False,
+                synapse_client=syn,
+            )
+            .fillna("")
+        )
     
     print(f"Data acquired from Synapse table {source_id}")
 
@@ -260,7 +268,11 @@ def apply_annotations_to_entity(
     converting new_annotations tuple to key:value pairs within the retrieved annotation object,
     storing modified annotation object in Synapse."""
 
-    entity = operations.get(entity_id, synapse_client=syn)
+    entity = operations.get(
+        entity_id,
+        file_options=operations.FileOptions(download_file=False),
+        synapse_client=syn,
+    )
     filtered_annotations = [
         tup
         for tup in new_annotations

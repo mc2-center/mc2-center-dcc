@@ -78,8 +78,12 @@ def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tu
     names = []
 
     for tableId in tableIdList:  # pull table from Synapse
-        table = Table(id=tableId).query(query=f"SELECT * FROM {tableId}", synapse_client=syn).fillna("")
-        name = table.iat[1, 0]  # grab name of data type from table, assumes "Component" is first column in table
+        table = Table(id=tableId).query(
+            query=f"SELECT * FROM {tableId}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        ).fillna("")
+        name = table["Component"].iat[1]  # grab name of data type from table (second row, as before)
         manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
         manifestPath.parent.mkdir(parents=True, exist_ok=True)  # create folder to store CSVs
         table.to_csv(manifestPath, index=False, lineterminator="\n")  # convert df to CSV
