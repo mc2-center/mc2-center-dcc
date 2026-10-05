@@ -46,7 +46,16 @@ def filter_updated_manifest(new_entries_df: pd.DataFrame, index_col: str, data_t
     for name, rows in index_groups.groups.items():
         row_to_keep = index_groups.get_group(name)
         if len(rows) > 1:
-            row_to_keep = row_to_keep[row_to_keep["Source"].isin(["Database"])]
+            # Prefer the corrected "Updated" row over the stale "Database"
+            # row - this previously kept "Database", which silently
+            # discarded every correction made to an existing publication's
+            # data on each run (confirmed: Accessibility, Tissue, and Assay
+            # fixes all reverted to their pre-correction values in the
+            # merged_corrected output). Fall back to "Database" only if no
+            # "Updated" row is present in the group, so a row is never
+            # dropped outright.
+            updated_rows = row_to_keep[row_to_keep["Source"].isin(["Updated"])]
+            row_to_keep = updated_rows if not updated_rows.empty else row_to_keep[row_to_keep["Source"].isin(["Database"])]
         else:
             if row_to_keep["Source"].isin(["Updated"]).all():
                 updated_entries_df = pd.concat([updated_entries_df, row_to_keep])
@@ -164,7 +173,14 @@ def main():
     
     index_col = index_col_dict.get(data_type)
 
-    database_df = pd.read_csv(database, keep_default_na=False, index_col=False)
+    # dtype=str matters here, not just for consistency: new_entries_df below
+    # is explicitly read as dtype=str, and update_database() aligns the two
+    # frames by setting index_col as the index on each. A numeric Pubmed Id
+    # column here (pandas' default inference, since every value looks like
+    # an int) vs a string Pubmed Id column there means DataFrame.update()
+    # can never match 40424361 (int) to "40424361" (str) - it silently
+    # no-ops for every row, regardless of which Source row was kept.
+    database_df = pd.read_csv(database, keep_default_na=False, index_col=False, dtype=str)
     print(f"\nDatabase read successfully!")
     
     if new_entries is not None:
