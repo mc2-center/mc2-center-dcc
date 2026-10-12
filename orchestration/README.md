@@ -5,6 +5,18 @@ scripts referenced below are expected to change soon, so this document
 describes the *stages and checkpoints* the eventual orchestrator needs to
 cover, not a pinned implementation against today's exact script names/args.
 
+**Relationship to the 14.0.0 cutover plans.** `plans/impl_ai_curation_pipeline_14.md`,
+`plans/impl_dcc_14_alignment.md` and `plans/impl_synapse_14_infrastructure.md`
+describe code and Synapse changes landing concurrently with this plan, several
+of which replace scripts named below. The notes in each phase point at the
+specific task; the biggest structural one is task **D15**, which replaces the
+~15-script manual Phase 2 with a single parameterized driver
+(`annotations/upload_workflow.py`) — once it lands, that driver *is* the
+orchestrator's Phase 2 stage, not something this plan re-wraps script-by-script.
+Phase 2's upload target (per-grant Synapse table vs. RecordSet) and Phase 3's
+validation method both depend on decision gate **G1** (infrastructure task I3),
+which is still open as of this writing.
+
 ## Goal
 
 Today, getting a new batch of publications/datasets/tools from
@@ -34,26 +46,52 @@ tooling built for it.
 ### Phase 2 — upload-workflow (`mc2-center-dcc/annotations/`)
 
 Gets new rows from Phase 1's output into Synapse's **per-grant source
-tables**. Run once per component (PublicationView / DatasetView / ToolView):
+tables**. Run once per component (PublicationView / DatasetView / ToolView).
+
+**Being replaced by task D15.** The scripts below are today's manual steps,
+still driven by the broken `upload-workflow.sh`. D15 collapses them into one
+command, `annotations/upload_workflow.py --manifest … --type … --out-dir …
+--target {recordset,schematic-table}`, which runs split → gen-mp-csv →
+processing-splits → create_entity_links → upload as a single call. The
+orchestrator's Phase 2 stage should shell out to that driver once it lands,
+rather than calling each script individually.
 
 1. `split_manifest_grants.py` — split the manifest by grant number into
-   per-grant CSVs.
+   per-grant CSVs. Splits on `GrantView Key` going forward, with a
+   deprecation-warning fallback to the legacy `Publication Grant Number`
+   (task D8). Also accepts the pipeline's `.xlsx` tool output directly.
 2. `gen-mp-csv.py` — read-only Synapse query; resolves each grant number to
    its target folder/project Synapse ID, produces a paths CSV.
 3. `processing-splits.py` — reformat each split file to match the target
-   table's column order/names.
+   table's column order/names. Column order now comes from
+   `model_contract.template_headers(component)` instead of 4 hardcoded
+   lists, legacy 13.1.0 headers are renamed through `RENAMES_13_TO_14` with a
+   warning, and every dropped column is logged rather than silently dropped
+   (task D8).
 4. *(`schema_update.py` is **not** part of the default flow — it only
    standardizes column types/sizes on already-existing columns in a
    per-grant table, writes directly to shared table schemas, and its own
    docs say it doesn't need to run every time. Only invoke it if a later
-   step reports a schema-type mismatch.)*
+   step reports a schema-type mismatch. It's also the tool the one-time
+   14.0.0 table migration uses, if that migration path is chosen — see
+   `--target schematic-table` below.)*
 5. `create_entity_links.py` — creates real Synapse entities (for
    DatasetView, full GEO/SRA Dataset entities via the `geo_synapse`
    pipeline; for ToolView, plain File link entities) and writes the
    resulting entity IDs back into each split file's primary-key column.
    Required for DatasetView/ToolView; not needed for PublicationView.
-6. `upload-manifests.py` — validates each split file against the model via
-   `schematic`, then submits (upserts) valid ones into the per-grant table.
+6. **Upload target (two paths, selected by `--target`):**
+   - **`schematic-table`** (today's path): `upload-manifests.py` validates
+     each split file against the model via `schematic`, then submits
+     (upserts) valid ones into the per-grant table. Kept until the
+     RecordSet migration is complete, with a deprecation notice.
+   - **`recordset`** (new, task D11; gated on decision **G1** from the
+     infrastructure RecordSet spike, I3): `annotations/upload_recordsets.py`
+     normalizes headers, upserts by primary key into the grant's
+     `MC2Center_<Component>_RecordSet`, stores a new version, and polls
+     Synapse's own `validation_summary` / `get_detailed_validation_results`
+     instead of shelling out to `schematic`. Defaults to `--dryrun`; a live
+     run needs `--execute`.
 
 ### Phase 3 — union-table sync (`mc2-center-dcc/portal_tables/` + `utils/`)
 
@@ -62,13 +100,20 @@ anything else that landed there independently) into the **live portal
 tables**. Run once per component:
 
 1. `merge_tables.py` — merges per-grant source tables into the component's
-   UNION table.
+   UNION table. Task D12 adds a RecordSet-based union mode (concatenates each
+   grant's RecordSet CSV, normalized back to display-name headers) alongside
+   the legacy table mode, and removes the legacy mode's per-grant mirror
+   tables, which were duplicating rows every run.
 2. `union_qc.py -m -s -db` — validates the UNION table against the live
    portal table and the QC model variant, producing `<component>_updated.csv`
-   (new/changed rows) and a validation log.
+   (new/changed rows) and a validation log. **Its `schematic` subprocess is
+   being removed** (infrastructure task I6): validation moves to Synapse's
+   own RecordSet validation results when Phase 2 is on the `recordset`
+   target, or to `jsonschema` against the registered 14.0.0 schemas
+   otherwise. Either way, `union_qc.py` no longer shells out to `schematic`.
 3. **Human review and correction** of `_updated.csv` against the validation
-   log, then a re-validation pass (`union_qc.py -tp <updated.csv>` or
-   `schematic model validate`) to confirm the fixes land.
+   log, then a re-validation pass (`union_qc.py -tp <updated.csv>`, using
+   whichever validation method step 2 used) to confirm the fixes land.
 4. `merge_and_correct_manifests.py` — folds `_updated.csv` into
    `<component>_merged.csv`, producing `<component>_merged_corrected.csv`.
 5. `build_tag_lists.py` — PublicationView and DatasetView only. Adds content
@@ -98,18 +143,25 @@ failing:
 
 Found while running this manually end-to-end on 2026-10-05:
 
-- **Environment**: scripts that shell out to `schematic` (e.g.
-  `upload-manifests.py`) need it on `PATH`. Invoking a venv's `python` by
-  absolute path does *not* put the venv's `bin/` on `PATH` for subprocesses —
-  only `source venv/bin/activate` does. The orchestrator must guarantee this
-  for every subprocess it spawns, not just the top-level process.
-- **Credentials for cross-manifest validation**: `schematic model validate`
-  needs real Synapse credentials to check cross-manifest references (e.g. a
-  DatasetView row's `PublicationView Key` actually existing). An interactive
-  `synapseclient.login()` in one process does not reliably propagate to a
-  `subprocess.run(["schematic", ...])` call in another. The orchestrator
-  needs to pass credentials through explicitly (e.g. `SYNAPSE_AUTH_TOKEN` in
-  the subprocess environment), not rely on ambient login state.
+- **Environment (transitional — `schematic-table` target only)**: scripts
+  that shell out to `schematic` (e.g. `upload-manifests.py`) need it on
+  `PATH`. Invoking a venv's `python` by absolute path does *not* put the
+  venv's `bin/` on `PATH` for subprocesses — only `source venv/bin/activate`
+  does. The orchestrator must guarantee this for every subprocess it spawns,
+  not just the top-level process, for as long as that target is in use.
+  Infrastructure task I6 removes `union_qc.py`'s `schematic` call outright,
+  and D11/G1 may remove `upload-manifests.py`'s as well once the RecordSet
+  migration is complete — at that point this gap no longer applies.
+- **Credentials for cross-manifest validation (transitional — same target)**:
+  `schematic model validate` needs real Synapse credentials to check
+  cross-manifest references (e.g. a DatasetView row's `PublicationView Key`
+  actually existing). An interactive `synapseclient.login()` in one process
+  does not reliably propagate to a `subprocess.run(["schematic", ...])` call
+  in another. Until I6/D11 land, the orchestrator needs to pass credentials
+  through explicitly (e.g. `SYNAPSE_AUTH_TOKEN` in the subprocess
+  environment), not rely on ambient login state. The RecordSet path replaces
+  this with Synapse's own `validation_summary` / `get_detailed_validation_results`
+  polling, run in-process with the same credentials as everything else.
 - **Empty link columns crash entity creation**: `create_entity_links.py`'s
   plain-link path (`create_links()`) has no handling for an empty
   `Tool Homepage` / link column — it will try to create a
@@ -152,3 +204,11 @@ glue. Each stage writes its output to a dated local folder (mirroring
 `ai-curation-pipeline`'s own `output/<date>/` convention) so every run is
 independently inspectable and a failed run can resume from the last
 completed stage rather than starting over.
+
+Task D15's `annotations/upload_workflow.py` is the first concrete piece of
+this shape to land — treat it as the Phase 2 stage once it's merged, rather
+than re-implementing a wrapper around the individual split/gen-mp-csv/
+processing-splits/create_entity_links/upload scripts it already chains. Its
+`--target` flag is also where this orchestrator should branch on decision
+gate G1 (RecordSets vs. in-place table migration) rather than carrying its
+own copy of that decision.
