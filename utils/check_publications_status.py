@@ -52,6 +52,17 @@ def get_args():
     parser.add_argument(
         "--send_email", type=str, nargs="+", help="Send email report to listed persons."
     )
+    parser.add_argument(
+        "--dryrun",
+        action="store_true",
+        help="Run the check and write the results CSV locally, but skip the "
+        "Synapse File upload and the email (sendMessage).",
+    )
+    parser.add_argument(
+        "--outdir",
+        default=".",
+        help="Directory for the local CSV written by --dryrun. (Default: .)",
+    )
     return parser.parse_args()
 
 
@@ -124,6 +135,23 @@ def main():
     ready_for_review = status_check(
         syn, args.portal_table, query, args.colname, email, PUBLICATION_DICT
     )
+
+    if args.dryrun:
+        os.makedirs(args.outdir, exist_ok=True)
+        output_file = os.path.join(
+            args.outdir, f"status_check_{datetime.today().strftime('%Y-%m-%d')}.csv"
+        )
+        ready_for_review.to_csv(output_file, index=False)
+        print(
+            f"[dryrun] {len(ready_for_review)} publications now Open Access; "
+            f"results written to {output_file}"
+        )
+        print(
+            f"[dryrun] Skipped: File upload to {args.folder_id}"
+            + (f", sendMessage to {args.send_email}" if args.send_email else "")
+        )
+        print("-- DONE --")
+        return
 
     file_id = upload_results(syn, ready_for_review, args.folder_id)
     print(f"Results ID: {file_id}")

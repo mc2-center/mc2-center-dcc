@@ -4,6 +4,8 @@ This script will get a count of themes across the grants and
 consortiums in the CCKP. (Based on James' `nbs/portal_summary.Rmd`)
 """
 
+import argparse
+import os
 import re
 
 from synapseclient import Synapse
@@ -138,8 +140,26 @@ def update_table(syn, table_id, updated_table):
     table.store_rows(values=updated_table, synapse_client=syn)
 
 
+def get_args():
+    """Set up command-line interface and get arguments."""
+    parser = argparse.ArgumentParser(description="Tally themes in portal tables.")
+    parser.add_argument(
+        "--dryrun",
+        action="store_true",
+        help="Compute and print the tallies and write local CSVs, but make no "
+        "Synapse writes (the three destination tables are not truncated or updated).",
+    )
+    parser.add_argument(
+        "--outdir",
+        default=".",
+        help="Directory for the local CSVs written by --dryrun. (Default: .)",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main function."""
+    args = get_args()
     syn = Synapse()
     syn.login(silent=True)
 
@@ -164,9 +184,23 @@ def main():
     theme_consortium_counts = tally_by_theme_consortium(grants, themes)
     theme_counts = tally_by_group(syn, themes)
 
-    update_table(syn, CONSORTIUM_CTS, consortium_counts)
-    update_table(syn, CON_THEME_CTS, theme_consortium_counts)
-    update_table(syn, THEME_CTS, theme_counts)
+    results = {
+        CONSORTIUM_CTS: ("consortium_counts", consortium_counts),
+        CON_THEME_CTS: ("theme_consortium_counts", theme_consortium_counts),
+        THEME_CTS: ("theme_counts", theme_counts),
+    }
+
+    if args.dryrun:
+        os.makedirs(args.outdir, exist_ok=True)
+        for table_id, (name, df) in results.items():
+            path = os.path.join(args.outdir, f"{name}.csv")
+            df.to_csv(path, index=False)
+            print(f"[dryrun] {name}: {len(df)} rows for {table_id} -> {path}")
+        print("[dryrun] No Synapse tables were updated.")
+        return
+
+    for table_id, (_, df) in results.items():
+        update_table(syn, table_id, df)
 
 
 if __name__ == "__main__":
