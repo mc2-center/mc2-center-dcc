@@ -1,0 +1,2505 @@
+{
+ "@graph": [
+  {
+   "@id": "bts:AlternativeNames",
+   "rdfs:label": "AlternativeNames",
+   "sms:displayName": "Alternative Names"
+  },
+  {
+   "@id": "bts:Assay",
+   "rdfs:label": "Assay",
+   "sms:displayName": "Assay"
+  },
+  {
+   "@id": "bts:BiospecimenAcquisitionMethod",
+   "rdfs:label": "BiospecimenAcquisitionMethod",
+   "sms:displayName": "Biospecimen Acquisition Method"
+  },
+  {
+   "@id": "bts:BiospecimenAgeatCollection",
+   "rdfs:label": "BiospecimenAgeatCollection",
+   "sms:displayName": "Biospecimen Age at Collection"
+  },
+  {
+   "@id": "bts:BiospecimenAgeatCollectionUnit",
+   "rdfs:label": "BiospecimenAgeatCollectionUnit",
+   "sms:displayName": "Biospecimen Age at Collection Unit"
+  },
+  {
+   "@id": "bts:BiospecimenAliquotMass",
+   "rdfs:label": "BiospecimenAliquotMass",
+   "sms:displayName": "Biospecimen Aliquot Mass"
+  },
+  {
+   "@id": "bts:BiospecimenAliquotVolume",
+   "rdfs:label": "BiospecimenAliquotVolume",
+   "sms:displayName": "Biospecimen Aliquot Volume"
+  },
+  {
+   "@id": "bts:BiospecimenAnatomicSite",
+   "rdfs:label": "BiospecimenAnatomicSite",
+   "sms:displayName": "Biospecimen Anatomic Site"
+  },
+  {
+   "@id": "bts:BiospecimenBioSampleIdentifier",
+   "rdfs:label": "BiospecimenBioSampleIdentifier",
+   "sms:displayName": "Biospecimen BioSample Identifier"
+  },
+  {
+   "@id": "bts:BiospecimenCollectionSite",
+   "rdfs:label": "BiospecimenCollectionSite",
+   "sms:displayName": "Biospecimen Collection Site"
+  },
+  {
+   "@id": "bts:BiospecimenComposition",
+   "rdfs:label": "BiospecimenComposition",
+   "sms:displayName": "Biospecimen Composition"
+  },
+  {
+   "@id": "bts:BiospecimenDaysfromDiagnosistoSpecimenCollection",
+   "rdfs:label": "BiospecimenDaysfromDiagnosistoSpecimenCollection",
+   "sms:displayName": "Biospecimen Days from Diagnosis to Specimen Collection"
+  },
+  {
+   "@id": "bts:BiospecimenDaysfromFirstSubjectVisittoSpecimenCollection",
+   "rdfs:label": "BiospecimenDaysfromFirstSubjectVisittoSpecimenCollection",
+   "sms:displayName": "Biospecimen Days from First Subject Visit to Specimen Collection"
+  },
+  {
+   "@id": "bts:BiospecimenDaysfromFirstTreatmenttoSpecimenCollection",
+   "rdfs:label": "BiospecimenDaysfromFirstTreatmenttoSpecimenCollection",
+   "sms:displayName": "Biospecimen Days from First Treatment to Specimen Collection"
+  },
+  {
+   "@id": "bts:BiospecimenDaysfromInitialGenomicSequencingtoSpecimenCollection",
+   "rdfs:label": "BiospecimenDaysfromInitialGenomicSequencingtoSpecimenCollection",
+   "sms:displayName": "Biospecimen Days from Initial Genomic Sequencing to Specimen Collection"
+  },
+  {
+   "@id": "bts:BiospecimenDaysfromRecurrencetoSpecimenCollection",
+   "rdfs:label": "BiospecimenDaysfromRecurrencetoSpecimenCollection",
+   "sms:displayName": "Biospecimen Days from Recurrence to Specimen Collection"
+  },
+  {
+   "@id": "bts:BiospecimenDaysfromSpecimenCollectiontoInitialPathologicDiagnosis",
+   "rdfs:label": "BiospecimenDaysfromSpecimenCollectiontoInitialPathologicDiagnosis",
+   "sms:displayName": "Biospecimen Days from Specimen Collection to Initial Pathologic Diagnosis"
+  },
+  {
+   "@id": "bts:BiospecimenDescription",
+   "rdfs:label": "BiospecimenDescription",
+   "sms:displayName": "Biospecimen Description"
+  },
+  {
+   "@id": "bts:BiospecimenEmbeddingMedium",
+   "rdfs:label": "BiospecimenEmbeddingMedium",
+   "sms:displayName": "Biospecimen Embedding Medium"
+  },
+  {
+   "@id": "bts:BiospecimenId",
+   "rdfs:label": "BiospecimenId",
+   "sms:displayName": "Biospecimen_id"
+  },
+  {
+   "@id": "bts:BiospecimenIncidenceType",
+   "rdfs:label": "BiospecimenIncidenceType",
+   "sms:displayName": "Biospecimen Incidence Type"
+  },
+  {
+   "@id": "bts:BiospecimenKey",
+   "rdfs:label": "BiospecimenKey",
+   "sms:displayName": "Biospecimen Key"
+  },
+  {
+   "@id": "bts:BiospecimenPreservationMedium",
+   "rdfs:label": "BiospecimenPreservationMedium",
+   "sms:displayName": "Biospecimen Preservation Medium"
+  },
+  {
+   "@id": "bts:BiospecimenPreservationMethod",
+   "rdfs:label": "BiospecimenPreservationMethod",
+   "sms:displayName": "Biospecimen Preservation Method"
+  },
+  {
+   "@id": "bts:BiospecimenPreservationTemperature",
+   "rdfs:label": "BiospecimenPreservationTemperature",
+   "sms:displayName": "Biospecimen Preservation Temperature"
+  },
+  {
+   "@id": "bts:BiospecimenSiteofResectionorBiopsy",
+   "rdfs:label": "BiospecimenSiteofResectionorBiopsy",
+   "sms:displayName": "Biospecimen Site of Resection or Biopsy"
+  },
+  {
+   "@id": "bts:BiospecimenStain",
+   "rdfs:label": "BiospecimenStain",
+   "sms:displayName": "Biospecimen Stain"
+  },
+  {
+   "@id": "bts:BiospecimenTaxonomyID",
+   "rdfs:label": "BiospecimenTaxonomyID",
+   "sms:displayName": "Biospecimen Taxonomy ID"
+  },
+  {
+   "@id": "bts:BiospecimenTimepointOffset",
+   "rdfs:label": "BiospecimenTimepointOffset",
+   "sms:displayName": "Biospecimen Timepoint Offset"
+  },
+  {
+   "@id": "bts:BiospecimenTimepointType",
+   "rdfs:label": "BiospecimenTimepointType",
+   "sms:displayName": "Biospecimen Timepoint Type"
+  },
+  {
+   "@id": "bts:BiospecimenTreatmentPriortoSpecimenCollectionIndicator",
+   "rdfs:label": "BiospecimenTreatmentPriortoSpecimenCollectionIndicator",
+   "sms:displayName": "Biospecimen Treatment Prior to Specimen Collection Indicator"
+  },
+  {
+   "@id": "bts:BiospecimenTumorMorphology",
+   "rdfs:label": "BiospecimenTumorMorphology",
+   "sms:displayName": "Biospecimen Tumor Morphology"
+  },
+  {
+   "@id": "bts:BiospecimenTumorStatus",
+   "rdfs:label": "BiospecimenTumorStatus",
+   "sms:displayName": "Biospecimen Tumor Status"
+  },
+  {
+   "@id": "bts:BiospecimenType",
+   "rdfs:label": "BiospecimenType",
+   "sms:displayName": "Biospecimen Type"
+  },
+  {
+   "@id": "bts:BiospecimenTypeCategory",
+   "rdfs:label": "BiospecimenTypeCategory",
+   "sms:displayName": "Biospecimen Type Category"
+  },
+  {
+   "@id": "bts:ChairRoles",
+   "rdfs:label": "ChairRoles",
+   "sms:displayName": "Chair Roles"
+  },
+  {
+   "@id": "bts:ChannelAntibodyCatalogNumber",
+   "rdfs:label": "ChannelAntibodyCatalogNumber",
+   "sms:displayName": "Channel Antibody Catalog Number"
+  },
+  {
+   "@id": "bts:ChannelAntibodyClone",
+   "rdfs:label": "ChannelAntibodyClone",
+   "sms:displayName": "Channel Antibody Clone"
+  },
+  {
+   "@id": "bts:ChannelAntibodyLot",
+   "rdfs:label": "ChannelAntibodyLot",
+   "sms:displayName": "Channel Antibody Lot"
+  },
+  {
+   "@id": "bts:ChannelAntibodyName",
+   "rdfs:label": "ChannelAntibodyName",
+   "sms:displayName": "Channel Antibody Name"
+  },
+  {
+   "@id": "bts:ChannelAntibodyRole",
+   "rdfs:label": "ChannelAntibodyRole",
+   "sms:displayName": "Channel Antibody Role"
+  },
+  {
+   "@id": "bts:ChannelAntibodyVendor",
+   "rdfs:label": "ChannelAntibodyVendor",
+   "sms:displayName": "Channel Antibody Vendor"
+  },
+  {
+   "@id": "bts:ChannelCycleNumber",
+   "rdfs:label": "ChannelCycleNumber",
+   "sms:displayName": "Channel Cycle Number"
+  },
+  {
+   "@id": "bts:ChannelEmissionBandwidth",
+   "rdfs:label": "ChannelEmissionBandwidth",
+   "sms:displayName": "Channel Emission Bandwidth"
+  },
+  {
+   "@id": "bts:ChannelEmissionWavelength",
+   "rdfs:label": "ChannelEmissionWavelength",
+   "sms:displayName": "Channel Emission Wavelength"
+  },
+  {
+   "@id": "bts:ChannelExcitationBandwidth",
+   "rdfs:label": "ChannelExcitationBandwidth",
+   "sms:displayName": "Channel Excitation Bandwidth"
+  },
+  {
+   "@id": "bts:ChannelExcitationWavelength",
+   "rdfs:label": "ChannelExcitationWavelength",
+   "sms:displayName": "Channel Excitation Wavelength"
+  },
+  {
+   "@id": "bts:ChannelFluorophore",
+   "rdfs:label": "ChannelFluorophore",
+   "sms:displayName": "Channel Fluorophore"
+  },
+  {
+   "@id": "bts:ChannelIdentifier",
+   "rdfs:label": "ChannelIdentifier",
+   "sms:displayName": "Channel Identifier"
+  },
+  {
+   "@id": "bts:ChannelMetalIsotope",
+   "rdfs:label": "ChannelMetalIsotope",
+   "sms:displayName": "Channel Metal Isotope"
+  },
+  {
+   "@id": "bts:ChannelMetalSymbol",
+   "rdfs:label": "ChannelMetalSymbol",
+   "sms:displayName": "Channel Metal Symbol"
+  },
+  {
+   "@id": "bts:ChannelName",
+   "rdfs:label": "ChannelName",
+   "sms:displayName": "Channel Name"
+  },
+  {
+   "@id": "bts:ChannelOligoBarcodeLowerStrand",
+   "rdfs:label": "ChannelOligoBarcodeLowerStrand",
+   "sms:displayName": "Channel Oligo Barcode Lower Strand"
+  },
+  {
+   "@id": "bts:ChannelOligoBarcodeUpperStrand",
+   "rdfs:label": "ChannelOligoBarcodeUpperStrand",
+   "sms:displayName": "Channel Oligo Barcode Upper Strand"
+  },
+  {
+   "@id": "bts:ChannelPassedQC",
+   "rdfs:label": "ChannelPassedQC",
+   "sms:displayName": "Channel Passed QC"
+  },
+  {
+   "@id": "bts:ChannelProbeConcentration",
+   "rdfs:label": "ChannelProbeConcentration",
+   "sms:displayName": "Channel Probe Concentration"
+  },
+  {
+   "@id": "bts:ChannelProbeDilutionRatio",
+   "rdfs:label": "ChannelProbeDilutionRatio",
+   "sms:displayName": "Channel Probe Dilution Ratio"
+  },
+  {
+   "@id": "bts:ChannelResourceID",
+   "rdfs:label": "ChannelResourceID",
+   "sms:displayName": "Channel Resource ID"
+  },
+  {
+   "@id": "bts:ChannelSub-cycleNumber",
+   "rdfs:label": "ChannelSub-cycleNumber",
+   "sms:displayName": "Channel Sub-cycle Number"
+  },
+  {
+   "@id": "bts:ChannelTargetName",
+   "rdfs:label": "ChannelTargetName",
+   "sms:displayName": "Channel Target Name"
+  },
+  {
+   "@id": "bts:ConsentForPortalDisplay",
+   "rdfs:label": "ConsentForPortalDisplay",
+   "sms:displayName": "Consent For Portal Display"
+  },
+  {
+   "@id": "bts:Consortium",
+   "rdfs:label": "Consortium",
+   "sms:displayName": "Consortium",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ConsortiumId"
+    },
+    {
+     "@id": "bts:ConsortiumName"
+    },
+    {
+     "@id": "bts:ConsortiumDisplayName"
+    },
+    {
+     "@id": "bts:ConsortiumFullName"
+    },
+    {
+     "@id": "bts:ConsortiumDescription"
+    },
+    {
+     "@id": "bts:ConsortiumFundingAgency"
+    },
+    {
+     "@id": "bts:Website"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ConsortiumDescription",
+   "rdfs:label": "ConsortiumDescription",
+   "sms:displayName": "Consortium Description"
+  },
+  {
+   "@id": "bts:ConsortiumDisplayName",
+   "rdfs:label": "ConsortiumDisplayName",
+   "sms:displayName": "Consortium Display Name"
+  },
+  {
+   "@id": "bts:ConsortiumFullName",
+   "rdfs:label": "ConsortiumFullName",
+   "sms:displayName": "Consortium Full Name"
+  },
+  {
+   "@id": "bts:ConsortiumFundingAgency",
+   "rdfs:label": "ConsortiumFundingAgency",
+   "sms:displayName": "Consortium Funding Agency"
+  },
+  {
+   "@id": "bts:ConsortiumId",
+   "rdfs:label": "ConsortiumId",
+   "sms:displayName": "Consortium_id"
+  },
+  {
+   "@id": "bts:ConsortiumKey",
+   "rdfs:label": "ConsortiumKey",
+   "sms:displayName": "Consortium Key"
+  },
+  {
+   "@id": "bts:ConsortiumName",
+   "rdfs:label": "ConsortiumName",
+   "sms:displayName": "Consortium Name"
+  },
+  {
+   "@id": "bts:DSPDataUseCodes",
+   "rdfs:label": "DSPDataUseCodes",
+   "sms:displayName": "DSP Data Use Codes"
+  },
+  {
+   "@id": "bts:DSPDatasetAlias",
+   "rdfs:label": "DSPDatasetAlias",
+   "sms:displayName": "DSP Dataset Alias"
+  },
+  {
+   "@id": "bts:DSPDatasetAssay",
+   "rdfs:label": "DSPDatasetAssay",
+   "sms:displayName": "DSP Dataset Assay"
+  },
+  {
+   "@id": "bts:DSPDatasetDescription",
+   "rdfs:label": "DSPDatasetDescription",
+   "sms:displayName": "DSP Dataset Description"
+  },
+  {
+   "@id": "bts:DSPDatasetDestination",
+   "rdfs:label": "DSPDatasetDestination",
+   "sms:displayName": "DSP Dataset Destination"
+  },
+  {
+   "@id": "bts:DSPDatasetFileFormats",
+   "rdfs:label": "DSPDatasetFileFormats",
+   "sms:displayName": "DSP Dataset File Formats"
+  },
+  {
+   "@id": "bts:DSPDatasetLevel",
+   "rdfs:label": "DSPDatasetLevel",
+   "sms:displayName": "DSP Dataset Level"
+  },
+  {
+   "@id": "bts:DSPDatasetMetadata",
+   "rdfs:label": "DSPDatasetMetadata",
+   "sms:displayName": "DSP Dataset Metadata"
+  },
+  {
+   "@id": "bts:DSPDatasetName",
+   "rdfs:label": "DSPDatasetName",
+   "sms:displayName": "DSP Dataset Name"
+  },
+  {
+   "@id": "bts:DSPDatasetSpecies",
+   "rdfs:label": "DSPDatasetSpecies",
+   "sms:displayName": "DSP Dataset Species"
+  },
+  {
+   "@id": "bts:DSPDatasetTissue",
+   "rdfs:label": "DSPDatasetTissue",
+   "sms:displayName": "DSP Dataset Tissue"
+  },
+  {
+   "@id": "bts:DSPDatasetTumorType",
+   "rdfs:label": "DSPDatasetTumorType",
+   "sms:displayName": "DSP Dataset Tumor Type"
+  },
+  {
+   "@id": "bts:DSPDatasetUrl",
+   "rdfs:label": "DSPDatasetUrl",
+   "sms:displayName": "DSP Dataset Url"
+  },
+  {
+   "@id": "bts:DSPIRBForm",
+   "rdfs:label": "DSPIRBForm",
+   "sms:displayName": "DSP IRB Form"
+  },
+  {
+   "@id": "bts:DSPNumberofFiles",
+   "rdfs:label": "DSPNumberofFiles",
+   "sms:displayName": "DSP Number of Files"
+  },
+  {
+   "@id": "bts:DSPNumberofParticipants",
+   "rdfs:label": "DSPNumberofParticipants",
+   "sms:displayName": "DSP Number of Participants"
+  },
+  {
+   "@id": "bts:DSPNumberofSamples",
+   "rdfs:label": "DSPNumberofSamples",
+   "sms:displayName": "DSP Number of Samples"
+  },
+  {
+   "@id": "bts:DSPPlannedReleaseDate",
+   "rdfs:label": "DSPPlannedReleaseDate",
+   "sms:displayName": "DSP Planned Release Date"
+  },
+  {
+   "@id": "bts:DSPPlannedUploadDate",
+   "rdfs:label": "DSPPlannedUploadDate",
+   "sms:displayName": "DSP Planned Upload Date"
+  },
+  {
+   "@id": "bts:DSPStorageSize",
+   "rdfs:label": "DSPStorageSize",
+   "sms:displayName": "DSP Storage Size"
+  },
+  {
+   "@id": "bts:DataDSPId",
+   "rdfs:label": "DataDSPId",
+   "sms:displayName": "DataDSP_id"
+  },
+  {
+   "@id": "bts:DataUseCodes",
+   "rdfs:label": "DataUseCodes",
+   "sms:displayName": "Data Use Codes"
+  },
+  {
+   "@id": "bts:DatasetAlias",
+   "rdfs:label": "DatasetAlias",
+   "sms:displayName": "Dataset Alias"
+  },
+  {
+   "@id": "bts:DatasetDataUseCodes",
+   "rdfs:label": "DatasetDataUseCodes",
+   "sms:displayName": "Dataset Data Use Codes"
+  },
+  {
+   "@id": "bts:DatasetDescription",
+   "rdfs:label": "DatasetDescription",
+   "sms:displayName": "Dataset Description"
+  },
+  {
+   "@id": "bts:DatasetDesign",
+   "rdfs:label": "DatasetDesign",
+   "sms:displayName": "Dataset Design"
+  },
+  {
+   "@id": "bts:DatasetDoi",
+   "rdfs:label": "DatasetDoi",
+   "sms:displayName": "Dataset Doi"
+  },
+  {
+   "@id": "bts:DatasetFileFormats",
+   "rdfs:label": "DatasetFileFormats",
+   "sms:displayName": "Dataset File Formats"
+  },
+  {
+   "@id": "bts:DatasetName",
+   "rdfs:label": "DatasetName",
+   "sms:displayName": "Dataset Name"
+  },
+  {
+   "@id": "bts:DatasetUrl",
+   "rdfs:label": "DatasetUrl",
+   "sms:displayName": "Dataset Url"
+  },
+  {
+   "@id": "bts:DatasetViewId",
+   "rdfs:label": "DatasetViewId",
+   "sms:displayName": "DatasetView_id"
+  },
+  {
+   "@id": "bts:DatasetViewKey",
+   "rdfs:label": "DatasetViewKey",
+   "sms:displayName": "DatasetView Key"
+  },
+  {
+   "@id": "bts:DaystoTreatment",
+   "rdfs:label": "DaystoTreatment",
+   "sms:displayName": "Days to Treatment"
+  },
+  {
+   "@id": "bts:DiseaseType",
+   "rdfs:label": "DiseaseType",
+   "sms:displayName": "Disease Type"
+  },
+  {
+   "@id": "bts:DurationofFunding",
+   "rdfs:label": "DurationofFunding",
+   "sms:displayName": "Duration of Funding"
+  },
+  {
+   "@id": "bts:EducationalResourceId",
+   "rdfs:label": "EducationalResourceId",
+   "sms:displayName": "EducationalResource_id"
+  },
+  {
+   "@id": "bts:Email",
+   "rdfs:label": "Email",
+   "sms:displayName": "Email"
+  },
+  {
+   "@id": "bts:EmbargoEndDate",
+   "rdfs:label": "EmbargoEndDate",
+   "sms:displayName": "Embargo End Date"
+  },
+  {
+   "@id": "bts:FileAlias",
+   "rdfs:label": "FileAlias",
+   "sms:displayName": "File Alias"
+  },
+  {
+   "@id": "bts:FileAssayCategory",
+   "rdfs:label": "FileAssayCategory",
+   "sms:displayName": "File Assay Category"
+  },
+  {
+   "@id": "bts:FileBatchIdentifier",
+   "rdfs:label": "FileBatchIdentifier",
+   "sms:displayName": "File Batch Identifier"
+  },
+  {
+   "@id": "bts:FileDataCategory",
+   "rdfs:label": "FileDataCategory",
+   "sms:displayName": "File Data Category"
+  },
+  {
+   "@id": "bts:FileDataChecksumType",
+   "rdfs:label": "FileDataChecksumType",
+   "sms:displayName": "File Data Checksum Type"
+  },
+  {
+   "@id": "bts:FileDataChecksumValue",
+   "rdfs:label": "FileDataChecksumValue",
+   "sms:displayName": "File Data Checksum Value"
+  },
+  {
+   "@id": "bts:FileDataCompressionStatus",
+   "rdfs:label": "FileDataCompressionStatus",
+   "sms:displayName": "File Data Compression Status"
+  },
+  {
+   "@id": "bts:FileDataSize",
+   "rdfs:label": "FileDataSize",
+   "sms:displayName": "File Data Size"
+  },
+  {
+   "@id": "bts:FileDescription",
+   "rdfs:label": "FileDescription",
+   "sms:displayName": "File Description"
+  },
+  {
+   "@id": "bts:FileDesign",
+   "rdfs:label": "FileDesign",
+   "sms:displayName": "File Design"
+  },
+  {
+   "@id": "bts:FileFormat",
+   "rdfs:label": "FileFormat",
+   "sms:displayName": "File Format"
+  },
+  {
+   "@id": "bts:FileLevel",
+   "rdfs:label": "FileLevel",
+   "sms:displayName": "File Level"
+  },
+  {
+   "@id": "bts:FileLongitudinalEventType",
+   "rdfs:label": "FileLongitudinalEventType",
+   "sms:displayName": "File Longitudinal Event Type"
+  },
+  {
+   "@id": "bts:FileLongitudinalGroup",
+   "rdfs:label": "FileLongitudinalGroup",
+   "sms:displayName": "File Longitudinal Group"
+  },
+  {
+   "@id": "bts:FileLongitudinalSequenceIdentifier",
+   "rdfs:label": "FileLongitudinalSequenceIdentifier",
+   "sms:displayName": "File Longitudinal Sequence Identifier"
+  },
+  {
+   "@id": "bts:FileLongitudinalTimeElapsedUnit",
+   "rdfs:label": "FileLongitudinalTimeElapsedUnit",
+   "sms:displayName": "File Longitudinal Time Elapsed Unit"
+  },
+  {
+   "@id": "bts:FileLongitudinalTotalTimeElapsed",
+   "rdfs:label": "FileLongitudinalTotalTimeElapsed",
+   "sms:displayName": "File Longitudinal Total Time Elapsed"
+  },
+  {
+   "@id": "bts:FileUrl",
+   "rdfs:label": "FileUrl",
+   "sms:displayName": "File Url"
+  },
+  {
+   "@id": "bts:FileViewId",
+   "rdfs:label": "FileViewId",
+   "sms:displayName": "FileView_id"
+  },
+  {
+   "@id": "bts:Filename",
+   "rdfs:label": "Filename",
+   "sms:displayName": "Filename"
+  },
+  {
+   "@id": "bts:GenomeAnnotationURL",
+   "rdfs:label": "GenomeAnnotationURL",
+   "sms:displayName": "Genome Annotation URL"
+  },
+  {
+   "@id": "bts:GenomicReference",
+   "rdfs:label": "GenomicReference",
+   "sms:displayName": "Genomic Reference"
+  },
+  {
+   "@id": "bts:GenomicReferenceURL",
+   "rdfs:label": "GenomicReferenceURL",
+   "sms:displayName": "Genomic Reference URL"
+  },
+  {
+   "@id": "bts:GeoMxAOIName",
+   "rdfs:label": "GeoMxAOIName",
+   "sms:displayName": "GeoMx AOI Name"
+  },
+  {
+   "@id": "bts:GeoMxAOIXCoordinate",
+   "rdfs:label": "GeoMxAOIXCoordinate",
+   "sms:displayName": "GeoMx AOI X Coordinate"
+  },
+  {
+   "@id": "bts:GeoMxAOIYCoordinate",
+   "rdfs:label": "GeoMxAOIYCoordinate",
+   "sms:displayName": "GeoMx AOI Y Coordinate"
+  },
+  {
+   "@id": "bts:GeoMxBindingDensity",
+   "rdfs:label": "GeoMxBindingDensity",
+   "sms:displayName": "GeoMx Binding Density"
+  },
+  {
+   "@id": "bts:GeoMxDSPAssayType",
+   "rdfs:label": "GeoMxDSPAssayType",
+   "sms:displayName": "GeoMx DSP Assay Type"
+  },
+  {
+   "@id": "bts:GeoMxExcludedOutlierProbes",
+   "rdfs:label": "GeoMxExcludedOutlierProbes",
+   "sms:displayName": "GeoMx Excluded Outlier Probes"
+  },
+  {
+   "@id": "bts:GeoMxImagingAOICoordinates",
+   "rdfs:label": "GeoMxImagingAOICoordinates",
+   "sms:displayName": "GeoMx Imaging AOI Coordinates"
+  },
+  {
+   "@id": "bts:GeoMxImagingChannelNames",
+   "rdfs:label": "GeoMxImagingChannelNames",
+   "sms:displayName": "GeoMx Imaging Channel Names"
+  },
+  {
+   "@id": "bts:GeoMxLimitofQuantification",
+   "rdfs:label": "GeoMxLimitofQuantification",
+   "sms:displayName": "GeoMx Limit of Quantification"
+  },
+  {
+   "@id": "bts:GeoMxNegativecountmean",
+   "rdfs:label": "GeoMxNegativecountmean",
+   "sms:displayName": "GeoMx Negative count mean"
+  },
+  {
+   "@id": "bts:GeoMxNoTemplateControlcount",
+   "rdfs:label": "GeoMxNoTemplateControlcount",
+   "sms:displayName": "GeoMx No Template Control count"
+  },
+  {
+   "@id": "bts:GeoMxNucleicount",
+   "rdfs:label": "GeoMxNucleicount",
+   "sms:displayName": "GeoMx Nuclei count"
+  },
+  {
+   "@id": "bts:GeoMxPositivenormfactor",
+   "rdfs:label": "GeoMxPositivenormfactor",
+   "sms:displayName": "GeoMx Positive norm factor"
+  },
+  {
+   "@id": "bts:GeoMxQCstatus",
+   "rdfs:label": "GeoMxQCstatus",
+   "sms:displayName": "GeoMx QC status"
+  },
+  {
+   "@id": "bts:GeoMxROIName",
+   "rdfs:label": "GeoMxROIName",
+   "sms:displayName": "GeoMx ROI Name"
+  },
+  {
+   "@id": "bts:GeoMxROIXCoordinate",
+   "rdfs:label": "GeoMxROIXCoordinate",
+   "sms:displayName": "GeoMx ROI X Coordinate"
+  },
+  {
+   "@id": "bts:GeoMxROIYCoordinate",
+   "rdfs:label": "GeoMxROIYCoordinate",
+   "sms:displayName": "GeoMx ROI Y Coordinate"
+  },
+  {
+   "@id": "bts:GeoMxScanHeight",
+   "rdfs:label": "GeoMxScanHeight",
+   "sms:displayName": "GeoMx Scan Height"
+  },
+  {
+   "@id": "bts:GeoMxScanOffsetX",
+   "rdfs:label": "GeoMxScanOffsetX",
+   "sms:displayName": "GeoMx Scan Offset X"
+  },
+  {
+   "@id": "bts:GeoMxScanOffsetY",
+   "rdfs:label": "GeoMxScanOffsetY",
+   "sms:displayName": "GeoMx Scan Offset Y"
+  },
+  {
+   "@id": "bts:GeoMxScanWidth",
+   "rdfs:label": "GeoMxScanWidth",
+   "sms:displayName": "GeoMx Scan Width"
+  },
+  {
+   "@id": "bts:GeoMxScanname",
+   "rdfs:label": "GeoMxScanname",
+   "sms:displayName": "GeoMx Scan name"
+  },
+  {
+   "@id": "bts:GeoMxSlidename",
+   "rdfs:label": "GeoMxSlidename",
+   "sms:displayName": "GeoMx Slide name"
+  },
+  {
+   "@id": "bts:GeoMxSurfacearea",
+   "rdfs:label": "GeoMxSurfacearea",
+   "sms:displayName": "GeoMx Surface area"
+  },
+  {
+   "@id": "bts:GeoMxTags",
+   "rdfs:label": "GeoMxTags",
+   "sms:displayName": "GeoMx Tags"
+  },
+  {
+   "@id": "bts:GeoMxTissueStain",
+   "rdfs:label": "GeoMxTissueStain",
+   "sms:displayName": "GeoMx Tissue Stain"
+  },
+  {
+   "@id": "bts:GrantAbstract",
+   "rdfs:label": "GrantAbstract",
+   "sms:displayName": "Grant Abstract"
+  },
+  {
+   "@id": "bts:GrantEndDate",
+   "rdfs:label": "GrantEndDate",
+   "sms:displayName": "Grant End Date"
+  },
+  {
+   "@id": "bts:GrantInstitutionAlias",
+   "rdfs:label": "GrantInstitutionAlias",
+   "sms:displayName": "Grant Institution Alias"
+  },
+  {
+   "@id": "bts:GrantInstitutionName",
+   "rdfs:label": "GrantInstitutionName",
+   "sms:displayName": "Grant Institution Name"
+  },
+  {
+   "@id": "bts:GrantName",
+   "rdfs:label": "GrantName",
+   "sms:displayName": "Grant Name"
+  },
+  {
+   "@id": "bts:GrantNumber",
+   "rdfs:label": "GrantNumber",
+   "sms:displayName": "Grant Number"
+  },
+  {
+   "@id": "bts:GrantStartDate",
+   "rdfs:label": "GrantStartDate",
+   "sms:displayName": "Grant Start Date"
+  },
+  {
+   "@id": "bts:GrantSynapseProject",
+   "rdfs:label": "GrantSynapseProject",
+   "sms:displayName": "Grant Synapse Project"
+  },
+  {
+   "@id": "bts:GrantSynapseTeam",
+   "rdfs:label": "GrantSynapseTeam",
+   "sms:displayName": "Grant Synapse Team"
+  },
+  {
+   "@id": "bts:GrantThemeName",
+   "rdfs:label": "GrantThemeName",
+   "sms:displayName": "Grant Theme Name"
+  },
+  {
+   "@id": "bts:GrantType",
+   "rdfs:label": "GrantType",
+   "sms:displayName": "Grant Type"
+  },
+  {
+   "@id": "bts:GrantViewId",
+   "rdfs:label": "GrantViewId",
+   "sms:displayName": "GrantView_id"
+  },
+  {
+   "@id": "bts:GrantViewKey",
+   "rdfs:label": "GrantViewKey",
+   "sms:displayName": "GrantView Key"
+  },
+  {
+   "@id": "bts:ICD-10-CMDiseaseCode",
+   "rdfs:label": "ICD-10-CMDiseaseCode",
+   "sms:displayName": "ICD-10-CM Disease Code"
+  },
+  {
+   "@id": "bts:ImageAssayType",
+   "rdfs:label": "ImageAssayType",
+   "sms:displayName": "Image Assay Type"
+  },
+  {
+   "@id": "bts:ImageChannelSize",
+   "rdfs:label": "ImageChannelSize",
+   "sms:displayName": "Image Channel Size"
+  },
+  {
+   "@id": "bts:ImageDICOMModalityType",
+   "rdfs:label": "ImageDICOMModalityType",
+   "sms:displayName": "Image DICOM Modality Type"
+  },
+  {
+   "@id": "bts:ImageDimensionOrder",
+   "rdfs:label": "ImageDimensionOrder",
+   "sms:displayName": "Image Dimension Order"
+  },
+  {
+   "@id": "bts:ImageFOVIndex",
+   "rdfs:label": "ImageFOVIndex",
+   "sms:displayName": "Image FOV Index"
+  },
+  {
+   "@id": "bts:ImageFOVSizeX",
+   "rdfs:label": "ImageFOVSizeX",
+   "sms:displayName": "Image FOV Size X"
+  },
+  {
+   "@id": "bts:ImageFOVSizeXUnit",
+   "rdfs:label": "ImageFOVSizeXUnit",
+   "sms:displayName": "Image FOV Size X Unit"
+  },
+  {
+   "@id": "bts:ImageFOVSizeY",
+   "rdfs:label": "ImageFOVSizeY",
+   "sms:displayName": "Image FOV Size Y"
+  },
+  {
+   "@id": "bts:ImageFOVSizeYUnit",
+   "rdfs:label": "ImageFOVSizeYUnit",
+   "sms:displayName": "Image FOV Size Y Unit"
+  },
+  {
+   "@id": "bts:ImageFrameAveraging",
+   "rdfs:label": "ImageFrameAveraging",
+   "sms:displayName": "Image Frame Averaging"
+  },
+  {
+   "@id": "bts:ImageIdentifier",
+   "rdfs:label": "ImageIdentifier",
+   "sms:displayName": "Image Identifier"
+  },
+  {
+   "@id": "bts:ImageImmersionType",
+   "rdfs:label": "ImageImmersionType",
+   "sms:displayName": "Image Immersion Type"
+  },
+  {
+   "@id": "bts:ImageLenseAperture",
+   "rdfs:label": "ImageLenseAperture",
+   "sms:displayName": "Image Lense Aperture"
+  },
+  {
+   "@id": "bts:ImageNominalMagnification",
+   "rdfs:label": "ImageNominalMagnification",
+   "sms:displayName": "Image Nominal Magnification"
+  },
+  {
+   "@id": "bts:ImageNumberofFeatures",
+   "rdfs:label": "ImageNumberofFeatures",
+   "sms:displayName": "Image Number of Features"
+  },
+  {
+   "@id": "bts:ImageNumberofObjects",
+   "rdfs:label": "ImageNumberofObjects",
+   "sms:displayName": "Image Number of Objects"
+  },
+  {
+   "@id": "bts:ImageNumberofTimepoints",
+   "rdfs:label": "ImageNumberofTimepoints",
+   "sms:displayName": "Image Number of Timepoints"
+  },
+  {
+   "@id": "bts:ImageObjectClass",
+   "rdfs:label": "ImageObjectClass",
+   "sms:displayName": "Image Object Class"
+  },
+  {
+   "@id": "bts:ImageObjectClassDescription",
+   "rdfs:label": "ImageObjectClassDescription",
+   "sms:displayName": "Image Object Class Description"
+  },
+  {
+   "@id": "bts:ImageObjective",
+   "rdfs:label": "ImageObjective",
+   "sms:displayName": "Image Objective"
+  },
+  {
+   "@id": "bts:ImageParameterfile",
+   "rdfs:label": "ImageParameterfile",
+   "sms:displayName": "Image Parameter file"
+  },
+  {
+   "@id": "bts:ImagePhysicalSizeX",
+   "rdfs:label": "ImagePhysicalSizeX",
+   "sms:displayName": "Image Physical Size X"
+  },
+  {
+   "@id": "bts:ImagePhysicalSizeXUnit",
+   "rdfs:label": "ImagePhysicalSizeXUnit",
+   "sms:displayName": "Image Physical Size X Unit"
+  },
+  {
+   "@id": "bts:ImagePhysicalSizeY",
+   "rdfs:label": "ImagePhysicalSizeY",
+   "sms:displayName": "Image Physical Size Y"
+  },
+  {
+   "@id": "bts:ImagePhysicalSizeYUnit",
+   "rdfs:label": "ImagePhysicalSizeYUnit",
+   "sms:displayName": "Image Physical Size Y Unit"
+  },
+  {
+   "@id": "bts:ImagePhysicalSizeZ",
+   "rdfs:label": "ImagePhysicalSizeZ",
+   "sms:displayName": "Image Physical Size Z"
+  },
+  {
+   "@id": "bts:ImagePhysicalSizeZUnit",
+   "rdfs:label": "ImagePhysicalSizeZUnit",
+   "sms:displayName": "Image Physical Size Z Unit"
+  },
+  {
+   "@id": "bts:ImagePixelType",
+   "rdfs:label": "ImagePixelType",
+   "sms:displayName": "Image Pixel Type"
+  },
+  {
+   "@id": "bts:ImagePixelsBigEndian",
+   "rdfs:label": "ImagePixelsBigEndian",
+   "sms:displayName": "Image Pixels BigEndian"
+  },
+  {
+   "@id": "bts:ImagePlaneCount",
+   "rdfs:label": "ImagePlaneCount",
+   "sms:displayName": "Image Plane Count"
+  },
+  {
+   "@id": "bts:ImagePlatformManufacturer",
+   "rdfs:label": "ImagePlatformManufacturer",
+   "sms:displayName": "Image Platform Manufacturer"
+  },
+  {
+   "@id": "bts:ImagePlatformModel",
+   "rdfs:label": "ImagePlatformModel",
+   "sms:displayName": "Image Platform Model"
+  },
+  {
+   "@id": "bts:ImagePlatformModelVersion",
+   "rdfs:label": "ImagePlatformModelVersion",
+   "sms:displayName": "Image Platform Model Version"
+  },
+  {
+   "@id": "bts:ImageProtocolLink",
+   "rdfs:label": "ImageProtocolLink",
+   "sms:displayName": "Image Protocol Link"
+  },
+  {
+   "@id": "bts:ImagePyramidal",
+   "rdfs:label": "ImagePyramidal",
+   "sms:displayName": "Image Pyramidal"
+  },
+  {
+   "@id": "bts:ImageSegmentationDataType",
+   "rdfs:label": "ImageSegmentationDataType",
+   "sms:displayName": "Image Segmentation Data Type"
+  },
+  {
+   "@id": "bts:ImageSoftware",
+   "rdfs:label": "ImageSoftware",
+   "sms:displayName": "Image Software"
+  },
+  {
+   "@id": "bts:ImageSummaryStatistic",
+   "rdfs:label": "ImageSummaryStatistic",
+   "sms:displayName": "Image Summary Statistic"
+  },
+  {
+   "@id": "bts:ImageTimeseries",
+   "rdfs:label": "ImageTimeseries",
+   "sms:displayName": "Image Timeseries"
+  },
+  {
+   "@id": "bts:ImageWorkingDistance",
+   "rdfs:label": "ImageWorkingDistance",
+   "sms:displayName": "Image Working Distance"
+  },
+  {
+   "@id": "bts:ImageWorkingDistanceUnit",
+   "rdfs:label": "ImageWorkingDistanceUnit",
+   "sms:displayName": "Image Working Distance Unit"
+  },
+  {
+   "@id": "bts:ImageXPixels",
+   "rdfs:label": "ImageXPixels",
+   "sms:displayName": "Image X Pixels"
+  },
+  {
+   "@id": "bts:ImageYPixels",
+   "rdfs:label": "ImageYPixels",
+   "sms:displayName": "Image Y Pixels"
+  },
+  {
+   "@id": "bts:ImageZPixels",
+   "rdfs:label": "ImageZPixels",
+   "sms:displayName": "Image Z Pixels"
+  },
+  {
+   "@id": "bts:ImageZstack",
+   "rdfs:label": "ImageZstack",
+   "sms:displayName": "Image Z stack"
+  },
+  {
+   "@id": "bts:ImagingChannelId",
+   "rdfs:label": "ImagingChannelId",
+   "sms:displayName": "ImagingChannel_id"
+  },
+  {
+   "@id": "bts:ImagingChannelKey",
+   "rdfs:label": "ImagingChannelKey",
+   "sms:displayName": "ImagingChannel Key"
+  },
+  {
+   "@id": "bts:ImagingLevel1Id",
+   "rdfs:label": "ImagingLevel1Id",
+   "sms:displayName": "ImagingLevel1_id"
+  },
+  {
+   "@id": "bts:ImagingLevel1Key",
+   "rdfs:label": "ImagingLevel1Key",
+   "sms:displayName": "ImagingLevel1 Key"
+  },
+  {
+   "@id": "bts:ImagingLevel2Id",
+   "rdfs:label": "ImagingLevel2Id",
+   "sms:displayName": "ImagingLevel2_id"
+  },
+  {
+   "@id": "bts:ImagingLevel2Key",
+   "rdfs:label": "ImagingLevel2Key",
+   "sms:displayName": "ImagingLevel2 Key"
+  },
+  {
+   "@id": "bts:ImagingLevel3ImageId",
+   "rdfs:label": "ImagingLevel3ImageId",
+   "sms:displayName": "ImagingLevel3Image_id"
+  },
+  {
+   "@id": "bts:ImagingLevel3ImageKey",
+   "rdfs:label": "ImagingLevel3ImageKey",
+   "sms:displayName": "ImagingLevel3Image Key"
+  },
+  {
+   "@id": "bts:ImagingLevel3SegmentsId",
+   "rdfs:label": "ImagingLevel3SegmentsId",
+   "sms:displayName": "ImagingLevel3Segments_id"
+  },
+  {
+   "@id": "bts:ImagingLevel3SegmentsKey",
+   "rdfs:label": "ImagingLevel3SegmentsKey",
+   "sms:displayName": "ImagingLevel3Segments Key"
+  },
+  {
+   "@id": "bts:ImagingLevel4Id",
+   "rdfs:label": "ImagingLevel4Id",
+   "sms:displayName": "ImagingLevel4_id"
+  },
+  {
+   "@id": "bts:IndividualAge90orOlder",
+   "rdfs:label": "IndividualAge90orOlder",
+   "sms:displayName": "Individual Age 90 or Older"
+  },
+  {
+   "@id": "bts:IndividualAgeatDiagnosis",
+   "rdfs:label": "IndividualAgeatDiagnosis",
+   "sms:displayName": "Individual Age at Diagnosis"
+  },
+  {
+   "@id": "bts:IndividualDaysToRecurrence",
+   "rdfs:label": "IndividualDaysToRecurrence",
+   "sms:displayName": "Individual Days To Recurrence"
+  },
+  {
+   "@id": "bts:IndividualDaystoLastFollowup",
+   "rdfs:label": "IndividualDaystoLastFollowup",
+   "sms:displayName": "Individual Days to Last Followup"
+  },
+  {
+   "@id": "bts:IndividualDaystoLastKnownDiseaseStatus",
+   "rdfs:label": "IndividualDaystoLastKnownDiseaseStatus",
+   "sms:displayName": "Individual Days to Last Known Disease Status"
+  },
+  {
+   "@id": "bts:IndividualDiseaseProgressionorRecurrenceType",
+   "rdfs:label": "IndividualDiseaseProgressionorRecurrenceType",
+   "sms:displayName": "Individual Disease Progression or Recurrence Type"
+  },
+  {
+   "@id": "bts:IndividualGender",
+   "rdfs:label": "IndividualGender",
+   "sms:displayName": "Individual Gender"
+  },
+  {
+   "@id": "bts:IndividualId",
+   "rdfs:label": "IndividualId",
+   "sms:displayName": "Individual_id"
+  },
+  {
+   "@id": "bts:IndividualKey",
+   "rdfs:label": "IndividualKey",
+   "sms:displayName": "Individual Key"
+  },
+  {
+   "@id": "bts:IndividualLymphNodeInvolvementAnatomicSiteUberonIdentifier",
+   "rdfs:label": "IndividualLymphNodeInvolvementAnatomicSiteUberonIdentifier",
+   "sms:displayName": "Individual Lymph Node Involvement Anatomic Site Uberon Identifier"
+  },
+  {
+   "@id": "bts:IndividualMetastasisStage",
+   "rdfs:label": "IndividualMetastasisStage",
+   "sms:displayName": "Individual Metastasis Stage"
+  },
+  {
+   "@id": "bts:IndividualPrimaryTumorStage",
+   "rdfs:label": "IndividualPrimaryTumorStage",
+   "sms:displayName": "Individual Primary Tumor Stage"
+  },
+  {
+   "@id": "bts:IndividualProgressionorRecurrenceAnatomicSiteUberonIdentifier",
+   "rdfs:label": "IndividualProgressionorRecurrenceAnatomicSiteUberonIdentifier",
+   "sms:displayName": "Individual Progression or Recurrence Anatomic Site Uberon Identifier"
+  },
+  {
+   "@id": "bts:IndividualRecurrenceStatus",
+   "rdfs:label": "IndividualRecurrenceStatus",
+   "sms:displayName": "Individual Recurrence Status"
+  },
+  {
+   "@id": "bts:IndividualResidualDiseaseStatus",
+   "rdfs:label": "IndividualResidualDiseaseStatus",
+   "sms:displayName": "Individual Residual Disease Status"
+  },
+  {
+   "@id": "bts:IndividualTreatmentIntentType",
+   "rdfs:label": "IndividualTreatmentIntentType",
+   "sms:displayName": "Individual Treatment Intent Type"
+  },
+  {
+   "@id": "bts:IndividualTreatmentorTherapyIndicator",
+   "rdfs:label": "IndividualTreatmentorTherapyIndicator",
+   "sms:displayName": "Individual Treatment or Therapy Indicator"
+  },
+  {
+   "@id": "bts:IndividualTumorLymphNodeStage",
+   "rdfs:label": "IndividualTumorLymphNodeStage",
+   "sms:displayName": "Individual Tumor Lymph Node Stage"
+  },
+  {
+   "@id": "bts:IndividualVitalStatus",
+   "rdfs:label": "IndividualVitalStatus",
+   "sms:displayName": "Individual Vital Status"
+  },
+  {
+   "@id": "bts:IndividualYearofBirth",
+   "rdfs:label": "IndividualYearofBirth",
+   "sms:displayName": "Individual Year of Birth"
+  },
+  {
+   "@id": "bts:IndividualYearofDeath",
+   "rdfs:label": "IndividualYearofDeath",
+   "sms:displayName": "Individual Year of Death"
+  },
+  {
+   "@id": "bts:IndividualYearofDiagnosis",
+   "rdfs:label": "IndividualYearofDiagnosis",
+   "sms:displayName": "Individual Year of Diagnosis"
+  },
+  {
+   "@id": "bts:IndividualdbGaPSubjectId",
+   "rdfs:label": "IndividualdbGaPSubjectId",
+   "sms:displayName": "Individual dbGaP Subject Id"
+  },
+  {
+   "@id": "bts:Institution",
+   "rdfs:label": "Institution",
+   "sms:displayName": "Institution",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:InstitutionId"
+    },
+    {
+     "@id": "bts:InstitutionName"
+    },
+    {
+     "@id": "bts:InstitutionFullName"
+    },
+    {
+     "@id": "bts:InstitutionAlias"
+    },
+    {
+     "@id": "bts:InstitutionLocationState"
+    },
+    {
+     "@id": "bts:InstitutionLocationCity"
+    },
+    {
+     "@id": "bts:Rorid"
+    }
+   ]
+  },
+  {
+   "@id": "bts:InstitutionAlias",
+   "rdfs:label": "InstitutionAlias",
+   "sms:displayName": "Institution Alias"
+  },
+  {
+   "@id": "bts:InstitutionFullName",
+   "rdfs:label": "InstitutionFullName",
+   "sms:displayName": "Institution Full Name"
+  },
+  {
+   "@id": "bts:InstitutionId",
+   "rdfs:label": "InstitutionId",
+   "sms:displayName": "Institution_id"
+  },
+  {
+   "@id": "bts:InstitutionKey",
+   "rdfs:label": "InstitutionKey",
+   "sms:displayName": "Institution Key"
+  },
+  {
+   "@id": "bts:InstitutionLocationCity",
+   "rdfs:label": "InstitutionLocationCity",
+   "sms:displayName": "Institution Location City"
+  },
+  {
+   "@id": "bts:InstitutionLocationState",
+   "rdfs:label": "InstitutionLocationState",
+   "sms:displayName": "Institution Location State"
+  },
+  {
+   "@id": "bts:InstitutionName",
+   "rdfs:label": "InstitutionName",
+   "sms:displayName": "Institution Name"
+  },
+  {
+   "@id": "bts:Investigator",
+   "rdfs:label": "Investigator",
+   "sms:displayName": "Investigator"
+  },
+  {
+   "@id": "bts:KnownMetastasisSites",
+   "rdfs:label": "KnownMetastasisSites",
+   "sms:displayName": "Known Metastasis Sites"
+  },
+  {
+   "@id": "bts:LastKnownDiseaseStatus",
+   "rdfs:label": "LastKnownDiseaseStatus",
+   "sms:displayName": "Last Known Disease Status"
+  },
+  {
+   "@id": "bts:LastKnownInstitution",
+   "rdfs:label": "LastKnownInstitution",
+   "sms:displayName": "Last Known Institution"
+  },
+  {
+   "@id": "bts:License",
+   "rdfs:label": "License",
+   "sms:displayName": "License"
+  },
+  {
+   "@id": "bts:ModelAcquisitionType",
+   "rdfs:label": "ModelAcquisitionType",
+   "sms:displayName": "Model Acquisition Type"
+  },
+  {
+   "@id": "bts:ModelAge",
+   "rdfs:label": "ModelAge",
+   "sms:displayName": "Model Age"
+  },
+  {
+   "@id": "bts:ModelAgeUnit",
+   "rdfs:label": "ModelAgeUnit",
+   "sms:displayName": "Model Age Unit"
+  },
+  {
+   "@id": "bts:ModelGenotype",
+   "rdfs:label": "ModelGenotype",
+   "sms:displayName": "Model Genotype"
+  },
+  {
+   "@id": "bts:ModelGraftSource",
+   "rdfs:label": "ModelGraftSource",
+   "sms:displayName": "Model Graft Source"
+  },
+  {
+   "@id": "bts:ModelId",
+   "rdfs:label": "ModelId",
+   "sms:displayName": "Model_id"
+  },
+  {
+   "@id": "bts:ModelKey",
+   "rdfs:label": "ModelKey",
+   "sms:displayName": "Model Key"
+  },
+  {
+   "@id": "bts:ModelMethod",
+   "rdfs:label": "ModelMethod",
+   "sms:displayName": "Model Method"
+  },
+  {
+   "@id": "bts:ModelSource",
+   "rdfs:label": "ModelSource",
+   "sms:displayName": "Model Source"
+  },
+  {
+   "@id": "bts:ModelType",
+   "rdfs:label": "ModelType",
+   "sms:displayName": "Model Type"
+  },
+  {
+   "@id": "bts:NGSAlignedReads",
+   "rdfs:label": "NGSAlignedReads",
+   "sms:displayName": "NGS Aligned Reads"
+  },
+  {
+   "@id": "bts:NGSDeduplicatedReads",
+   "rdfs:label": "NGSDeduplicatedReads",
+   "sms:displayName": "NGS Deduplicated Reads"
+  },
+  {
+   "@id": "bts:NGSLibraryLayout",
+   "rdfs:label": "NGSLibraryLayout",
+   "sms:displayName": "NGS Library Layout"
+  },
+  {
+   "@id": "bts:NGSLibraryPreparationDaysfromIndex",
+   "rdfs:label": "NGSLibraryPreparationDaysfromIndex",
+   "sms:displayName": "NGS Library Preparation Days from Index"
+  },
+  {
+   "@id": "bts:NGSLibraryPreparationKitName",
+   "rdfs:label": "NGSLibraryPreparationKitName",
+   "sms:displayName": "NGS Library Preparation Kit Name"
+  },
+  {
+   "@id": "bts:NGSLibraryPreparationKitVendor",
+   "rdfs:label": "NGSLibraryPreparationKitVendor",
+   "sms:displayName": "NGS Library Preparation Kit Vendor"
+  },
+  {
+   "@id": "bts:NGSLibraryPreparationKitVersion",
+   "rdfs:label": "NGSLibraryPreparationKitVersion",
+   "sms:displayName": "NGS Library Preparation Kit Version"
+  },
+  {
+   "@id": "bts:NGSLibrarySelectionMethod",
+   "rdfs:label": "NGSLibrarySelectionMethod",
+   "sms:displayName": "NGS Library Selection Method"
+  },
+  {
+   "@id": "bts:NGSLibrarySourceMaterial",
+   "rdfs:label": "NGSLibrarySourceMaterial",
+   "sms:displayName": "NGS Library Source Material"
+  },
+  {
+   "@id": "bts:NGSLibrarySourceMolecule",
+   "rdfs:label": "NGSLibrarySourceMolecule",
+   "sms:displayName": "NGS Library Source Molecule"
+  },
+  {
+   "@id": "bts:NGSLibraryStrategy",
+   "rdfs:label": "NGSLibraryStrategy",
+   "sms:displayName": "NGS Library Strategy"
+  },
+  {
+   "@id": "bts:NGSMapQ30",
+   "rdfs:label": "NGSMapQ30",
+   "sms:displayName": "NGS MapQ30"
+  },
+  {
+   "@id": "bts:NGSMatrixType",
+   "rdfs:label": "NGSMatrixType",
+   "sms:displayName": "NGS Matrix Type"
+  },
+  {
+   "@id": "bts:NGSRNADV200",
+   "rdfs:label": "NGSRNADV200",
+   "sms:displayName": "NGS RNA DV200"
+  },
+  {
+   "@id": "bts:NGSRNAEndBias",
+   "rdfs:label": "NGSRNAEndBias",
+   "sms:displayName": "NGS RNA End Bias"
+  },
+  {
+   "@id": "bts:NGSRNARIN",
+   "rdfs:label": "NGSRNARIN",
+   "sms:displayName": "NGS RNA RIN"
+  },
+  {
+   "@id": "bts:NGSRNAReverseTranscriptionPrimer",
+   "rdfs:label": "NGSRNAReverseTranscriptionPrimer",
+   "sms:displayName": "NGS RNA Reverse Transcription Primer"
+  },
+  {
+   "@id": "bts:NGSRawReads",
+   "rdfs:label": "NGSRawReads",
+   "sms:displayName": "NGS Raw Reads"
+  },
+  {
+   "@id": "bts:NGSReadIndicator",
+   "rdfs:label": "NGSReadIndicator",
+   "sms:displayName": "NGS Read Indicator"
+  },
+  {
+   "@id": "bts:NGSReadLength",
+   "rdfs:label": "NGSReadLength",
+   "sms:displayName": "NGS Read Length"
+  },
+  {
+   "@id": "bts:NGSSequencingCoverage",
+   "rdfs:label": "NGSSequencingCoverage",
+   "sms:displayName": "NGS Sequencing Coverage"
+  },
+  {
+   "@id": "bts:NGSSequencingDesignDescription",
+   "rdfs:label": "NGSSequencingDesignDescription",
+   "sms:displayName": "NGS Sequencing Design Description"
+  },
+  {
+   "@id": "bts:NGSSequencingLibraryConstructionDaysfromIndex",
+   "rdfs:label": "NGSSequencingLibraryConstructionDaysfromIndex",
+   "sms:displayName": "NGS Sequencing Library Construction Days from Index"
+  },
+  {
+   "@id": "bts:NGSSequencingPlatform",
+   "rdfs:label": "NGSSequencingPlatform",
+   "sms:displayName": "NGS Sequencing Platform"
+  },
+  {
+   "@id": "bts:NGSStitchedReads",
+   "rdfs:label": "NGSStitchedReads",
+   "sms:displayName": "NGS Stitched Reads"
+  },
+  {
+   "@id": "bts:NGSTrimmedReads",
+   "rdfs:label": "NGSTrimmedReads",
+   "sms:displayName": "NGS Trimmed Reads"
+  },
+  {
+   "@id": "bts:NGSUniqueBases",
+   "rdfs:label": "NGSUniqueBases",
+   "sms:displayName": "NGS Unique Bases"
+  },
+  {
+   "@id": "bts:NGSUniqueProbeCount",
+   "rdfs:label": "NGSUniqueProbeCount",
+   "sms:displayName": "NGS Unique Probe Count"
+  },
+  {
+   "@id": "bts:NGSUniqueTargetCount",
+   "rdfs:label": "NGSUniqueTargetCount",
+   "sms:displayName": "NGS Unique Target Count"
+  },
+  {
+   "@id": "bts:NIHRePORTERLink",
+   "rdfs:label": "NIHRePORTERLink",
+   "sms:displayName": "NIH RePORTER Link"
+  },
+  {
+   "@id": "bts:Name",
+   "rdfs:label": "Name",
+   "sms:displayName": "Name"
+  },
+  {
+   "@id": "bts:NanoStringGeoMXROISegmentAnnotationId",
+   "rdfs:label": "NanoStringGeoMXROISegmentAnnotationId",
+   "sms:displayName": "NanoStringGeoMXROISegmentAnnotation_id"
+  },
+  {
+   "@id": "bts:NanoStringGeoMXROISegmentAnnotationKey",
+   "rdfs:label": "NanoStringGeoMXROISegmentAnnotationKey",
+   "sms:displayName": "NanoStringGeoMXROISegmentAnnotation Key"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxAuxiliaryFilesId",
+   "rdfs:label": "NanoStringGeoMxAuxiliaryFilesId",
+   "sms:displayName": "NanoStringGeoMxAuxiliaryFiles_id"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxAuxiliaryFilesKey",
+   "rdfs:label": "NanoStringGeoMxAuxiliaryFilesKey",
+   "sms:displayName": "NanoStringGeoMxAuxiliaryFiles Key"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPImagingId",
+   "rdfs:label": "NanoStringGeoMxDSPImagingId",
+   "sms:displayName": "NanoStringGeoMxDSPImaging_id"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel1Id",
+   "rdfs:label": "NanoStringGeoMxDSPLevel1Id",
+   "sms:displayName": "NanoStringGeoMxDSPLevel1_id"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel1Key",
+   "rdfs:label": "NanoStringGeoMxDSPLevel1Key",
+   "sms:displayName": "NanoStringGeoMxDSPLevel1 Key"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel2Id",
+   "rdfs:label": "NanoStringGeoMxDSPLevel2Id",
+   "sms:displayName": "NanoStringGeoMxDSPLevel2_id"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel2Key",
+   "rdfs:label": "NanoStringGeoMxDSPLevel2Key",
+   "sms:displayName": "NanoStringGeoMxDSPLevel2 Key"
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel3Id",
+   "rdfs:label": "NanoStringGeoMxDSPLevel3Id",
+   "sms:displayName": "NanoStringGeoMxDSPLevel3_id"
+  },
+  {
+   "@id": "bts:OrcidId",
+   "rdfs:label": "OrcidId",
+   "sms:displayName": "Orcid Id"
+  },
+  {
+   "@id": "bts:ParentBiospecimenKey",
+   "rdfs:label": "ParentBiospecimenKey",
+   "sms:displayName": "Parent Biospecimen Key"
+  },
+  {
+   "@id": "bts:PersonDatasets",
+   "rdfs:label": "PersonDatasets",
+   "sms:displayName": "Person Datasets"
+  },
+  {
+   "@id": "bts:PersonEducationalResources",
+   "rdfs:label": "PersonEducationalResources",
+   "sms:displayName": "Person Educational Resources"
+  },
+  {
+   "@id": "bts:PersonPublications",
+   "rdfs:label": "PersonPublications",
+   "sms:displayName": "Person Publications"
+  },
+  {
+   "@id": "bts:PersonTools",
+   "rdfs:label": "PersonTools",
+   "sms:displayName": "Person Tools"
+  },
+  {
+   "@id": "bts:PersonViewId",
+   "rdfs:label": "PersonViewId",
+   "sms:displayName": "PersonView_id"
+  },
+  {
+   "@id": "bts:PersonViewKey",
+   "rdfs:label": "PersonViewKey",
+   "sms:displayName": "PersonView Key"
+  },
+  {
+   "@id": "bts:PortalDisplay",
+   "rdfs:label": "PortalDisplay",
+   "sms:displayName": "Portal Display"
+  },
+  {
+   "@id": "bts:PrimaryDiagnosis",
+   "rdfs:label": "PrimaryDiagnosis",
+   "sms:displayName": "Primary Diagnosis"
+  },
+  {
+   "@id": "bts:PrimarySite",
+   "rdfs:label": "PrimarySite",
+   "sms:displayName": "Primary Site"
+  },
+  {
+   "@id": "bts:ProjectDescription",
+   "rdfs:label": "ProjectDescription",
+   "sms:displayName": "Project Description"
+  },
+  {
+   "@id": "bts:ProjectName",
+   "rdfs:label": "ProjectName",
+   "sms:displayName": "Project Name"
+  },
+  {
+   "@id": "bts:ProjectShortName",
+   "rdfs:label": "ProjectShortName",
+   "sms:displayName": "Project Short Name"
+  },
+  {
+   "@id": "bts:ProjectType",
+   "rdfs:label": "ProjectType",
+   "sms:displayName": "Project Type"
+  },
+  {
+   "@id": "bts:ProjectView",
+   "rdfs:label": "ProjectView",
+   "sms:displayName": "Project View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ProjectViewId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:ProjectName"
+    },
+    {
+     "@id": "bts:ProjectType"
+    },
+    {
+     "@id": "bts:ProjectDescription"
+    },
+    {
+     "@id": "bts:Investigator"
+    },
+    {
+     "@id": "bts:PersonViewKey"
+    },
+    {
+     "@id": "bts:ConsortiumKey"
+    },
+    {
+     "@id": "bts:ProjectShortName"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ProjectViewId",
+   "rdfs:label": "ProjectViewId",
+   "sms:displayName": "ProjectView_id"
+  },
+  {
+   "@id": "bts:ProjectViewKey",
+   "rdfs:label": "ProjectViewKey",
+   "sms:displayName": "ProjectView Key"
+  },
+  {
+   "@id": "bts:PublicationAbstract",
+   "rdfs:label": "PublicationAbstract",
+   "sms:displayName": "Publication Abstract"
+  },
+  {
+   "@id": "bts:PublicationAccessibility",
+   "rdfs:label": "PublicationAccessibility",
+   "sms:displayName": "Publication Accessibility"
+  },
+  {
+   "@id": "bts:PublicationAuthors",
+   "rdfs:label": "PublicationAuthors",
+   "sms:displayName": "Publication Authors"
+  },
+  {
+   "@id": "bts:PublicationDatasetAlias",
+   "rdfs:label": "PublicationDatasetAlias",
+   "sms:displayName": "Publication Dataset Alias"
+  },
+  {
+   "@id": "bts:PublicationDoi",
+   "rdfs:label": "PublicationDoi",
+   "sms:displayName": "Publication Doi"
+  },
+  {
+   "@id": "bts:PublicationJournal",
+   "rdfs:label": "PublicationJournal",
+   "sms:displayName": "Publication Journal"
+  },
+  {
+   "@id": "bts:PublicationKeywords",
+   "rdfs:label": "PublicationKeywords",
+   "sms:displayName": "Publication Keywords"
+  },
+  {
+   "@id": "bts:PublicationTitle",
+   "rdfs:label": "PublicationTitle",
+   "sms:displayName": "Publication Title"
+  },
+  {
+   "@id": "bts:PublicationViewId",
+   "rdfs:label": "PublicationViewId",
+   "sms:displayName": "PublicationView_id"
+  },
+  {
+   "@id": "bts:PublicationViewKey",
+   "rdfs:label": "PublicationViewKey",
+   "sms:displayName": "PublicationView Key"
+  },
+  {
+   "@id": "bts:PublicationYear",
+   "rdfs:label": "PublicationYear",
+   "sms:displayName": "Publication Year"
+  },
+  {
+   "@id": "bts:PubmedId",
+   "rdfs:label": "PubmedId",
+   "sms:displayName": "Pubmed Id"
+  },
+  {
+   "@id": "bts:PubmedUrl",
+   "rdfs:label": "PubmedUrl",
+   "sms:displayName": "Pubmed Url"
+  },
+  {
+   "@id": "bts:ResourceAccessHazard",
+   "rdfs:label": "ResourceAccessHazard",
+   "sms:displayName": "Resource Access Hazard"
+  },
+  {
+   "@id": "bts:ResourceActivityType",
+   "rdfs:label": "ResourceActivityType",
+   "sms:displayName": "Resource Activity Type"
+  },
+  {
+   "@id": "bts:ResourceAlias",
+   "rdfs:label": "ResourceAlias",
+   "sms:displayName": "Resource Alias"
+  },
+  {
+   "@id": "bts:ResourceContributors",
+   "rdfs:label": "ResourceContributors",
+   "sms:displayName": "Resource Contributors"
+  },
+  {
+   "@id": "bts:ResourceDatasetAlias",
+   "rdfs:label": "ResourceDatasetAlias",
+   "sms:displayName": "Resource Dataset Alias"
+  },
+  {
+   "@id": "bts:ResourceDescription",
+   "rdfs:label": "ResourceDescription",
+   "sms:displayName": "Resource Description"
+  },
+  {
+   "@id": "bts:ResourceDoi",
+   "rdfs:label": "ResourceDoi",
+   "sms:displayName": "Resource Doi"
+  },
+  {
+   "@id": "bts:ResourceEducationalLevel",
+   "rdfs:label": "ResourceEducationalLevel",
+   "sms:displayName": "Resource Educational Level"
+  },
+  {
+   "@id": "bts:ResourceIntendedUse",
+   "rdfs:label": "ResourceIntendedUse",
+   "sms:displayName": "Resource Intended Use"
+  },
+  {
+   "@id": "bts:ResourceInternalIdentifier",
+   "rdfs:label": "ResourceInternalIdentifier",
+   "sms:displayName": "Resource Internal Identifier"
+  },
+  {
+   "@id": "bts:ResourceLanguage",
+   "rdfs:label": "ResourceLanguage",
+   "sms:displayName": "Resource Language"
+  },
+  {
+   "@id": "bts:ResourceLink",
+   "rdfs:label": "ResourceLink",
+   "sms:displayName": "Resource Link"
+  },
+  {
+   "@id": "bts:ResourceMediaAccessibility",
+   "rdfs:label": "ResourceMediaAccessibility",
+   "sms:displayName": "Resource Media Accessibility"
+  },
+  {
+   "@id": "bts:ResourceOriginInstitution",
+   "rdfs:label": "ResourceOriginInstitution",
+   "sms:displayName": "Resource Origin Institution"
+  },
+  {
+   "@id": "bts:ResourcePrimaryAudience",
+   "rdfs:label": "ResourcePrimaryAudience",
+   "sms:displayName": "Resource Primary Audience"
+  },
+  {
+   "@id": "bts:ResourcePrimaryFormat",
+   "rdfs:label": "ResourcePrimaryFormat",
+   "sms:displayName": "Resource Primary Format"
+  },
+  {
+   "@id": "bts:ResourceSecondaryTopic",
+   "rdfs:label": "ResourceSecondaryTopic",
+   "sms:displayName": "Resource Secondary Topic"
+  },
+  {
+   "@id": "bts:ResourceTitle",
+   "rdfs:label": "ResourceTitle",
+   "sms:displayName": "Resource Title"
+  },
+  {
+   "@id": "bts:ResourceToolLink",
+   "rdfs:label": "ResourceToolLink",
+   "sms:displayName": "Resource Tool Link"
+  },
+  {
+   "@id": "bts:ResourceTopic",
+   "rdfs:label": "ResourceTopic",
+   "sms:displayName": "Resource Topic"
+  },
+  {
+   "@id": "bts:ResourceUseRequirements",
+   "rdfs:label": "ResourceUseRequirements",
+   "sms:displayName": "Resource Use Requirements"
+  },
+  {
+   "@id": "bts:Rorid",
+   "rdfs:label": "Rorid",
+   "sms:displayName": "Rorid"
+  },
+  {
+   "@id": "bts:SequencingLevel1Id",
+   "rdfs:label": "SequencingLevel1Id",
+   "sms:displayName": "SequencingLevel1_id"
+  },
+  {
+   "@id": "bts:SequencingLevel1Key",
+   "rdfs:label": "SequencingLevel1Key",
+   "sms:displayName": "SequencingLevel1 Key"
+  },
+  {
+   "@id": "bts:SequencingLevel2Id",
+   "rdfs:label": "SequencingLevel2Id",
+   "sms:displayName": "SequencingLevel2_id"
+  },
+  {
+   "@id": "bts:SequencingLevel2Key",
+   "rdfs:label": "SequencingLevel2Key",
+   "sms:displayName": "SequencingLevel2 Key"
+  },
+  {
+   "@id": "bts:SequencingLevel3Id",
+   "rdfs:label": "SequencingLevel3Id",
+   "sms:displayName": "SequencingLevel3_id"
+  },
+  {
+   "@id": "bts:SequencingRNALevel1Id",
+   "rdfs:label": "SequencingRNALevel1Id",
+   "sms:displayName": "SequencingRNALevel1_id"
+  },
+  {
+   "@id": "bts:Sex",
+   "rdfs:label": "Sex",
+   "sms:displayName": "Sex"
+  },
+  {
+   "@id": "bts:SiteofOrigin",
+   "rdfs:label": "SiteofOrigin",
+   "sms:displayName": "Site of Origin"
+  },
+  {
+   "@id": "bts:SoftwareandVersion",
+   "rdfs:label": "SoftwareandVersion",
+   "sms:displayName": "Software and Version"
+  },
+  {
+   "@id": "bts:Species",
+   "rdfs:label": "Species",
+   "sms:displayName": "Species"
+  },
+  {
+   "@id": "bts:StudyDeidentificationMethodDescription",
+   "rdfs:label": "StudyDeidentificationMethodDescription",
+   "sms:displayName": "Study Deidentification Method Description"
+  },
+  {
+   "@id": "bts:StudyDeidentificationMethodSoftware",
+   "rdfs:label": "StudyDeidentificationMethodSoftware",
+   "sms:displayName": "Study Deidentification Method Software"
+  },
+  {
+   "@id": "bts:StudyDeidentificationMethodType",
+   "rdfs:label": "StudyDeidentificationMethodType",
+   "sms:displayName": "Study Deidentification Method Type"
+  },
+  {
+   "@id": "bts:StudyDescription",
+   "rdfs:label": "StudyDescription",
+   "sms:displayName": "Study Description"
+  },
+  {
+   "@id": "bts:StudyId",
+   "rdfs:label": "StudyId",
+   "sms:displayName": "Study_id"
+  },
+  {
+   "@id": "bts:StudyIndexDate",
+   "rdfs:label": "StudyIndexDate",
+   "sms:displayName": "Study Index Date"
+  },
+  {
+   "@id": "bts:StudyKey",
+   "rdfs:label": "StudyKey",
+   "sms:displayName": "Study Key"
+  },
+  {
+   "@id": "bts:StudyName",
+   "rdfs:label": "StudyName",
+   "sms:displayName": "Study Name"
+  },
+  {
+   "@id": "bts:StudyNumberofParticipants",
+   "rdfs:label": "StudyNumberofParticipants",
+   "sms:displayName": "Study Number of Participants"
+  },
+  {
+   "@id": "bts:StudyNumberofSamples",
+   "rdfs:label": "StudyNumberofSamples",
+   "sms:displayName": "Study Number of Samples"
+  },
+  {
+   "@id": "bts:StudyProjectIdentifier",
+   "rdfs:label": "StudyProjectIdentifier",
+   "sms:displayName": "Study Project Identifier"
+  },
+  {
+   "@id": "bts:StudyShortName",
+   "rdfs:label": "StudyShortName",
+   "sms:displayName": "Study Short Name"
+  },
+  {
+   "@id": "bts:StudydbGaPAccessionId",
+   "rdfs:label": "StudydbGaPAccessionId",
+   "sms:displayName": "Study dbGaP Accession Id"
+  },
+  {
+   "@id": "bts:SynapseIDofGeoMxDSPConfigFile",
+   "rdfs:label": "SynapseIDofGeoMxDSPConfigFile",
+   "sms:displayName": "Synapse ID of GeoMx DSP Config File"
+  },
+  {
+   "@id": "bts:SynapseIDofGeoMxDSPPKCFile",
+   "rdfs:label": "SynapseIDofGeoMxDSPPKCFile",
+   "sms:displayName": "Synapse ID of GeoMx DSP PKC File"
+  },
+  {
+   "@id": "bts:SynapseIDofGeoMxDSPROISegmentAnnotationFile",
+   "rdfs:label": "SynapseIDofGeoMxDSPROISegmentAnnotationFile",
+   "sms:displayName": "Synapse ID of GeoMx DSP ROI Segment Annotation File"
+  },
+  {
+   "@id": "bts:SynapseIDofGeoMxLabWorksheetFile",
+   "rdfs:label": "SynapseIDofGeoMxLabWorksheetFile",
+   "sms:displayName": "Synapse ID of GeoMx Lab Worksheet File"
+  },
+  {
+   "@id": "bts:SynapseProfileId",
+   "rdfs:label": "SynapseProfileId",
+   "sms:displayName": "Synapse Profile Id"
+  },
+  {
+   "@id": "bts:Theme",
+   "rdfs:label": "Theme",
+   "sms:displayName": "Theme",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ThemeName"
+    },
+    {
+     "@id": "bts:ThemeDisplayName"
+    },
+    {
+     "@id": "bts:ThemeDescription"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ThemeDescription",
+   "rdfs:label": "ThemeDescription",
+   "sms:displayName": "Theme Description"
+  },
+  {
+   "@id": "bts:ThemeDisplayName",
+   "rdfs:label": "ThemeDisplayName",
+   "sms:displayName": "Theme Display Name"
+  },
+  {
+   "@id": "bts:ThemeName",
+   "rdfs:label": "ThemeName",
+   "sms:displayName": "Theme Name"
+  },
+  {
+   "@id": "bts:TherapeuticAgent",
+   "rdfs:label": "TherapeuticAgent",
+   "sms:displayName": "Therapeutic Agent"
+  },
+  {
+   "@id": "bts:Tissue",
+   "rdfs:label": "Tissue",
+   "sms:displayName": "Tissue"
+  },
+  {
+   "@id": "bts:ToolAccessibility",
+   "rdfs:label": "ToolAccessibility",
+   "sms:displayName": "Tool Accessibility"
+  },
+  {
+   "@id": "bts:ToolCmd",
+   "rdfs:label": "ToolCmd",
+   "sms:displayName": "Tool Cmd"
+  },
+  {
+   "@id": "bts:ToolComputeRequirements",
+   "rdfs:label": "ToolComputeRequirements",
+   "sms:displayName": "Tool Compute Requirements"
+  },
+  {
+   "@id": "bts:ToolCost",
+   "rdfs:label": "ToolCost",
+   "sms:displayName": "Tool Cost"
+  },
+  {
+   "@id": "bts:ToolDateLastModified",
+   "rdfs:label": "ToolDateLastModified",
+   "sms:displayName": "Tool Date Last Modified"
+  },
+  {
+   "@id": "bts:ToolDescription",
+   "rdfs:label": "ToolDescription",
+   "sms:displayName": "Tool Description"
+  },
+  {
+   "@id": "bts:ToolDocumentationNote",
+   "rdfs:label": "ToolDocumentationNote",
+   "sms:displayName": "Tool Documentation Note"
+  },
+  {
+   "@id": "bts:ToolDocumentationType",
+   "rdfs:label": "ToolDocumentationType",
+   "sms:displayName": "Tool Documentation Type"
+  },
+  {
+   "@id": "bts:ToolDocumentationUrl",
+   "rdfs:label": "ToolDocumentationUrl",
+   "sms:displayName": "Tool Documentation Url"
+  },
+  {
+   "@id": "bts:ToolDoi",
+   "rdfs:label": "ToolDoi",
+   "sms:displayName": "Tool Doi"
+  },
+  {
+   "@id": "bts:ToolDownloadNote",
+   "rdfs:label": "ToolDownloadNote",
+   "sms:displayName": "Tool Download Note"
+  },
+  {
+   "@id": "bts:ToolDownloadType",
+   "rdfs:label": "ToolDownloadType",
+   "sms:displayName": "Tool Download Type"
+  },
+  {
+   "@id": "bts:ToolDownloadUrl",
+   "rdfs:label": "ToolDownloadUrl",
+   "sms:displayName": "Tool Download Url"
+  },
+  {
+   "@id": "bts:ToolDownloadVersion",
+   "rdfs:label": "ToolDownloadVersion",
+   "sms:displayName": "Tool Download Version"
+  },
+  {
+   "@id": "bts:ToolEntityName",
+   "rdfs:label": "ToolEntityName",
+   "sms:displayName": "Tool Entity Name"
+  },
+  {
+   "@id": "bts:ToolEntityRole",
+   "rdfs:label": "ToolEntityRole",
+   "sms:displayName": "Tool Entity Role"
+  },
+  {
+   "@id": "bts:ToolEntityType",
+   "rdfs:label": "ToolEntityType",
+   "sms:displayName": "Tool Entity Type"
+  },
+  {
+   "@id": "bts:ToolFunctionNote",
+   "rdfs:label": "ToolFunctionNote",
+   "sms:displayName": "Tool Function Note"
+  },
+  {
+   "@id": "bts:ToolHomepage",
+   "rdfs:label": "ToolHomepage",
+   "sms:displayName": "Tool Homepage"
+  },
+  {
+   "@id": "bts:ToolInputData",
+   "rdfs:label": "ToolInputData",
+   "sms:displayName": "Tool Input Data"
+  },
+  {
+   "@id": "bts:ToolInputFormat",
+   "rdfs:label": "ToolInputFormat",
+   "sms:displayName": "Tool Input Format"
+  },
+  {
+   "@id": "bts:ToolLanguage",
+   "rdfs:label": "ToolLanguage",
+   "sms:displayName": "Tool Language"
+  },
+  {
+   "@id": "bts:ToolLinkNote",
+   "rdfs:label": "ToolLinkNote",
+   "sms:displayName": "Tool Link Note"
+  },
+  {
+   "@id": "bts:ToolLinkType",
+   "rdfs:label": "ToolLinkType",
+   "sms:displayName": "Tool Link Type"
+  },
+  {
+   "@id": "bts:ToolLinkUrl",
+   "rdfs:label": "ToolLinkUrl",
+   "sms:displayName": "Tool Link Url"
+  },
+  {
+   "@id": "bts:ToolName",
+   "rdfs:label": "ToolName",
+   "sms:displayName": "Tool Name"
+  },
+  {
+   "@id": "bts:ToolOperatingSystem",
+   "rdfs:label": "ToolOperatingSystem",
+   "sms:displayName": "Tool Operating System"
+  },
+  {
+   "@id": "bts:ToolOperation",
+   "rdfs:label": "ToolOperation",
+   "sms:displayName": "Tool Operation"
+  },
+  {
+   "@id": "bts:ToolOutputData",
+   "rdfs:label": "ToolOutputData",
+   "sms:displayName": "Tool Output Data"
+  },
+  {
+   "@id": "bts:ToolOutputFormat",
+   "rdfs:label": "ToolOutputFormat",
+   "sms:displayName": "Tool Output Format"
+  },
+  {
+   "@id": "bts:ToolPackageDependencies",
+   "rdfs:label": "ToolPackageDependencies",
+   "sms:displayName": "Tool Package Dependencies"
+  },
+  {
+   "@id": "bts:ToolPackageDependenciesPresent",
+   "rdfs:label": "ToolPackageDependenciesPresent",
+   "sms:displayName": "Tool Package Dependencies Present"
+  },
+  {
+   "@id": "bts:ToolReleaseDate",
+   "rdfs:label": "ToolReleaseDate",
+   "sms:displayName": "Tool Release Date"
+  },
+  {
+   "@id": "bts:ToolTopic",
+   "rdfs:label": "ToolTopic",
+   "sms:displayName": "Tool Topic"
+  },
+  {
+   "@id": "bts:ToolType",
+   "rdfs:label": "ToolType",
+   "sms:displayName": "Tool Type"
+  },
+  {
+   "@id": "bts:ToolVersion",
+   "rdfs:label": "ToolVersion",
+   "sms:displayName": "Tool Version"
+  },
+  {
+   "@id": "bts:ToolViewId",
+   "rdfs:label": "ToolViewId",
+   "sms:displayName": "ToolView_id"
+  },
+  {
+   "@id": "bts:ToolViewKey",
+   "rdfs:label": "ToolViewKey",
+   "sms:displayName": "ToolView Key"
+  },
+  {
+   "@id": "bts:TreatmentAnatomicSite",
+   "rdfs:label": "TreatmentAnatomicSite",
+   "sms:displayName": "Treatment Anatomic Site"
+  },
+  {
+   "@id": "bts:TreatmentResponse",
+   "rdfs:label": "TreatmentResponse",
+   "sms:displayName": "Treatment Response"
+  },
+  {
+   "@id": "bts:TreatmentType",
+   "rdfs:label": "TreatmentType",
+   "sms:displayName": "Treatment Type"
+  },
+  {
+   "@id": "bts:TumorGrade",
+   "rdfs:label": "TumorGrade",
+   "sms:displayName": "Tumor Grade"
+  },
+  {
+   "@id": "bts:TumorSubtype",
+   "rdfs:label": "TumorSubtype",
+   "sms:displayName": "Tumor Subtype"
+  },
+  {
+   "@id": "bts:TumorType",
+   "rdfs:label": "TumorType",
+   "sms:displayName": "Tumor Type"
+  },
+  {
+   "@id": "bts:Url",
+   "rdfs:label": "Url",
+   "sms:displayName": "Url"
+  },
+  {
+   "@id": "bts:VisiumAppliedHardTrimming",
+   "rdfs:label": "VisiumAppliedHardTrimming",
+   "sms:displayName": "Visium Applied Hard Trimming"
+  },
+  {
+   "@id": "bts:VisiumAuxiliaryFilesId",
+   "rdfs:label": "VisiumAuxiliaryFilesId",
+   "sms:displayName": "VisiumAuxiliaryFiles_id"
+  },
+  {
+   "@id": "bts:VisiumAuxiliaryFilesKey",
+   "rdfs:label": "VisiumAuxiliaryFilesKey",
+   "sms:displayName": "VisiumAuxiliaryFiles Key"
+  },
+  {
+   "@id": "bts:VisiumCaptureArea",
+   "rdfs:label": "VisiumCaptureArea",
+   "sms:displayName": "Visium Capture Area"
+  },
+  {
+   "@id": "bts:VisiumFileType",
+   "rdfs:label": "VisiumFileType",
+   "sms:displayName": "Visium File Type"
+  },
+  {
+   "@id": "bts:VisiumImageRe-orientation",
+   "rdfs:label": "VisiumImageRe-orientation",
+   "sms:displayName": "Visium Image Re-orientation"
+  },
+  {
+   "@id": "bts:VisiumMeanReadsperSpatialSpot",
+   "rdfs:label": "VisiumMeanReadsperSpatialSpot",
+   "sms:displayName": "Visium Mean Reads per Spatial Spot"
+  },
+  {
+   "@id": "bts:VisiumMedianNumberGenesperSpatialSpot",
+   "rdfs:label": "VisiumMedianNumberGenesperSpatialSpot",
+   "sms:displayName": "Visium Median Number Genes per Spatial Spot"
+  },
+  {
+   "@id": "bts:VisiumMedianUMICountsperSpot",
+   "rdfs:label": "VisiumMedianUMICountsperSpot",
+   "sms:displayName": "Visium Median UMI Counts per Spot"
+  },
+  {
+   "@id": "bts:VisiumPermeabilizationTime",
+   "rdfs:label": "VisiumPermeabilizationTime",
+   "sms:displayName": "Visium Permeabilization Time"
+  },
+  {
+   "@id": "bts:VisiumProportionReadsMapped",
+   "rdfs:label": "VisiumProportionReadsMapped",
+   "sms:displayName": "Visium Proportion Reads Mapped"
+  },
+  {
+   "@id": "bts:VisiumProportionReadsMappedtoTranscriptome",
+   "rdfs:label": "VisiumProportionReadsMappedtoTranscriptome",
+   "sms:displayName": "Visium Proportion Reads Mapped to Transcriptome"
+  },
+  {
+   "@id": "bts:VisiumRNALevel1Id",
+   "rdfs:label": "VisiumRNALevel1Id",
+   "sms:displayName": "VisiumRNALevel1_id"
+  },
+  {
+   "@id": "bts:VisiumRNALevel1Key",
+   "rdfs:label": "VisiumRNALevel1Key",
+   "sms:displayName": "VisiumRNALevel1 Key"
+  },
+  {
+   "@id": "bts:VisiumRNALevel2Id",
+   "rdfs:label": "VisiumRNALevel2Id",
+   "sms:displayName": "VisiumRNALevel2_id"
+  },
+  {
+   "@id": "bts:VisiumRNALevel2Key",
+   "rdfs:label": "VisiumRNALevel2Key",
+   "sms:displayName": "VisiumRNALevel2 Key"
+  },
+  {
+   "@id": "bts:VisiumRNALevel3Id",
+   "rdfs:label": "VisiumRNALevel3Id",
+   "sms:displayName": "VisiumRNALevel3_id"
+  },
+  {
+   "@id": "bts:VisiumRNALevel3Key",
+   "rdfs:label": "VisiumRNALevel3Key",
+   "sms:displayName": "VisiumRNALevel3 Key"
+  },
+  {
+   "@id": "bts:VisiumRNALevel4Id",
+   "rdfs:label": "VisiumRNALevel4Id",
+   "sms:displayName": "VisiumRNALevel4_id"
+  },
+  {
+   "@id": "bts:VisiumRNALevel4Key",
+   "rdfs:label": "VisiumRNALevel4Key",
+   "sms:displayName": "VisiumRNALevel4 Key"
+  },
+  {
+   "@id": "bts:VisiumRunID",
+   "rdfs:label": "VisiumRunID",
+   "sms:displayName": "Visium Run ID"
+  },
+  {
+   "@id": "bts:VisiumSlideID",
+   "rdfs:label": "VisiumSlideID",
+   "sms:displayName": "Visium Slide ID"
+  },
+  {
+   "@id": "bts:VisiumSlideVersion",
+   "rdfs:label": "VisiumSlideVersion",
+   "sms:displayName": "Visium Slide Version"
+  },
+  {
+   "@id": "bts:VisiumSpatialBarcodeTag",
+   "rdfs:label": "VisiumSpatialBarcodeTag",
+   "sms:displayName": "Visium Spatial Barcode Tag"
+  },
+  {
+   "@id": "bts:VisiumSpatialLibraryConstructionMethod",
+   "rdfs:label": "VisiumSpatialLibraryConstructionMethod",
+   "sms:displayName": "Visium Spatial Library Construction Method"
+  },
+  {
+   "@id": "bts:VisiumSpatialRead1",
+   "rdfs:label": "VisiumSpatialRead1",
+   "sms:displayName": "Visium Spatial Read1"
+  },
+  {
+   "@id": "bts:VisiumSpatialRead2",
+   "rdfs:label": "VisiumSpatialRead2",
+   "sms:displayName": "Visium Spatial Read2"
+  },
+  {
+   "@id": "bts:VisiumSpotsundertissue",
+   "rdfs:label": "VisiumSpotsundertissue",
+   "sms:displayName": "Visium Spots under tissue"
+  },
+  {
+   "@id": "bts:VisiumUMITag",
+   "rdfs:label": "VisiumUMITag",
+   "sms:displayName": "Visium UMI Tag"
+  },
+  {
+   "@id": "bts:VisiumWhitelistSpatialBarcodeFileLink",
+   "rdfs:label": "VisiumWhitelistSpatialBarcodeFileLink",
+   "sms:displayName": "Visium Whitelist Spatial Barcode File Link"
+  },
+  {
+   "@id": "bts:VisiumWorkflowParametersDescription",
+   "rdfs:label": "VisiumWorkflowParametersDescription",
+   "sms:displayName": "Visium Workflow Parameters Description"
+  },
+  {
+   "@id": "bts:VisiumWorkflowType",
+   "rdfs:label": "VisiumWorkflowType",
+   "sms:displayName": "Visium Workflow Type"
+  },
+  {
+   "@id": "bts:Website",
+   "rdfs:label": "Website",
+   "sms:displayName": "Website"
+  },
+  {
+   "@id": "bts:WorkflowLink",
+   "rdfs:label": "WorkflowLink",
+   "sms:displayName": "Workflow Link"
+  },
+  {
+   "@id": "bts:WorkflowParameterDescription",
+   "rdfs:label": "WorkflowParameterDescription",
+   "sms:displayName": "Workflow Parameter Description"
+  },
+  {
+   "@id": "bts:WorkflowType",
+   "rdfs:label": "WorkflowType",
+   "sms:displayName": "Workflow Type"
+  },
+  {
+   "@id": "bts:WorkflowVersion",
+   "rdfs:label": "WorkflowVersion",
+   "sms:displayName": "Workflow Version"
+  },
+  {
+   "@id": "bts:WorkingGroupParticipation",
+   "rdfs:label": "WorkingGroupParticipation",
+   "sms:displayName": "Working Group Participation"
+  }
+ ]
+}
