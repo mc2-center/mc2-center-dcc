@@ -193,10 +193,11 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 		out_df.at[_, "node"] = row["Resolved_Node_URI"]
 		out_df.at[_, "is_key"] = "true" if "primary_key" in mappings[1] else ""
 		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
-		out_df.at[_, "has_enum"] = '"[' + ", ".join(str(attribute_rows.loc[row["label"], "Valid Values"]).split(", ")) + ']"' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
+		valid_values = attribute_rows.loc[row["label"], "Valid Values"]
+		is_enum = pd.notna(valid_values) and str(valid_values).strip() != ""
+		out_df.at[_, "has_enum"] = '"[' + ", ".join(str(valid_values).split(", ")) + ']"' if is_enum else ""
 		col_type = attribute_rows.loc[row["label"], "columnType"]
 		validation = attribute_rows.loc[row["label"], "Validation Rules"]
-		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "" else False
 		out_df.at[_, "type"] = '"' + convert_schematic_column_type(col_type, validation, is_enum) + '"'
 		for e in mappings[1]:
 			key_tuples.append((e, row["Resolved_Node_URI"], row["term"]))
@@ -255,8 +256,8 @@ def format_uri(node:str, attribute:str) -> str:
 	Returns:
 		str: Formatted URI string."""
 
-	node_segment = str(node).strip().lower().replace(" ", "_").replace('10x_', '')
-	attr_segment = attribute.strip().lower().replace(" ", "_").replace('10x_', '')
+	node_segment = str(node).strip().lower().replace(" ", "_")
+	attr_segment = attribute.strip().lower().replace(" ", "_")
     
 	return f"{node_segment}:{attr_segment}"
 
@@ -473,7 +474,7 @@ def main():
 		node_set = set(node_list)
 		first_lines = [f"@prefix {tag_dict[prefix][0]}: {tag_dict[prefix][1]}"+" .\n" for prefix in prefix_set]
 		org_line = f"@prefix {args.org_name}: <{base_ref}:{args.org_name}/> .\n"
-		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_').replace('10x_', '')}: <{args.org_name}:{node_type.lower().replace(' ', '_').replace('10x_', '')}/> .\n" for node_type in node_set])
+		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_')}: <{args.org_name}:{node_type.lower().replace(' ', '_')}/> .\n" for node_type in node_set])
 		first_lines_set = "".join(set(first_lines))
 		f.write(first_lines_set)
 		f.write(org_line)
