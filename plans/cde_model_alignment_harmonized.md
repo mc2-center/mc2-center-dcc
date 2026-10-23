@@ -80,7 +80,7 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 | Item | Status on `main` |
 |---|---|
 | DM-1 to DM-10, DM-12 | **Done** in #262 (`c234c467`). DM-12 re-checked here: `scripts/check_json_schemas.py` finds 0 failures across 38 schemas. Spot checks: `Species` is in DatasetView's `required`; enums use the display form (`10-cell RNA Sequencing`); no key contains a space or starts with a digit. |
-| **DM-11 Release** | **Open.** The notes are drafted (`plans/release_14.0.0_notes.md`). Tag `v14.0.0` and publish the release; needs the owner's go-ahead. Everything in sections B and C that pins to a model version waits on this tag. |
+| **DM-11 Release** | **Done.** The owner tagged `v14.0.0` at `c234c467` (2026-10-23). Sections B and C can now pin to it. |
 | DM-13 CI gate | Open, deferred. Today `.github/workflows` only checks PR labels, builds docs and runs the release and sheet-sync jobs. |
 | **DM-14 (new)** | Fix the DatasetView row in `qc_model/qc_attribute_mapping.csv`: `Data Use Codes` becomes `Dataset Data Use Codes`. This is a patch PR. |
 | **DM-15 (new, low priority)** | Consider making `GrantView Key` a `string_list` with an anchored per-item pattern, instead of an unanchored pattern on one comma-joined string. That would change the key type, so it belongs in a later minor or major release. |
@@ -120,7 +120,7 @@ These came in with #262 on top of what the earlier plans assumed. They're folded
 - **`DUOPlus` codes**, which the new pattern allows, need `DUO_DICT` entries or a defined fallback text.
 
 ### B4. Annotation and utility scripts
-- **Scripts:** `processing-splits.py`, `add_cols.py` (possibly dead per the CLI plan; confirm first), `schema_update.py`, `edit_legacy_annotations.py`, `split_manifest_grants.py`, `merge_and_correct_manifests.py`, `table_to_annotations.py`, `check_publications_status.py`.
+- **Scripts:** `processing-splits.py`, `add_cols.py` (owner approved deleting it, 2026-10-01; DCC plan D17a), `schema_update.py`, `edit_legacy_annotations.py`, `split_manifest_grants.py`, `merge_and_correct_manifests.py`, `table_to_annotations.py`, `check_publications_status.py`.
 - **Change:** rename through B1.
 - **Pin** the `all_valid_values.csv` URL to `v14.0.0`. Its format is unchanged on `main` (`category,valid_value,nonpreferred_values`).
 - **`processing-splits.py`** only splits by component once the pipeline emits template headers ([C] P1).

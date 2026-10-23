@@ -89,7 +89,7 @@ The remaining ~30 scripts, grouped into command groups, with the duplication fou
   - `query_schema_registry.py`, `validate_json_schema.py` — the underlying calls (`synapseclient.extensions.curator.query_schema_registry`, the OOP `Folder.validate_schema()`) are real, available, one-line imports, but **checked and confirmed nothing in this repo currently calls either one** outside `curator_tools/`'s own demo scripts. Deleting these two loses a worked example, not a unique capability — the functions stay fully available to import directly whenever actually needed.
 - `mc2dcc portal ...` for `build_table_view.py`, `merge_tables.py`, `add_datasets_to_pub.py`, `union_qc.py` (now calling `cckp_metadata`'s validation function instead of shelling out to `schematic`), `build_tag_lists.py`.
 - `mc2dcc annotations ...` for the `annotations/` scripts — several (`gen-mp-csv.py`, `processing-splits.py`, `schema_update.py`) currently skip argparse and read raw `sys.argv`, so this is also where they gain real argument validation for the first time. `upload-workflow.sh`'s 5-step manual pipeline becomes one `mc2dcc annotations upload-workflow` command.
-- Flagged, not auto-deleted: `annotations/add_cols.py` looks like a dead one-off CSV-migration helper — confirm with you before dropping it, the way `unify_grant_tables.py` was confirmed before deletion last time.
+- `annotations/add_cols.py` is a dead one-off CSV-migration helper — deletion approved 2026-10-01 and scheduled under `impl_dcc_14_alignment.md` D17a, so it isn't migrated.
 
 ## Verification
 

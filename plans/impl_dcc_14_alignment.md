@@ -144,7 +144,7 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
     - `Publication Grant Number` becomes `GrantView Key`.
     - Replace `PUBLICATION_DICT` with the crosswalk.
   - Delete `annotations/attribute_dictionary.py`.
-- **`annotations/add_cols.py`:** the CLI plan flags it as possibly dead. **Don't edit it**; list it in the report for the owner to decide.
+- **`annotations/add_cols.py`:** don't edit it. The owner approved deleting it (D17a).
 - **Check:** `py_compile`. `grep -rnE "Publication Assay|Dataset Assay|Tool License|Resource License|Grant Investigator|Grant Consortium Name|Person Consortium Name"` over the tracked `.py` files returns only `RENAMES_13_TO_14` and the D8 legacy fallback.
 
 ### D10. Cron scripts get `--dryrun`

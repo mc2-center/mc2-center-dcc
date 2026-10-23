@@ -43,7 +43,7 @@ I5 + I6 + I4 + D* merged ─ I9 first sync + verification ─ I10 comms ─ I11 
 
 ---
 
-### I0. Holds and communication (now)
+### I0. Holds and communication: done (owner, 2026-10-23)
 - **Tell the people who run the syncs and the curation pipeline:**
   - No non-dryrun `sync-to-portal.yml` until I9.
   - The curation pipeline only runs with the `--model-jsonld` pointing at a v13.1.0 copy until pipeline task P0 ships.

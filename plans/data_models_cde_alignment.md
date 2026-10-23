@@ -8,7 +8,7 @@
 | Item | Status |
 |---|---|
 | DM-1 to DM-10, DM-12 | **Done.** Recorded in `plans/data_models_cde_alignment_report.md` in data-models. Re-checked on `main`: `scripts/check_json_schemas.py` finds 0 failures across 38 schemas. |
-| DM-11 | **Open**: issue #273. The notes are in `plans/release_14.0.0_notes.md`. Tag `v14.0.0` and publish the release (owner's go-ahead). |
+| DM-11 | **Done**: the owner tagged `v14.0.0` at `c234c467` (2026-10-23). Issue #273. |
 | DM-13 | Open, deferred: issue #274. |
 | DM-14 | **New, open:** a patch. See below. |
 | DM-15 | **New, low priority**: issue #275. See below. |
@@ -155,7 +155,7 @@ PR #262 consolidates about 70 per-entity attributes into shared ones: `Assay`, `
 1. DM-1, DM-2, DM-3, DM-4, DM-5, DM-6, DM-8, DM-9 and DM-10 are independent CSV and Makefile edits. They can go to parallel Sonnet tasks, one commit each. DM-2 and DM-3 both touch `mapping.yaml`, so the same agent does them.
 2. DM-7, the post-processing step (O8 decided). Do it after DM-2 and DM-6, which change labels it maps.
 3. Regenerate everything (`make all`), then run DM-12.
-4. DM-11: release notes are done; tag `v14.0.0` (needs explicit go-ahead). **This is the next step.** DM-14 can go in before the tag or as 14.0.1.
+4. DM-11: done; `v14.0.0` tagged 2026-10-23. DM-14 didn't land before the tag, so it ships as 14.0.1.
 5. DM-13 comes later.
 
 ## What happens after the tag (not this repo)
