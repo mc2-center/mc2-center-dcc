@@ -20,7 +20,10 @@ CONFIG = {
     "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
     "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
     "education": {"manifest": "syn53651540", "portal_table": "syn51497305"},
-    "project": {"manifest": "syn59074382", "portal_table": "syn21868602"}
+    "project": {"manifest": "syn59074382", "portal_table": "syn21868602"},
+    # Consortium table ("Consortium", in CCKP - MC2 Admin). Used by
+    # consortium_display_names(); not a synced resource.
+    "consortium": {"table": "syn36345930"},
 }
 
 DUO_DICT = {
@@ -159,11 +162,53 @@ def strip_newlines(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def update_table(syn: Synapse, table_id: str, df: pd.DataFrame) -> None:
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
+    """Resolve ``program.*`` Consortium IDs to display names (``CSBC``).
+
+    Reads the Consortium table (``CONFIG["consortium"]["table"]``). Uses its
+    ``consortiumId`` column when it has one; until it does, an ID is
+    ``program.`` plus the slug of ``consortiumDisplayName`` (``PS-ON`` is
+    ``program.ps-on``). Empty IDs are skipped; any other ID the table doesn't
+    know raises ``ValueError``. Order follows ``ids``.
+    """
+    table_id = CONFIG["consortium"]["table"]
+    rows = Table(id=table_id).query(
+        query=f"SELECT * FROM {table_id}",
+        include_row_id_and_row_version=False,
+        synapse_client=syn,
+    )
+    if "consortiumId" in rows.columns:
+        lookup = dict(zip(rows["consortiumId"], rows["consortiumDisplayName"]))
+    else:
+        lookup = {
+            f"program.{_slugify(name)}": name for name in rows["consortiumDisplayName"]
+        }
+    wanted = [i.strip() for i in ids if i and i.strip()]
+    unknown = [i for i in wanted if i not in lookup]
+    if unknown:
+        raise ValueError(
+            f"Unknown Consortium ID(s) {unknown}; {table_id} has {sorted(lookup)}"
+        )
+    return [lookup[i] for i in wanted]
+
+
+def update_table(
+    syn: Synapse, table_id: str, df: pd.DataFrame, component: str | None = None
+) -> None:
     """Update the portal table.
 
+    With ``component``, ``df`` must already be in portal shape (see
+    ``crosswalk.to_portal``): the live table is checked against the
+    crosswalk and ``df``'s column names and order must equal the live
+    columns. Without it, the DataFrame is renamed to the live columns by
+    position (the sync scripts' manifest-style ``col_order`` lists).
+
     Steps include:
-        - aligning DataFrame column names to the live table's columns
+        - checking or aligning DataFrame column names to the live table's columns
         - creating a new table version
         - truncating the table
         - sync over rows from the latest manifest, restoring the previous
@@ -180,13 +225,31 @@ def update_table(syn: Synapse, table_id: str, df: pd.DataFrame) -> None:
     # shapes can't line up. The only live columns the DataFrame may omit are
     # known unpopulated trailing columns, which are left empty.
     live_columns = list(table.columns.keys())
-    missing = live_columns[len(df.columns):]
-    if len(df.columns) > len(live_columns) or not set(missing) <= OPTIONAL_TRAILING_COLUMNS:
-        raise ValueError(
-            f"{table_id} has columns {live_columns} but {len(df.columns)} were "
-            f"provided ({list(df.columns)}); refusing to truncate the table."
+    if component is not None:
+        import crosswalk  # local import: crosswalk imports this module
+
+        crosswalk.check_live_columns(
+            table_id,
+            component,
+            {n: c.column_type for n, c in table.columns.items()},
         )
-    df = strip_newlines(df.set_axis(live_columns[: len(df.columns)], axis="columns"))
+        want = live_columns
+        while want and want[-1] in OPTIONAL_TRAILING_COLUMNS:
+            want = want[:-1]
+        if list(df.columns) != want:
+            raise ValueError(
+                f"{table_id} expects columns {want} but got {list(df.columns)}; "
+                "refusing to truncate the table."
+            )
+        df = strip_newlines(df)
+    else:
+        missing = live_columns[len(df.columns):]
+        if len(df.columns) > len(live_columns) or not set(missing) <= OPTIONAL_TRAILING_COLUMNS:
+            raise ValueError(
+                f"{table_id} has columns {live_columns} but {len(df.columns)} were "
+                f"provided ({list(df.columns)}); refusing to truncate the table."
+            )
+        df = strip_newlines(df.set_axis(live_columns[: len(df.columns)], axis="columns"))
 
     today = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
     print(f"Creating new table version with label: {today}...")
