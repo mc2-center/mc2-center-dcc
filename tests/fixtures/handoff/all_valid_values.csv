@@ -1,0 +1,61 @@
+category,valid_value,nonpreferred_values
+dataset_species,African Bush Elephant,"Loxodonta africana, African bush elephant"
+dataset_species,Armadillo,Dasypus novemcinctus
+dataset_species,Asian Elephant,"Elephas maximus, Asian elephant"
+dataset_species,Boar,Sus scrofa
+dataset_species,Cat,Felis catus
+assay,10-cell RNA Sequencing,10-cell rna sequencing
+assay,16S Ribosomal Gene Sequencing Assay,"16s ribosomal gene sequencing assay, 16S rRNA sequencing, 16S Ribosomal RNA Sequencing, 16S rRNA gene amplification, 16S ribosomal RNA sequencing"
+assay,3' RNA-seq,
+assay,3C,"3c, Chromosome Conformation NG Capture-C Assay, Chromosome Conformation Capture Assay"
+assay,3C-qPCR,"Quantitative analysis of chromosome conformation capture assays, 3c-qpcr"
+tissue,Gonad,"Gonadal, Gonads"
+tissue,Abdominal Esophagus,"ESOPHAGUS, ABDOMINAL"
+tissue,Adipose Tissue,"Adipose, Body Fat, Fat Tissue, Human Adipose Tissue"
+tissue,Adrenal Gland,"suprarenal gland, Adrenal Glands, GLAND, ADRENAL,  adrenal gland, Adrenal, Adrenals"
+tissue,Alveolus,"Bronchial Alveolus, Alveoli, alveoli, Pulmonary Alveolus"
+tumorType,Cutaneous Melanoma,"Melanoma of Skin, Malignant Melanoma of Skin, Skin Melanoma, Malignant Melanoma (of Skin), Stage Unspecified, Cutaneous (Skin) Melanoma, CM, Skin, Melanoma, Skin Cutaneous Melanoma, Melanoma of the Skin, Malignant Melanoma of Skin Stage Unspecified, Malignant Cutaneous Melanoma"
+tumorType,Acinar Cell Carcinoma,"Acinar Carcinoma, Acinar adenocarcinoma, Acinar Cell Adenocarcinoma, Acinar carcinoma, Acinic Cell Carcinoma, Acinic Cell Adenocarcinoma, Acinar Adenocarcinoma, Acinic cell adenocarcinoma"
+tumorType,Acute Lymphoblastic Leukemia,"Precursor Lymphoblasic Leukemia, Acute lymphatic leukemia, Precursor Lymphoblastic Leukemia, Acute Lymphoid Leukemia, Precursor Cell Lymphoblastic Leukemia, Acute Lymphoblastic Leukemia (ALL), Acute lymphoblastic leukemia (ALL), Acute lymphoblastic leukemia, precursor cell type, Lymphoblastic Leukemia, ALL, Acute Lymphogenous Leukemia, ALL - Acute Lymphocytic Leukemia, Acute lymphoid leukemia, Acute Lymphocytic Leukaemia, Acute Lymphocytic Leukemia, ALL_TYPE, Acute Lymphocytic Leukemias, Acute lymphocytic leukemia, acute lymphocytic leukemia"
+tumorType,Acute Monocytic Leukemia,"Monocytic Leukemia, Acute Monocytic Leukemia (Fab M5B), Acute Monocytic Leukemia (FAB M5b)"
+tumorType,Acute Myeloid Leukemia,"Acute myelocytic leukemia, Acute Myeloid Leukemia Not Otherwise Specified, Acute myelogenous leukemia, Acute Myelogenous Leukemia, Acute Nonlymphocytic Leukemia, ANLL, Acute myeloblastic leukemia, AML - Acute Myeloid Leukemia, AML, Acute Myeloid Leukemia (AML), Acute granulocytic leukemia, Hematopoeitic - Acute Myleogenous Leukemia (AML), Acute Myelogenous Leukemias, Acute myeloid leukemia (AML), acute myeloblastic leukemia, acute nonlymphocytic leukemia, acute myelogenous leukemia, Acute Myeloblastic Leukemia, Acute Myelocytic Leukemia, Acute Granulocytic Leukemia"
+license,AAL,
+license,ADSL,
+license,AFL-1.1,
+license,AFL-1.2,
+license,AFL-2.0,
+ed_topic,Computational Model Development,
+ed_topic,Computational Resource,
+ed_topic,Diversity/Equity/Inclusion,
+ed_topic,Drug Resistance/Sensitivity,
+ed_topic,Epigenetics,
+theme_name,Computational Model Development,
+theme_name,Computational Resource,
+theme_name,Drug Resistance/Sensitivity,
+theme_name,Epigenetics,
+theme_name,Evolution,
+tool_download_type,API Specification,
+tool_download_type,Binaries,
+tool_download_type,Biological Data,
+tool_download_type,Command-Line Specification,
+tool_download_type,Container File,
+tool_language,AWK,
+tool_language,ActionScript,
+tool_language,Ada,
+tool_language,AppleScript,
+tool_language,Assembly Language,
+tool_operation,Aggregation,
+tool_operation,Allele Frequency Distribution Analysis,
+tool_operation,Analysis,
+tool_operation,Annotation,
+tool_operation,Box-Whisker Plot Plotting,
+tool_topic,Allergy Clinical Immunology and Immunotherapeutics,
+tool_topic,Biochemistry,
+tool_topic,Bioimaging,
+tool_topic,Bioinformatics,
+tool_topic,Biological Databases,
+tool_type,Bioinformatics Portal,
+tool_type,Command-Line Tool,
+tool_type,Database Portal,
+tool_type,Desktop Application,
+tool_type,Library,
