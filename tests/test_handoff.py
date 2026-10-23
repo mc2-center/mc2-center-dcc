@@ -182,3 +182,19 @@ def test_educational_resource_legacy_grant_and_license(proc_mod, caplog):
         out = proc_mod.process_df(df)
     assert list(out.columns) == headers
     assert "Resource Grant Number" in caplog.text and "Resource License" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "ca_number, mapping, expected",
+    [
+        ("CA1", None, ("synF1", "synG1")),  # table match, no mapping (grants path)
+        ("CA1", {"CA2": ("synF2", "synG2")}, ("synF1", "synG1")),  # table match, mapping lacks it
+        ("CA2", {"CA2": ("synF2", "synG2")}, ("synF2", "synG2")),  # mapping overrides
+        ("CA9", None, (None, None)),  # no match anywhere
+        ("CA9", {"CA2": ("synF2", "synG2")}, (None, None)),  # no match, mapping lacks it
+    ],
+)
+def test_folder_lookup(genmp_mod, ca_number, mapping, expected):
+    ref = pd.DataFrame({"grantNumber": ["CA1"], "folderId": ["synF1"], "grantId": ["synG1"]})
+    got = genmp_mod.get_folder_id_and_grant_id_from_csv(ref, ca_number, "folderId", "grantId", mapping)
+    assert tuple(got) == expected

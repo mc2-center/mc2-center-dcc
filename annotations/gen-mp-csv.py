@@ -84,15 +84,12 @@ def get_folder_id_and_grant_id_from_csv(
 
         match = df[df["grantNumber"] == ca_number]
 
-        if not match.empty:
+        if mapping is not None and ca_number in mapping:
+            print(f"Entry {ca_number} contains values from mapping dictionary")
+            folder_id, grant_id = mapping[ca_number]
+        elif not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
-
-        if mapping is not None:
-            if ca_number in mapping.keys():
-                print(f"Entry {ca_number} contains values from mapping dictionary")
-                folder_id, grant_id = mapping[ca_number]
-            
         else:
             print(f"No match found for {ca_number}.")
             return None, None
