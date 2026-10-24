@@ -1,11 +1,17 @@
 import argparse
+import os
+import sys
 from getpass import getpass
 
 import pandas as pd
 from synapseclient import Synapse
 from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Table
-from attribute_dictionary import ATTRIBUTE_DICT
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
+import model_contract
 
 
 def login() -> Synapse:
@@ -38,7 +44,7 @@ def get_args() -> argparse.Namespace:
         "-cv",
         "--cv_list",
         type=str,
-        default="https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv",
+        default=model_contract.ALL_VALID_VALUES_URL,
         help="CSV of controlled terms and their non-preferred terms",
     )
     parser.add_argument("--dryrun", action="store_true")
@@ -81,11 +87,11 @@ def update_nonpreferred_terms(
     """Update legacy annotations found to current standard terms."""
 
     # Manifest may use colnames that are variations of what is listed
-    # in the dictionary, e.g. "Publication Assay" instead of "assay".
-    # Re-map colnames to match with dictionary, keeping record of the
-    # original manifest colnames.
+    # in the CV, e.g. "Assay" or the 13.1.0 "Publication Assay" instead of
+    # "assay". Re-map colnames to CV categories (derived from the crosswalk),
+    # keeping record of the original manifest colnames.
     og_colnames = table.columns
-    table = table.rename(columns=ATTRIBUTE_DICT)
+    table = table.rename(columns=header_maps.cv_category_columns())
     for category in cv_dict.index:
         if category in table.columns:
             print(f"\tChecking {category}...")
