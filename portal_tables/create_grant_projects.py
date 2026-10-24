@@ -12,7 +12,8 @@ import pandas as pd
 
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
-from synapseclient.models import Table
+from synapseclient.models import Table, Team as TeamModel
+from synapseclient.operations import find_entity_id
 
 import crosswalk
 import model_contract
@@ -82,17 +83,33 @@ def get_args():
     return parser.parse_args()
 
 
+def _text(value):
+    """Cell value as text: ``None`` and NaN become the empty string."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return ""
+    return str(value)
+
+
+def _split_people(value):
+    """Comma-separated people cell to a list; missing or empty gives ``[]``."""
+    if isinstance(value, (list, tuple, set)):
+        names = [_text(v) for v in value]
+    else:
+        names = _text(value).split(",")
+    return [n.strip() for n in names if n.strip()]
+
+
 def create_wiki_pages(syn, project_id, grant):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant["consortium"]
-    grant_type = grant["GrantType"]
-    title = grant["GrantInstitutionAlias"]
-    institutions = grant["GrantInstitutionName"]
-    desc = grant["GrantAbstract"] or ""
+    consortium = _text(grant["consortium"])
+    grant_type = _text(grant["GrantType"])
+    title = _text(grant["GrantInstitutionAlias"])
+    institutions = _text(grant["GrantInstitutionName"])
+    desc = _text(grant["GrantAbstract"])
 
-    content = f"""### The {consortium} {grant_type} Research Project \\@{title}
+    content = f"""### The {consortium} {grant_type} Research Project \\@ {title}
 
 #### List of Collaborating Institutions
 {institutions}
@@ -112,15 +129,17 @@ def create_wiki_pages(syn, project_id, grant):
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
-    pis = [pi.strip(" ") for pi in grant["Investigator"].split(",")]
-    pi_markdown = "* " + "\n* ".join(pis)
-    pi_wiki = Wiki(
-        title="Project Investigators",
-        owner=project_id,
-        markdown=pi_markdown,
-        parentWikiId=main_wiki.id,
-    )
-    pi_wiki = syn.store(pi_wiki)
+    pis = _split_people(grant["Investigator"])
+    if pis:
+        pi_markdown = "* " + "\n* ".join(pis)
+        syn.store(
+            Wiki(
+                title="Project Investigators",
+                owner=project_id,
+                markdown=pi_markdown,
+                parentWikiId=main_wiki.id,
+            )
+        )
 
 
 def create_folders(syn, project_id):
@@ -142,47 +161,85 @@ def create_folders(syn, project_id):
         syn.store(Folder(name, parent=project_id))
 
 
-def create_team(syn, project_id, grant, access_type="edit"):
-    """Create team for new grant project."""
-    consortia = _join_listlike_col(grant["consortium"])
-    center = _join_listlike_col(grant["GrantInstitutionAlias"])
-    team_name = f"{consortia} {center} {grant['GrantType']} {grant['GrantNumber']}"
+def find_team_id(syn, team_name):
+    """ID of the team named exactly ``team_name``, or None if there isn't one."""
     try:
-        new_team = Team(name=team_name, canPublicJoin=False)
-        new_team = syn.store(new_team)
-        syn.setPermissions(
-            project_id, principalId=new_team.id, accessType=PERMISSIONS.get(access_type)
-        )
-        return new_team.id
-    except ValueError as err:
-        if err.__context__.response.status_code == 409:
-            print(f"Team already exists: {team_name}")
-        else:
-            print(f"Something went wrong! Team: {team_name}")
+        return TeamModel.from_name(team_name, synapse_client=syn).id
+    except ValueError:  # "Can't find team"
         return None
 
 
-def create_grant_projects(syn, grants):
-    """Create a new Synapse project for each grant and populate its Wiki."""
+def create_team(syn, project_id, grant, access_type="edit"):
+    """Create (or reuse, if one already has the name) the team for a grant."""
+    consortia = _join_listlike_col(grant["consortium"])
+    center = _join_listlike_col(grant["GrantInstitutionAlias"])
+    team_name = f"{consortia} {center} {grant['GrantType']} {grant['GrantNumber']}"
+    team_id = find_team_id(syn, team_name)
+    if team_id is not None:
+        print(f"Reusing existing team: {team_name}")
+    else:
+        try:
+            team_id = syn.store(Team(name=team_name, canPublicJoin=False)).id
+        except ValueError as err:
+            if err.__context__ is not None and err.__context__.response.status_code == 409:
+                print(f"Team already exists: {team_name}")
+            else:
+                print(f"Something went wrong! Team: {team_name}")
+            return None
+    syn.setPermissions(
+        project_id, principalId=team_id, accessType=PERMISSIONS.get(access_type)
+    )
+    return team_id
 
+
+def _has_wiki(syn, project_id):
+    """True if the project already has a root Wiki page."""
+    try:
+        syn.getWiki(project_id)
+        return True
+    except synapseclient.core.exceptions.SynapseHTTPError as err:
+        if err.response is not None and err.response.status_code == 404:
+            return False
+        raise
+
+
+def create_grant_projects(syn, grants):
+    """Create (or reuse) a Synapse project for each grant and populate it.
+
+    A project that already exists under the grant's name (left by an earlier
+    run that failed midway) is reused, and only the missing parts are added.
+    Returns ``{GrantViewId: (project_id, team_id)}``; grants that could not
+    be created map to ``("None", "None")``.
+    """
+
+    grants = grants.fillna("")
     grant_info_dict = {}
     for _, row in grants.iterrows():
         name = _syn_prettify(row["GrantName"])
         try:
-            project = Project(name)
-            project = syn.store(project)
+            project_id = find_entity_id(name=name, parent=None, synapse_client=syn)
+            if project_id is not None:
+                print(f"Reusing existing project: {name} ({project_id})")
+            else:
+                project_id = syn.store(Project(name)).id
             syn.setPermissions(
-                project.id, principalId=3450948, accessType=PERMISSIONS.get("admin")
+                project_id, principalId=3450948, accessType=PERMISSIONS.get("admin")
             )
 
-            create_wiki_pages(syn, project.id, row)
-            create_folders(syn, project.id)
-            team_id = create_team(syn, project.id, row)
-            grant_info_dict[row["GrantViewId"]] = (project.id, team_id)
-        except synapseclient.core.exceptions.SynapseHTTPError:
+            if not _has_wiki(syn, project_id):
+                create_wiki_pages(syn, project_id, row)
+            create_folders(syn, project_id)
+            team_id = create_team(syn, project_id, row)
+            if team_id is None:
+                raise synapseclient.core.exceptions.SynapseHTTPError(
+                    f"No team for {name}"
+                )
+            grant_info_dict[row["GrantViewId"]] = (project_id, team_id)
+        except synapseclient.core.exceptions.SynapseHTTPError as err:
+            logger.error("Grant creation failed, skipping: %s (%s)", name, err)
             print(f"Skipping: {name}")
             grant_info_dict[row["GrantViewId"]] = ("None", "None")
-    
+
     return grant_info_dict
 
 
@@ -235,12 +292,18 @@ def portal_to_sources(curr_portal):
     return curr_portal.rename(columns=renames)
 
 
-def process_new_grants(new = None, current = None, dryrun = None, synapse_client = None):
+def process_new_grants(new = None, current = None, dryrun = None, synapse_client = None, live_types = None):
     """Create projects for new grants; return all grants in staging shape.
 
     The result has class-label (key) columns plus the crosswalk's derived
     columns (``grantId``, ``consortium``, ``grantSynapseTeam``,
     ``grantSynapseProject``), ready for ``crosswalk.to_portal``.
+
+    With ``live_types`` (see ``crosswalk.check_crosswalk``), the full frame is
+    converted with placeholder project/team IDs *before* anything is created,
+    so a conversion error aborts the run with nothing created. Grants whose
+    project creation failed are left out of the result and listed in
+    ``result.attrs["failed_grants"]``.
     """
     syn = synapse_client
     if syn is None:
@@ -282,9 +345,39 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
             syn, manifest.loc[is_new, "ConsortiumKey"]
         )
     new_grants = manifest[is_new]
+    failed_grants = []
     grant_info_dict = {
         grant: ("None", "None") for grant in new_grants["GrantViewId"].to_list() if grant
     }
+
+    manifest["grantId"] = ""
+    manifest["grantSynapseTeam"] = manifest["GrantSynapseTeam"]
+    manifest["grantSynapseProject"] = manifest["GrantSynapseProject"]
+    curr = portal_to_sources(curr_portal)
+
+    def assemble(info):
+        """All grants in staging shape, new rows carrying ``info``'s IDs."""
+        # Add new Grant info to the current portal rows (which win on conflict).
+        frame = (
+            pd.concat([curr, manifest])
+            .drop_duplicates(subset=["GrantViewId"])
+            .reset_index(drop=True)
+        )
+        # Flatten list-like cells; add Project and Team info to new rows.
+        for col in ["GrantThemeName", "GrantInstitutionAlias", "GrantInstitutionName", "consortium"]:
+            frame[col] = frame[col].map(_list_to_string)
+        for idx, row in frame.iterrows():
+            if row["grantId"] == "":  # If row was added via new manifest
+                grantId, teamId = info[row["GrantViewId"]]
+                frame.at[idx, "grantId"] = grantId
+                frame.at[idx, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
+                frame.at[idx, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
+        return frame
+
+    if live_types is not None and not new_grants.empty:
+        # Dry-run the conversion with placeholder IDs; raises on bad data.
+        placeholder = {g: ("syn0", "0") for g in grant_info_dict}
+        crosswalk.to_portal(assemble(placeholder), COMPONENT, live_types)
 
     # Only add grants not currently in the Grants table.
     if new_grants.empty:
@@ -297,28 +390,20 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         else:
             print("Adding new grants...")
             grant_info_dict = create_grant_projects(syn, new_grants)
+            failed_grants = [
+                g for g, ids in grant_info_dict.items()
+                if any(i in ("None", "", None) for i in ids)
+            ]
 
-    manifest["grantId"] = ""
-    manifest["grantSynapseTeam"] = manifest["GrantSynapseTeam"]
-    manifest["grantSynapseProject"] = manifest["GrantSynapseProject"]
-
-    # Add new Grant info to the current portal rows (which win on conflict).
-    curr = portal_to_sources(curr_portal)
-    new_manifest = (
-        pd.concat([curr, manifest])
-        .drop_duplicates(subset=["GrantViewId"])
-        .reset_index(drop=True)
-    )
-
-    # Flatten list-like cells; add Project and Team info to new rows.
-    for col in ["GrantThemeName", "GrantInstitutionAlias", "GrantInstitutionName", "consortium"]:
-        new_manifest[col] = new_manifest[col].map(_list_to_string)
-    for idx, row in new_manifest.iterrows():
-        if row["grantId"] == "":  # If row was added via new manifest
-            grantId, teamId = grant_info_dict[row["GrantViewId"]]
-            new_manifest.at[idx, "grantId"] = grantId
-            new_manifest.at[idx, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
-            new_manifest.at[idx, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
+    new_manifest = assemble(grant_info_dict)
+    if failed_grants:
+        # Never write a grant that has no project: it would become a
+        # permanent "None" row and never be retried.
+        for g in failed_grants:
+            logger.error("Grant %s was not created; leaving it out of the table", g)
+        new_manifest = new_manifest[~new_manifest["GrantViewId"].isin(failed_grants)]
+        new_manifest = new_manifest.reset_index(drop=True)
+    new_manifest.attrs["failed_grants"] = failed_grants
 
     print("DONE ✓")
 
