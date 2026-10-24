@@ -48,6 +48,12 @@ def _patch(tta, monkeypatch, df):
             return df.copy()
 
     monkeypatch.setattr(tta, "Table", FakeTable)
+    # whole-table reads go through model_contract.read_manifest
+    def fake_read_manifest(syn, entity_id):
+        FakeTable.queries.append(f"SELECT * FROM {entity_id}")
+        return df.copy()
+
+    monkeypatch.setattr(tta.model_contract, "read_manifest", fake_read_manifest)
     return entity, FakeTable
 
 

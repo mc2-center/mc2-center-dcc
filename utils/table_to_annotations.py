@@ -23,7 +23,7 @@ import pandas as pd
 import re
 import sys
 
-from synapseclient.models import RecordSet, Table
+from synapseclient.models import Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
@@ -124,39 +124,34 @@ def get_table(
     """
 
     wanted = cols
-    if legacy_component is not None and type(cols) == list:
-        cols = "*"
-    if type(cols) == list and is_record_set is False:
-        cols = ", ".join(["".join(['"', col, '"']) for col in cols])
-    
-    if is_record_set:
-        file = RecordSet(id=source_id).get(synapse_client=syn)
-        data = file.path
-        table = pd.read_csv(data, header=0, dtype=str).fillna("")
+    whole_table = is_record_set or legacy_component is not None or cols == "*"
+
+    if whole_table:
+        table = model_contract.read_manifest(syn, source_id).fillna("")
         if legacy_component is not None:
             table = model_contract.rename_legacy_headers(table, legacy_component)
-        cols = wanted
-        table = table[cols]
-        for _, row in table.iterrows():
-            for col in cols:
-                entry = re.findall(r'"(.*?)"', row[col])
-                table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
+        if type(wanted) == list:
+            table = table[wanted]
+        if is_record_set:
+            for _, row in table.iterrows():
+                for col in table.columns:
+                    entry = re.findall(r'"(.*?)"', row[col])
+                    table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
     else:
-        query = f"SELECT {cols} FROM {source_id}"
+        # A column subset of a table or view is queried directly, so a wide
+        # FileView isn't pulled whole.
+        if type(cols) == list:
+            cols = ", ".join(["".join(['"', col, '"']) for col in cols])
         table = (
             Table(id=source_id)
             .query(
-                query=query,
+                query=f"SELECT {cols} FROM {source_id}",
                 include_row_id_and_row_version=False,
                 synapse_client=syn,
             )
             .fillna("")
         )
-        if legacy_component is not None:
-            table = model_contract.rename_legacy_headers(table, legacy_component)
-            if type(wanted) == list:
-                table = table[wanted]
-    
+
     print(f"Data acquired from Synapse table {source_id}")
 
     return table

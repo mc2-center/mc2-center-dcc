@@ -16,6 +16,7 @@ import os
 import pandas as pd
 import random
 import re
+import sys
 from synapseclient import operations
 from synapseclient.models import Dataset, EntityRef, Table
 import synapseutils
@@ -30,6 +31,10 @@ _spec = importlib.util.spec_from_file_location(
 _portal_utils = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_portal_utils)
 syn_login = _portal_utils.syn_login
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
 
 
 def get_args():
@@ -78,17 +83,6 @@ def get_args():
         default=None
     )
     return parser.parse_args()
-
-
-def get_table(syn, source_id: str) -> pd.DataFrame:
-    """Collect a Synapse table entity and return as a Dataframe."""
-
-    query = f"SELECT * FROM {source_id}"
-    table = Table(id=source_id).query(
-        query=query, include_row_id_and_row_version=False, synapse_client=syn
-    ).fillna("")
-
-    return table
 
 
 def filter_files_in_folder(syn, scope: str, formats: list[str], folder_or_files: str, cutoff_date: str, after_date: bool, check_version: bool, default_version: int) -> list:
@@ -199,7 +193,7 @@ def main():
         dsp_df = pd.read_csv(dsp, keep_default_na=False, header=0)
         print("\nData Sharing Plan read successfully!")
     elif "syn" in dsp:
-        dsp_df = get_table(syn, dsp)
+        dsp_df = model_contract.read_manifest(syn, dsp).fillna("")
         print(f"Data Sharing Plan acquired from Synapse table {dsp}!")
     else:
         print(

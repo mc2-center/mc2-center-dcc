@@ -12,9 +12,9 @@ author: orion.banks
 
 import argparse
 import os
+import sys
 import pandas as pd
 from synapseclient import operations
-from synapseclient.models import Table
 
 import importlib.util
 # removed when the mc2dcc package (CLI consolidation plan) lands
@@ -26,6 +26,10 @@ _spec = importlib.util.spec_from_file_location(
 _portal_utils = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_portal_utils)
 syn_login = _portal_utils.syn_login
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
 
 
 def get_args():
@@ -39,15 +43,6 @@ def get_args():
         default=None,
     )
     return parser.parse_args()
-
-
-def get_table(syn, source_id: str) -> pd.DataFrame:
-    """Collect a Synapse table entity and return as a Dataframe."""
-
-    query = f"SELECT * FROM {source_id}"
-    table = Table(id=source_id).query(query=query, synapse_client=syn).fillna("")
-
-    return table
 
 
 def remove_files_from_dataset(syn, dataset: str, files: list[str]) -> tuple[str, list]:
@@ -80,7 +75,7 @@ def main():
         config_df = pd.read_csv(config, keep_default_na=False, header=0)
         print("\nDataset trimming config read successfully!")
     elif "syn" in config:
-        config_df = get_table(syn, config)
+        config_df = model_contract.read_manifest(syn, config).fillna("")
         print(f"Data trimming config acquired from Synapse table {config}!")
     else:
         print(
