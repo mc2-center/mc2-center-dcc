@@ -96,7 +96,7 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
 5. Write with `utils.update_table(syn, table_id, df, component=...)`.
 6. Delete the script's hardcoded `col_order`.
 
-**Check for each:** `--dryrun --noprint -o <scratch>` succeeds. The diff of its output CSV against the B0-era dry-run output in the session scratchpad (`b0/final_<type>.csv`) contains **only** the changes the task spec lists.
+**Check for each:** `--dryrun -o <scratch>` succeeds (not `--noprint`, which suppresses the CSV). The diff of its output CSV against a dry run of the unmodified script contains **only** the changes the task spec lists.
 
 | Task | Script | Specific changes |
 |---|---|---|
@@ -127,7 +127,7 @@ D15 (upload-workflow driver): after D8 (and D11, if RecordSets go ahead)
   - Take the column order from `model_contract.template_headers(component)` instead of the 4 hardcoded lists.
   - Before ordering: apply `RENAMES_13_TO_14[component]` to any legacy headers, with a warning. Rename `<Resource> Grant Number` to `GrantView Key`. Fill `PublicationView_id` from `Pubmed Id`. Add any missing template column as empty.
   - **Log every column it drops**, which covers the `_download_status`, `_download_source`, `_pdf_path`, `_parse_error`, `_tool_availability_text` and `keywords` columns the pipeline writes. Don't drop silently as `df[col_order]` does now.
-  - Keep the 500 → 400-character "(Read more on Pubmed)" cap, but **don't** apply it to ID or key columns.
+  - Keep the 500 → 400-character "(Read more on Pubmed)" cap, but **don't** apply it to ID, key or alias columns (alias exemption: owner, 2026-10-23).
   - Add argparse (`input_csv` from gen-mp-csv) instead of `sys.argv[1]`.
 - **Checks:**
   - Using a fixture of today's pipeline output (old headers plus `_…` columns) **and** a fixture of the P1 output (14.0.0 headers): both produce files whose header row equals `templates/<component>.csv` exactly.
