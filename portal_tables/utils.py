@@ -196,6 +196,70 @@ def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
     return [lookup[i] for i in wanted]
 
 
+def split_cell(value) -> list[str]:
+    """A manifest cell (comma-separated string or list) as a list of strings."""
+    if isinstance(value, (list, tuple)):
+        items = [str(v) for v in value]
+    elif value is None or (not isinstance(value, str) and pd.isna(value)):
+        items = []
+    else:
+        items = str(value).split(",")
+    return [i.strip() for i in items if i and i.strip()]
+
+
+def known_consortium_names(syn: Synapse) -> set[str]:
+    """Display names in the Consortium table (read-only)."""
+    table_id = CONFIG["consortium"]["table"]
+    rows = Table(id=table_id).query(
+        query=f"SELECT consortiumDisplayName FROM {table_id}",
+        include_row_id_and_row_version=False,
+        synapse_client=syn,
+    )
+    return set(rows["consortiumDisplayName"])
+
+
+def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[str]]:
+    """Resolve ConsortiumKey cells to lists of consortium display names.
+
+    Until infrastructure step I5 regenerates the manifests, cells hold display
+    names (``CSBC``); afterwards they hold ``program.*`` IDs. A value that is
+    a display name the Consortium table knows passes through; a ``program.*``
+    ID is resolved with ``consortium_display_names``. Any other value is
+    fatal: every unknown value is collected and raised in one ``ValueError``.
+    """
+    if known_names is None:
+        known_names = known_consortium_names(syn)
+    resolved: dict[str, str] = {}
+    unknown = []
+    for cell in cells:
+        for token in split_cell(cell):
+            if token in resolved or token in unknown:
+                continue
+            if token in known_names:
+                resolved[token] = token
+            elif token.startswith("program."):
+                try:
+                    resolved[token] = consortium_display_names(syn, [token])[0]
+                except ValueError:
+                    unknown.append(token)
+            else:
+                unknown.append(token)
+    if unknown:
+        raise ValueError(
+            f"Unknown ConsortiumKey value(s) {sorted(unknown)}: neither a display "
+            f"name nor a program.* ID in the Consortium table "
+            f"({sorted(known_names)})"
+        )
+    out = []
+    for cell in cells:
+        names = []
+        for token in split_cell(cell):
+            if resolved[token] not in names:
+                names.append(resolved[token])
+        out.append(names)
+    return out
+
+
 def update_table(
     syn: Synapse, table_id: str, df: pd.DataFrame, component: str | None = None
 ) -> None:

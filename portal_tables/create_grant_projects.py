@@ -201,59 +201,16 @@ def read_manifest(syn, manifest_id):
     return model_contract.normalize_headers(manifest, to="keys")
 
 
-def _split_values(value):
-    """Comma-separated string or list to a list of stripped, non-empty values."""
-    if isinstance(value, str):
-        value = value.split(",")
-    elif value is None or (not hasattr(value, "__iter__") and pd.isna(value)):
-        return []
-    return [v.strip() for v in value if isinstance(v, str) and v.strip()]
-
-
 def resolve_consortium(syn, values):
-    """Resolve ConsortiumKey values to Consortium display names.
+    """Resolve ConsortiumKey values to ``", "``-joined display names.
 
-    Each cell may hold several comma-separated values. ``program.*`` IDs are
-    resolved with ``utils.consortium_display_names``; a value that is already
-    a display name known to the Consortium table (the live manifest today)
-    passes through unchanged. Any other value raises ``ValueError``, listing
-    every unknown value. Returns a Series of ``", "``-joined display names.
+    See ``utils.resolve_consortium_keys``; unknown values raise ``ValueError``.
     """
-    cells = [_split_values(v) for v in values]
-    tokens = {t for cell in cells for t in cell}
-    if not tokens:
+    cells = list(values)
+    if not any(utils.split_cell(c) for c in cells):
         return pd.Series([""] * len(cells), index=values.index, dtype=object)
-
-    table_id = utils.CONFIG["consortium"]["table"]
-    known = set(
-        Table(id=table_id)
-        .query(
-            query=f"SELECT consortiumDisplayName FROM {table_id}",
-            include_row_id_and_row_version=False,
-            synapse_client=syn,
-        )["consortiumDisplayName"]
-    )
-    ids = sorted(t for t in tokens if t.startswith("program."))
-    unknown = sorted(t for t in tokens if not t.startswith("program.") and t not in known)
-    resolved = {}
-    try:
-        resolved = dict(zip(ids, utils.consortium_display_names(syn, ids)))
-    except ValueError as err:
-        unknown_ids = [i for i in ids if f"'{i}'" in str(err)]
-        raise ValueError(
-            f"Unknown ConsortiumKey value(s): names {unknown}, IDs {unknown_ids}. {err}"
-        ) from err
-    if unknown:
-        raise ValueError(
-            f"Unknown ConsortiumKey value(s) {unknown}: neither a program.* ID nor "
-            f"a display name in {table_id} ({sorted(known)})"
-        )
-    mapping = {t: resolved.get(t, t) for t in tokens}
-    return pd.Series(
-        [", ".join(mapping[t] for t in cell) for cell in cells],
-        index=values.index,
-        dtype=object,
-    )
+    names = utils.resolve_consortium_keys(syn, cells)
+    return pd.Series([", ".join(n) for n in names], index=values.index, dtype=object)
 
 
 def _list_to_string(value):
