@@ -144,17 +144,17 @@ def test_live_style_stripped_headers_give_identical_output():
 
 
 def test_access_text_for_ids_and_short_codes_match():
-    id_to_code = model_contract.duo_id_to_code()
-    for duo_id, code in [("DUO:0000042", "GRU"), ("DUO:0000029", "RTN"), ("DUO:0000018", "NPUNCU")]:
-        assert id_to_code[duo_id] == code
-        assert sync_datasets.translate_access(duo_id, id_to_code) == sync_datasets.translate_access(code, id_to_code)
-        assert sync_datasets.translate_access(code, id_to_code) == utils.DUO_DICT[code]
+    code_to_id = sync_datasets.duo_code_to_id()
+    for duo_id, code in [("DUO:0000042", "GRU"), ("DUO:0000029", "RTN"), ("DUO:0000018", "NPUNCU"), ("DUO:0000012", "RS")]:
+        assert code_to_id[code] == duo_id
+        assert sync_datasets.translate_access(duo_id, code_to_id) == utils.DUO_DICT[duo_id]
+        assert sync_datasets.translate_access(code, code_to_id) == utils.DUO_DICT[duo_id]
 
 
 def test_pending_annotation_and_duoplus_are_mapped():
-    id_to_code = model_contract.duo_id_to_code()
-    assert sync_datasets.translate_access("Pending Annotation", id_to_code) == utils.DUO_DICT["Pending Annotation"]
-    assert sync_datasets.translate_access("DUOPlus1", id_to_code).startswith("Source geography")
+    code_to_id = sync_datasets.duo_code_to_id()
+    assert sync_datasets.translate_access("Pending Annotation", code_to_id) == utils.DUO_DICT["Pending Annotation"]
+    assert sync_datasets.translate_access("DUOPlus1", code_to_id).startswith("Source geography")
 
 
 def test_duoplus_text_matches_data_models_description():
@@ -178,7 +178,7 @@ def test_unknown_code_warns_and_row_is_still_processed(caplog):
     # set from the link/alias, not skipped because of the unknown code
     assert row["sourceRepository"] == utils.extract_map_repository("", "setB")
     row_a = out[out["datasetAlias"] == "setA"].iloc[0]
-    assert sorted(row_a["accessInformation"]) == sorted([utils.DUO_DICT["GRU"], utils.DUO_DICT["RTN"]])
+    assert sorted(row_a["accessInformation"]) == sorted([utils.DUO_DICT["DUO:0000042"], utils.DUO_DICT["DUO:0000029"]])
 
 
 def test_theme_consortium_and_pub_lists_keep_first_seen_order(monkeypatch):
@@ -206,7 +206,8 @@ def test_theme_consortium_and_pub_lists_keep_first_seen_order(monkeypatch):
     assert out.at[0, "pub"] == ["Z title", "A title"]
 
 
-# The access text each code produced before DUOPlus moved into utils.DUO_DICT.
+# The access text each code produced before DUO_DICT was keyed by DUO ID.
+# Short codes must keep producing exactly this text.
 ACCESS_TEXT_BEFORE = {
     "GRU": "Data access is allowed for any research purpose",
     "IRB": "Requestor must provide documentation of local IRB/ERB approval to access data",
@@ -228,20 +229,24 @@ ACCESS_TEXT_BEFORE = {
 
 
 def test_access_text_unchanged_for_every_existing_code():
-    id_to_code = model_contract.duo_id_to_code()
+    code_to_id = sync_datasets.duo_code_to_id()
     for code, text in ACCESS_TEXT_BEFORE.items():
-        assert utils.DUO_DICT[code] == text
-        assert sync_datasets.translate_access(code, id_to_code) == text
+        assert sync_datasets.translate_access(code, code_to_id) == text
 
 
 def test_every_14_duo_id_has_access_text():
-    id_to_code = model_contract.duo_id_to_code()
-    assert len(id_to_code) == 24
-    for duo_id, code in id_to_code.items():
-        assert code in utils.DUO_DICT, code
-        text = sync_datasets.translate_access(duo_id, id_to_code)
-        assert text == utils.DUO_DICT[code]
+    code_to_id = sync_datasets.duo_code_to_id()
+    duo_ids = list(model_contract.duo_id_to_code())
+    assert len(duo_ids) == 24
+    for duo_id in duo_ids:
+        text = sync_datasets.translate_access(duo_id, code_to_id)
+        assert text == utils.DUO_DICT[duo_id]
         assert not text.startswith("Access information not mapped")
+
+
+def test_duo_dict_keys_are_ids_or_manifest_sentinels():
+    for key in utils.DUO_DICT:
+        assert key.startswith("DUO:") or key.startswith("DUOPlus") or key == "Pending Annotation", key
 
 
 def test_identify_download_type_accepts_both_keys(monkeypatch):

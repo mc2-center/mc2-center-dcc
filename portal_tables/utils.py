@@ -26,40 +26,40 @@ CONFIG = {
     "consortium": {"table": "syn36345930"},
 }
 
+# Portal access text per data use code. Manifests store DUO IDs
+# (DUO:nnnnnnn, master decision O10); the short code from data-models
+# modules/shared/duo.csv (Properties column) is noted for reference.
+# Codes whose details live in another manifest column (USE, COL, RST, TSM,
+# MOR, IST, GSR, DSR) state the condition only.
 DUO_DICT = {
-    "GRU" : "Data access is allowed for any research purpose",
-    "IRB" : "Requestor must provide documentation of local IRB/ERB approval to access data",
-    "NCU" : "Data access is limited to not-for-profit use",
-    "NPU" : "Data access is limited to not-for-profit organizations",
-    "NPUNCU" : "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",
-    "NRES" : "There are no restrictions on the use of this data",
-    "RS" : "Data access is limited to use in specific types of research",
-    "RTN" : "Derived/enriched data must be returned to the database/resource repository",
-    # Remaining 14.0.0 DUO codes (modules/shared/duo.csv Properties), worded
-    # from each term's description. Codes whose details live in another
-    # manifest column (USE, COL, RST, TSM, MOR, IST, GSR, DSR) state the
-    # condition only.
-    "CC" : "Data access is allowed for clinical use and care",
-    "COL" : "Requestor must agree to collaborate with the primary study investigator(s)",
-    "DSR" : "Data access is limited to research related to specific diseases",
-    "DUM" : "Additional conditions apply to data use",
-    "GSO" : "Data access is limited to genetic studies only",
-    "GSR" : "Data access is limited to use within specific geographic regions",
-    "HMB" : "Data access is allowed for health/medical/biomedical research, not including the study of population origins or ancestry",
-    "IST" : "Data access is limited to use within approved institutions",
-    "MOR" : "Requestor must not publish results of studies using the data before a specified date",
-    "NMDS" : "Data may not be used for methods development research",
-    "NPOA" : "Data may not be used for population, origin, or ancestry research",
-    "POA" : "Data access is limited to the study of population origins or ancestry",
-    "PS" : "Data access is limited to use within an approved project",
-    "PUB" : "Requestor must make results of studies using the data available to the scientific community",
-    "RST" : "Data access is limited to use in specific types of research",
-    "TSM" : "Data access is limited to a specific period of time",
-    "USE" : "Data access is limited to approved users",
+    "DUO:0000004" : "There are no restrictions on the use of this data",  # NRES
+    "DUO:0000006" : "Data access is allowed for health/medical/biomedical research, not including the study of population origins or ancestry",  # HMB
+    "DUO:0000007" : "Data access is limited to research related to specific diseases",  # DSR
+    "DUO:0000011" : "Data access is limited to the study of population origins or ancestry",  # POA
+    "DUO:0000012" : "Data access is limited to use in specific types of research",  # RST (formerly RS)
+    "DUO:0000015" : "Data may not be used for methods development research",  # NMDS
+    "DUO:0000016" : "Data access is limited to genetic studies only",  # GSO
+    "DUO:0000017" : "Additional conditions apply to data use",  # DUM
+    "DUO:0000018" : "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",  # NPUNCU
+    "DUO:0000019" : "Requestor must make results of studies using the data available to the scientific community",  # PUB
+    "DUO:0000020" : "Requestor must agree to collaborate with the primary study investigator(s)",  # COL
+    "DUO:0000021" : "Requestor must provide documentation of local IRB/ERB approval to access data",  # IRB
+    "DUO:0000022" : "Data access is limited to use within specific geographic regions",  # GSR
+    "DUO:0000024" : "Requestor must not publish results of studies using the data before a specified date",  # MOR
+    "DUO:0000025" : "Data access is limited to a specific period of time",  # TSM
+    "DUO:0000026" : "Data access is limited to approved users",  # USE
+    "DUO:0000027" : "Data access is limited to use within an approved project",  # PS
+    "DUO:0000028" : "Data access is limited to use within approved institutions",  # IST
+    "DUO:0000029" : "Derived/enriched data must be returned to the database/resource repository",  # RTN
+    "DUO:0000042" : "Data access is allowed for any research purpose",  # GRU
+    "DUO:0000043" : "Data access is allowed for clinical use and care",  # CC
+    "DUO:0000044" : "Data may not be used for population, origin, or ancestry research",  # NPOA
+    "DUO:0000045" : "Data access is limited to not-for-profit organizations",  # NPU
+    "DUO:0000046" : "Data access is limited to not-for-profit use",  # NCU
     "Pending Annotation" : "Access information was not provided for this dataset",
-    # DUOPlus terms have no short code. Their meaning is the first sentence of
-    # the term's description in data-models modules/shared/duo.csv (the rest
-    # of the description is curator guidance).
+    # DUOPlus terms have no DUO ID. Their meaning is the first sentence of the
+    # term's description in data-models modules/shared/duo.csv (the rest of
+    # the description is curator guidance).
     "DUOPlus1" : "Source geography is relevant to governance decisions",
     "DUOPlus2" : "Study population is relevant to governance decisions",
     "DUOPlus3" : "Data deidentification is relevant to governance decisions",
@@ -68,6 +68,9 @@ DUO_DICT = {
     "DUOPlus6" : "A license is associated with the Study",
     "DUOPlus7" : "Attribution conditions are associated with this Study",
 }
+
+# Short codes that pre-date duo.csv's Properties column, mapped to their ID.
+LEGACY_DUO_CODES = {"RS": "DUO:0000012"}
 
 REPO_DICT = {
     "CBioPortal" : [("cbioportal"), (None)],

@@ -46,21 +46,29 @@ def restore_display_names(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=renames)
 
 
-def translate_access(code: str, id_to_code: dict) -> str:
+def duo_code_to_id() -> dict[str, str]:
+    """Short code (``RTN``) -> DUO ID (``DUO:0000029``), from duo.csv plus legacy codes."""
+    mapping = {code: duo_id for duo_id, code in model_contract.duo_id_to_code().items()}
+    mapping.update(utils.LEGACY_DUO_CODES)
+    return mapping
+
+
+def translate_access(code: str, code_to_id: dict) -> str:
     """Access text for one data use code.
 
-    ``DUO:`` IDs are first translated to short codes; short codes (still held
-    by the live manifest during the transition) and ``DUOPlus*`` codes pass
-    through. A code with no entry gets a logged warning and fallback text
-    instead of raising.
+    Manifests store ``DUO:`` IDs, ``DUOPlus*`` and ``Pending Annotation``,
+    which are looked up directly. Short codes (still held by the live manifest
+    until it is migrated) are first translated to their DUO ID. A code with
+    no entry gets a logged warning and fallback text instead of raising.
     """
     code = code.strip()
-    short = id_to_code.get(code, code)
+    key = code_to_id.get(code, code)
     try:
-        return utils.translate_duo(short)
+        return utils.translate_duo(key)
     except KeyError:
         logger.warning("No access information mapped for data use code %r", code)
         return f"Access information not mapped: {code}"
+
 
 def _get_croissant_versions(syn: Synapse) -> dict:
     """Return a dict mapping dataset synID -> latest Croissant dataset_version."""
@@ -75,7 +83,7 @@ def add_missing_info(
     syn: Synapse, datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
-    id_to_code = model_contract.duo_id_to_code()
+    code_to_id = duo_code_to_id()
     datasets["link"] = [
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
@@ -184,7 +192,7 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
-        d = [translate_access(code, id_to_code) for code in row["DatasetDataUseCodes"].split(",")]
+        d = [translate_access(code, code_to_id) for code in row["DatasetDataUseCodes"].split(",")]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         datasets.at[_, "DatasetDataUseCodes"] = ",".join(d)
 
