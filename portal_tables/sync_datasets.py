@@ -112,20 +112,20 @@ def add_missing_info(
 
     for _, row in datasets.iterrows():
         grant_names = []
-        themes = set()
-        consortia = set()
+        themes = []
+        consortia = []
         for g in row["GrantViewKey"].split(","):
             if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
                     grants[grants.grantNumber == g]["grantName"].values[0]
                 )
-                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
-                consortia.update(
+                themes.extend(grants[grants.grantNumber == g]["theme"].values[0])
+                consortia.extend(
                     grants[grants.grantNumber == g]["consortium"].values[0]
                 )
         datasets.at[_, "grantName"] = grant_names
-        datasets.at[_, "theme"] = list(themes)
-        datasets.at[_, "consortium"] = list(consortia)
+        datasets.at[_, "theme"] = list(dict.fromkeys(themes))
+        datasets.at[_, "consortium"] = list(dict.fromkeys(consortia))
 
         # Use the actual Synapse entity ID (DatasetViewId), not DatasetAlias,
         # since DatasetAlias is often an external accession (e.g. a GEO
@@ -190,7 +190,7 @@ def add_missing_info(
                 )
             except (ValueError, IndexError):
                 pass  # PMID not yet annotated or found in portal table
-        datasets.at[_, "pub"] = list(set(pub_titles))
+        datasets.at[_, "pub"] = list(dict.fromkeys(pub_titles))
         # Use the most recent linked publication's year as the dataset's
         # release date for sorting; leave as None if no publication matched.
         datasets.at[_, "pubYear"] = max(pub_years) if pub_years else None

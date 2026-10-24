@@ -119,7 +119,7 @@ def run(rows, legacy=False, stripped=False):
 
 
 def canon(df):
-    """Order-insensitive view: the transform dedups lists through set()."""
+    """Order-insensitive view of list cells."""
     return df.map(lambda v: sorted(v) if isinstance(v, list) else v).astype(str)
 
 
@@ -175,3 +175,28 @@ def test_unknown_code_warns_and_row_is_still_processed(caplog):
     assert row["sourceRepository"] == utils.extract_map_repository("", "setB")
     row_a = out[out["datasetAlias"] == "setA"].iloc[0]
     assert sorted(row_a["accessInformation"]) == sorted([utils.DUO_DICT["GRU"], utils.DUO_DICT["RTN"]])
+
+
+def test_theme_consortium_and_pub_lists_keep_first_seen_order(monkeypatch):
+    grants = pd.DataFrame(
+        {
+            "grantNumber": ["CA1", "CA2"],
+            "grantName": ["One", "Two"],
+            "theme": [["Zeta", "Alpha"], ["Alpha", "Mu"]],
+            "consortium": [["Q", "B"], ["B", "A"]],
+        }
+    )
+    pubs = pd.DataFrame(
+        {
+            "pubMedId": [1001, 1002, 1003],
+            "publicationTitle": ["Z title", "A title", "Z title"],
+            "doi": ["d1", "d2", "d3"],
+            "publicationYear": [2020, 2021, 2022],
+        }
+    )
+    row = dict(MANIFEST_14[1], **{"GrantView Key": "CA1,CA2", "PublicationView Key": "1001,1002,1003"})
+    df = prepare([row], legacy=False)
+    out = sync_datasets.add_missing_info(None, df, grants, pubs)
+    assert out.at[0, "theme"] == ["Zeta", "Alpha", "Mu"]
+    assert out.at[0, "consortium"] == ["Q", "B", "A"]
+    assert out.at[0, "pub"] == ["Z title", "A title"]

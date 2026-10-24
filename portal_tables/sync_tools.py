@@ -21,23 +21,23 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     tools["consortium"] = ""
     tools["synapseLink"] = ""
     for _, row in tools.iterrows():
-        themes = set()
-        consortium = set()
+        themes = []
+        consortium = []
         for g in row["GrantViewKey"].split(","):
             if g not in ["", "Affiliated/Non-Grant Associated"]:
-                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
-                consortium.update(
+                themes.extend(grants[grants.grantNumber == g]["theme"].values[0])
+                consortium.extend(
                     grants[grants.grantNumber == g]["consortium"].values[0]
                 )
-        tools.at[_, "theme"] = list(themes)
-        tools.at[_, "consortium"] = list(consortium)
+        tools.at[_, "theme"] = list(dict.fromkeys(themes))
+        tools.at[_, "consortium"] = list(dict.fromkeys(consortium))
         
         synapse_links = []
         for s in [row["ToolDownloadUrl"], row["ToolLinkUrl"], row["ToolHomepage"]]:
             s_match = re.match(url_pattern, s)
             if s_match:
                 synapse_links.append("".join(["[Link](", s , ")"]))
-        tools.at[_, "synapseLink"] = ", ".join(set(synapse_links))
+        tools.at[_, "synapseLink"] = ", ".join(dict.fromkeys(synapse_links))
         
         tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or "Pending Annotation"
         
