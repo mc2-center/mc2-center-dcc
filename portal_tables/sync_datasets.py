@@ -205,8 +205,8 @@ def add_missing_info(
 
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
         download_type, download_id = utils.identify_download_type(
-            syn, row.rename({"DatasetViewId": "DatasetView_id"}), source_repo
-        )  # utils still reads the 13.1.0 key
+            syn, row, source_repo
+        )
         
         datasets.at[_, "sourceRepository"] = source_repo
         datasets.at[_, "downloadType"] = download_type

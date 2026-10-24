@@ -10,6 +10,8 @@ import model_contract
 import sync_datasets
 import utils
 
+REAL_IDENTIFY = utils.identify_download_type
+
 MANIFEST_14 = [
     {
         "Component": "DatasetView",
@@ -83,8 +85,8 @@ def offline(monkeypatch):
     monkeypatch.setattr(sync_datasets.operations, "get", lambda *a, **k: None)
 
     def fake_download(syn, row, repo):
-        assert "DatasetView_id" in row  # utils still reads the 13.1.0 key
-        return "Open Access", row["DatasetView_id"].split(",")[0]
+        assert "DatasetViewId" in row  # the 14.0.0 key, passed straight through
+        return "Open Access", row["DatasetViewId"].split(",")[0]
 
     monkeypatch.setattr(utils, "identify_download_type", fake_download)
 
@@ -200,3 +202,13 @@ def test_theme_consortium_and_pub_lists_keep_first_seen_order(monkeypatch):
     assert out.at[0, "theme"] == ["Zeta", "Alpha", "Mu"]
     assert out.at[0, "consortium"] == ["Q", "B", "A"]
     assert out.at[0, "pub"] == ["Z title", "A title"]
+
+
+def test_identify_download_type_accepts_both_keys(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        utils.operations, "get", lambda eid, **k: seen.append(eid) or None
+    )
+    for key in ("DatasetViewId", "DatasetView_id"):
+        REAL_IDENTIFY(None, pd.Series({key: "syn5, syn6"}), "Synapse")
+    assert seen == ["syn5", "syn5"]

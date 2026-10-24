@@ -384,15 +384,17 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
 def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
     """Determine download type and return download id if Synapse hosted or indexed.
 
-    When DatasetView_id points to a Synapse Dataset entity (created by the
+    When DatasetViewId (the 14.0.0 key; the 13.1.0 ``DatasetView_id`` is still
+    accepted) points to a Synapse Dataset entity (created by the
     geo_dataset_creation bulk indexing pipeline), download_type is set to
     "Synapse Indexed" and download_id is set to that entity's synID. The portal
     uses download_id as downloadSynId to surface per-run download links.
 
-    DatasetView_id may contain a comma-separated list of synIDs from legacy
+    The id may contain a comma-separated list of synIDs from legacy
     manifest entries; only the first is used.
     """
-    entity_id = row["DatasetView_id"].split(",")[0].strip()
+    key = "DatasetViewId" if "DatasetViewId" in row else "DatasetView_id"
+    entity_id = row[key].split(",")[0].strip()
 
     is_dataset = False
     if entity_id:
