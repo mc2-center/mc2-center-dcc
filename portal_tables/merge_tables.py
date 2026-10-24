@@ -18,7 +18,10 @@ author: orion.banks
 from synapseclient import Synapse, operations
 from synapseclient.models import MaterializedView, RecordSet, SchemaStorageStrategy, Table
 import argparse
+import logging
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def get_args():
@@ -65,22 +68,30 @@ def build_query(table_ids):
 
 def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org = "MC2Center"):
 
-    project_ids = Table(id=source).query(query=f"SELECT 'grantId' FROM {source}", synapse_client=syn)
+    project_ids = Table(id=source).query(query=f"SELECT grantId FROM {source}", synapse_client=syn)
 
     record_df = pd.DataFrame(project_ids)
     record_df["recordId"] = ""
     record_name = "_".join([org, record_type])
 
+    # TODO(D12): mirror tables below still feed the UNION; see plan before removing.
     for _,row in record_df.iterrows():
         folder_id = operations.find_entity_id(name=folder_name, parent=row["grantId"], synapse_client=syn)
+        if folder_id is None:
+            logger.warning("Skipping %s: folder '%s' not found", row["grantId"], folder_name)
+            continue
         record_id = operations.find_entity_id(name=record_name, parent=folder_id, synapse_client=syn)
+        if record_id is None:
+            logger.warning("Skipping %s: RecordSet '%s' not found in folder %s", row["grantId"], record_name, folder_id)
+            continue
         record_set = RecordSet(id=record_id).get(synapse_client=syn)
         record_set_df = pd.read_csv(record_set.path, header=0)  # apply sorting, column naming, extraction, etc. as needed
         record_set_table = Table(name=f"{record_name}_table", parent_id=row["grantId"]).store(synapse_client=syn)
         record_set_table.store_rows(values=record_set_df, schema_storage_strategy=SchemaStorageStrategy.INFER_FROM_DATA, synapse_client=syn)
         record_df.at[_,"recordId"] = record_set_table.id
 
-    return record_df
+    # grants that were skipped have no recordId; keep them out of the UNION query
+    return record_df[record_df["recordId"] != ""].reset_index(drop=True)
 
 
 def main():
