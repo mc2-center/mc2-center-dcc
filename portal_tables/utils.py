@@ -129,14 +129,6 @@ def get_args(resource: str) -> argparse.Namespace:
 
 
 # TODO: check if we still need this function?
-def sort_and_stringify_col(col: pd.Series) -> str:
-    """Sort list col then join together as comma-separated string."""
-    # Check column by looking at first row; if str, convert to list first.
-    if isinstance(col.iloc[0], str):
-        col = col.str.replace(", ", ",").str.split(",")
-    return col.apply(lambda x: ",".join(map(str, sorted(x))))
-
-
 def convert_to_stringlist(col: pd.Series) -> pd.Series:
     """Convert a string column to a list."""
     return col.str.replace(", ", ",").str.split(",")
