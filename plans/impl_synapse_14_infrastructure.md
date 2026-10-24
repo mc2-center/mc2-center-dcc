@@ -97,6 +97,14 @@ I5 + I6 + I4 + D* merged ─ I9 first sync + verification ─ I10 comms ─ I11 
 - **Order:** D2's `to_portal` adapts to the live types, so code and schema changes don't have to happen at the same moment. Re-run `check_crosswalk` after each change.
 - **Check:** `check_crosswalk` passes on all 7 tables. Portal facets render for Tools, Grants and Projects.
 
+### I4b. Consortium table IDs (approved by the owner, 2026-10-23; before the first D6/D7 sync)
+- **Table:** Consortium `syn36345930` (CCKP - MC2 Admin). Today it has 8 rows and no ID column. D2's `consortium_display_names()` derives `program.<slug of consortiumDisplayName>` until a `consortiumId` column exists, then uses that column.
+- **Changes:**
+  - Add a `consortiumId` (STRING) column, filled with the `program.*` ID from `all_valid_values.csv` at `v14.0.0` for each of the 8 existing rows.
+  - Add rows for the three IDs in the 14.0.0 enum with no row today: `program.htan`, `program.nci`, `program.sage-bionetworks`. The owner supplies their display names and any other column values.
+- **Before the write:** snapshot and CSV export, as in the execution rules.
+- **Check:** `consortium_display_names()` resolves all 11 enum IDs. A sync dry run of grants and people resolves every consortium.
+
 ### I5a. Grant-level migration to RecordSets (G1 = RecordSets)
 - **Order by type:** PublicationView, DatasetView, ToolView, EducationalResource, then GrantView. Then the assay-level types (FileView, Study, Biospecimen), coordinated with the I8.2 audit.
 - **For each grant and type:**
