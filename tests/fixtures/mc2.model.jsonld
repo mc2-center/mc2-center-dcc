@@ -2500,6 +2500,3602 @@
    "@id": "bts:WorkingGroupParticipation",
    "rdfs:label": "WorkingGroupParticipation",
    "sms:displayName": "Working Group Participation"
+  },
+  {
+   "@id": "bts:Breast",
+   "rdfs:label": "Breast",
+   "sms:displayName": "Breast"
+  },
+  {
+   "@id": "bts:SequencingLevel3",
+   "rdfs:label": "SequencingLevel3",
+   "sms:displayName": "Sequencing Level 3",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:SequencingLevel3Id"
+    },
+    {
+     "@id": "bts:SequencingLevel2Key"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:NGSUniqueProbeCount"
+    },
+    {
+     "@id": "bts:NGSUniqueTargetCount"
+    },
+    {
+     "@id": "bts:NGSMatrixType"
+    },
+    {
+     "@id": "bts:SoftwareandVersion"
+    },
+    {
+     "@id": "bts:WorkflowType"
+    },
+    {
+     "@id": "bts:WorkflowParameterDescription"
+    },
+    {
+     "@id": "bts:WorkflowLink"
+    }
+   ]
+  },
+  {
+   "@id": "bts:SequencingLevel2",
+   "rdfs:label": "SequencingLevel2",
+   "sms:displayName": "Sequencing Level 2",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:SequencingLevel2Id"
+    },
+    {
+     "@id": "bts:SequencingLevel1Key"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:NGSLibraryStrategy"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMaterial"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMolecule"
+    },
+    {
+     "@id": "bts:NGSLibrarySelectionMethod"
+    },
+    {
+     "@id": "bts:NGSLibraryLayout"
+    },
+    {
+     "@id": "bts:NGSSequencingPlatform"
+    },
+    {
+     "@id": "bts:NGSSequencingDesignDescription"
+    },
+    {
+     "@id": "bts:NGSRawReads"
+    },
+    {
+     "@id": "bts:NGSStitchedReads"
+    },
+    {
+     "@id": "bts:NGSAlignedReads"
+    },
+    {
+     "@id": "bts:NGSDeduplicatedReads"
+    },
+    {
+     "@id": "bts:NGSTrimmedReads"
+    },
+    {
+     "@id": "bts:NGSMapQ30"
+    },
+    {
+     "@id": "bts:NGSUniqueBases"
+    },
+    {
+     "@id": "bts:NGSReadLength"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:GenomicReference"
+    },
+    {
+     "@id": "bts:SoftwareandVersion"
+    }
+   ]
+  },
+  {
+   "@id": "bts:SequencingRNALevel1",
+   "rdfs:label": "SequencingRNALevel1",
+   "sms:displayName": "Sequencing RNA Level 1",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:SequencingRNALevel1Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:NGSLibraryStrategy"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMaterial"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMolecule"
+    },
+    {
+     "@id": "bts:NGSLibrarySelectionMethod"
+    },
+    {
+     "@id": "bts:NGSLibraryLayout"
+    },
+    {
+     "@id": "bts:NGSSequencingPlatform"
+    },
+    {
+     "@id": "bts:NGSSequencingDesignDescription"
+    },
+    {
+     "@id": "bts:NGSReadLength"
+    },
+    {
+     "@id": "bts:NGSRawReads"
+    },
+    {
+     "@id": "bts:NGSUniqueBases"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitName"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitVendor"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitVersion"
+    },
+    {
+     "@id": "bts:NGSReadIndicator"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationDaysfromIndex"
+    },
+    {
+     "@id": "bts:NGSSequencingLibraryConstructionDaysfromIndex"
+    },
+    {
+     "@id": "bts:NGSRNAEndBias"
+    },
+    {
+     "@id": "bts:NGSRNAReverseTranscriptionPrimer"
+    },
+    {
+     "@id": "bts:NGSRNARIN"
+    },
+    {
+     "@id": "bts:NGSRNADV200"
+    }
+   ]
+  },
+  {
+   "@id": "bts:SequencingLevel1",
+   "rdfs:label": "SequencingLevel1",
+   "sms:displayName": "Sequencing Level 1",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:SequencingLevel1Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:NGSLibraryStrategy"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMaterial"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMolecule"
+    },
+    {
+     "@id": "bts:NGSLibrarySelectionMethod"
+    },
+    {
+     "@id": "bts:NGSLibraryLayout"
+    },
+    {
+     "@id": "bts:NGSSequencingPlatform"
+    },
+    {
+     "@id": "bts:NGSSequencingDesignDescription"
+    },
+    {
+     "@id": "bts:NGSReadLength"
+    },
+    {
+     "@id": "bts:NGSRawReads"
+    },
+    {
+     "@id": "bts:NGSUniqueBases"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitName"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitVendor"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitVersion"
+    },
+    {
+     "@id": "bts:NGSReadIndicator"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationDaysfromIndex"
+    },
+    {
+     "@id": "bts:NGSSequencingLibraryConstructionDaysfromIndex"
+    }
+   ]
+  },
+  {
+   "@id": "bts:PersonView",
+   "rdfs:label": "PersonView",
+   "sms:displayName": "Person View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:PersonViewId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:ConsortiumKey"
+    },
+    {
+     "@id": "bts:Name"
+    },
+    {
+     "@id": "bts:AlternativeNames"
+    },
+    {
+     "@id": "bts:Email"
+    },
+    {
+     "@id": "bts:Url"
+    },
+    {
+     "@id": "bts:OrcidId"
+    },
+    {
+     "@id": "bts:SynapseProfileId"
+    },
+    {
+     "@id": "bts:LastKnownInstitution"
+    },
+    {
+     "@id": "bts:InstitutionKey"
+    },
+    {
+     "@id": "bts:WorkingGroupParticipation"
+    },
+    {
+     "@id": "bts:ChairRoles"
+    },
+    {
+     "@id": "bts:ConsentForPortalDisplay"
+    },
+    {
+     "@id": "bts:PortalDisplay"
+    },
+    {
+     "@id": "bts:PersonPublications"
+    },
+    {
+     "@id": "bts:PersonDatasets"
+    },
+    {
+     "@id": "bts:PersonTools"
+    },
+    {
+     "@id": "bts:PersonEducationalResources"
+    }
+   ]
+  },
+  {
+   "@id": "bts:PublicationView",
+   "rdfs:label": "PublicationView",
+   "sms:displayName": "Publication View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:PublicationViewId"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:PublicationDoi"
+    },
+    {
+     "@id": "bts:PublicationJournal"
+    },
+    {
+     "@id": "bts:PubmedId"
+    },
+    {
+     "@id": "bts:PubmedUrl"
+    },
+    {
+     "@id": "bts:PublicationTitle"
+    },
+    {
+     "@id": "bts:PublicationYear"
+    },
+    {
+     "@id": "bts:PublicationKeywords"
+    },
+    {
+     "@id": "bts:PublicationAuthors"
+    },
+    {
+     "@id": "bts:PublicationAbstract"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:PublicationAccessibility"
+    },
+    {
+     "@id": "bts:PublicationDatasetAlias"
+    }
+   ]
+  },
+  {
+   "@id": "bts:VisiumRNALevel4",
+   "rdfs:label": "VisiumRNALevel4",
+   "sms:displayName": "Visium RNA Level 4",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:VisiumRNALevel4Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:VisiumRNALevel3Key"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:VisiumRunID"
+    },
+    {
+     "@id": "bts:WorkflowVersion"
+    },
+    {
+     "@id": "bts:WorkflowLink"
+    },
+    {
+     "@id": "bts:VisiumWorkflowType"
+    },
+    {
+     "@id": "bts:VisiumWorkflowParametersDescription"
+    }
+   ]
+  },
+  {
+   "@id": "bts:EducationalResource",
+   "rdfs:label": "EducationalResource",
+   "sms:displayName": "Educational Resource",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:EducationalResourceId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:PublicationViewKey"
+    },
+    {
+     "@id": "bts:ToolViewKey"
+    },
+    {
+     "@id": "bts:ResourceTitle"
+    },
+    {
+     "@id": "bts:ResourceLink"
+    },
+    {
+     "@id": "bts:ResourceDoi"
+    },
+    {
+     "@id": "bts:ResourceTopic"
+    },
+    {
+     "@id": "bts:ResourceActivityType"
+    },
+    {
+     "@id": "bts:ResourcePrimaryFormat"
+    },
+    {
+     "@id": "bts:ResourceIntendedUse"
+    },
+    {
+     "@id": "bts:ResourcePrimaryAudience"
+    },
+    {
+     "@id": "bts:ResourceEducationalLevel"
+    },
+    {
+     "@id": "bts:ResourceDescription"
+    },
+    {
+     "@id": "bts:ResourceOriginInstitution"
+    },
+    {
+     "@id": "bts:ResourceLanguage"
+    },
+    {
+     "@id": "bts:ResourceContributors"
+    },
+    {
+     "@id": "bts:ResourceSecondaryTopic"
+    },
+    {
+     "@id": "bts:License"
+    },
+    {
+     "@id": "bts:ResourceUseRequirements"
+    },
+    {
+     "@id": "bts:ResourceAlias"
+    },
+    {
+     "@id": "bts:ResourceInternalIdentifier"
+    },
+    {
+     "@id": "bts:ResourceMediaAccessibility"
+    },
+    {
+     "@id": "bts:ResourceAccessHazard"
+    },
+    {
+     "@id": "bts:ResourceToolLink"
+    },
+    {
+     "@id": "bts:ResourceDatasetAlias"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ImagingLevel4",
+   "rdfs:label": "ImagingLevel4",
+   "sms:displayName": "Imaging Level 4",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ImagingLevel4Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:ImagingLevel2Key"
+    },
+    {
+     "@id": "bts:ImagingLevel3ImageKey"
+    },
+    {
+     "@id": "bts:ImagingLevel3SegmentsKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:ImageParameterfile"
+    },
+    {
+     "@id": "bts:ImageSoftware"
+    },
+    {
+     "@id": "bts:ImageNumberofObjects"
+    },
+    {
+     "@id": "bts:ImageNumberofFeatures"
+    },
+    {
+     "@id": "bts:ImageObjectClass"
+    },
+    {
+     "@id": "bts:ImageSummaryStatistic"
+    }
+   ]
+  },
+  {
+   "@id": "bts:GrantView",
+   "rdfs:label": "GrantView",
+   "sms:displayName": "Grant View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:GrantViewId"
+    },
+    {
+     "@id": "bts:GrantName"
+    },
+    {
+     "@id": "bts:GrantNumber"
+    },
+    {
+     "@id": "bts:GrantAbstract"
+    },
+    {
+     "@id": "bts:GrantType"
+    },
+    {
+     "@id": "bts:GrantThemeName"
+    },
+    {
+     "@id": "bts:GrantInstitutionName"
+    },
+    {
+     "@id": "bts:GrantInstitutionAlias"
+    },
+    {
+     "@id": "bts:InstitutionKey"
+    },
+    {
+     "@id": "bts:Investigator"
+    },
+    {
+     "@id": "bts:PersonViewKey"
+    },
+    {
+     "@id": "bts:ConsortiumKey"
+    },
+    {
+     "@id": "bts:GrantStartDate"
+    },
+    {
+     "@id": "bts:GrantEndDate"
+    },
+    {
+     "@id": "bts:NIHRePORTERLink"
+    },
+    {
+     "@id": "bts:DurationofFunding"
+    },
+    {
+     "@id": "bts:EmbargoEndDate"
+    },
+    {
+     "@id": "bts:GrantSynapseTeam"
+    },
+    {
+     "@id": "bts:GrantSynapseProject"
+    }
+   ]
+  },
+  {
+   "@id": "bts:VisiumRNALevel2",
+   "rdfs:label": "VisiumRNALevel2",
+   "sms:displayName": "Visium RNA Level 2",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:VisiumRNALevel2Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:VisiumRNALevel1Key"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:VisiumUMITag"
+    },
+    {
+     "@id": "bts:VisiumWhitelistSpatialBarcodeFileLink"
+    },
+    {
+     "@id": "bts:VisiumSpatialBarcodeTag"
+    },
+    {
+     "@id": "bts:VisiumAppliedHardTrimming"
+    },
+    {
+     "@id": "bts:WorkflowVersion"
+    },
+    {
+     "@id": "bts:WorkflowLink"
+    },
+    {
+     "@id": "bts:GenomicReference"
+    },
+    {
+     "@id": "bts:GenomicReferenceURL"
+    },
+    {
+     "@id": "bts:GenomeAnnotationURL"
+    },
+    {
+     "@id": "bts:VisiumRunID"
+    },
+    {
+     "@id": "bts:VisiumCaptureArea"
+    }
+   ]
+  },
+  {
+   "@id": "bts:DatasetView",
+   "rdfs:label": "DatasetView",
+   "sms:displayName": "Dataset View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:DatasetViewId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:PublicationViewKey"
+    },
+    {
+     "@id": "bts:DatasetName"
+    },
+    {
+     "@id": "bts:DatasetAlias"
+    },
+    {
+     "@id": "bts:DatasetDescription"
+    },
+    {
+     "@id": "bts:DatasetDesign"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:DatasetUrl"
+    },
+    {
+     "@id": "bts:DatasetDoi"
+    },
+    {
+     "@id": "bts:DatasetFileFormats"
+    },
+    {
+     "@id": "bts:DatasetDataUseCodes"
+    }
+   ]
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPImaging",
+   "rdfs:label": "NanoStringGeoMxDSPImaging",
+   "sms:displayName": "NanoString GeoMx DSP Imaging",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:NanoStringGeoMxDSPImagingId"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel1Key"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel2Key"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxAuxiliaryFilesKey"
+    },
+    {
+     "@id": "bts:NanoStringGeoMXROISegmentAnnotationKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:GeoMxImagingChannelNames"
+    },
+    {
+     "@id": "bts:GeoMxImagingAOICoordinates"
+    },
+    {
+     "@id": "bts:ImagingChannelKey"
+    },
+    {
+     "@id": "bts:ImageAssayType"
+    },
+    {
+     "@id": "bts:ImageProtocolLink"
+    },
+    {
+     "@id": "bts:ImagePlatformModel"
+    },
+    {
+     "@id": "bts:ImagePlatformManufacturer"
+    },
+    {
+     "@id": "bts:ImageSoftware"
+    },
+    {
+     "@id": "bts:ImageObjective"
+    },
+    {
+     "@id": "bts:ImageNominalMagnification"
+    },
+    {
+     "@id": "bts:ImageLenseAperture"
+    },
+    {
+     "@id": "bts:ImageWorkingDistance"
+    },
+    {
+     "@id": "bts:ImageWorkingDistanceUnit"
+    },
+    {
+     "@id": "bts:ImageImmersionType"
+    },
+    {
+     "@id": "bts:ImagePyramidal"
+    },
+    {
+     "@id": "bts:ImageZstack"
+    },
+    {
+     "@id": "bts:ImageTimeseries"
+    },
+    {
+     "@id": "bts:ImageFOVIndex"
+    },
+    {
+     "@id": "bts:ImageFOVSizeX"
+    },
+    {
+     "@id": "bts:ImageFOVSizeXUnit"
+    },
+    {
+     "@id": "bts:ImageFOVSizeY"
+    },
+    {
+     "@id": "bts:ImageFOVSizeYUnit"
+    },
+    {
+     "@id": "bts:ImageFrameAveraging"
+    },
+    {
+     "@id": "bts:ImageIdentifier"
+    },
+    {
+     "@id": "bts:ImageDimensionOrder"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeX"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeXUnit"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeY"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeYUnit"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeZ"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeZUnit"
+    },
+    {
+     "@id": "bts:ImagePixelsBigEndian"
+    },
+    {
+     "@id": "bts:ImagePlaneCount"
+    },
+    {
+     "@id": "bts:ImageChannelSize"
+    },
+    {
+     "@id": "bts:ImageNumberofTimepoints"
+    },
+    {
+     "@id": "bts:ImageXPixels"
+    },
+    {
+     "@id": "bts:ImageYPixels"
+    },
+    {
+     "@id": "bts:ImageZPixels"
+    },
+    {
+     "@id": "bts:ImagePixelType"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ImagingLevel1",
+   "rdfs:label": "ImagingLevel1",
+   "sms:displayName": "Imaging Level 1",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ImagingLevel1Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:ImageAssayType"
+    },
+    {
+     "@id": "bts:ImageProtocolLink"
+    },
+    {
+     "@id": "bts:ImagePlatformModel"
+    },
+    {
+     "@id": "bts:ImagePlatformManufacturer"
+    },
+    {
+     "@id": "bts:ImageSoftware"
+    },
+    {
+     "@id": "bts:ImagingChannelKey"
+    },
+    {
+     "@id": "bts:ImagePlatformModelVersion"
+    },
+    {
+     "@id": "bts:ImageDICOMModalityType"
+    }
+   ]
+  },
+  {
+   "@id": "bts:VisiumRNALevel3",
+   "rdfs:label": "VisiumRNALevel3",
+   "sms:displayName": "Visium RNA Level 3",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:VisiumRNALevel3Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:VisiumRNALevel2Key"
+    },
+    {
+     "@id": "bts:VisiumAuxiliaryFilesKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:VisiumRunID"
+    },
+    {
+     "@id": "bts:VisiumFileType"
+    },
+    {
+     "@id": "bts:WorkflowVersion"
+    },
+    {
+     "@id": "bts:WorkflowLink"
+    },
+    {
+     "@id": "bts:VisiumCaptureArea"
+    },
+    {
+     "@id": "bts:VisiumSpotsundertissue"
+    },
+    {
+     "@id": "bts:VisiumMeanReadsperSpatialSpot"
+    },
+    {
+     "@id": "bts:VisiumMedianNumberGenesperSpatialSpot"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:VisiumProportionReadsMapped"
+    },
+    {
+     "@id": "bts:VisiumProportionReadsMappedtoTranscriptome"
+    },
+    {
+     "@id": "bts:VisiumMedianUMICountsperSpot"
+    }
+   ]
+  },
+  {
+   "@id": "bts:VisiumRNALevel1",
+   "rdfs:label": "VisiumRNALevel1",
+   "sms:displayName": "Visium RNA Level 1",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:VisiumRNALevel1Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:VisiumRunID"
+    },
+    {
+     "@id": "bts:NGSReadIndicator"
+    },
+    {
+     "@id": "bts:VisiumSpatialRead1"
+    },
+    {
+     "@id": "bts:VisiumSpatialRead2"
+    },
+    {
+     "@id": "bts:VisiumSpatialLibraryConstructionMethod"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationDaysfromIndex"
+    },
+    {
+     "@id": "bts:NGSSequencingLibraryConstructionDaysfromIndex"
+    },
+    {
+     "@id": "bts:NGSRNAEndBias"
+    },
+    {
+     "@id": "bts:NGSRNAReverseTranscriptionPrimer"
+    },
+    {
+     "@id": "bts:NGSSequencingPlatform"
+    },
+    {
+     "@id": "bts:VisiumCaptureArea"
+    },
+    {
+     "@id": "bts:ImageProtocolLink"
+    },
+    {
+     "@id": "bts:VisiumSlideVersion"
+    },
+    {
+     "@id": "bts:VisiumSlideID"
+    },
+    {
+     "@id": "bts:VisiumImageRe-orientation"
+    },
+    {
+     "@id": "bts:VisiumPermeabilizationTime"
+    },
+    {
+     "@id": "bts:NGSRNARIN"
+    },
+    {
+     "@id": "bts:NGSRNADV200"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ImagingLevel2",
+   "rdfs:label": "ImagingLevel2",
+   "sms:displayName": "Imaging Level 2",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ImagingLevel2Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:ImagingLevel1Key"
+    },
+    {
+     "@id": "bts:ImagingChannelKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:ImageAssayType"
+    },
+    {
+     "@id": "bts:ImageProtocolLink"
+    },
+    {
+     "@id": "bts:ImagePlatformModel"
+    },
+    {
+     "@id": "bts:ImagePlatformManufacturer"
+    },
+    {
+     "@id": "bts:ImageSoftware"
+    },
+    {
+     "@id": "bts:ImageObjective"
+    },
+    {
+     "@id": "bts:ImageNominalMagnification"
+    },
+    {
+     "@id": "bts:ImageLenseAperture"
+    },
+    {
+     "@id": "bts:ImageWorkingDistance"
+    },
+    {
+     "@id": "bts:ImageWorkingDistanceUnit"
+    },
+    {
+     "@id": "bts:ImageImmersionType"
+    },
+    {
+     "@id": "bts:ImagePyramidal"
+    },
+    {
+     "@id": "bts:ImageZstack"
+    },
+    {
+     "@id": "bts:ImageTimeseries"
+    },
+    {
+     "@id": "bts:ImageFOVIndex"
+    },
+    {
+     "@id": "bts:ImageFOVSizeX"
+    },
+    {
+     "@id": "bts:ImageFOVSizeXUnit"
+    },
+    {
+     "@id": "bts:ImageFOVSizeY"
+    },
+    {
+     "@id": "bts:ImageFOVSizeYUnit"
+    },
+    {
+     "@id": "bts:ImageFrameAveraging"
+    },
+    {
+     "@id": "bts:ImageIdentifier"
+    },
+    {
+     "@id": "bts:ImageDimensionOrder"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeX"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeXUnit"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeY"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeYUnit"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeZ"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeZUnit"
+    },
+    {
+     "@id": "bts:ImagePixelsBigEndian"
+    },
+    {
+     "@id": "bts:ImagePlaneCount"
+    },
+    {
+     "@id": "bts:ImageChannelSize"
+    },
+    {
+     "@id": "bts:ImageNumberofTimepoints"
+    },
+    {
+     "@id": "bts:ImageXPixels"
+    },
+    {
+     "@id": "bts:ImageYPixels"
+    },
+    {
+     "@id": "bts:ImageZPixels"
+    },
+    {
+     "@id": "bts:ImagePixelType"
+    }
+   ]
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel2",
+   "rdfs:label": "NanoStringGeoMxDSPLevel2",
+   "sms:displayName": "NanoString GeoMx DSP Level 2",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel2Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel1Key"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxAuxiliaryFilesKey"
+    },
+    {
+     "@id": "bts:NanoStringGeoMXROISegmentAnnotationKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:GeoMxDSPAssayType"
+    },
+    {
+     "@id": "bts:NGSLibraryStrategy"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMaterial"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMolecule"
+    },
+    {
+     "@id": "bts:NGSLibrarySelectionMethod"
+    },
+    {
+     "@id": "bts:NGSLibraryLayout"
+    },
+    {
+     "@id": "bts:NGSSequencingPlatform"
+    },
+    {
+     "@id": "bts:NGSSequencingDesignDescription"
+    },
+    {
+     "@id": "bts:NGSRawReads"
+    },
+    {
+     "@id": "bts:NGSStitchedReads"
+    },
+    {
+     "@id": "bts:NGSAlignedReads"
+    },
+    {
+     "@id": "bts:NGSDeduplicatedReads"
+    },
+    {
+     "@id": "bts:NGSTrimmedReads"
+    },
+    {
+     "@id": "bts:NGSMapQ30"
+    },
+    {
+     "@id": "bts:NGSUniqueBases"
+    },
+    {
+     "@id": "bts:NGSReadLength"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:GenomicReference"
+    },
+    {
+     "@id": "bts:SoftwareandVersion"
+    }
+   ]
+  },
+  {
+   "@id": "bts:NanoStringGeoMxAuxiliaryFiles",
+   "rdfs:label": "NanoStringGeoMxAuxiliaryFiles",
+   "sms:displayName": "NanoString GeoMx Auxiliary Files",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:NanoStringGeoMxAuxiliaryFilesId"
+    },
+    {
+     "@id": "bts:SynapseIDofGeoMxDSPROISegmentAnnotationFile"
+    },
+    {
+     "@id": "bts:SynapseIDofGeoMxDSPPKCFile"
+    },
+    {
+     "@id": "bts:SynapseIDofGeoMxLabWorksheetFile"
+    },
+    {
+     "@id": "bts:SynapseIDofGeoMxDSPConfigFile"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ToolView",
+   "rdfs:label": "ToolView",
+   "sms:displayName": "Tool View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ToolViewId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:PublicationViewKey"
+    },
+    {
+     "@id": "bts:ToolName"
+    },
+    {
+     "@id": "bts:ToolDescription"
+    },
+    {
+     "@id": "bts:ToolHomepage"
+    },
+    {
+     "@id": "bts:ToolVersion"
+    },
+    {
+     "@id": "bts:ToolOperation"
+    },
+    {
+     "@id": "bts:ToolInputData"
+    },
+    {
+     "@id": "bts:ToolOutputData"
+    },
+    {
+     "@id": "bts:ToolInputFormat"
+    },
+    {
+     "@id": "bts:ToolOutputFormat"
+    },
+    {
+     "@id": "bts:ToolFunctionNote"
+    },
+    {
+     "@id": "bts:ToolCmd"
+    },
+    {
+     "@id": "bts:ToolType"
+    },
+    {
+     "@id": "bts:ToolTopic"
+    },
+    {
+     "@id": "bts:ToolOperatingSystem"
+    },
+    {
+     "@id": "bts:ToolLanguage"
+    },
+    {
+     "@id": "bts:License"
+    },
+    {
+     "@id": "bts:ToolCost"
+    },
+    {
+     "@id": "bts:ToolAccessibility"
+    },
+    {
+     "@id": "bts:ToolDownloadUrl"
+    },
+    {
+     "@id": "bts:ToolDownloadType"
+    },
+    {
+     "@id": "bts:ToolDownloadNote"
+    },
+    {
+     "@id": "bts:ToolDownloadVersion"
+    },
+    {
+     "@id": "bts:ToolDocumentationUrl"
+    },
+    {
+     "@id": "bts:ToolDocumentationType"
+    },
+    {
+     "@id": "bts:ToolDocumentationNote"
+    },
+    {
+     "@id": "bts:ToolLinkUrl"
+    },
+    {
+     "@id": "bts:ToolLinkType"
+    },
+    {
+     "@id": "bts:ToolLinkNote"
+    },
+    {
+     "@id": "bts:ToolDoi"
+    },
+    {
+     "@id": "bts:ToolDateLastModified"
+    },
+    {
+     "@id": "bts:ToolReleaseDate"
+    },
+    {
+     "@id": "bts:ToolPackageDependencies"
+    },
+    {
+     "@id": "bts:ToolPackageDependenciesPresent"
+    },
+    {
+     "@id": "bts:ToolComputeRequirements"
+    },
+    {
+     "@id": "bts:ToolEntityName"
+    },
+    {
+     "@id": "bts:ToolEntityType"
+    },
+    {
+     "@id": "bts:ToolEntityRole"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ImagingChannel",
+   "rdfs:label": "ImagingChannel",
+   "sms:displayName": "Imaging Channel",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ImagingChannelId"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:ChannelIdentifier"
+    },
+    {
+     "@id": "bts:ChannelName"
+    },
+    {
+     "@id": "bts:ChannelPassedQC"
+    },
+    {
+     "@id": "bts:ChannelCycleNumber"
+    },
+    {
+     "@id": "bts:ChannelSub-cycleNumber"
+    },
+    {
+     "@id": "bts:ChannelAntibodyRole"
+    },
+    {
+     "@id": "bts:ChannelTargetName"
+    },
+    {
+     "@id": "bts:ChannelAntibodyName"
+    },
+    {
+     "@id": "bts:ChannelResourceID"
+    },
+    {
+     "@id": "bts:ChannelFluorophore"
+    },
+    {
+     "@id": "bts:ChannelAntibodyClone"
+    },
+    {
+     "@id": "bts:ChannelAntibodyLot"
+    },
+    {
+     "@id": "bts:ChannelAntibodyVendor"
+    },
+    {
+     "@id": "bts:ChannelAntibodyCatalogNumber"
+    },
+    {
+     "@id": "bts:ChannelExcitationWavelength"
+    },
+    {
+     "@id": "bts:ChannelEmissionWavelength"
+    },
+    {
+     "@id": "bts:ChannelExcitationBandwidth"
+    },
+    {
+     "@id": "bts:ChannelEmissionBandwidth"
+    },
+    {
+     "@id": "bts:ChannelMetalSymbol"
+    },
+    {
+     "@id": "bts:ChannelMetalIsotope"
+    },
+    {
+     "@id": "bts:ChannelOligoBarcodeUpperStrand"
+    },
+    {
+     "@id": "bts:ChannelOligoBarcodeLowerStrand"
+    },
+    {
+     "@id": "bts:ChannelProbeDilutionRatio"
+    },
+    {
+     "@id": "bts:ChannelProbeConcentration"
+    }
+   ]
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel3",
+   "rdfs:label": "NanoStringGeoMxDSPLevel3",
+   "sms:displayName": "NanoString GeoMx DSP Level 3",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel3Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel1Key"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel2Key"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxAuxiliaryFilesKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:NGSUniqueProbeCount"
+    },
+    {
+     "@id": "bts:NGSUniqueTargetCount"
+    },
+    {
+     "@id": "bts:NGSMatrixType"
+    },
+    {
+     "@id": "bts:SoftwareandVersion"
+    },
+    {
+     "@id": "bts:WorkflowType"
+    },
+    {
+     "@id": "bts:WorkflowParameterDescription"
+    },
+    {
+     "@id": "bts:WorkflowLink"
+    }
+   ]
+  },
+  {
+   "@id": "bts:NanoStringGeoMxDSPLevel1",
+   "rdfs:label": "NanoStringGeoMxDSPLevel1",
+   "sms:displayName": "NanoString GeoMx DSP Level 1",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:NanoStringGeoMxDSPLevel1Id"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:NanoStringGeoMxAuxiliaryFilesKey"
+    },
+    {
+     "@id": "bts:NanoStringGeoMXROISegmentAnnotationKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:GeoMxDSPAssayType"
+    },
+    {
+     "@id": "bts:NGSLibraryStrategy"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMaterial"
+    },
+    {
+     "@id": "bts:NGSLibrarySourceMolecule"
+    },
+    {
+     "@id": "bts:NGSLibrarySelectionMethod"
+    },
+    {
+     "@id": "bts:NGSLibraryLayout"
+    },
+    {
+     "@id": "bts:NGSSequencingPlatform"
+    },
+    {
+     "@id": "bts:NGSSequencingDesignDescription"
+    },
+    {
+     "@id": "bts:NGSReadLength"
+    },
+    {
+     "@id": "bts:NGSRawReads"
+    },
+    {
+     "@id": "bts:NGSUniqueBases"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitName"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitVendor"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationKitVersion"
+    },
+    {
+     "@id": "bts:NGSReadIndicator"
+    },
+    {
+     "@id": "bts:NGSLibraryPreparationDaysfromIndex"
+    },
+    {
+     "@id": "bts:NGSSequencingLibraryConstructionDaysfromIndex"
+    }
+   ]
+  },
+  {
+   "@id": "bts:NanoStringGeoMXROISegmentAnnotation",
+   "rdfs:label": "NanoStringGeoMXROISegmentAnnotation",
+   "sms:displayName": "NanoString GeoMX ROI Segment Annotation",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:NanoStringGeoMXROISegmentAnnotationId"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:GeoMxScanname"
+    },
+    {
+     "@id": "bts:GeoMxROIName"
+    },
+    {
+     "@id": "bts:GeoMxAOIName"
+    },
+    {
+     "@id": "bts:GeoMxTags"
+    },
+    {
+     "@id": "bts:GeoMxROIXCoordinate"
+    },
+    {
+     "@id": "bts:GeoMxROIYCoordinate"
+    },
+    {
+     "@id": "bts:GeoMxAOIXCoordinate"
+    },
+    {
+     "@id": "bts:GeoMxAOIYCoordinate"
+    },
+    {
+     "@id": "bts:GeoMxQCstatus"
+    },
+    {
+     "@id": "bts:GeoMxScanHeight"
+    },
+    {
+     "@id": "bts:GeoMxScanWidth"
+    },
+    {
+     "@id": "bts:GeoMxScanOffsetX"
+    },
+    {
+     "@id": "bts:GeoMxScanOffsetY"
+    },
+    {
+     "@id": "bts:GeoMxBindingDensity"
+    },
+    {
+     "@id": "bts:GeoMxPositivenormfactor"
+    },
+    {
+     "@id": "bts:GeoMxSurfacearea"
+    },
+    {
+     "@id": "bts:GeoMxNucleicount"
+    },
+    {
+     "@id": "bts:GeoMxTissueStain"
+    },
+    {
+     "@id": "bts:GeoMxSlidename"
+    },
+    {
+     "@id": "bts:NGSRawReads"
+    },
+    {
+     "@id": "bts:NGSStitchedReads"
+    },
+    {
+     "@id": "bts:NGSAlignedReads"
+    },
+    {
+     "@id": "bts:NGSDeduplicatedReads"
+    },
+    {
+     "@id": "bts:NGSTrimmedReads"
+    },
+    {
+     "@id": "bts:NGSSequencingCoverage"
+    },
+    {
+     "@id": "bts:NGSMapQ30"
+    },
+    {
+     "@id": "bts:GeoMxNegativecountmean"
+    },
+    {
+     "@id": "bts:GeoMxNoTemplateControlcount"
+    },
+    {
+     "@id": "bts:GeoMxExcludedOutlierProbes"
+    },
+    {
+     "@id": "bts:GeoMxLimitofQuantification"
+    }
+   ]
+  },
+  {
+   "@id": "bts:Study",
+   "rdfs:label": "Study",
+   "sms:displayName": "Study",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:StudyId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:ProjectViewKey"
+    },
+    {
+     "@id": "bts:StudydbGaPAccessionId"
+    },
+    {
+     "@id": "bts:StudyName"
+    },
+    {
+     "@id": "bts:StudyDescription"
+    },
+    {
+     "@id": "bts:Investigator"
+    },
+    {
+     "@id": "bts:PersonViewKey"
+    },
+    {
+     "@id": "bts:StudyNumberofParticipants"
+    },
+    {
+     "@id": "bts:StudyNumberofSamples"
+    },
+    {
+     "@id": "bts:StudyDeidentificationMethodType"
+    },
+    {
+     "@id": "bts:StudyDeidentificationMethodDescription"
+    },
+    {
+     "@id": "bts:StudyDeidentificationMethodSoftware"
+    },
+    {
+     "@id": "bts:StudyIndexDate"
+    },
+    {
+     "@id": "bts:StudyProjectIdentifier"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:StudyShortName"
+    },
+    {
+     "@id": "bts:License"
+    }
+   ]
+  },
+  {
+   "@id": "bts:Biospecimen",
+   "rdfs:label": "Biospecimen",
+   "sms:displayName": "Biospecimen",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:BiospecimenId"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:IndividualKey"
+    },
+    {
+     "@id": "bts:ModelKey"
+    },
+    {
+     "@id": "bts:ParentBiospecimenKey"
+    },
+    {
+     "@id": "bts:BiospecimenTypeCategory"
+    },
+    {
+     "@id": "bts:BiospecimenType"
+    },
+    {
+     "@id": "bts:BiospecimenTumorStatus"
+    },
+    {
+     "@id": "bts:BiospecimenAcquisitionMethod"
+    },
+    {
+     "@id": "bts:BiospecimenIncidenceType"
+    },
+    {
+     "@id": "bts:BiospecimenStain"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Sex"
+    },
+    {
+     "@id": "bts:BiospecimenAgeatCollection"
+    },
+    {
+     "@id": "bts:BiospecimenAgeatCollectionUnit"
+    },
+    {
+     "@id": "bts:DiseaseType"
+    },
+    {
+     "@id": "bts:PrimarySite"
+    },
+    {
+     "@id": "bts:PrimaryDiagnosis"
+    },
+    {
+     "@id": "bts:SiteofOrigin"
+    },
+    {
+     "@id": "bts:TumorSubtype"
+    },
+    {
+     "@id": "bts:TumorGrade"
+    },
+    {
+     "@id": "bts:KnownMetastasisSites"
+    },
+    {
+     "@id": "bts:BiospecimenTumorMorphology"
+    },
+    {
+     "@id": "bts:BiospecimenComposition"
+    },
+    {
+     "@id": "bts:BiospecimenPreservationMethod"
+    },
+    {
+     "@id": "bts:BiospecimenPreservationMedium"
+    },
+    {
+     "@id": "bts:BiospecimenEmbeddingMedium"
+    },
+    {
+     "@id": "bts:BiospecimenAnatomicSite"
+    },
+    {
+     "@id": "bts:BiospecimenSiteofResectionorBiopsy"
+    },
+    {
+     "@id": "bts:BiospecimenTimepointType"
+    },
+    {
+     "@id": "bts:BiospecimenTimepointOffset"
+    },
+    {
+     "@id": "bts:BiospecimenCollectionSite"
+    },
+    {
+     "@id": "bts:TreatmentType"
+    },
+    {
+     "@id": "bts:TherapeuticAgent"
+    },
+    {
+     "@id": "bts:TreatmentResponse"
+    },
+    {
+     "@id": "bts:LastKnownDiseaseStatus"
+    },
+    {
+     "@id": "bts:BiospecimenBioSampleIdentifier"
+    },
+    {
+     "@id": "bts:BiospecimenDescription"
+    },
+    {
+     "@id": "bts:ICD-10-CMDiseaseCode"
+    },
+    {
+     "@id": "bts:BiospecimenTreatmentPriortoSpecimenCollectionIndicator"
+    },
+    {
+     "@id": "bts:BiospecimenAliquotMass"
+    },
+    {
+     "@id": "bts:BiospecimenAliquotVolume"
+    },
+    {
+     "@id": "bts:BiospecimenDaysfromDiagnosistoSpecimenCollection"
+    },
+    {
+     "@id": "bts:BiospecimenDaysfromFirstSubjectVisittoSpecimenCollection"
+    },
+    {
+     "@id": "bts:BiospecimenDaysfromFirstTreatmenttoSpecimenCollection"
+    },
+    {
+     "@id": "bts:BiospecimenDaysfromInitialGenomicSequencingtoSpecimenCollection"
+    },
+    {
+     "@id": "bts:BiospecimenDaysfromRecurrencetoSpecimenCollection"
+    },
+    {
+     "@id": "bts:BiospecimenDaysfromSpecimenCollectiontoInitialPathologicDiagnosis"
+    },
+    {
+     "@id": "bts:BiospecimenPreservationTemperature"
+    },
+    {
+     "@id": "bts:BiospecimenTaxonomyID"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ImagingLevel3Segments",
+   "rdfs:label": "ImagingLevel3Segments",
+   "sms:displayName": "Imaging Level 3 Segments",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ImagingLevel3SegmentsId"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:ImagingLevel2Key"
+    },
+    {
+     "@id": "bts:ImagingLevel3ImageKey"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:ImageSegmentationDataType"
+    },
+    {
+     "@id": "bts:ImageParameterfile"
+    },
+    {
+     "@id": "bts:SoftwareandVersion"
+    },
+    {
+     "@id": "bts:ImageObjectClass"
+    },
+    {
+     "@id": "bts:ImageObjectClassDescription"
+    },
+    {
+     "@id": "bts:ImageNumberofObjects"
+    }
+   ]
+  },
+  {
+   "@id": "bts:Model",
+   "rdfs:label": "Model",
+   "sms:displayName": "Model",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ModelId"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:IndividualKey"
+    },
+    {
+     "@id": "bts:ModelAge"
+    },
+    {
+     "@id": "bts:ModelAgeUnit"
+    },
+    {
+     "@id": "bts:Sex"
+    },
+    {
+     "@id": "bts:DiseaseType"
+    },
+    {
+     "@id": "bts:PrimaryDiagnosis"
+    },
+    {
+     "@id": "bts:PrimarySite"
+    },
+    {
+     "@id": "bts:SiteofOrigin"
+    },
+    {
+     "@id": "bts:TumorSubtype"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:ModelType"
+    },
+    {
+     "@id": "bts:ModelMethod"
+    },
+    {
+     "@id": "bts:ModelSource"
+    },
+    {
+     "@id": "bts:ModelAcquisitionType"
+    },
+    {
+     "@id": "bts:ModelGraftSource"
+    },
+    {
+     "@id": "bts:ModelGenotype"
+    },
+    {
+     "@id": "bts:TreatmentType"
+    },
+    {
+     "@id": "bts:TherapeuticAgent"
+    },
+    {
+     "@id": "bts:DaystoTreatment"
+    },
+    {
+     "@id": "bts:TreatmentResponse"
+    },
+    {
+     "@id": "bts:TreatmentAnatomicSite"
+    }
+   ]
+  },
+  {
+   "@id": "bts:FileView",
+   "rdfs:label": "FileView",
+   "sms:displayName": "File View",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:FileViewId"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:FileDataCategory"
+    },
+    {
+     "@id": "bts:FileDataChecksumType"
+    },
+    {
+     "@id": "bts:FileDataChecksumValue"
+    },
+    {
+     "@id": "bts:FileDataCompressionStatus"
+    },
+    {
+     "@id": "bts:FileDataSize"
+    }
+   ]
+  },
+  {
+   "@id": "bts:Individual",
+   "rdfs:label": "Individual",
+   "sms:displayName": "Individual",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:IndividualId"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:IndividualdbGaPSubjectId"
+    },
+    {
+     "@id": "bts:Sex"
+    },
+    {
+     "@id": "bts:IndividualGender"
+    },
+    {
+     "@id": "bts:IndividualAgeatDiagnosis"
+    },
+    {
+     "@id": "bts:DiseaseType"
+    },
+    {
+     "@id": "bts:PrimaryDiagnosis"
+    },
+    {
+     "@id": "bts:PrimarySite"
+    },
+    {
+     "@id": "bts:IndividualPrimaryTumorStage"
+    },
+    {
+     "@id": "bts:SiteofOrigin"
+    },
+    {
+     "@id": "bts:TumorSubtype"
+    },
+    {
+     "@id": "bts:TumorGrade"
+    },
+    {
+     "@id": "bts:IndividualTumorLymphNodeStage"
+    },
+    {
+     "@id": "bts:KnownMetastasisSites"
+    },
+    {
+     "@id": "bts:IndividualMetastasisStage"
+    },
+    {
+     "@id": "bts:TreatmentType"
+    },
+    {
+     "@id": "bts:TherapeuticAgent"
+    },
+    {
+     "@id": "bts:DaystoTreatment"
+    },
+    {
+     "@id": "bts:TreatmentResponse"
+    },
+    {
+     "@id": "bts:IndividualDaystoLastFollowup"
+    },
+    {
+     "@id": "bts:IndividualRecurrenceStatus"
+    },
+    {
+     "@id": "bts:IndividualDaysToRecurrence"
+    },
+    {
+     "@id": "bts:IndividualDaystoLastKnownDiseaseStatus"
+    },
+    {
+     "@id": "bts:LastKnownDiseaseStatus"
+    },
+    {
+     "@id": "bts:IndividualVitalStatus"
+    },
+    {
+     "@id": "bts:IndividualResidualDiseaseStatus"
+    },
+    {
+     "@id": "bts:IndividualAge90orOlder"
+    },
+    {
+     "@id": "bts:IndividualYearofBirth"
+    },
+    {
+     "@id": "bts:IndividualYearofDeath"
+    },
+    {
+     "@id": "bts:IndividualYearofDiagnosis"
+    },
+    {
+     "@id": "bts:IndividualDiseaseProgressionorRecurrenceType"
+    },
+    {
+     "@id": "bts:ICD-10-CMDiseaseCode"
+    },
+    {
+     "@id": "bts:IndividualLymphNodeInvolvementAnatomicSiteUberonIdentifier"
+    },
+    {
+     "@id": "bts:IndividualProgressionorRecurrenceAnatomicSiteUberonIdentifier"
+    },
+    {
+     "@id": "bts:TreatmentAnatomicSite"
+    },
+    {
+     "@id": "bts:IndividualTreatmentIntentType"
+    },
+    {
+     "@id": "bts:IndividualTreatmentorTherapyIndicator"
+    }
+   ]
+  },
+  {
+   "@id": "bts:VisiumAuxiliaryFiles",
+   "rdfs:label": "VisiumAuxiliaryFiles",
+   "sms:displayName": "Visium Auxiliary Files",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:VisiumAuxiliaryFilesId"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:VisiumRNALevel1Key"
+    },
+    {
+     "@id": "bts:VisiumRNALevel2Key"
+    },
+    {
+     "@id": "bts:VisiumRNALevel3Key"
+    },
+    {
+     "@id": "bts:VisiumRNALevel4Key"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:VisiumRunID"
+    },
+    {
+     "@id": "bts:VisiumFileType"
+    },
+    {
+     "@id": "bts:VisiumSlideID"
+    },
+    {
+     "@id": "bts:VisiumCaptureArea"
+    },
+    {
+     "@id": "bts:WorkflowVersion"
+    },
+    {
+     "@id": "bts:WorkflowLink"
+    }
+   ]
+  },
+  {
+   "@id": "bts:DataDSP",
+   "rdfs:label": "DataDSP",
+   "sms:displayName": "DataDSP",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:DataDSPId"
+    },
+    {
+     "@id": "bts:GrantViewKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:DSPDatasetAlias"
+    },
+    {
+     "@id": "bts:DSPDatasetName"
+    },
+    {
+     "@id": "bts:DSPDatasetUrl"
+    },
+    {
+     "@id": "bts:DSPDatasetAssay"
+    },
+    {
+     "@id": "bts:DSPDatasetLevel"
+    },
+    {
+     "@id": "bts:DSPDatasetSpecies"
+    },
+    {
+     "@id": "bts:DSPDatasetTumorType"
+    },
+    {
+     "@id": "bts:DSPDatasetTissue"
+    },
+    {
+     "@id": "bts:DSPDatasetFileFormats"
+    },
+    {
+     "@id": "bts:DSPNumberofFiles"
+    },
+    {
+     "@id": "bts:DSPNumberofSamples"
+    },
+    {
+     "@id": "bts:DSPNumberofParticipants"
+    },
+    {
+     "@id": "bts:DSPStorageSize"
+    },
+    {
+     "@id": "bts:DSPDatasetDescription"
+    },
+    {
+     "@id": "bts:DSPPlannedUploadDate"
+    },
+    {
+     "@id": "bts:DSPPlannedReleaseDate"
+    },
+    {
+     "@id": "bts:DSPDataUseCodes"
+    },
+    {
+     "@id": "bts:DSPIRBForm"
+    },
+    {
+     "@id": "bts:DSPDatasetDestination"
+    },
+    {
+     "@id": "bts:DSPDatasetMetadata"
+    }
+   ]
+  },
+  {
+   "@id": "bts:ImagingLevel3Image",
+   "rdfs:label": "ImagingLevel3Image",
+   "sms:displayName": "Imaging Level 3 Image",
+   "sms:requiresDependency": [
+    {
+     "@id": "bts:ImagingLevel3ImageId"
+    },
+    {
+     "@id": "bts:Filename"
+    },
+    {
+     "@id": "bts:ImagingChannelKey"
+    },
+    {
+     "@id": "bts:ImagingLevel2Key"
+    },
+    {
+     "@id": "bts:BiospecimenKey"
+    },
+    {
+     "@id": "bts:StudyKey"
+    },
+    {
+     "@id": "bts:DatasetViewKey"
+    },
+    {
+     "@id": "bts:FileAlias"
+    },
+    {
+     "@id": "bts:FileDescription"
+    },
+    {
+     "@id": "bts:FileDesign"
+    },
+    {
+     "@id": "bts:FileBatchIdentifier"
+    },
+    {
+     "@id": "bts:FileLevel"
+    },
+    {
+     "@id": "bts:Assay"
+    },
+    {
+     "@id": "bts:Species"
+    },
+    {
+     "@id": "bts:Tissue"
+    },
+    {
+     "@id": "bts:TumorType"
+    },
+    {
+     "@id": "bts:FileUrl"
+    },
+    {
+     "@id": "bts:FileFormat"
+    },
+    {
+     "@id": "bts:FileAssayCategory"
+    },
+    {
+     "@id": "bts:DataUseCodes"
+    },
+    {
+     "@id": "bts:FileLongitudinalGroup"
+    },
+    {
+     "@id": "bts:FileLongitudinalEventType"
+    },
+    {
+     "@id": "bts:FileLongitudinalSequenceIdentifier"
+    },
+    {
+     "@id": "bts:FileLongitudinalTimeElapsedUnit"
+    },
+    {
+     "@id": "bts:FileLongitudinalTotalTimeElapsed"
+    },
+    {
+     "@id": "bts:ImageAssayType"
+    },
+    {
+     "@id": "bts:ImageProtocolLink"
+    },
+    {
+     "@id": "bts:ImagePlatformModel"
+    },
+    {
+     "@id": "bts:ImagePlatformManufacturer"
+    },
+    {
+     "@id": "bts:ImageSoftware"
+    },
+    {
+     "@id": "bts:ImageObjective"
+    },
+    {
+     "@id": "bts:ImageNominalMagnification"
+    },
+    {
+     "@id": "bts:ImageLenseAperture"
+    },
+    {
+     "@id": "bts:ImageWorkingDistance"
+    },
+    {
+     "@id": "bts:ImageWorkingDistanceUnit"
+    },
+    {
+     "@id": "bts:ImageImmersionType"
+    },
+    {
+     "@id": "bts:ImagePyramidal"
+    },
+    {
+     "@id": "bts:ImageZstack"
+    },
+    {
+     "@id": "bts:ImageTimeseries"
+    },
+    {
+     "@id": "bts:ImageFOVIndex"
+    },
+    {
+     "@id": "bts:ImageFOVSizeX"
+    },
+    {
+     "@id": "bts:ImageFOVSizeXUnit"
+    },
+    {
+     "@id": "bts:ImageFOVSizeY"
+    },
+    {
+     "@id": "bts:ImageFOVSizeYUnit"
+    },
+    {
+     "@id": "bts:ImageFrameAveraging"
+    },
+    {
+     "@id": "bts:ImageIdentifier"
+    },
+    {
+     "@id": "bts:ImageDimensionOrder"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeX"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeXUnit"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeY"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeYUnit"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeZ"
+    },
+    {
+     "@id": "bts:ImagePhysicalSizeZUnit"
+    },
+    {
+     "@id": "bts:ImagePixelsBigEndian"
+    },
+    {
+     "@id": "bts:ImagePlaneCount"
+    },
+    {
+     "@id": "bts:ImageChannelSize"
+    },
+    {
+     "@id": "bts:ImageNumberofTimepoints"
+    },
+    {
+     "@id": "bts:ImageXPixels"
+    },
+    {
+     "@id": "bts:ImageYPixels"
+    },
+    {
+     "@id": "bts:ImageZPixels"
+    },
+    {
+     "@id": "bts:ImagePixelType"
+    }
+   ]
   }
  ]
 }

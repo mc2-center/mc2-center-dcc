@@ -151,16 +151,27 @@ def fetch(path: str) -> Path:
 
 @lru_cache(maxsize=None)
 def _load_model(jsonld_path: Path) -> tuple[dict, dict]:
-    """Return (display -> label, label -> node) from the JSON-LD graph."""
+    """Return (display -> label, label -> node) from the JSON-LD graph.
+
+    The display -> label map holds attribute (property) nodes only: nodes that
+    appear as an ``sms:requiresDependency`` of some other node (a template or
+    component). Valid-value nodes such as ``Breast`` also carry a display name
+    but are never dependencies, so they are not valid column headers. The
+    second dict still holds every labelled node.
+    """
     graph = json.loads(jsonld_path.read_text(encoding="utf-8"))["@graph"]
-    by_display: dict[str, set[str]] = {}
     nodes: dict[str, dict] = {}
+    attributes: set[str] = set()
     for node in graph:
         label = node.get("rdfs:label")
-        display = node.get("sms:displayName")
         if not label:
             continue
         nodes[label] = node
+        for dep in node.get("sms:requiresDependency", []):
+            attributes.add(dep["@id"].split(":", 1)[-1])
+    by_display: dict[str, set[str]] = {}
+    for label in attributes:
+        display = nodes.get(label, {}).get("sms:displayName")
         if display:
             by_display.setdefault(display, set()).add(label)
     ambiguous = {d: sorted(ls) for d, ls in by_display.items() if len(ls) > 1}
@@ -176,8 +187,9 @@ def _model() -> tuple[dict, dict]:
 def label_map() -> dict[str, str]:
     """Display name -> class label, from ``mc2.model.jsonld``.
 
-    Raises if one display name maps to more than one label. ``Component`` has
-    no label and is not included.
+    Attribute nodes only (dependencies of some node); valid-value names such
+    as ``Breast`` are excluded. Raises if one display name maps to more than
+    one label. ``Component`` has no label and is not included.
     """
     return dict(_model()[0])
 

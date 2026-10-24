@@ -88,12 +88,40 @@ def test_ambiguous_display_name_raises(tmp_path):
         "@graph": [
             {"rdfs:label": "A", "sms:displayName": "Same"},
             {"rdfs:label": "B", "sms:displayName": "Same"},
+            {
+                "rdfs:label": "T",
+                "sms:requiresDependency": [{"@id": "bts:A"}, {"@id": "bts:B"}],
+            },
         ]
     }
     p = tmp_path / "m.jsonld"
     p.write_text(json.dumps(graph))
     with pytest.raises(ValueError, match="more than one label"):
         mc._load_model(p)
+
+
+def test_enum_value_name_is_not_a_header():
+    # "Breast" is a valid-value node (never a dependency), not an attribute.
+    assert "Breast" not in mc.label_map()
+    with pytest.raises(ValueError, match="Breast"):
+        mc.normalize_headers(pd.DataFrame(columns=["Component", "Breast"]), to="keys")
+    with pytest.raises(ValueError, match="Breast"):
+        mc.normalize_headers(pd.DataFrame(columns=["Breast"]), to="display")
+
+
+def test_duplicate_display_name_among_values_is_not_ambiguous(tmp_path):
+    import json
+
+    graph = {
+        "@graph": [
+            {"rdfs:label": "A", "sms:displayName": "Same"},
+            {"rdfs:label": "B", "sms:displayName": "Same"},
+            {"rdfs:label": "T", "sms:requiresDependency": [{"@id": "bts:A"}]},
+        ]
+    }
+    p = tmp_path / "m.jsonld"
+    p.write_text(json.dumps(graph))
+    assert mc._load_model(p)[0] == {"Same": "A"}
 
 
 @pytest.mark.parametrize("component", sorted(mc.LEGACY_ADMIN_HEADERS))
