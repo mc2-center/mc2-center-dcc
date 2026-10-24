@@ -78,12 +78,7 @@ def main():
     syn = utils.syn_login()
     args = utils.get_args("people")
 
-    # TODO: update to pd.read_csv once csv manifest is available.
-    manifest = Table(id=args.manifest_id).query(
-        query=f"SELECT * FROM {args.manifest_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    ).fillna("")
+    manifest = model_contract.read_manifest(syn, args.manifest_id).fillna("")
     manifest = prepare_manifest(manifest)
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)

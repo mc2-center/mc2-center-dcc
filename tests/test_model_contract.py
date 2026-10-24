@@ -157,3 +157,89 @@ def test_renames_13_to_14_targets_exist():
     for component, renames in mc.RENAMES_13_TO_14.items():
         allowed = set(mc.template_headers(component))
         assert set(renames.values()) <= allowed, component
+
+
+class _FakeSyn:
+    def __init__(self, concrete):
+        self.concrete = concrete
+        self.calls = []
+
+    def restGET(self, uri):
+        self.calls.append(uri)
+        return {"id": "syn1", "concreteType": self.concrete}
+
+
+def _csv(tmp_path):
+    path = tmp_path / "m.csv"
+    path.write_text("Component,Year,Name\nGrantView,2020,A\nGrantView,,B\n")
+    return str(path)
+
+
+@pytest.mark.parametrize(
+    "concrete",
+    [
+        "org.sagebionetworks.repo.model.table.TableEntity",
+        "org.sagebionetworks.repo.model.table.EntityView",
+    ],
+)
+def test_read_manifest_table(monkeypatch, concrete):
+    seen = {}
+    frame = pd.DataFrame({"Name": ["A"]})
+
+    class FakeTable:
+        def __init__(self, id):
+            seen["id"] = id
+
+        def query(self, **kwargs):
+            seen.update(kwargs)
+            return frame
+
+    monkeypatch.setattr(mc, "Table", FakeTable)
+    syn = _FakeSyn(concrete)
+    out = mc.read_manifest(syn, "syn1")
+    assert out is frame
+    assert seen["id"] == "syn1"
+    assert seen["query"] == "SELECT * FROM syn1"
+    assert seen["include_row_id_and_row_version"] is False
+    assert seen["synapse_client"] is syn
+    assert syn.calls == ["/entity/syn1"]
+
+
+@pytest.mark.parametrize(
+    "concrete,attr",
+    [
+        ("org.sagebionetworks.repo.model.RecordSet", "RecordSet"),
+        ("org.sagebionetworks.repo.model.FileEntity", "File"),
+    ],
+)
+def test_read_manifest_csv_entities(monkeypatch, tmp_path, concrete, attr):
+    path = _csv(tmp_path)
+    seen = {}
+
+    class FakeEntity:
+        def __init__(self, id):
+            seen["id"] = id
+
+        def get(self, **kwargs):
+            seen["get"] = kwargs
+            self.path = path
+            return self
+
+    class NoTable:
+        def __init__(self, *a, **k):
+            raise AssertionError("a CSV entity must not be queried")
+
+    monkeypatch.setattr(mc, attr, FakeEntity)
+    monkeypatch.setattr(mc, "Table", NoTable)
+    syn = _FakeSyn(concrete)
+    out = mc.read_manifest(syn, "syn1")
+    assert seen["id"] == "syn1" and seen["get"] == {"synapse_client": syn}
+    assert list(out.columns) == ["Component", "Year", "Name"]
+    assert out["Year"].tolist()[0] == "2020" and pd.isna(out["Year"].tolist()[1])
+    assert all(dt == object or str(dt) == "str" for dt in out.dtypes)
+
+
+def test_read_manifest_unsupported_type():
+    syn = _FakeSyn("org.sagebionetworks.repo.model.Folder")
+    with pytest.raises(ValueError, match="unsupported entity type"):
+        mc.read_manifest(syn, "syn1")

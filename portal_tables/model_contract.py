@@ -22,6 +22,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+from synapseclient.core.constants import concrete_types
+from synapseclient.models import File, RecordSet, Table
 
 logger = logging.getLogger(__name__)
 
@@ -259,3 +261,43 @@ def duo_id_to_code() -> dict[str, str]:
     df = pd.read_csv(fetch("modules/shared/duo.csv"), dtype=str).fillna("")
     df = df[df["Properties"] != ""]
     return dict(zip(df["Attribute"], df["Properties"]))
+
+
+_TABLE_TYPES = frozenset(
+    {
+        concrete_types.TABLE_ENTITY,
+        concrete_types.ENTITY_VIEW,
+        concrete_types.MATERIALIZED_VIEW,
+        concrete_types.SUBMISSION_VIEW,
+        concrete_types.VIRTUAL_TABLE,
+        concrete_types.DATASET_ENTITY,
+        concrete_types.DATASET_COLLECTION_ENTITY,
+    }
+)
+
+
+def read_manifest(syn, entity_id: str) -> pd.DataFrame:
+    """Read a manifest from a Synapse Table, view, RecordSet or File.
+
+    The entity type comes from a metadata-only REST get (no download).
+    Tables and views are queried with ``SELECT *`` and no row ID/version
+    columns. RecordSets and Files are downloaded and read as CSV with every
+    column as a string (empty cells stay NaN, as ``pd.read_csv`` returns
+    them). Any other entity type raises ``ValueError``.
+    """
+    concrete = syn.restGET(f"/entity/{entity_id}").get("concreteType")
+    if concrete in _TABLE_TYPES:
+        return Table(id=entity_id).query(
+            query=f"SELECT * FROM {entity_id}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        )
+    if concrete == concrete_types.RECORD_SET_ENTITY:
+        entity = RecordSet(id=entity_id).get(synapse_client=syn)
+    elif concrete == concrete_types.FILE_ENTITY:
+        entity = File(id=entity_id).get(synapse_client=syn)
+    else:
+        raise ValueError(
+            f"Cannot read a manifest from {entity_id}: unsupported entity type {concrete!r}"
+        )
+    return pd.read_csv(entity.path, dtype=str)

@@ -72,6 +72,8 @@ def _table_factory(manifest):
 def _run(manifest, dryrun=True):
     factory = _table_factory(manifest)
     with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
+            patch.object(cgp.model_contract, "read_manifest",
+                         lambda syn, entity_id: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = {"NEW1": ("syn99", "123")}
         staged = cgp.process_new_grants("syn53259587", "syn21918972", dryrun, MagicMock())

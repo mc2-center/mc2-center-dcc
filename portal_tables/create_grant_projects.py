@@ -192,11 +192,7 @@ def read_manifest(syn, manifest_id):
     Accepts both 13.1.0 and 14.0.0 headers: legacy headers are renamed
     (with a warning) before normalizing display names to keys.
     """
-    manifest = Table(id=manifest_id).query(
-        query=f"SELECT * FROM {manifest_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    manifest = model_contract.read_manifest(syn, manifest_id)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     return model_contract.normalize_headers(manifest, to="keys")
 

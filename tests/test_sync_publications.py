@@ -62,7 +62,7 @@ def manifest(names: dict) -> pd.DataFrame:
 def run(tmp_path, names):
     path = tmp_path / "m.csv"
     manifest(names).to_csv(path, index=False)
-    m = sp.read_manifest(str(path))
+    m = sp.prepare_manifest(pd.read_csv(path, dtype=str))
     db = sp.add_missing_info(m, GRANTS, ["theme", "consortium", "grantName"])
     return sp.clean_table(db, LIVE_TYPES)
 

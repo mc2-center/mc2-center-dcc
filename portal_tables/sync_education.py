@@ -6,7 +6,6 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import re
-from synapseclient import operations
 import crosswalk
 import model_contract
 import utils
@@ -59,7 +58,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path).fillna("")
+    manifest = model_contract.read_manifest(syn, args.manifest_id).fillna("")
     manifest = model_contract.rename_legacy_headers(manifest, "EducationalResource")
     manifest = model_contract.normalize_headers(manifest, to="keys")
     if args.verbose:

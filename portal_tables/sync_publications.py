@@ -8,7 +8,6 @@ import re
 from typing import List
 
 import pandas as pd
-from synapseclient import operations
 from synapseclient.models import Table
 import crosswalk
 import model_contract
@@ -64,9 +63,9 @@ def clean_table(df: pd.DataFrame, live_types: dict[str, str]) -> pd.DataFrame:
     return crosswalk.to_portal(df, COMPONENT, live_types)
 
 
-def read_manifest(path: str) -> pd.DataFrame:
-    """Read the manifest CSV with class-label headers (13.1.0 or 14.0.0)."""
-    manifest = pd.read_csv(path, header=0).fillna("")
+def prepare_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
+    """Give the raw manifest class-label headers (13.1.0 or 14.0.0 input)."""
+    manifest = manifest.fillna("")
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     # iconTags is an enrichment column that comes with the manifest.
     return model_contract.normalize_headers(manifest, to="keys", passthrough=["iconTags"])
@@ -85,7 +84,7 @@ def main():
             "\n\nDatabase will NOT be updated.",
         )
 
-    manifest = read_manifest(operations.get(args.manifest_id, synapse_client=syn).path)
+    manifest = prepare_manifest(model_contract.read_manifest(syn, args.manifest_id))
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)

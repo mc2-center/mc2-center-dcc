@@ -63,11 +63,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = Table(id=args.manifest_id).query(
-        query=f"SELECT * FROM {args.manifest_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    ).fillna("")
+    manifest = model_contract.read_manifest(syn, args.manifest_id).fillna("")
     manifest = prepare_manifest(manifest)
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
