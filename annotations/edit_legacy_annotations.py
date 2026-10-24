@@ -87,7 +87,7 @@ def update_nonpreferred_terms(
     """Update legacy annotations found to current standard terms."""
 
     # Manifest may use colnames that are variations of what is listed
-    # in the CV, e.g. "Assay" or the 13.1.0 "Publication Assay" instead of
+    # in the CV, e.g. "Assay" or its 13.1.0 per-entity name instead of
     # "assay". Re-map colnames to CV categories (derived from the crosswalk),
     # keeping record of the original manifest colnames.
     og_colnames = table.columns
