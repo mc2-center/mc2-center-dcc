@@ -99,18 +99,21 @@ def live_types():
     return types
 
 
-def prepare(rows, legacy):
+def prepare(rows, legacy, stripped=False):
     df = pd.DataFrame(rows).fillna("")
     if legacy:
         df = df.rename(columns=LEGACY_NAMES)
+    if stripped:  # the live manifest: 13.1.0 names with spaces removed
+        df = df.rename(columns=lambda c: c if c == "iconTags" else c.replace(" ", ""))
+    df = sync_datasets.restore_display_names(df)
     df = model_contract.rename_legacy_headers(df, "DatasetView")
     return model_contract.normalize_headers(
         df, to="keys", passthrough=sync_datasets.MANIFEST_PASSTHROUGH
     )
 
 
-def run(rows, legacy=False):
-    df = prepare(rows, legacy)
+def run(rows, legacy=False, stripped=False):
+    df = prepare(rows, legacy, stripped)
     df = sync_datasets.add_missing_info(None, df, GRANTS, PUBS)
     return sync_datasets.clean_table(df, live_types())
 
@@ -128,6 +131,14 @@ def test_legacy_and_current_headers_give_identical_output(caplog):
     pd.testing.assert_frame_equal(canon(new), canon(old))
     assert list(new.columns) == crosswalk.expected_columns("DatasetView", [])
     assert sorted(new["datasetId"]) == ["syn111", "syn222"]
+
+
+def test_live_style_stripped_headers_give_identical_output():
+    new = run(MANIFEST_14)
+    live = run(MANIFEST_14, legacy=True, stripped=True)
+    pd.testing.assert_frame_equal(canon(new), canon(live))
+    also_14 = run(MANIFEST_14, stripped=True)  # stripped 14.0.0 names work too
+    pd.testing.assert_frame_equal(canon(new), canon(also_14))
 
 
 def test_access_text_for_ids_and_short_codes_match():
