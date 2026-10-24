@@ -194,6 +194,10 @@ def query_reporter(in_grants, in_years, csv_path):
                 f"Not quite! Reply included a {report.status_code} status code. Please review the response to diagnose the error.\n\n"
             )
             print(report.text)
+            # A partial report would silently drop this chunk's grants downstream.
+            raise RuntimeError(
+                f"RePORTER returned status {status} for grants {grant_list}; no report written."
+            )
 
     build_report(all_reports, csv_path)
 
