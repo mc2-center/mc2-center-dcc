@@ -23,7 +23,15 @@ SCHEMA_VERSION := $(patsubst v%,%,$(VERSION))
 SCHEMA_FILES := $(sort $(wildcard $(SCHEMAS)/*.json))
 REGISTER_TARGETS := $(addprefix register-json/,$(notdir $(SCHEMA_FILES)))
 
-.PHONY: register-json $(REGISTER_TARGETS)
+.PHONY: help register-json $(REGISTER_TARGETS)
+
+# A bare `make` must never write to Synapse.
+.DEFAULT_GOAL := help
+
+help:
+	@echo "Targets:"
+	@echo "  register-json  Register every JSON schema in SCHEMAS under ORG_NAME at VERSION (writes to Synapse)."
+	@echo "                 Preview first: make -n register-json SCHEMAS=../data-models/json_schemas"
 
 ifneq ($(filter register-json,$(MAKECMDGOALS)),)
 ifeq ($(SCHEMA_FILES),)
