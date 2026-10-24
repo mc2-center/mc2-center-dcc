@@ -232,7 +232,16 @@ def test_access_text_unchanged_for_every_existing_code():
     for code, text in ACCESS_TEXT_BEFORE.items():
         assert utils.DUO_DICT[code] == text
         assert sync_datasets.translate_access(code, id_to_code) == text
-    assert set(utils.DUO_DICT) == set(ACCESS_TEXT_BEFORE)
+
+
+def test_every_14_duo_id_has_access_text():
+    id_to_code = model_contract.duo_id_to_code()
+    assert len(id_to_code) == 24
+    for duo_id, code in id_to_code.items():
+        assert code in utils.DUO_DICT, code
+        text = sync_datasets.translate_access(duo_id, id_to_code)
+        assert text == utils.DUO_DICT[code]
+        assert not text.startswith("Access information not mapped")
 
 
 def test_identify_download_type_accepts_both_keys(monkeypatch):

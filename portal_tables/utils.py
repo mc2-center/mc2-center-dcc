@@ -35,6 +35,27 @@ DUO_DICT = {
     "NRES" : "There are no restrictions on the use of this data",
     "RS" : "Data access is limited to use in specific types of research",
     "RTN" : "Derived/enriched data must be returned to the database/resource repository",
+    # Remaining 14.0.0 DUO codes (modules/shared/duo.csv Properties), worded
+    # from each term's description. Codes whose details live in another
+    # manifest column (USE, COL, RST, TSM, MOR, IST, GSR, DSR) state the
+    # condition only.
+    "CC" : "Data access is allowed for clinical use and care",
+    "COL" : "Requestor must agree to collaborate with the primary study investigator(s)",
+    "DSR" : "Data access is limited to research related to specific diseases",
+    "DUM" : "Additional conditions apply to data use",
+    "GSO" : "Data access is limited to genetic studies only",
+    "GSR" : "Data access is limited to use within specific geographic regions",
+    "HMB" : "Data access is allowed for health/medical/biomedical research, not including the study of population origins or ancestry",
+    "IST" : "Data access is limited to use within approved institutions",
+    "MOR" : "Requestor must not publish results of studies using the data before a specified date",
+    "NMDS" : "Data may not be used for methods development research",
+    "NPOA" : "Data may not be used for population, origin, or ancestry research",
+    "POA" : "Data access is limited to the study of population origins or ancestry",
+    "PS" : "Data access is limited to use within an approved project",
+    "PUB" : "Requestor must make results of studies using the data available to the scientific community",
+    "RST" : "Data access is limited to use in specific types of research",
+    "TSM" : "Data access is limited to a specific period of time",
+    "USE" : "Data access is limited to approved users",
     "Pending Annotation" : "Access information was not provided for this dataset",
     # DUOPlus terms have no short code. Their meaning is the first sentence of
     # the term's description in data-models modules/shared/duo.csv (the rest
