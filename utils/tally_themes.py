@@ -6,7 +6,6 @@ consortiums in the CCKP. (Based on James' `nbs/portal_summary.Rmd`)
 
 import argparse
 import os
-import re
 
 from synapseclient.models import Table
 import pandas as pd
@@ -132,24 +131,6 @@ def tally_by_group(syn, themes):
     return res[~res["theme"].isin(["Computational Resource"])]
 
 
-def update_table(syn, table_id, updated_table):
-    """Truncate table then add new rows."""
-    table = Table(id=table_id)
-    table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
-
-    # Strip embedded newlines/carriage returns from free-text cells. A literal
-    # line break inside a quoted CSV field survives synapseclient's row
-    # serialization (csv.writer with QUOTE_NONNUMERIC), but Synapse's
-    # server-side bulk CSV ingestion splits large uploads by scanning for
-    # newlines rather than parsing quotes, which corrupts the batch containing
-    # that row into blank rows. See the same fix in portal_tables/utils.py
-    # (row-version 2230/2231 duplicated blank rows in syn21897968).
-    updated_table = updated_table.map(
-        lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
-    )
-    table.store_rows(values=updated_table, synapse_client=syn)
-
-
 def get_args():
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description="Tally themes in portal tables.")
@@ -209,7 +190,7 @@ def main():
         return
 
     for table_id, (_, df) in results.items():
-        update_table(syn, table_id, df)
+        _portal_utils.update_table(syn, table_id, df)
 
 
 if __name__ == "__main__":
