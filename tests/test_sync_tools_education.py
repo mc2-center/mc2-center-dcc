@@ -82,7 +82,7 @@ def test_tool_14_and_13_give_same_output():
     assert row["theme"] == ["Heterogeneity"] and row["consortium"] == ["CSBC"]
     assert row["topic"] == ["A", "B"]
     assert row["pubMedId"] == ["Pending Annotation"]
-    assert row["downloadLink"] == ""
+    assert row["downloadLink"] == "[Link](https://example.org/t1)"
     assert "synapse.org" in row["synapseLink"]
 
 
