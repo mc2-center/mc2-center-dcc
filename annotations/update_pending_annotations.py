@@ -10,7 +10,12 @@ import os
 from synapseclient import Synapse
 from synapseclient.models import Table
 import pandas as pd
-from attribute_dictionary import PUBLICATION_DICT
+import sys
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
+import model_contract
 
 # portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
 _spec = importlib.util.spec_from_file_location(
@@ -55,6 +60,8 @@ def get_args():
 def get_updated_df(manifest):
 
     updated_df = pd.read_csv(manifest, index_col=False).fillna("")
+    # Accept manifests that still use 13.1.0 headers.
+    updated_df = model_contract.rename_legacy_headers(updated_df, "PublicationView")
 
     return updated_df
 
@@ -87,7 +94,9 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
 
     # rename updated_df columns to match annots_df column and set index to pubMedId
     updated_df = (
-        updated_df.rename(columns=PUBLICATION_DICT)
+        updated_df.rename(
+            columns=header_maps.display_to_portal("PublicationView")
+        )
         .drop(["Component"], axis=1)
         .set_index("pubMedId")
     )

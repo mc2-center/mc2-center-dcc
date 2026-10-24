@@ -16,8 +16,9 @@ import pandas as pd
 from synapseclient import Synapse
 from synapseclient.models import File, Table
 
-sys.path.insert(0, "./annotations")
-from attribute_dictionary import PUBLICATION_DICT
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
 
 
 def get_args():
@@ -66,7 +67,7 @@ def get_args():
     return parser.parse_args()
 
 
-def status_check(syn, table_id, query, colname, email, publication_dict):
+def status_check(syn, table_id, query, colname, email):
     """
     Check availability of publications and return df of open/accessible
     publications and their current annotations on the portal.
@@ -95,21 +96,26 @@ def status_check(syn, table_id, query, colname, email, publication_dict):
     else:
         ready_for_review = pd.DataFrame(columns=df.columns)
 
-    # Switch column name dictionary key/value pairs
-    column_names = {value: key for key, value in publication_dict.items()}
+    return to_manifest(ready_for_review)
 
-    # Edit data frame to match data model
-    ready_for_review = ready_for_review.rename(columns=column_names).drop(
-        ["pubMedLink", "grantName", "theme", "consortium"], axis=1
-    )
-    ready_for_review["Component"] = "PublicationView"
 
+def to_manifest(portal_df: pd.DataFrame) -> pd.DataFrame:
+    """Convert PublicationView portal-table rows to manifest (display-name) form.
+
+    Portal columns map to display names through the crosswalk; the columns the
+    sync script computes (``pubMedLink``, ``grantName``, ``theme``,
+    ``consortium``, ``dataType``) are dropped.
+    """
+    component = "PublicationView"
+    df = portal_df.drop(columns=header_maps.derived_portal_columns(component), errors="ignore")
+    df = df.rename(columns=header_maps.portal_to_display(component))
+    df["Component"] = component
     # Convert grant number from list type to string
-    ready_for_review["Publication Grant Number"] = [
-        ",".join(map(str, grant))
-        for grant in ready_for_review["Publication Grant Number"]
+    df["GrantView Key"] = [
+        grant if isinstance(grant, str) else ",".join(map(str, grant))
+        for grant in df["GrantView Key"]
     ]
-    return ready_for_review
+    return df
 
 
 def upload_results(syn, results, parent):
@@ -133,7 +139,7 @@ def main():
     )
     email = "mc2center@sagebase.org"
     ready_for_review = status_check(
-        syn, args.portal_table, query, args.colname, email, PUBLICATION_DICT
+        syn, args.portal_table, query, args.colname, email
     )
 
     if args.dryrun:
