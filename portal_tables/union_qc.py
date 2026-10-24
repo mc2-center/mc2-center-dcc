@@ -374,7 +374,7 @@ def main():
     if trimList is not None:
         if inputManifest is not None:
             names, outs, paths = [], [], []
-            name = re.search("\/(\w*)(_trim_config)", str(trimList))
+            name = re.search(r"/(\w*)(_trim_config)", str(trimList))
             if name is None:
                 print("\nPlease provide a trim config that uses the expected naming convention.")
                 exit
