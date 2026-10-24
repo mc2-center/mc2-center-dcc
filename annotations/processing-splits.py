@@ -30,10 +30,6 @@ MAX_LEN = 500
 KEEP_LEN = 400
 TRUNCATION_NOTE = "(Read more on Pubmed)"
 
-# Legacy spelling that pre-dates the 13.1.0 -> 14.0.0 rename table.
-LEGACY_EXTRA_RENAMES = {"Publication TumorType": "Publication Tumor Type"}
-
-
 def is_id_or_key_column(name):
     """ID and key columns hold identifiers and must never be truncated."""
     return (
@@ -44,33 +40,15 @@ def is_id_or_key_column(name):
     )
 
 
-def grant_column_legacy_name(component):
-    """`<Resource> Grant Number` for a component, e.g. `Publication Grant Number`."""
-    prefix = "Resource" if component == "EducationalResource" else component.removesuffix("View")
-    return f"{prefix} Grant Number"
-
-
-def rename_legacy_headers(df, component):
-    """Rename legacy headers to 14.0.0 display names, warning for each."""
-    renames = dict(LEGACY_EXTRA_RENAMES)
-    renames[grant_column_legacy_name(component)] = "GrantView Key"
-    renames.update(model_contract.RENAMES_13_TO_14.get(component, {}))
-    applied = {}
-    for old, new in renames.items():
-        if old not in df.columns:
-            continue
-        if new in df.columns:
-            logger.warning("Not renaming %r to %r: target already present", old, new)
-            continue
-        applied[old] = new
-        logger.warning("Renaming legacy column %r to %r", old, new)
-    return df.rename(columns=applied)
+def is_alias_column(name):
+    """Alias columns hold identifier lists (e.g. GEO accessions); never truncate them."""
+    return name.endswith(" Alias")
 
 
 def truncate_long_text(df):
-    """Apply the 500 -> 400 character cap to every column except ID and key columns."""
+    """Apply the 500 -> 400 character cap to free-text columns only."""
     for column in df.columns:
-        if is_id_or_key_column(column):
+        if is_id_or_key_column(column) or is_alias_column(column):
             continue
         df[column] = df[column].apply(
             lambda x: (
@@ -88,7 +66,7 @@ def process_df(df, component=None):
         component = str(df.iloc[0, 0])
     col_order = model_contract.template_headers(component)
 
-    df = rename_legacy_headers(df, component)
+    df = model_contract.rename_legacy_headers(df, component)
 
     if "PublicationView_id" in col_order and "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
         df["PublicationView_id"] = df["Pubmed Id"]

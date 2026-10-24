@@ -198,3 +198,11 @@ def test_folder_lookup(genmp_mod, ca_number, mapping, expected):
     ref = pd.DataFrame({"grantNumber": ["CA1"], "folderId": ["synF1"], "grantId": ["synG1"]})
     got = genmp_mod.get_folder_id_and_grant_id_from_csv(ref, ca_number, "folderId", "grantId", mapping)
     assert tuple(got) == expected
+
+
+def test_alias_columns_not_truncated(proc_mod):
+    long = ", ".join(f"GSE{100000 + i}" for i in range(80))
+    df = pd.DataFrame({"Publication Dataset Alias": [long], "Publication Abstract": ["x" * 600]})
+    out = proc_mod.truncate_long_text(df)
+    assert out.loc[0, "Publication Dataset Alias"] == long
+    assert out.loc[0, "Publication Abstract"].endswith("(Read more on Pubmed)")

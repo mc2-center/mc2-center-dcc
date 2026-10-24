@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
@@ -21,6 +22,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 MODEL_REF = "v14.0.0"
 RAW = f"https://raw.githubusercontent.com/mc2-center/data-models/{MODEL_REF}"
@@ -89,6 +92,39 @@ LEGACY_ADMIN_HEADERS: dict[str, dict[str, str]] = {
         "Project Grant Number": "GrantView Key",
     },
 }
+
+
+# Legacy spelling that pre-dates the 13.1.0 -> 14.0.0 rename table.
+LEGACY_EXTRA_RENAMES = {"Publication TumorType": "Publication Tumor Type"}
+
+
+def grant_column_legacy_name(component: str) -> str:
+    """`<Resource> Grant Number` for a component, e.g. `Publication Grant Number`."""
+    prefix = "Resource" if component == "EducationalResource" else component.removesuffix("View")
+    return f"{prefix} Grant Number"
+
+
+def rename_legacy_headers(df: pd.DataFrame, component: str) -> pd.DataFrame:
+    """Rename 13.1.0 display-name headers to 14.0.0, warning for each.
+
+    Covers ``RENAMES_13_TO_14[component]``, ``<Resource> Grant Number`` ->
+    ``GrantView Key`` and ``LEGACY_EXTRA_RENAMES``. Lets manifests written
+    before the 14.0.0 migration (infrastructure step I5) pass through
+    ``normalize_headers``. Headers already in 14.0.0 form are untouched.
+    """
+    renames = dict(LEGACY_EXTRA_RENAMES)
+    renames[grant_column_legacy_name(component)] = "GrantView Key"
+    renames.update(RENAMES_13_TO_14.get(component, {}))
+    applied = {}
+    for old, new in renames.items():
+        if old not in df.columns:
+            continue
+        if new in df.columns:
+            logger.warning("Not renaming %r to %r: target already present", old, new)
+            continue
+        applied[old] = new
+        logger.warning("Renaming legacy column %r to %r", old, new)
+    return df.rename(columns=applied)
 
 
 def fetch(path: str) -> Path:
