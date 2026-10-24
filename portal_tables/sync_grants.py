@@ -4,46 +4,29 @@ This script will "sync" the grant manifest table to the Grant portal
 table, by first truncating the table, then re-adding the rows.
 """
 
-import pandas as pd
-import re
 from synapseclient.models import EntityView
+import crosswalk
 import utils
-from create_grant_projects import process_new_grants
+from create_grant_projects import COMPONENT, process_new_grants
 
 
-def clean_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean up the table one final time."""
+def update_scopes(syn, table_ids, grant_ids):
+    """Add each new grant project to the scope of every view in ``table_ids``.
 
-    # Convert string columns to string-list.
-    for col in [
-        "theme",
-        "institutionAlias",
-        "grantInstitution",
-        "consortium",
-    ]:
-        df[col] = utils.convert_to_stringlist(df[col].apply(lambda x: str(x)))
-
-    # Reorder columns to match the table order.
-    col_order = [
-        "grantId",
-        "grantViewId",
-        "grantName",
-        "grantNumber",
-        "abstract",
-        "grantType",
-        "theme",
-        "institutionAlias",
-        "grantInstitution",
-        "investigator",
-        "consortium",
-        "grantStartDate",
-        "nihReporterLink",
-        "durationOfFunding",
-        "embargoEndDate",
-        "grantSynapseTeam",
-        "grantSynapseProject"
-        ]
-    return df[col_order]
+    Each view is compared against the full list of grant projects, so a
+    grant already in one view's scope is still added to the others. IDs of
+    projects that were not created (``"None"``) are skipped.
+    """
+    wanted = {g for g in grant_ids if isinstance(g, str) and g.startswith("syn")}
+    for table in table_ids:
+        view = EntityView(id=table).get(synapse_client=syn)
+        missing = wanted - set(view.scope_ids)
+        if missing:
+            view.scope_ids = set(view.scope_ids) | missing
+            view.store(synapse_client=syn)
+            print(f"Scope updated for table: {view.name} (+{len(missing)})")
+        else:
+            print(f"Scope already up to date for table: {view.name}")
 
 
 def main():
@@ -59,6 +42,9 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
+    # Fail before any project is created if the live table drifted.
+    live_types = crosswalk.check_crosswalk(syn, args.portal_table_id, COMPONENT)
+
     manifest = process_new_grants(
         args.manifest_id, args.portal_table_id, args.dryrun, synapse_client=syn
     )
@@ -69,8 +55,7 @@ def main():
         print()
 
     print("Processing grant staging database...")
-    final_database = clean_table(manifest)
-    updated_scope = final_database.grantId.to_list()
+    final_database = crosswalk.to_portal(manifest, COMPONENT, live_types)
 
     if args.verbose:
         print("\n🔍 Grant(s) to be synced:\n" + "=" * 72)
@@ -78,13 +63,8 @@ def main():
         print()
 
     if not args.dryrun:
-        for table in table_list:
-            view = EntityView(id=table).get(synapse_client=syn)
-            updated_scope = [s for s in updated_scope if s not in view.scope_ids]
-            view.scope_ids = view.scope_ids | set(updated_scope)
-            view.store(synapse_client=syn)
-            print(f"Scope updated for table: {view.name}")
-        utils.update_table(syn, args.portal_table_id, final_database)
+        update_scopes(syn, table_list, final_database.grantId.to_list())
+        utils.update_table(syn, args.portal_table_id, final_database, component=COMPONENT)
         print()
 
     if not args.noprint:
