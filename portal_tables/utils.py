@@ -280,6 +280,11 @@ def update_table(
         - sync over rows from the latest manifest, restoring the previous
           rows if the upload fails
     """
+    # An empty frame would snapshot, delete every live row and store none,
+    # without any error to trigger the restore.
+    if df.empty:
+        raise ValueError(f"No rows to store for {table_id}; refusing to truncate the table.")
+
     table = Table(id=table_id).get(include_columns=True, synapse_client=syn)
 
     # store_rows() uploads the DataFrame as a CSV with a header row, and

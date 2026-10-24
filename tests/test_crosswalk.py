@@ -244,11 +244,25 @@ def _fake_table(columns, current=None):
     return table, monkey
 
 
+def _one_row(columns):
+    return pd.DataFrame([[""] * len(columns)], columns=columns)
+
+
+def test_update_table_refuses_empty_frame(monkeypatch):
+    live = _live("GrantView")
+    table, fake = _fake_table(live)
+    monkeypatch.setattr(utils, "Table", fake)
+    with pytest.raises(ValueError, match="No rows to store"):
+        utils.update_table(None, "synX", pd.DataFrame(columns=list(live)), component="GrantView")
+    table.snapshot.assert_not_called()
+    table.delete_rows.assert_not_called()
+
+
 def test_update_table_component_refuses_before_snapshot(monkeypatch):
     live = _live("GrantView")
     table, fake = _fake_table(live)
     monkeypatch.setattr(utils, "Table", fake)
-    df = pd.DataFrame(columns=list(live)[:-1])  # one column short
+    df = _one_row(list(live)[:-1])  # one column short
     with pytest.raises(ValueError, match="refusing to truncate"):
         utils.update_table(None, "synX", df, component="GrantView")
     table.snapshot.assert_not_called()
@@ -260,7 +274,7 @@ def test_update_table_component_refuses_wrong_names_same_count(monkeypatch):
     live = _live("GrantView")
     table, fake = _fake_table(live)
     monkeypatch.setattr(utils, "Table", fake)
-    df = pd.DataFrame(columns=[f"c{i}" for i in range(len(live))])
+    df = _one_row([f"c{i}" for i in range(len(live))])
     with pytest.raises(ValueError, match="refusing to truncate"):
         utils.update_table(None, "synX", df, component="GrantView")
     table.snapshot.assert_not_called()
@@ -271,7 +285,7 @@ def test_update_table_component_refuses_live_table_that_drifted(monkeypatch):
     table, fake = _fake_table(live)
     monkeypatch.setattr(utils, "Table", fake)
     with pytest.raises(ValueError):
-        utils.update_table(None, "synX", pd.DataFrame(columns=list(live)), component="GrantView")
+        utils.update_table(None, "synX", _one_row(list(live)), component="GrantView")
     table.snapshot.assert_not_called()
 
 
@@ -317,5 +331,5 @@ def test_update_table_positional_fallback_unchanged(monkeypatch):
     # Still refuses a mismatch before touching the table.
     table.reset_mock()
     with pytest.raises(ValueError, match="refusing to truncate"):
-        utils.update_table(None, "synX", pd.DataFrame(columns=list("abc")))
+        utils.update_table(None, "synX", _one_row(list("abc")))
     table.snapshot.assert_not_called()
