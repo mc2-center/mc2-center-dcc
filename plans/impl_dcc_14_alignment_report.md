@@ -1,6 +1,6 @@
 # Implementation report: mc2-center-dcc alignment with data model 14.0.0
 
-Executed against `plans/impl_dcc_14_alignment.md`, 2026-10-23, on branch `model-alignment` (47 commits after `56a2ee7`; nothing pushed). Sonnet subagents implemented each task in its own worktree; Opus reviewed every diff, re-ran the tests, re-checked dry-run diffs, and merged. Two independent reviews covered the whole branch; their should-fix items are fixed below. `pytest tests/`: 185 passed.
+Executed against `plans/impl_dcc_14_alignment.md`, 2026-10-23, on branch `model-alignment` (47 commits after `56a2ee7`; nothing pushed). Sonnet subagents implemented each task in its own worktree; Opus reviewed every diff, re-ran the tests, re-checked dry-run diffs, and merged. Two independent reviews covered the whole branch; their should-fix items are fixed below. `pytest tests/`: 196 passed.
 
 ## Status by task
 | Task | Status | Evidence |
@@ -10,7 +10,7 @@ Executed against `plans/impl_dcc_14_alignment.md`, 2026-10-23, on branch `model-
 | D3 publications | Done | Live dry run: 4773 rows identical to the pre-change run. |
 | D4 datasets + DUO | Done | 1141 rows; one cell differs: a row whose manifest lists two synIDs now keeps the first instead of a random one. DUO IDs and short codes give the same text; unknown codes keep the row. |
 | D5 tools, education | Done | Identical apart from list order inside cells (old code used `set()`) and `"['']"` → `""` in education `publicationId`. |
-| D6 grants | Done; safety fix in progress | 160 rows identical. Per-view scope update bug fixed. See "Open" for the creation-order fix. |
+| D6 grants | Done | 160 rows identical. Per-view scope update bug fixed. Creation-order safety fix below. |
 | D7 projects, people | Done | Projects identical apart from theme order; people identical when the consortium step is bypassed (see I4b). |
 | D8 hand-off | Done | Output headers equal the templates for legacy and P1 input; P1's real output passes with no renames or drops. Cap skips ID, key and alias columns. |
 | D9 other scripts | Done | `header_maps.py` replaces `attribute_dictionary.py` (now unreferenced). |
@@ -31,6 +31,7 @@ Executed against `plans/impl_dcc_14_alignment.md`, 2026-10-23, on branch `model-
 - Deterministic list cells in the syncs (`set()` → ordered dedupe).
 - `reporter_grants.py` fails on any failed RePORTER chunk instead of writing a partial report.
 - One shared consortium resolver in `utils.py`; raw-string regexes in four scripts.
+- Grant creation (review finding): the full frame is validated before any project, team or wiki is created; existing projects and teams are reused by name; a grant whose creation fails is left out and the run exits 1; rows with a `"None"` or empty `grantId` are refused before writing; NaN abstracts and missing investigators no longer produce "nan" or crash; the wiki heading's space is restored. Tested with mocks only (the live manifest has no new grants); `--dryrun` output byte-identical.
 
 ## Behaviour changes to know about
 - `tally_themes.py` now snapshots its three count tables before each monthly write and restores them on failure.
@@ -40,7 +41,7 @@ Executed against `plans/impl_dcc_14_alignment.md`, 2026-10-23, on branch `model-
 - `run_sync.sh` stops on the first failed sync and passes extra flags (e.g. `--dryrun`) through.
 
 ## Open
-- **Grant creation order (review finding, fix in progress on `dcc-grants-safety`):** validate the full frame before creating projects, never write `"None"` rows, reuse existing projects by name.
+- **Grant creation path** has only been tested with mocks: the first real run with a new grant is its first live test. A project found by name is trusted as that grant's project.
 - **D17a deletions** and the newly unreferenced files (`attribute_dictionary.py`, `utils/reporter_project_query.py`, `utils/clean_reporter_results.py`) need the owner.
 - **People sync** fails until I4b adds `HTAN`, `NCI` and `Sage Bionetworks` to the Consortium table.
 - **DUO text:** 17 of 24 DUO codes in 14.0.0 have no portal access text; they would show "Access information not mapped: …" once manifests carry them.
