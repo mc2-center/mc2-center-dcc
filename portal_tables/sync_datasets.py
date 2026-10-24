@@ -22,21 +22,6 @@ COMPONENT = "DatasetView"
 # Manifest columns that are not model attributes but are passed through.
 MANIFEST_PASSTHROUGH = ("iconTags",)
 
-# DUOPlus terms have no short code, so utils.DUO_DICT does not know them.
-# Their meaning is the first sentence of the term's description in data-models
-# modules/shared/duo.csv (the rest of the description is curator guidance).
-DUOPLUS_DICT = {
-    "DUOPlus1": "Source geography is relevant to governance decisions",
-    "DUOPlus2": "Study population is relevant to governance decisions",
-    "DUOPlus3": "Data deidentification is relevant to governance decisions",
-    "DUOPlus4": "A data permission designation is associated with the Study",
-    "DUOPlus5": "A data tier designation is associated with the Study",
-    "DUOPlus6": "A license is associated with the Study",
-    "DUOPlus7": "Attribution conditions are associated with this Study",
-}
-ACCESS_DICT = {**utils.DUO_DICT, **DUOPLUS_DICT}
-
-
 def restore_display_names(df: pd.DataFrame) -> pd.DataFrame:
     """Undo space-stripped headers (``GrantViewKey`` -> ``GrantView Key``).
 
@@ -72,7 +57,7 @@ def translate_access(code: str, id_to_code: dict) -> str:
     code = code.strip()
     short = id_to_code.get(code, code)
     try:
-        return utils.translate_duo(short, ACCESS_DICT)
+        return utils.translate_duo(short)
     except KeyError:
         logger.warning("No access information mapped for data use code %r", code)
         return f"Access information not mapped: {code}"

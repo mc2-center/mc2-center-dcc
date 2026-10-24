@@ -159,7 +159,9 @@ def test_pending_annotation_and_duoplus_are_mapped():
 
 def test_duoplus_text_matches_data_models_description():
     duo = pd.read_csv(model_contract.fetch("modules/shared/duo.csv"), dtype=str).fillna("")
-    for code, text in sync_datasets.DUOPLUS_DICT.items():
+    duoplus = {k: v for k, v in utils.DUO_DICT.items() if k.startswith("DUOPlus")}
+    assert len(duoplus) == 7
+    for code, text in duoplus.items():
         desc = duo.loc[duo["Attribute"] == code, "Description"].iloc[0]
         assert desc.startswith(text + "."), code
 
@@ -202,6 +204,35 @@ def test_theme_consortium_and_pub_lists_keep_first_seen_order(monkeypatch):
     assert out.at[0, "theme"] == ["Zeta", "Alpha", "Mu"]
     assert out.at[0, "consortium"] == ["Q", "B", "A"]
     assert out.at[0, "pub"] == ["Z title", "A title"]
+
+
+# The access text each code produced before DUOPlus moved into utils.DUO_DICT.
+ACCESS_TEXT_BEFORE = {
+    "GRU": "Data access is allowed for any research purpose",
+    "IRB": "Requestor must provide documentation of local IRB/ERB approval to access data",
+    "NCU": "Data access is limited to not-for-profit use",
+    "NPU": "Data access is limited to not-for-profit organizations",
+    "NPUNCU": "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",
+    "NRES": "There are no restrictions on the use of this data",
+    "RS": "Data access is limited to use in specific types of research",
+    "RTN": "Derived/enriched data must be returned to the database/resource repository",
+    "Pending Annotation": "Access information was not provided for this dataset",
+    "DUOPlus1": "Source geography is relevant to governance decisions",
+    "DUOPlus2": "Study population is relevant to governance decisions",
+    "DUOPlus3": "Data deidentification is relevant to governance decisions",
+    "DUOPlus4": "A data permission designation is associated with the Study",
+    "DUOPlus5": "A data tier designation is associated with the Study",
+    "DUOPlus6": "A license is associated with the Study",
+    "DUOPlus7": "Attribution conditions are associated with this Study",
+}
+
+
+def test_access_text_unchanged_for_every_existing_code():
+    id_to_code = model_contract.duo_id_to_code()
+    for code, text in ACCESS_TEXT_BEFORE.items():
+        assert utils.DUO_DICT[code] == text
+        assert sync_datasets.translate_access(code, id_to_code) == text
+    assert set(utils.DUO_DICT) == set(ACCESS_TEXT_BEFORE)
 
 
 def test_identify_download_type_accepts_both_keys(monkeypatch):

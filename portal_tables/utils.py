@@ -35,7 +35,17 @@ DUO_DICT = {
     "NRES" : "There are no restrictions on the use of this data",
     "RS" : "Data access is limited to use in specific types of research",
     "RTN" : "Derived/enriched data must be returned to the database/resource repository",
-    "Pending Annotation" : "Access information was not provided for this dataset"
+    "Pending Annotation" : "Access information was not provided for this dataset",
+    # DUOPlus terms have no short code. Their meaning is the first sentence of
+    # the term's description in data-models modules/shared/duo.csv (the rest
+    # of the description is curator guidance).
+    "DUOPlus1" : "Source geography is relevant to governance decisions",
+    "DUOPlus2" : "Study population is relevant to governance decisions",
+    "DUOPlus3" : "Data deidentification is relevant to governance decisions",
+    "DUOPlus4" : "A data permission designation is associated with the Study",
+    "DUOPlus5" : "A data tier designation is associated with the Study",
+    "DUOPlus6" : "A license is associated with the Study",
+    "DUOPlus7" : "Attribution conditions are associated with this Study",
 }
 
 REPO_DICT = {
