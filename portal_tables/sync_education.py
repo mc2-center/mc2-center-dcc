@@ -14,8 +14,8 @@ def add_missing_info(
     education: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
 
-    url_pattern = re.compile(".*(synapse\.org).*")
-    alias_pattern = re.compile("^syn\d{7,8}$")
+    url_pattern = re.compile(r".*(synapse\.org).*")
+    alias_pattern = re.compile(r"^syn\d{7,8}$")
     education["synapseLink"] = ""
     if "iconTags" not in education.columns:
         education["iconTags"] = ""

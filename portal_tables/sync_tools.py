@@ -14,7 +14,7 @@ import utils
 
 def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
-    url_pattern = re.compile(".*(synapse\.org).*")
+    url_pattern = re.compile(r".*(synapse\.org).*")
     tools["link"] = "[Link](" + tools["ToolHomepage"] + ")"
     tools["portalDisplay"] = "true"
     tools["theme"] = ""
