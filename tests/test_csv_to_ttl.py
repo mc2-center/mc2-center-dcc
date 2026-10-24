@@ -67,3 +67,13 @@ def test_get_reference_id_key_classification():
     refs, keys = mod.get_reference_id("CDE:1, CRDC_CDE:2, primary_key")
     assert refs == "CDE:1, CRDC_CDE:2"
     assert keys == ["primary_key"]
+
+
+def test_template_mask_falls_back_to_dependson():
+    import importlib.util
+    import pandas as pd
+    spec = importlib.util.spec_from_file_location("csv_to_ttl", ROOT / "utils" / "csv_to_ttl.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    df = pd.DataFrame({"Attribute": ["T", "a"], "DependsOn": ["Component, a", ""]})
+    assert list(mod.is_template_mask(df)) == [True, False]

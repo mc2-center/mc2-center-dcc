@@ -50,8 +50,16 @@ import re
 
 
 def is_template_mask(df: pd.DataFrame) -> pd.Series:
-	"""Boolean mask of template (node) rows, based on the IsTemplate column."""
-	return df["IsTemplate"].fillna("").astype(str).str.strip().str.lower() == "true"
+	"""Boolean mask of template (node) rows.
+
+	Uses the IsTemplate column; models without it fall back to the older
+	convention of "Component" listed in DependsOn.
+	"""
+	if "IsTemplate" in df.columns:
+		return df["IsTemplate"].fillna("").astype(str).str.strip().str.lower() == "true"
+	if "DependsOn" in df.columns:
+		return df["DependsOn"].fillna("").astype(str).str.contains("Component")
+	raise ValueError("Model has neither an IsTemplate nor a DependsOn column; cannot find templates.")
 
 
 def get_args():
