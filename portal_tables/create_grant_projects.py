@@ -6,12 +6,21 @@ team with "Can edit" permissions.
 """
 
 import argparse
+import ast
+import logging
 import pandas as pd
-import re
 
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
 from synapseclient.models import Table
+
+import crosswalk
+import model_contract
+import utils
+
+logger = logging.getLogger(__name__)
+
+COMPONENT = "GrantView"
 
 PERMISSIONS = {
     "view": ["READ"],
@@ -77,13 +86,13 @@ def create_wiki_pages(syn, project_id, grant):
     """Create main Wiki page for the Project."""
 
     # Main Wiki page
-    consortium = grant["Grant Consortium Name"]
-    grant_type = grant["Grant Type"]
-    title = grant["Grant Institution Alias"]
-    institutions = grant["Grant Institution Name"]
-    desc = grant["Grant Abstract"] or ""
+    consortium = grant["consortium"]
+    grant_type = grant["GrantType"]
+    title = grant["GrantInstitutionAlias"]
+    institutions = grant["GrantInstitutionName"]
+    desc = grant["GrantAbstract"] or ""
 
-    content = f"""### The {consortium} {grant_type} Research Project \@ {title}
+    content = f"""### The {consortium} {grant_type} Research Project \\@{title}
 
 #### List of Collaborating Institutions
 {institutions}
@@ -99,11 +108,11 @@ def create_wiki_pages(syn, project_id, grant):
         "&url=https%3A%2F%2Fwww%2Esynapse%2Eorg%2F%23%21Synapse%3Asyn7080714%2F}"
         "<-"
     )
-    main_wiki = Wiki(title=grant["Grant Name"], owner=project_id, markdown=content)
+    main_wiki = Wiki(title=grant["GrantName"], owner=project_id, markdown=content)
     main_wiki = syn.store(main_wiki)
 
     # Sub-wiki page: Project Investigators
-    pis = [pi.strip(" ") for pi in grant["Grant Investigator"].split(",")]
+    pis = [pi.strip(" ") for pi in grant["Investigator"].split(",")]
     pi_markdown = "* " + "\n* ".join(pis)
     pi_wiki = Wiki(
         title="Project Investigators",
@@ -135,9 +144,9 @@ def create_folders(syn, project_id):
 
 def create_team(syn, project_id, grant, access_type="edit"):
     """Create team for new grant project."""
-    consortia = _join_listlike_col(grant["Grant Consortium Name"])
-    center = _join_listlike_col(grant["Grant Institution Alias"])
-    team_name = f"{consortia} {center} {grant['Grant Type']} {grant['Grant Number']}"
+    consortia = _join_listlike_col(grant["consortium"])
+    center = _join_listlike_col(grant["GrantInstitutionAlias"])
+    team_name = f"{consortia} {center} {grant['GrantType']} {grant['GrantNumber']}"
     try:
         new_team = Team(name=team_name, canPublicJoin=False)
         new_team = syn.store(new_team)
@@ -158,7 +167,7 @@ def create_grant_projects(syn, grants):
 
     grant_info_dict = {}
     for _, row in grants.iterrows():
-        name = _syn_prettify(row["Grant Name"])
+        name = _syn_prettify(row["GrantName"])
         try:
             project = Project(name)
             project = syn.store(project)
@@ -169,16 +178,117 @@ def create_grant_projects(syn, grants):
             create_wiki_pages(syn, project.id, row)
             create_folders(syn, project.id)
             team_id = create_team(syn, project.id, row)
-            grant_info_dict[row["GrantView_id"]] = (project.id, team_id)
+            grant_info_dict[row["GrantViewId"]] = (project.id, team_id)
         except synapseclient.core.exceptions.SynapseHTTPError:
             print(f"Skipping: {name}")
-            grant_info_dict[row["GrantView_id"]] = ("None", "None")
+            grant_info_dict[row["GrantViewId"]] = ("None", "None")
     
     return grant_info_dict
 
 
+def read_manifest(syn, manifest_id):
+    """Read the grant manifest table into class-label (key) columns.
+
+    Accepts both 13.1.0 and 14.0.0 headers: legacy headers are renamed
+    (with a warning) before normalizing display names to keys.
+    """
+    manifest = Table(id=manifest_id).query(
+        query=f"SELECT * FROM {manifest_id}",
+        include_row_id_and_row_version=False,
+        synapse_client=syn,
+    )
+    manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
+    return model_contract.normalize_headers(manifest, to="keys")
+
+
+def _split_values(value):
+    """Comma-separated string or list to a list of stripped, non-empty values."""
+    if isinstance(value, str):
+        value = value.split(",")
+    elif value is None or (not hasattr(value, "__iter__") and pd.isna(value)):
+        return []
+    return [v.strip() for v in value if isinstance(v, str) and v.strip()]
+
+
+def resolve_consortium(syn, values):
+    """Resolve ConsortiumKey values to Consortium display names.
+
+    Each cell may hold several comma-separated values. ``program.*`` IDs are
+    resolved with ``utils.consortium_display_names``; a value that is already
+    a display name known to the Consortium table (the live manifest today)
+    passes through unchanged. Any other value raises ``ValueError``, listing
+    every unknown value. Returns a Series of ``", "``-joined display names.
+    """
+    cells = [_split_values(v) for v in values]
+    tokens = {t for cell in cells for t in cell}
+    if not tokens:
+        return pd.Series([""] * len(cells), index=values.index, dtype=object)
+
+    table_id = utils.CONFIG["consortium"]["table"]
+    known = set(
+        Table(id=table_id)
+        .query(
+            query=f"SELECT consortiumDisplayName FROM {table_id}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        )["consortiumDisplayName"]
+    )
+    ids = sorted(t for t in tokens if t.startswith("program."))
+    unknown = sorted(t for t in tokens if not t.startswith("program.") and t not in known)
+    resolved = {}
+    try:
+        resolved = dict(zip(ids, utils.consortium_display_names(syn, ids)))
+    except ValueError as err:
+        unknown_ids = [i for i in ids if f"'{i}'" in str(err)]
+        raise ValueError(
+            f"Unknown ConsortiumKey value(s): names {unknown}, IDs {unknown_ids}. {err}"
+        ) from err
+    if unknown:
+        raise ValueError(
+            f"Unknown ConsortiumKey value(s) {unknown}: neither a program.* ID nor "
+            f"a display name in {table_id} ({sorted(known)})"
+        )
+    mapping = {t: resolved.get(t, t) for t in tokens}
+    return pd.Series(
+        [", ".join(mapping[t] for t in cell) for cell in cells],
+        index=values.index,
+        dtype=object,
+    )
+
+
+def _list_to_string(value):
+    """Portal list cell (list or its string form) to a ``", "``-joined string."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("["):
+            try:
+                value = ast.literal_eval(stripped)
+            except (ValueError, SyntaxError):
+                return value
+        else:
+            return value
+    if isinstance(value, (list, tuple, set)):
+        return ", ".join(str(v) for v in value)
+    return value
+
+
+def portal_to_sources(curr_portal):
+    """Rename portal-table columns back to crosswalk source columns."""
+    renames = {
+        portal_col: crosswalk.source_column(source)
+        for source, portal_col, _ in crosswalk.CROSSWALK[COMPONENT]
+        if portal_col in curr_portal.columns
+    }
+    return curr_portal.rename(columns=renames)
+
+
 def process_new_grants(new = None, current = None, dryrun = None, synapse_client = None):
-    """Main function."""
+    """Create projects for new grants; return all grants in staging shape.
+
+    The result has class-label (key) columns plus the crosswalk's derived
+    columns (``grantId``, ``consortium``, ``grantSynapseTeam``,
+    ``grantSynapseProject``), ready for ``crosswalk.to_portal``.
+    """
     syn = synapse_client
     if syn is None:
         syn = synapseclient.Synapse()
@@ -189,21 +299,40 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     # own CLI flags when this is used as a library function.
     if new is None or current is None or dryrun is None:
         args = get_args()
-        manifest = new if new is not None else args.manifest
+        manifest_id = new if new is not None else args.manifest
         portal_table = current if current is not None else args.portal_table
         dryrun = dryrun if dryrun is not None else args.dryrun
     else:
-        manifest = new
+        manifest_id = new
         portal_table = current
 
-    manifest = Table(id=manifest).query(query=f"SELECT * FROM {manifest}", synapse_client=syn)
-    curr_manifest = Table(id=portal_table).query(query=f"SELECT * FROM {portal_table}", synapse_client=syn)
-    curr_grants = curr_manifest.grantNumber.to_list()
+    manifest = read_manifest(syn, manifest_id)
+    curr_portal = Table(id=portal_table).query(
+        query=f"SELECT * FROM {portal_table}",
+        include_row_id_and_row_version=False,
+        synapse_client=syn,
+    )
+    is_new = ~manifest["GrantNumber"].isin(curr_portal.grantNumber.to_list())
 
-    # Generate manifest containing grants not currently on CCKP
-    new_grants = manifest[~manifest["Grant Number"].isin(curr_grants)]
-    grant_info_dict = {grant : ("None", "None") for grant in new_grants["Grant Number"].to_list() if grant}
-    
+    # Grants already on the portal keep their portal values, so an unknown
+    # consortium there is only worth a warning. New grants must resolve.
+    manifest["consortium"] = ""
+    if (~is_new).any():
+        try:
+            manifest.loc[~is_new, "consortium"] = resolve_consortium(
+                syn, manifest.loc[~is_new, "ConsortiumKey"]
+            )
+        except ValueError as err:
+            logger.warning("Existing grants have unresolved ConsortiumKey (unused): %s", err)
+    if is_new.any():
+        manifest.loc[is_new, "consortium"] = resolve_consortium(
+            syn, manifest.loc[is_new, "ConsortiumKey"]
+        )
+    new_grants = manifest[is_new]
+    grant_info_dict = {
+        grant: ("None", "None") for grant in new_grants["GrantViewId"].to_list() if grant
+    }
+
     # Only add grants not currently in the Grants table.
     if new_grants.empty:
         print("No new grants found!")
@@ -215,66 +344,31 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         else:
             print("Adding new grants...")
             grant_info_dict = create_grant_projects(syn, new_grants)
-            
-    manifest = manifest.rename(columns={
-        "GrantView_id" : "grantViewId",
-        "Grant Name" : "grantName",
-        "Grant Number" : "grantNumber",
-        "Grant Abstract" : "abstract",
-        "Grant Type" : "grantType",
-        "Grant Theme Name" : "theme",
-        "Grant Institution Name" : "grantInstitution",
-        "Grant Institution Alias" : "institutionAlias",
-        "Grant Investigator" : "investigator",
-        "Grant Consortium Name" : "consortium",
-        "Grant Start Date" : "grantStartDate",
-        "NIH RePORTER Link" : "nihReporterLink",
-        "Duration of Funding" : "durationOfFunding",
-        "Embargo End Date" : "embargoEndDate",
-        "Grant Synapse Team" : "grantSynapseTeam",
-        "Grant Synapse Project" : "grantSynapseProject"
-        })
-    
+
     manifest["grantId"] = ""
+    manifest["grantSynapseTeam"] = manifest["GrantSynapseTeam"]
+    manifest["grantSynapseProject"] = manifest["GrantSynapseProject"]
 
-    # Add new Grant info to current manifest
-    col_order = [
-        "grantId",
-        "grantViewId",
-        "grantName",
-        "grantNumber",
-        "abstract",
-        "grantType",
-        "theme",
-        "institutionAlias",
-        "grantInstitution",
-        "investigator",
-        "consortium",
-        "grantStartDate",
-        "nihReporterLink",
-        "durationOfFunding",
-        "embargoEndDate",
-        "grantSynapseTeam",
-        "grantSynapseProject"
-        ]
-    manifest = manifest[col_order]
-    
-    new_manifest = pd.concat([curr_manifest, manifest]).drop_duplicates(subset=["grantViewId"]).reset_index()
+    # Add new Grant info to the current portal rows (which win on conflict).
+    curr = portal_to_sources(curr_portal)
+    new_manifest = (
+        pd.concat([curr, manifest])
+        .drop_duplicates(subset=["GrantViewId"])
+        .reset_index(drop=True)
+    )
 
-    # Add Project and Team info to updated manifest
-    for _, row in new_manifest.iterrows():
-        for col in ["theme", "institutionAlias", "grantInstitution", "consortium"]:
-            values = re.findall(r"\'(.*?)\'", "".join(row[col])) # extract values from string lists
-            value_string = ", ".join(values) if values else ", ".join(row[col])
-            new_manifest.at[_, col] = value_string
+    # Flatten list-like cells; add Project and Team info to new rows.
+    for col in ["GrantThemeName", "GrantInstitutionAlias", "GrantInstitutionName", "consortium"]:
+        new_manifest[col] = new_manifest[col].map(_list_to_string)
+    for idx, row in new_manifest.iterrows():
         if row["grantId"] == "":  # If row was added via new manifest
-            grantId, teamId = grant_info_dict[row["grantViewId"]]
-            new_manifest.at[_, "grantId"] = grantId
-            new_manifest.at[_, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
-            new_manifest.at[_, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
-            
+            grantId, teamId = grant_info_dict[row["GrantViewId"]]
+            new_manifest.at[idx, "grantId"] = grantId
+            new_manifest.at[idx, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
+            new_manifest.at[idx, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
+
     print("DONE ✓")
-    
+
     return new_manifest
 
 
