@@ -15,11 +15,12 @@ the tables provided as input
 author: orion.banks
 """
 
-from synapseclient import Synapse, operations
+from synapseclient import operations
 from synapseclient.models import MaterializedView, RecordSet, SchemaStorageStrategy, Table
 import argparse
 import logging
 import pandas as pd
+import utils
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +97,7 @@ def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org =
 
 def main():
 
-    syn = Synapse()
-    syn.login()
+    syn = utils.syn_login()
     args = get_args()
     source, target, table_type, record_sets = args.s, args.t, args.n, args.target_record_set
 

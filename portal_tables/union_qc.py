@@ -304,8 +304,7 @@ def trim_tables(args: list[tuple[str, Path, str]]) -> list[Path]:
 def main():
 
     args = get_args()
-    syn = Synapse()
-    syn.login()
+    syn = utils.syn_login()
 
     inputList, config, attributeMap, trimList, inputManifest, merge, trim, strict, debug = (
         args.l,

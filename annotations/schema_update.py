@@ -10,7 +10,6 @@ author: orion.banks
 """
 
 import asyncio
-from synapseclient import Synapse
 from synapseclient.core.exceptions import SynapseHTTPError, SynapseFileNotFoundError
 from synapseclient.models import Table
 from synapseclient.api import get_children
@@ -22,6 +21,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import header_maps
 import model_contract
+import utils
 
 
 def _get_children(parent, include_types=None, *, synapse_client=None):
@@ -35,8 +35,7 @@ def _get_children(parent, include_types=None, *, synapse_client=None):
     return asyncio.run(_collect())
 
 
-syn = Synapse()
-syn.login()
+syn = utils.syn_login()
 
 if len(sys.argv) != 3:
     print("Usage: python script_name.py input_file.csv entity_type")

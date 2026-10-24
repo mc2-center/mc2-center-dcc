@@ -15,8 +15,8 @@ author: orion.banks
 """
 
 import argparse
-from synapseclient import Synapse
 from synapseclient.models import EntityView, ViewTypeMask
+import utils
 
 
 def get_args():
@@ -59,9 +59,7 @@ def build_schema(view_name, view_parent, view_scope, view_types, view_default):
 
 def main():
 
-    syn = Synapse()
-
-    syn.login()
+    syn = utils.syn_login()
     args = get_args()
 
     if args.c == "table":

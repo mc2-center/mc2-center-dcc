@@ -13,12 +13,22 @@ from datetime import datetime
 import requests
 
 import pandas as pd
-from synapseclient import Synapse
 from synapseclient.models import File, Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import header_maps
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -129,8 +139,7 @@ def upload_results(syn, results, parent):
 
 def main():
     """Main function."""
-    syn = Synapse()
-    syn.login(silent=True)
+    syn = syn_login()
     args = get_args()
 
     query = (

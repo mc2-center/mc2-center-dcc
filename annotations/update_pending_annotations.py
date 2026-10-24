@@ -7,7 +7,6 @@ with their updated annotations after they have become 'Open Access'
 import argparse
 import importlib.util
 import os
-from synapseclient import Synapse
 from synapseclient.models import Table
 import pandas as pd
 import sys
@@ -25,15 +24,6 @@ _spec = importlib.util.spec_from_file_location(
 _portal_utils = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_portal_utils)
 strip_newlines = _portal_utils.strip_newlines
-
-
-def login():
-    """Login to Synapse"""
-
-    syn = Synapse()
-    syn.login()
-
-    return syn
 
 
 def get_args():
@@ -181,7 +171,7 @@ def main():
     )
     if choice == "y":
 
-        syn = login()
+        syn = _portal_utils.syn_login()
         args = get_args()
         update_df = get_updated_df(args.manifest_path)
         annots_results = get_annotations(args.table_id, update_df, syn)

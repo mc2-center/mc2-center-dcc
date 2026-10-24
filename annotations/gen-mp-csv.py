@@ -19,17 +19,19 @@ import os
 import csv
 import pandas as pd
 import sys
-from synapseclient import Synapse
 from synapseclient.models import Table
 from datetime import datetime
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import utils
 
 
 def query_synapse_for_folder_info(
     ref_path: str, data_type: str, folder_id_column_name: str, grant_id_column_name: str
 ) -> pd.DataFrame:
 
-    syn = Synapse()
-    syn.login()
+    syn = utils.syn_login()
 
     grant_table = (
         Table(id="syn21918972")

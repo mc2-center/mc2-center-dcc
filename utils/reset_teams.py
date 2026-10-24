@@ -14,6 +14,18 @@ from typing import List
 from synapseclient import Synapse
 from synapseclient.models import Table, Team
 
+import importlib.util
+import os
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
+
 
 def get_args():
     """Set up command-line interface and get arguments."""
@@ -68,8 +80,7 @@ def get_teams(syn: Synapse, table_id: str) -> List[str]:
 
 def main():
     """Main function."""
-    syn = Synapse()
-    syn.login(silent=True)
+    syn = syn_login()
     args = get_args()
 
     teams = get_teams(syn, args.table_id)

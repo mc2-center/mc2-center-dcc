@@ -8,9 +8,19 @@ import argparse
 import os
 import re
 
-from synapseclient import Synapse
 from synapseclient.models import Table
 import pandas as pd
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 # Source table IDs
 GRANTS = "syn21918972"
@@ -160,8 +170,7 @@ def get_args():
 def main():
     """Main function."""
     args = get_args()
-    syn = Synapse()
-    syn.login(silent=True)
+    syn = syn_login()
 
     # Table of theme names and their descriptions.
     themes = (

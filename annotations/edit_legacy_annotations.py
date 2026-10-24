@@ -1,33 +1,15 @@
 import argparse
 import os
 import sys
-from getpass import getpass
 
 import pandas as pd
-from synapseclient import Synapse
-from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import header_maps
 import model_contract
-
-
-def login() -> Synapse:
-    """Log into Synapse. If env variables not found, prompt user."""
-    syn = Synapse()
-    try:
-        syn.login(silent=True)
-    except SynapseNoCredentialsError:
-        print(
-            ".synapseConfig not found; please manually provide your",
-            "Synapse Personal Access Token (PAT). You can generate"
-            "one at https://www.synapse.org/#!PersonalAccessTokens:0",
-        )
-        pat = getpass("Your Synapse PAT: ")
-        syn.login(authToken=pat, silent=True)
-    return syn
+import utils
 
 
 def get_args() -> argparse.Namespace:
@@ -126,7 +108,7 @@ def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
 
 def main():
     """Main function."""
-    syn = login()
+    syn = utils.syn_login()
     args = get_args()
 
     union_table_scope_ids = (

@@ -28,6 +28,12 @@ from geo_synapse.synapse_ops import (
 )
 from geo_synapse.pipeline import run_one
 
+import os
+import sys
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import utils
+
 # Central public project where GEO Dataset entities and link folders are created.
 # Must have PUBLIC: READ + DOWNLOAD so files are accessible without touching PI projects.
 _CENTRAL_PROJECT_SYNID = "syn76986881"   # CCKP Indexed Datasets
@@ -191,8 +197,7 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
 
 def main():
 
-    syn = Synapse()
-    syn.login()
+    syn = utils.syn_login()
 
     args = get_args()
 

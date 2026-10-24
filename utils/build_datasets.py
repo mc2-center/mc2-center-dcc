@@ -16,9 +16,20 @@ import os
 import pandas as pd
 import random
 import re
-from synapseclient import Synapse, operations
+from synapseclient import operations
 from synapseclient.models import Dataset, EntityRef, Table
 import synapseutils
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -172,8 +183,7 @@ def chunk_files_for_dataset(scope_files: list[str], file_max: int, dataset_total
 
 def main():
 
-    syn = Synapse()
-    syn.login()
+    syn = syn_login()
 
     args = get_args()
 
