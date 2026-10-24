@@ -4,12 +4,54 @@ This script will "sync" the dataset manifest table to the Dataset
 portal table, by first truncating the table, then re-adding the rows.
 """
 
+import logging
+
 import pandas as pd
 import re
 import synapseclient
 from synapseclient import Synapse, operations
 from synapseclient.models import Table
+import crosswalk
+import model_contract
 import utils
+
+logger = logging.getLogger(__name__)
+
+COMPONENT = "DatasetView"
+
+# Manifest columns that are not model attributes but are passed through.
+MANIFEST_PASSTHROUGH = ("iconTags",)
+
+# DUOPlus terms have no short code, so utils.DUO_DICT does not know them.
+# Their meaning is the first sentence of the term's description in data-models
+# modules/shared/duo.csv (the rest of the description is curator guidance).
+DUOPLUS_DICT = {
+    "DUOPlus1": "Source geography is relevant to governance decisions",
+    "DUOPlus2": "Study population is relevant to governance decisions",
+    "DUOPlus3": "Data deidentification is relevant to governance decisions",
+    "DUOPlus4": "A data permission designation is associated with the Study",
+    "DUOPlus5": "A data tier designation is associated with the Study",
+    "DUOPlus6": "A license is associated with the Study",
+    "DUOPlus7": "Attribution conditions are associated with this Study",
+}
+ACCESS_DICT = {**utils.DUO_DICT, **DUOPLUS_DICT}
+
+
+def translate_access(code: str, id_to_code: dict) -> str:
+    """Access text for one data use code.
+
+    ``DUO:`` IDs are first translated to short codes; short codes (still held
+    by the live manifest during the transition) and ``DUOPlus*`` codes pass
+    through. A code with no entry gets a logged warning and fallback text
+    instead of raising.
+    """
+    code = code.strip()
+    short = id_to_code.get(code, code)
+    try:
+        return utils.translate_duo(short, ACCESS_DICT)
+    except KeyError:
+        logger.warning("No access information mapped for data use code %r", code)
+        return f"Access information not mapped: {code}"
 
 def _get_croissant_versions(syn: Synapse) -> dict:
     """Return a dict mapping dataset synID -> latest Croissant dataset_version."""
@@ -24,14 +66,15 @@ def add_missing_info(
     syn: Synapse, datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
+    id_to_code = model_contract.duo_id_to_code()
     datasets["link"] = [
         "".join(["[", d_id, "](", url, ")"]) if url else ""
         for d_id, url in zip(datasets["DatasetAlias"], datasets["DatasetUrl"])
     ]
 
     datasets["grantName"] = ""
-    datasets["themes"] = ""
-    datasets["consortia"] = ""
+    datasets["theme"] = ""
+    datasets["consortium"] = ""
     datasets["pub"] = ""
     datasets["pubYear"] = None
     datasets["version"] = ""
@@ -57,18 +100,18 @@ def add_missing_info(
                     grants[grants.grantNumber == g]["consortium"].values[0]
                 )
         datasets.at[_, "grantName"] = grant_names
-        datasets.at[_, "themes"] = list(themes)
-        datasets.at[_, "consortia"] = list(consortia)
+        datasets.at[_, "theme"] = list(themes)
+        datasets.at[_, "consortium"] = list(consortia)
 
-        # Use the actual Synapse entity ID (DatasetView_id), not DatasetAlias,
+        # Use the actual Synapse entity ID (DatasetViewId), not DatasetAlias,
         # since DatasetAlias is often an external accession (e.g. a GEO
         # GSE ID) rather than a syn ID for externally-hosted datasets.
-        dataset_id = row["DatasetView_id"].split(",")[0]
+        dataset_id = row["DatasetViewId"].split(",")[0]
         try:
             # operations.get() looks up the entity's actual type on Synapse
             # first and dispatches to the matching model (File, Folder,
             # Dataset, etc.), unlike the Dataset model's .get() directly,
-            # which errors out on DatasetView_ids that reference non-Dataset
+            # which errors out on DatasetViewIds that reference non-Dataset
             # entities.
             entity = (
                 operations.get(
@@ -132,16 +175,14 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
-        d = row["DataUseCodes"].split(",")
-        try:
-            d = [utils.translate_duo(code.strip()) for code in d]
-        except KeyError as e:
-            continue
+        d = [translate_access(code, id_to_code) for code in row["DatasetDataUseCodes"].split(",")]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
-        datasets.at[_, "DataUseCodes"] = ",".join(d)
-        
+        datasets.at[_, "DatasetDataUseCodes"] = ",".join(d)
+
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
-        download_type, download_id = utils.identify_download_type(syn, row, source_repo)
+        download_type, download_id = utils.identify_download_type(
+            syn, row.rename({"DatasetViewId": "DatasetView_id"}), source_repo
+        )  # utils still reads the 13.1.0 key
         
         datasets.at[_, "sourceRepository"] = source_repo
         datasets.at[_, "downloadType"] = download_type
@@ -150,39 +191,36 @@ def add_missing_info(
     return datasets
 
 
-def clean_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean up the table one final time."""
-
-    df = df.rename(columns={
-        "GrantViewKey": "DatasetGrantNumber",
-        "PublicationViewKey": "DatasetPubmedId"
-    })
+def clean_table(df: pd.DataFrame, live_types: dict) -> pd.DataFrame:
+    """Clean up the table one final time and return it in portal shape."""
 
     # Convert string columns to string-list.
     cols = [
-        "DatasetView_id",
+        "DatasetViewId",
         "DatasetFileFormats",
-        "DatasetAssay",
-        "DatasetSpecies",
-        "DatasetTissue",
-        "DatasetTumorType",
-        "DatasetGrantNumber",
-        "DatasetPubmedId",
+        "Assay",
+        "Species",
+        "Tissue",
+        "TumorType",
+        "GrantViewKey",
+        "PublicationViewKey",
         "iconTags",
-        "DataUseCodes"
+        "DatasetDataUseCodes",
     ]
-    
+
     for col in cols:
         df[col] = utils.convert_to_stringlist(df[col])
-    
-    for _,row in df.iterrows():
+
+    for _, row in df.iterrows():
         for col in cols:
-           df.at[_, col] = list(set(row[col]))
+            # Dedupe keeping first-seen order: set() order is arbitrary, which
+            # made the portal's single DatasetViewId differ between runs.
+            df.at[_, col] = list(dict.fromkeys(row[col]))
 
     # We only need one synID for the portal table. See
     # https://github.com/mc2-center/mc2-center-dcc/pull/41#issuecomment-1955119623
     # for more context.
-    df["DatasetView_id"] = df["DatasetView_id"].str[0]
+    df["DatasetViewId"] = df["DatasetViewId"].str[0]
 
     # Rank rows by how many content fields are still unannotated, so that
     # complete entries sort ahead of incomplete ones within the same
@@ -191,19 +229,19 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         "DatasetDescription",
         "DatasetDesign",
         "DatasetFileFormats",
-        "DatasetAssay",
-        "DatasetSpecies",
-        "DatasetTissue",
-        "themes",
-        "DatasetTumorType",
-        "consortia",
-        "DatasetGrantNumber",
+        "Assay",
+        "Species",
+        "Tissue",
+        "theme",
+        "TumorType",
+        "consortium",
+        "GrantViewKey",
         "grantName",
-        "DatasetPubmedId",
+        "PublicationViewKey",
         "pub",
         "DatasetDoi",
         "iconTags",
-        "DataUseCodes",
+        "DatasetDataUseCodes",
     ]
 
     def _is_incomplete(value) -> bool:
@@ -225,35 +263,8 @@ def clean_table(df: pd.DataFrame) -> pd.DataFrame:
         na_position="last",
     )
 
-    # Reorder columns to match the table order.
-    col_order = [
-        "DatasetView_id",
-        "DatasetName",
-        "DatasetAlias",
-        "DatasetDescription",
-        "DatasetDesign",
-        "DatasetFileFormats",
-        "DatasetAssay",
-        "DatasetSpecies",
-        "DatasetTissue",
-        "themes",
-        "DatasetTumorType",
-        "consortia",
-        "DatasetGrantNumber",
-        "grantName",
-        "DatasetPubmedId",
-        "pub",
-        "link",
-        "DatasetDoi",
-        "iconTags",
-        "version",
-        "DataUseCodes",
-        "sourceRepository",
-        "downloadType",
-        "downloadSynId"     
-    ]
-
-    return df[col_order]
+    # Rename, order and type the columns to match the live portal table.
+    return crosswalk.to_portal(df, COMPONENT, live_types)
 
 
 def main():
@@ -265,7 +276,10 @@ def main():
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
     manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path, dtype=str).fillna("")
-    manifest.columns = manifest.columns.str.replace(" ", "")
+    manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
+    manifest = model_contract.normalize_headers(
+        manifest, to="keys", passthrough=MANIFEST_PASSTHROUGH
+    )
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
@@ -282,14 +296,15 @@ def main():
     )
 
     database = add_missing_info(syn, manifest, grants, pubs)
-    final_database = clean_table(database)
+    live_types = crosswalk.check_crosswalk(syn, args.portal_table_id, COMPONENT)
+    final_database = clean_table(database, live_types)
     if args.verbose:
         print("\n🔍 Dataset(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
     if not args.dryrun:
-        utils.update_table(syn, args.portal_table_id, final_database)
+        utils.update_table(syn, args.portal_table_id, final_database, component=COMPONENT)
         print()
 
     if not args.noprint:
