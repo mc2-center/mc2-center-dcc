@@ -14,20 +14,24 @@ C contributor) and ``set_at`` (version):
 * Baseline [owner decision]: with nothing logged, the latest version is the
   baseline, all P (a first write). Otherwise the baseline is the last version
   before the first logged one (or empty), all P: pre-log and migration data
-  belong to the pipeline. Every value seen in pre-log versions joins the
-  per-cell ``history``.
+  belong to the pipeline.
 * Pipeline version ``v`` (base ``b``): a differing cell keeps the state value if
   its owner is C and ``set_at > b`` (the pipeline overwrote an edit it never
   saw; ``kept_unseen_edit``), else takes the version's value as P. State keys
   missing from ``v`` are kept (``kept_unseen_row``); new keys are added as P.
 * Foreign version ``v``: new keys are added (``kept_contributor_row``;
-  non-blank cells C, blank cells P so the pipeline can fill them). Per cell:
-  equal, nothing; a value already in the cell's history is a stale-session
-  revert, state kept (``restored_revert``); otherwise a contributor edit
-  (``kept_edit``: value, owner C, ``set_at = v``). A state key missing from
-  ``v`` is restored whatever its owner (``restored_missing``); a real deletion
-  is done by the DCC.
-* After each version all its cell values are added to the history.
+  non-blank cells C, blank cells P so the pipeline can fill them). A Grid
+  export is the snapshot its session opened on plus the user's edits, so the
+  version's snapshot is taken to be the earlier version it agrees with on the
+  most cells (newest on ties; :func:`_session_base`). An exact copy of an older
+  version is read as a deliberate contributor undo [owner decision], so its
+  snapshot is ``v - 1``. Per cell: equal to the
+  state, nothing; equal to the snapshot but not the state, the session never
+  touched it and it is stale, state kept (``restored_revert``); otherwise a
+  contributor edit (``kept_edit``: value, owner C, ``set_at = v``), even when
+  it matches an older value (e.g. undoing a pipeline change). A state key
+  missing from ``v`` is restored whatever its owner (``restored_missing``); a
+  real deletion is done by the DCC.
 
 :func:`merge_upload` then applies an upload to the replayed state: a differing
 cell owned by C is kept and reported as a conflict (contributor wins), any
@@ -492,6 +496,34 @@ def _is_blank(value) -> bool:
     return _norm(value) == ""
 
 
+def _session_base(frames, v, non_key, set_like) -> int:
+    """The earlier version that version ``v`` was most likely exported from.
+
+    The one agreeing with ``v`` on the most cells (newest on ties). A fresh
+    session gives ``v - 1``; a stale session gives the older version it was
+    opened on.
+    """
+    target = frames[v]
+    best, best_score = v - 1, -1
+    for u in sorted((u for u in frames if u < v), reverse=True):
+        other = frames[u]
+        score = sum(
+            1
+            for k in target.keys() & other.keys()
+            for c in non_key
+            if _cells_equal(target[k][c], other[k][c], c in set_like)
+        )
+        if score > best_score:
+            best, best_score = u, score
+    # An exact copy of an older version is either an untouched stale session or
+    # a contributor undoing the changes since; the data can't tell them apart.
+    # Owner decision (2026-10-26): read it as a deliberate contributor undo.
+    exact = target.keys() == frames[best].keys() and best_score == len(target) * len(non_key)
+    if exact and best != v - 1:
+        return v - 1
+    return best
+
+
 def replay(versions, log_map, key, set_like=()):
     """Rebuild the current state from every version, tracking cell ownership.
 
@@ -512,28 +544,17 @@ def replay(versions, log_map, key, set_like=()):
     latest = versions[-1][0]
     non_key = [c for c in columns if c not in key_cols]
 
-    history: dict[tuple, set] = {}
     decisions: list[dict] = []
     state: dict[str, dict] = {}  # key -> {column: [value, owner, set_at]}
-
-    def remember(frame):
-        for k, row in frame.items():
-            for c in non_key:
-                history.setdefault((k, c), set()).add(_canon(row[c], c in set_like))
 
     def fresh(row, owner_of, v):
         return {c: [row[c], owner_of(row[c]), v] for c in columns}
 
     if not log_map:
-        for v in frames:
-            remember(frames[v])
         state = {k: fresh(r, lambda _: P, latest) for k, r in frames[latest].items()}
         first, report_after = latest + 1, latest
     else:
         first, report_after = min(log_map), max(log_map)
-        for v in frames:
-            if v < first:
-                remember(frames[v])
         if first - 1 in frames:
             state = {k: fresh(r, lambda _: P, first - 1) for k, r in frames[first - 1].items()}
 
@@ -564,6 +585,12 @@ def replay(versions, log_map, key, set_like=()):
                 if k not in frame:
                     decide(v, k, "", "kept_unseen_row")
         else:
+            # A Grid export is the snapshot its session opened on plus the
+            # user's edits, so a cell that still equals that snapshot was not
+            # touched: if it differs from the state, it is stale. Only cells
+            # that differ from the snapshot are contributor edits, even when
+            # they match an older value (e.g. undoing a pipeline change).
+            snapshot = frames[_session_base(frames, v, non_key, set_like)] if v > 1 else {}
             for k, row in frame.items():
                 if k not in state:
                     state[k] = fresh(row, lambda x: P if _is_blank(x) else C, v)
@@ -573,7 +600,7 @@ def replay(versions, log_map, key, set_like=()):
                     cell = state[k][c]
                     if _cells_equal(row[c], cell[0], c in set_like):
                         continue
-                    if _canon(row[c], c in set_like) in history.get((k, c), ()):
+                    if k in snapshot and _cells_equal(row[c], snapshot[k][c], c in set_like):
                         decide(v, k, c, "restored_revert", row[c], cell[0])
                     else:
                         decide(v, k, c, "kept_edit", row[c], cell[0])
@@ -581,7 +608,6 @@ def replay(versions, log_map, key, set_like=()):
             for k in state:
                 if k not in frame:
                     decide(v, k, "", "restored_missing")
-        remember(frame)
 
     rows = [{c: cells[c][0] for c in columns} for cells in state.values()]
     owned = {(k, c) for k, cells in state.items() for c in non_key if cells[c][1] == C}

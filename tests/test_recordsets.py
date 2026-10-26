@@ -219,15 +219,26 @@ def test_v5_v6_v7_stale_session_keeps_a_edit_and_b_edit():
     assert owned == {("a", "Title"), ("b", "Title"), ("c", "Title")}
 
 
-def test_stale_revert_then_pipeline_rewrite_makes_the_value_pipeline_owned():
-    # A pipeline (v1), B edit (v2), stale A revert (v3), filler export (v4),
-    # pipeline A (v5, base 4), then an upload C applies.
+def test_exact_copy_of_an_older_version_is_a_contributor_undo():
+    # A pipeline (v1), B edit (v2), then v3 is an exact copy of v1. Stale export
+    # or deliberate undo can't be told apart; owner decision: a contributor undo.
     a = df(["k", "A", ""])
     b = df(["k", "B", ""])
-    state, owned, _ = rep(a, b, a, a, a, log={1: 0, 5: 4})
-    assert cell(state, "k", "Title") == "A" and owned == set()
+    state, owned, d = rep(a, b, a, a, a, log={1: 0, 5: 4})
+    assert cell(state, "k", "Title") == "A" and owned == {("k", "Title")}
     merged, conflicts = rs.merge_upload(state, df(["k", "C", ""]), K, owned)
-    assert cell(merged, "k", "Title") == "C" and conflicts.empty
+    assert cell(merged, "k", "Title") == "A" and len(conflicts) == 1
+
+
+def test_stale_export_with_an_edit_restores_untouched_cells():
+    # Not an exact copy (the session also edited another row), so the snapshot
+    # is the older version and its untouched cells are stale.
+    v1 = df(["k", "A", ""], ["m", "M", ""])
+    v2 = df(["k", "B", ""], ["m", "M", ""])
+    v3 = df(["k", "A", ""], ["m", "M2", ""])
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 2: 1})
+    assert cell(state, "k", "Title") == "B" and cell(state, "m", "Title") == "M2"
+    assert (3, "k", "Title", "restored_revert") in dec(d)
 
 
 def test_contributor_row_blank_cells_stay_pipeline_owned():
@@ -257,18 +268,18 @@ def test_pipeline_version_keeps_state_rows_it_lacks():
     assert set(state[K]) == {"a", "b"}
 
 
-def test_clearing_a_never_blank_cell_is_an_edit_and_a_seen_blank_is_a_revert():
+def test_clearing_a_cell_is_an_edit():
     v1 = df(["a", "T", ""])
     v2 = df(["a", "", ""])
     state, owned, d = rep(v1, v2, log={1: 0})
     assert dec(d) == {(2, "a", "Title", "kept_edit")}
-    # a cell that was once blank: going back to blank is a stale revert
+    # going back to blank by an exact copy of an older version is a contributor undo
     w1 = df(["a", "", ""])
     w2 = df(["a", "T", ""])
     w3 = df(["a", "", ""])
     state, _, d = rep(w1, w2, w3, log={2: 1})
-    assert cell(state, "a", "Title") == "T"
-    assert (3, "a", "Title", "restored_revert") in dec(d)
+    assert cell(state, "a", "Title") == ""
+    assert (3, "a", "Title", "kept_edit") in dec(d)
 
 
 def test_set_like_list_order_is_not_an_edit():
@@ -460,3 +471,42 @@ def test_grid_delete_failure_does_not_mask_the_original_exception():
         cls.return_value.create.return_value = grid
         with pytest.raises(ValueError, match="original"):
             rs.write_via_grid("syn", "syn1", "x.csv")
+
+
+def test_fresh_session_undoing_a_pipeline_change_is_an_edit():
+    # v1 baseline "Orig"; pipeline v2 writes "Pipe"; a contributor (fresh session
+    # on v2) sets it back to "Orig". That is a deliberate edit, not a stale revert.
+    v1 = df(["p1", "Orig", ""])
+    v2 = df(["p1", "Pipe", ""])
+    v3 = df(["p1", "Orig", ""])
+    state, owned, d = rep(v1, v2, v3, log={2: 1})
+    assert state.set_index(K).loc["p1", "Title"] == "Orig"
+    assert ("p1", "Title") in owned
+    assert (3, "p1", "Title", "kept_edit") in dec(d)
+
+
+def test_stale_session_untouched_cell_is_restored_but_its_edit_kept():
+    # pipeline v1 (A, X); pipeline v2 (B, X); stale session opened on v1 exports
+    # v3 = v1 + an edit to p2: p1 "A" is stale, p2 "Y" is the user's edit.
+    v1 = df(["p1", "A", ""], ["p2", "X", ""])
+    v2 = df(["p1", "B", ""], ["p2", "X", ""])
+    v3 = df(["p1", "A", ""], ["p2", "Y", ""])
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 2: 1})
+    s = state.set_index(K)
+    assert s.loc["p1", "Title"] == "B" and s.loc["p2", "Title"] == "Y"
+    assert (3, "p1", "Title", "restored_revert") in dec(d)
+    assert (3, "p2", "Title", "kept_edit") in dec(d)
+    assert ("p2", "Title") in owned and ("p1", "Title") not in owned
+
+
+def test_stale_session_edit_to_an_old_value_is_kept():
+    # The stale session's snapshot (v1) had "A"; the user typed "Z", a value the
+    # cell held long ago (v0 baseline). Differs from the snapshot, so it's an edit.
+    v0 = df(["p1", "Z", ""])
+    v1 = df(["p1", "A", ""])
+    v2 = df(["p1", "B", ""])
+    v3 = df(["p1", "Z", ""])
+    # rep() numbers them 1..4 (v0=1 baseline, v1=2 and v2=3 pipeline, v3=4)
+    state, owned, d = rep(v0, v1, v2, v3, log={2: 1, 3: 2})
+    assert state.set_index(K).loc["p1", "Title"] == "Z"
+    assert (4, "p1", "Title", "kept_edit") in dec(d)
