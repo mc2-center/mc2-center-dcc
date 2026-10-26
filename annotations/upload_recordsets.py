@@ -55,6 +55,11 @@ def get_args(argv=None):
         "--execute", action="store_true", help="write to Synapse; the default is a dry run"
     )
     parser.add_argument(
+        "--cache-dir",
+        default=str(recordsets.DEFAULT_CACHE_DIR),
+        help="on-disk cache of downloaded RecordSet versions (immutable); default: %(default)s",
+    )
+    parser.add_argument(
         "--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp"
     )
     return parser.parse_args(argv)
@@ -114,7 +119,10 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
             f"write log has v{pipeline_last} but {rs_id} is at v{latest}"))
         return summary
 
-    current = recordsets.read_recordset(syn, rs_id, version=latest)
+    def read(v):
+        return recordsets.read_recordset(syn, rs_id, version=v, cache_dir=args.cache_dir)
+
+    current = read(latest)
     decisions = pd.DataFrame(columns=recordsets.DECISION_COLUMNS)
     edited = set()
     if pipeline_last is None:
@@ -122,12 +130,17 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     elif latest == pipeline_last:
         base, mode = current, "no newer versions (no reconciliation)"
     else:
-        history = [recordsets.read_recordset(syn, rs_id, version=v) for v in range(1, pipeline_last + 1)]
-        foreign = [(v, recordsets.read_recordset(syn, rs_id, version=v)) for v in range(pipeline_last + 1, latest)]
+        history = [read(v) for v in range(1, pipeline_last + 1)]
+        foreign = [(v, read(v)) for v in range(pipeline_last + 1, latest)]
         foreign.append((latest, current))
         base, decisions, edited = recordsets.reconcile_versions(foreign, history[-1], history, key, set_like)
         mode = f"reconciled v{pipeline_last}..v{latest}"
 
+    # Contributor-wins must hold on every run, not only the one that saw the edit:
+    # a cell whose current value a contributor introduced stays theirs.
+    edited = edited | recordsets.contributor_owned_cells(
+        upload, base, key, latest, logged, read, set_like
+    )
     merged, conflicts = recordsets.merge_upload(
         base, upload, key, edited, set_like
     )

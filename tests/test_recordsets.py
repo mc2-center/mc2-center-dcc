@@ -281,3 +281,82 @@ def test_reconcile_versions_without_foreign_is_identity():
     v5 = df(["a", "T", ""])
     state, d, edited = rs.reconcile_versions([], v5, [v5], K)
     assert state.equals(v5) and d.empty and edited == set()
+
+
+def _owned(versions, logged, upload, state, set_like=()):
+    reads = []
+
+    def read(v):
+        reads.append(v)
+        return versions[v - 1]
+
+    owned = rs.contributor_owned_cells(upload, state, K, len(versions), logged, read, set_like)
+    return owned, reads
+
+
+def test_owned_origin_foreign_vs_pipeline():
+    v1 = df(["a", "P", ""], ["b", "P", ""])
+    v2 = df(["a", "Mine", ""], ["b", "P", ""])  # contributor
+    v3 = df(["a", "Mine", ""], ["b", "P2", ""])  # pipeline wrote v3 (b changed by pipeline)
+    state = v3
+    upload = df(["a", "Up", ""], ["b", "Up", ""])
+    owned, _ = _owned([v1, v2, v3], {1, 3}, upload, state)
+    assert owned == {("a", "Title")}
+
+
+def test_owned_only_reads_cells_that_differ():
+    v1 = df(["a", "T", ""])
+    owned, reads = _owned([v1], {1}, df(["a", "T", ""]), v1)
+    assert owned == set() and reads == []
+
+
+def test_owned_value_present_before_first_logged_version_is_foreign():
+    v1 = df(["a", "Legacy", ""])
+    v2 = df(["a", "Legacy", ""])
+    owned, _ = _owned([v1, v2], {2}, df(["a", "Up", ""]), v2)
+    assert owned == {("a", "Title")}
+
+
+def test_owned_nothing_logged_is_first_write():
+    v1 = df(["a", "Legacy", ""])
+    assert _owned([v1], set(), df(["a", "Up", ""]), v1)[0] == set()
+
+
+def test_owned_set_like_and_new_keys():
+    v1 = df(["a", "T", ["x", "y"]])
+    v2 = df(["a", "T", ["y", "x"]])
+    owned, _ = _owned([v1, v2], {1}, df(["a", "T", ["x", "y"]], ["new", "N", ""]), v2, {"Assay"})
+    assert owned == set()
+
+
+def _fake_entity(tmp_path, text):
+    path = tmp_path / "dl.csv"
+    path.write_text(text)
+    return SimpleNamespace(path=str(path))
+
+
+def test_read_recordset_cache_miss_then_hit(tmp_path):
+    cache = tmp_path / "cache"
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = _fake_entity(tmp_path, f"{K},Title\na,x\n")
+        first = rs.read_recordset("syn", "syn1", version=4, cache_dir=cache)
+        assert (cache / "syn1" / "v4.csv").exists() and cls.return_value.get.call_count == 1
+        second = rs.read_recordset("syn", "syn1", version=4, cache_dir=cache)
+        assert cls.return_value.get.call_count == 1  # hit: no download
+        assert first.equals(second)
+        rs.read_recordset("syn", "syn1", version=None, cache_dir=cache)  # latest is never cached
+        rs.read_recordset("syn", "syn1", version=None, cache_dir=cache)
+        assert cls.return_value.get.call_count == 3
+        assert not (cache / "syn1" / "vNone.csv").exists()
+
+
+def test_owned_value_carried_by_pipeline_versions_stays_owned():
+    v1 = df(["a", "P", ""])
+    v2 = df(["a", "Mine", ""])  # contributor
+    v3 = df(["a", "P", ""])  # stale-session export wiped it
+    v4 = df(["a", "Mine", ""])  # pipeline restored it
+    owned, _ = _owned([v1, v2, v3, v4], {1, 4}, df(["a", "Up", ""]), v4)
+    assert owned == {("a", "Title")}
+    # a pipeline value that never had a foreign origin is not owned
+    owned, _ = _owned([v1, v3, v1], {1, 2, 3}, df(["a", "Up", ""]), v1)
+    assert owned == set()

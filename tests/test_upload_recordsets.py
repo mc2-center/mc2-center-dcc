@@ -50,7 +50,7 @@ class FakeSynapse:
     def info(self, syn, rs_id):
         return len(self.versions), self.key
 
-    def read(self, syn, rs_id, version=None):
+    def read(self, syn, rs_id, version=None, cache_dir=None):
         return self.versions[(version or len(self.versions)) - 1].copy()
 
     def write(self, syn, rs_id, csv_path, **kw):
@@ -209,3 +209,44 @@ def test_non_schema_columns_are_not_uploaded(tmp_path):
     code, rep = run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), execute=False)
     merged = pd.read_csv(rep / "syn100" / "merged.csv", dtype=str)
     assert "Component" not in merged.columns
+
+
+def test_contributor_value_survives_later_runs(tmp_path):
+    """Run N keeps the edit and reports a conflict; run N+1 with the same upload does too."""
+    v1 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
+    v2 = stored(["p1", "Contributor title", ""], ["p2", "Second", ""])
+    log = tmp_path / "log.csv"
+    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    fake = FakeSynapse([v1, v2])
+    for n in (1, 2):
+        code, rep = run(tmp_path, fake, log=log)
+        assert code == 0
+        written = fake.writes[-1].set_index(KEY)
+        assert written.loc["p1", "PublicationTitle"] == "Contributor title", f"run {n}"
+        conflicts = pd.read_csv(rep / "syn100" / "conflicts.csv", dtype=str, keep_default_na=False)
+        assert list(conflicts["column"]) == ["PublicationTitle"], f"run {n}"
+    assert rs.CsvWriteLog(log).pipeline_versions("synRS") == [1, 3, 4]
+
+
+def test_pipeline_originated_value_is_overwritten(tmp_path):
+    v1 = stored(["p1", "Old pipeline", ""], ["p2", "Second", ""])
+    log = tmp_path / "log.csv"
+    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    fake = FakeSynapse([v1])
+    code, rep = run(tmp_path, fake, log=log)
+    assert fake.writes[-1].set_index(KEY).loc["p1", "PublicationTitle"] == "Pipeline title"
+    assert pd.read_csv(rep / "syn100" / "conflicts.csv").empty
+
+
+def test_stale_session_scenario_second_run_keeps_both_edits(tmp_path):
+    v5 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
+    v6 = stored(["p1", "A edit", ""], ["p2", "Second", ""])
+    v7 = stored(["p1", "Pipeline title", ""], ["p2", "B edit", ""])
+    log = tmp_path / "log.csv"
+    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    fake = FakeSynapse([v5, v6, v7])
+    for _ in range(2):
+        run(tmp_path, fake, log=log)
+        written = fake.writes[-1].set_index(KEY)
+        assert written.loc["p1", "PublicationTitle"] == "A edit"
+        assert written.loc["p2", "PublicationTitle"] == "B edit"

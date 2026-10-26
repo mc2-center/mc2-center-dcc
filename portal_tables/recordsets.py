@@ -23,6 +23,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,18 +151,38 @@ def _split_list_cell(value: str) -> list[str]:
 # --- reading ----------------------------------------------------------------
 
 
-def read_recordset(syn, rs_id: str, version: int | None = None) -> pd.DataFrame:
-    """Read a RecordSet version (default: latest) with string dtype.
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "mc2-center-dcc" / "recordsets"
 
-    JSON-array cells become Python lists, other cells stay strings, empty
-    cells are ``""``.
-    """
-    entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
+
+def _load_csv(path) -> pd.DataFrame:
     try:
-        df = pd.read_csv(entity.path, dtype=str, keep_default_na=False)
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
     return df.map(parse_cell)
+
+
+def read_recordset(syn, rs_id: str, version: int | None = None, cache_dir=None) -> pd.DataFrame:
+    """Read a RecordSet version (default: latest) with string dtype.
+
+    JSON-array cells become Python lists, other cells stay strings, empty
+    cells are ``""``. With ``cache_dir`` and an explicit ``version``, the CSV
+    is cached on disk as ``<cache_dir>/<rs_id>/v<version>.csv`` (versions are
+    immutable) and read from there on later calls. The latest version
+    (``version=None``) is never cached.
+    """
+    cached = None
+    if cache_dir is not None and version is not None:
+        cached = Path(cache_dir) / rs_id / f"v{version}.csv"
+        if cached.exists():
+            return _load_csv(cached)
+    entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
+    if cached is not None:
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_name(cached.name + ".part")
+        shutil.copyfile(entity.path, tmp)
+        tmp.replace(cached)
+    return _load_csv(entity.path)
 
 
 def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
@@ -381,6 +402,67 @@ def reconcile_versions(foreign, pipeline_last, history, key, set_like=()):
         if k in final and k in base and not _cells_equal(final[k][c], base[k][c], c in set_like)
     }
     return state, decisions, edited
+
+
+def contributor_owned_cells(upload, state, key, latest, logged, read, set_like=()):
+    """``(key, column)`` cells of ``state`` that a contributor owns and the upload must not change.
+
+    Only cells where the upload differs from ``state`` are examined. For each,
+    find the newest version (``latest`` down to 1) holding the state's value,
+    then extend back while the cell keeps that value; the oldest version of
+    that run is the origin. If the origin is not in ``logged`` (the write
+    log's versions) a contributor introduced the value and owns the cell.
+    If the origin is a pipeline version, the pipeline may merely have carried
+    a contributor value (kept or restored it), so the search continues below
+    the run for an earlier occurrence of the same value; the cell is owned if
+    any such run originates in a foreign version, otherwise the upload wins.
+    A value found in no version (e.g. a new key) is not owned. Versions before the first logged one count
+    as foreign, so versions created by a migration must be logged. With
+    nothing logged at all this is a first write and nothing is owned.
+
+    ``read(version)`` returns a version's DataFrame; versions are read lazily,
+    at most once each.
+    """
+    logged = set(logged)
+    if not logged:
+        return set()
+    key_cols = key_columns(key)
+    set_like = set(set_like)
+    columns = _all_columns([state, upload], key_cols)
+    cur = _frames_by_key(state, key_cols, columns)
+    loaded: dict[int, dict] = {}
+
+    def value(version, k, column):
+        if version not in loaded:
+            loaded[version] = _frames_by_key(read(version), key_cols, columns)
+        row = loaded[version].get(k)
+        return None if row is None else row[column]
+
+    def same(version, k, column):
+        v = value(version, k, column)
+        return v is not None and _cells_equal(v, cur[k][column], column in set_like)
+
+    owned = set()
+    for k, up_row in _frames_by_key(upload, key_cols, columns).items():
+        if k not in cur:
+            continue
+        for column in upload.columns:
+            if column in key_cols or _cells_equal(up_row[column], cur[k][column], column in set_like):
+                continue
+            top = latest
+            while top >= 1:
+                origin = next((v for v in range(top, 0, -1) if same(v, k, column)), None)
+                if origin is None:
+                    break
+                while origin > 1 and same(origin - 1, k, column):
+                    origin -= 1
+                if origin not in logged:
+                    owned.add((k, column))
+                    break
+                # A pipeline version may only have carried the value over (kept or
+                # restored a contributor edit): look for an earlier foreign origin.
+                top = origin - 1
+    return owned
 
 
 def edited_cells(decisions: pd.DataFrame) -> set[tuple[str, str]]:
