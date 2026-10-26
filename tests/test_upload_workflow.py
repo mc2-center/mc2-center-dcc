@@ -368,10 +368,10 @@ def test_links_reuse_existing_entity_by_name_under_parent(tmp_path, monkeypatch)
     syn = LinkSyn(existing={("syn100", "a"): "syn555"})
     syn.urls["syn555"] = "https://x/a"
     patch_file(mod, monkeypatch, syn)
-    mod.main(["-m", str(pending), "-t", "ToolView"])  # default ledger sits next to the manifest
+    mod.main(["-m", str(pending), "-t", "ToolView"])  # no --created-ids: no resume file
     assert syn.stored == ["b"]
     assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist()[0] == "syn555"
-    assert (tmp_path / "created_ids.csv").exists()
+    assert not (tmp_path / "created_ids.csv").exists()
 
 
 # --- stale outputs ---------------------------------------------------------------

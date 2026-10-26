@@ -88,7 +88,7 @@ def get_args(argv=None):
         default=None,
         help="CSV that records each created entity ID as it is made (row key -> synID). "
         "Rows already listed are skipped on a re-run, so an interrupted run can be resumed. "
-        "Default with -m: created_ids.csv next to the manifest.",
+        "Opt-in: without this flag no resume file is kept.",
     )
     return parser.parse_args(argv)
 
@@ -292,8 +292,6 @@ def main(argv=None):
 
     manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p,
     created_ids_path = args.created_ids
-    if created_ids_path is None and manifest is not None:
-        created_ids_path = str(Path(manifest).parent / "created_ids.csv")
 
     if data_type == "DatasetView":
 
