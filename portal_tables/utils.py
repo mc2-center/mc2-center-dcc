@@ -266,7 +266,8 @@ def update_table(
     With ``component``, ``df`` must already be in portal shape (see
     ``crosswalk.to_portal``): the live table is checked against the
     crosswalk and ``df``'s column names and order must equal the live
-    columns. Without it, the DataFrame is renamed to the live columns by
+    columns. Without it, a DataFrame whose names are all live column names is
+    reordered by name; any other DataFrame is renamed to the live columns by
     position (the sync scripts' manifest-style ``col_order`` lists).
 
     Steps include:
@@ -309,6 +310,16 @@ def update_table(
                 "refusing to truncate the table."
             )
         df = strip_newlines(df)
+    elif set(df.columns) <= set(live_columns) and not df.columns.has_duplicates:
+        # Names are live names (e.g. utils/tally_themes.py): reorder by name,
+        # so a different column order can't write values into the wrong column.
+        missing = [c for c in live_columns if c not in df.columns]
+        if not set(missing) <= OPTIONAL_TRAILING_COLUMNS:
+            raise ValueError(
+                f"{table_id} has columns {live_columns} but {list(df.columns)} were "
+                f"provided; refusing to truncate the table."
+            )
+        df = strip_newlines(df[[c for c in live_columns if c in df.columns]])
     else:
         missing = live_columns[len(df.columns):]
         if len(df.columns) > len(live_columns) or not set(missing) <= OPTIONAL_TRAILING_COLUMNS:

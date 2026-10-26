@@ -344,3 +344,23 @@ def test_update_table_positional_fallback_unchanged(monkeypatch):
     with pytest.raises(ValueError, match="refusing to truncate"):
         utils.update_table(None, "synX", _one_row(list("abc")))
     table.snapshot.assert_not_called()
+
+
+def test_update_table_without_component_reorders_live_names_by_name(monkeypatch):
+    live = {"theme": "STRING", "themeDescription": "STRING", "groupBy": "STRING", "totalCount": "INTEGER"}
+    table, fake = _fake_table(live)
+    monkeypatch.setattr(utils, "Table", fake)
+    df = pd.DataFrame({"totalCount": [3], "theme": ["t"], "groupBy": ["g"], "themeDescription": ["d"]})
+    utils.update_table(None, "synX", df)
+    stored = table.store_rows.call_args.kwargs["values"]
+    assert list(stored.columns) == list(live)
+    assert stored.iloc[0].tolist() == ["t", "d", "g", 3]
+
+
+def test_update_table_without_component_refuses_live_names_missing_a_column(monkeypatch):
+    live = {"theme": "STRING", "groupBy": "STRING", "totalCount": "INTEGER"}
+    table, fake = _fake_table(live)
+    monkeypatch.setattr(utils, "Table", fake)
+    with pytest.raises(ValueError, match="refusing to truncate"):
+        utils.update_table(None, "synX", pd.DataFrame({"totalCount": [3], "theme": ["t"]}))
+    table.snapshot.assert_not_called()
