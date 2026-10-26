@@ -444,4 +444,34 @@ def test_new_run_in_used_out_dir_needs_force_new(tmp_path, env):
                      "--force-new", "--from-stage", "links"])
 
 
+# --- interrupts ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("exc", [SystemExit(3), KeyboardInterrupt()])
+def test_base_exceptions_mark_stage_failed_and_propagate(tmp_path, env, monkeypatch, exc):
+    def boom(run_, args):
+        raise exc
+
+    monkeypatch.setattr(uw, "stage_reshape", boom)
+    with pytest.raises(type(exc)):
+        run(tmp_path)
+    stages = json.loads((tmp_path / "out" / "run.json").read_text())["stages"]
+    assert stages["reshape"]["status"] == "failed" and stages["paths"]["status"] == "done"
+    assert "upload" not in stages
+
+
+def test_run_json_has_no_stale_done_records_while_running(tmp_path, env, monkeypatch):
+    run(tmp_path)
+    seen = {}
+    real = uw.stage_split
+
+    def peek(run_, args):
+        seen.update(json.loads((tmp_path / "out" / "run.json").read_text())["stages"])
+        return real(run_, args)
+
+    monkeypatch.setattr(uw, "stage_split", peek)
+    run(tmp_path)
+    assert seen == {}
+
+
 # --- end ---

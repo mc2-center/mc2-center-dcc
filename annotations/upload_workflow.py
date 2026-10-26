@@ -560,8 +560,13 @@ def main(argv=None, syn=None):
                 outputs = {"split": stage_split, "paths": stage_paths,
                            "reshape": stage_reshape, "upload": stage_upload}[stage](run, args)
                 status, note = "done", None
-        except Exception as err:
+        except BaseException as err:
+            # SystemExit/KeyboardInterrupt (a stage script calling sys.exit, Ctrl-C)
+            # must also leave the stage marked failed, then propagate.
             run.record(stage, "failed", started, note=repr(err))
+            if not isinstance(err, Exception):
+                logger.error("Stage %s interrupted: %r", stage, err)
+                raise
             logger.error("Stage %s failed: %s", stage, err)
             return 1
         run.record(stage, status, started, outputs, note)
