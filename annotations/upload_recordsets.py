@@ -185,40 +185,13 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
 
     principal = principal_id(syn)
-    write_log.start(rs_id, latest, args.run_id, principal)
-    created = []
-
-    def on_version(v):
-        write_log.record(rs_id, v, args.run_id, len(merged), base=latest, principal=principal)
-        created.append(v)
-
     try:
-        # Lock race: another run may have started between our check and our pending
-        # row. The earlier pending row (ties by runId) keeps the lock.
-        winner = write_log.earlier_pending(rs_id, args.run_id)
-        if winner:
-            write_log.abort(rs_id, latest, args.run_id, principal)
-            summary.update(status="locked", message=f"run {winner} started its write first; skipped")
-            return summary
-        # The merge was computed against ``latest``; if the RecordSet moved, replay again next run.
-        now_latest, _ = recordsets.recordset_info(syn, rs_id)
-        if now_latest != latest:
-            write_log.abort(rs_id, latest, args.run_id, principal)
-            summary.update(status="retry", message=(
-                f"{rs_id} moved from v{latest} to v{now_latest} before the write; nothing written, "
-                "the next run replays it"))
-            return summary
-        recordsets.write_via_grid(syn, rs_id, merged_path, on_version=on_version)
-        write_log.finish(rs_id, latest, args.run_id, principal)
-    except BaseException:
-        # Exports that completed are already logged. Claim a version whose export
-        # raised after it was created, or resolve our pending row as aborted.
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=args.run_id)
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
+        created = recordsets.write_logged(
+            syn, rs_id, merged_path, write_log, args.run_id, principal, len(merged), latest
+        )
+    except recordsets.WriteRefused as refused:
+        summary.update(status=refused.status, message=refused.message)
+        return summary
     version = created[-1]
     summary["version"] = version
 
