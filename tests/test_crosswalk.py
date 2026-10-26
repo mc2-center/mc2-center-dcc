@@ -178,6 +178,17 @@ def test_optional_column_skipped_while_absent_from_live():
     assert "projectShortName" not in out.columns
 
 
+def test_optional_column_live_without_source_is_filled_empty(caplog):
+    live = _live("ProjectView", {"projectShortName": "STRING"})
+    sources = [cw.source_column(s) for s, _, _ in cw.CROSSWALK["ProjectView"]]
+    df = pd.DataFrame({s: ["x", "y"] for s in sources if s != "ProjectShortName"})
+    with caplog.at_level("WARNING"):
+        out = cw.to_portal(df, "ProjectView", live)
+    assert out["projectShortName"].tolist() == ["", ""]
+    assert out.columns[-1] == "projectShortName"
+    assert caplog.text.count("ProjectShortName") == 1
+
+
 # --- consortium lookup ---------------------------------------------------
 
 

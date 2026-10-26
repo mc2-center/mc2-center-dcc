@@ -15,11 +15,15 @@ ordered list of ``(source, portal_column, kind)`` for one portal table:
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 from synapseclient import Synapse
 from synapseclient.models import Table
 
 import utils
+
+logger = logging.getLogger(__name__)
 
 DERIVED = "derived:"
 
@@ -301,16 +305,29 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
     are converted: cells that are already lists pass through untouched.
     ``int``-kind columns become nullable integers where the live type is
     ``INTEGER`` (empty string means missing; any other non-integer raises).
+    An optional column that exists live but has no source column in ``df``
+    (the manifest does not carry it yet) is filled with empty strings.
     """
     optional = OPTIONAL_COLUMNS.get(component, set())
     entries = [e for e in _entries(component) if e[1] not in optional or e[1] in live_types]
-    missing = [source_column(s) for s, _, _ in entries if source_column(s) not in df.columns]
+    missing = [
+        source_column(s)
+        for s, col, _ in entries
+        if source_column(s) not in df.columns and col not in optional
+    ]
     if missing:
         raise KeyError(f"{component}: DataFrame is missing columns {missing}")
 
     out = pd.DataFrame(index=df.index)
     for source, portal_col, kind in entries:
-        col = df[source_column(source)]
+        if source_column(source) in df.columns:
+            col = df[source_column(source)]
+        else:  # optional column that exists live, but the manifest lacks it
+            logger.warning(
+                "%s: no source column %r for optional column %r; leaving it empty",
+                component, source_column(source), portal_col,
+            )
+            col = pd.Series("", index=df.index, dtype=object)
         live_type = _type_name(live_types.get(portal_col, "STRING"))
         if kind == "list" and live_type == "STRING_LIST":
             is_str = col.map(lambda v: isinstance(v, str))
