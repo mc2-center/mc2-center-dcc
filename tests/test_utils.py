@@ -99,3 +99,25 @@ def test_cells_within_limits_and_nulls_are_stored(monkeypatch):
     _update(monkeypatch, table, fake, df)
     table.snapshot.assert_called_once()
     table.store_rows.assert_called_once()
+
+
+# --- strip_newlines ----------------------------------------------------------
+
+
+def test_strip_newlines_only_touches_text_columns():
+    df = pd.DataFrame(
+        {
+            "year": pd.array([2020, None], dtype="Int64"),
+            "score": [1.5, 2.0],
+            "text": ["a\r\nb", "c"],
+            "mixed": [["x\ny"], "p\nq"],
+            "name": pd.array(["m\nn", None], dtype="string"),
+        }
+    )
+    out = utils.strip_newlines(df)
+    assert out["year"].dtype == "Int64" and out["year"].iloc[0] == 2020
+    assert out["score"].dtype == "float64"
+    assert out["text"].tolist() == ["a b", "c"]
+    assert out["mixed"].iloc[0] == ["x\ny"] and out["mixed"].iloc[1] == "p q"
+    assert out["name"].iloc[0] == "m n" and pd.isna(out["name"].iloc[1])
+    assert df["text"].iloc[0] == "a\r\nb"  # input untouched

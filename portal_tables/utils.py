@@ -155,9 +155,15 @@ def strip_newlines(df: pd.DataFrame) -> pd.DataFrame:
     columns survive). See row-version 2230/2231 duplicated blank rows in
     syn21897968.
     """
-    return df.map(
-        lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
-    )
+    # Only string/object columns: DataFrame.map would turn Int64 columns with
+    # nulls into float64 (uploaded as 2020.0).
+    out = df.copy()
+    for col in df.columns:
+        if pd.api.types.is_string_dtype(df[col]) or df[col].dtype == object:
+            out[col] = df[col].map(
+                lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
+            )
+    return out
 
 
 def fill_blank(df: pd.DataFrame, numeric: bool = True) -> pd.DataFrame:
