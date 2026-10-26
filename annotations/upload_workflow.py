@@ -338,7 +338,9 @@ def stage_links(run, args, syn=None):
         return "skipped", outputs, "dry run: link entities not created (needs --execute)"
 
     if len(paths):
-        _load("create_entity_links.py").main(["-m", pending, "-t", args.type])
+        # created_ids.csv lets an interrupted run resume without re-storing finished rows
+        _load("create_entity_links.py").main(["-m", pending, "-t", args.type,
+                                              "--created-ids", str(d / "created_ids.csv")])
     final = merge_reused(paths, original, d, d / "final")
     outputs["paths_csv"] = write_paths_csv(final, d / "paths.csv")
     return "done", outputs, None

@@ -89,7 +89,8 @@ def test_links_skipped_in_dry_run_and_created_on_execute(tmp_path, env):
     assert "dry run" in state["stages"]["links"]["note"]
     code, state = run(tmp_path, "ToolView", "--execute")
     assert code == 0 and len(env["links"]) == 1
-    assert env["links"][0][-2:] == ["-t", "ToolView"]
+    assert env["links"][0][2:4] == ["-t", "ToolView"]
+    assert env["links"][0][-2:] == ["--created-ids", str(tmp_path / "out" / "04_links" / "created_ids.csv")]
     assert "--execute" in env["upload"][-1]
 
 
@@ -195,3 +196,87 @@ def test_create_entity_links_main_takes_argv(monkeypatch):
     assert (args.m, args.t) == ("p.csv", "ToolView")
     monkeypatch.setattr(sys, "argv", ["x", "-t", "DatasetView"])
     assert mod.get_args().t == "DatasetView"
+
+
+# --- create_entity_links: resume safety ---------------------------------------
+
+
+def load_cel(monkeypatch):
+    for name in ["geo_synapse", "geo_synapse.mc2_table", "geo_synapse.synapse_ops", "geo_synapse.pipeline"]:
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    sys.modules["geo_synapse.mc2_table"].parse_accession = lambda s: None
+    sys.modules["geo_synapse.mc2_table"].find_project_for_grant = lambda *a: None
+    for n in ["find_or_create_folder", "create_synapse_dataset", "add_to_dataset_collection"]:
+        setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
+    sys.modules["geo_synapse.pipeline"].run_one = None
+    spec2 = importlib.util.spec_from_file_location("cel_resume", ANNOTATIONS / "create_entity_links.py")
+    mod = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(mod)
+    return mod
+
+
+class LinkSyn:
+    """Fake client: findEntityId looks in `existing`; File.store records and can fail."""
+
+    def __init__(self, existing=None, fail_on=None):
+        self.existing, self.stored, self.fail_on = dict(existing or {}), [], fail_on
+
+    def findEntityId(self, name, parent=None):
+        return self.existing.get((parent, name))
+
+
+def link_manifest(tmp_path, names):
+    split = tmp_path / "CA1_tool.csv"
+    pd.DataFrame({"Tool Name": names, "Tool Homepage": [f"https://x/{n}" for n in names],
+                  "ToolView_id": ""}).to_csv(split, index=False)
+    pending = tmp_path / "pending_paths.csv"
+    pd.DataFrame({"File Paths": [str(split)], "folderIdTools": ["syn100"]}).to_csv(pending, index=False)
+    return split, pending
+
+
+def patch_file(mod, monkeypatch, syn):
+    class FakeFile:
+        def __init__(self, external_url, name, parent_id, synapse_store):
+            self.name, self.parent_id = name, parent_id
+
+        def store(self, synapse_client):
+            if syn.fail_on == self.name:
+                raise RuntimeError("boom")
+            syn.stored.append(self.name)
+            self.id = f"syn{1000 + len(syn.stored)}"
+            return self
+
+    monkeypatch.setattr(mod, "File", FakeFile)
+    monkeypatch.setattr(mod.utils, "syn_login", lambda: syn)
+
+
+def test_links_resume_skips_rows_already_created(tmp_path, monkeypatch):
+    mod = load_cel(monkeypatch)
+    split, pending = link_manifest(tmp_path, ["a", "b", "c"])
+    ids = tmp_path / "created_ids.csv"
+    argv = ["-m", str(pending), "-t", "ToolView", "--created-ids", str(ids)]
+
+    syn = LinkSyn(fail_on="c")
+    patch_file(mod, monkeypatch, syn)
+    with pytest.raises(RuntimeError):
+        mod.main(argv)
+    assert syn.stored == ["a", "b"]
+    assert len(pd.read_csv(ids)) == 2  # persisted as made, before the failure
+    assert pd.read_csv(split, dtype=str, keep_default_na=False)["ToolView_id"].tolist() == ["", "", ""]
+
+    syn = LinkSyn()  # resume: only the failed row is stored
+    patch_file(mod, monkeypatch, syn)
+    mod.main(argv)
+    assert syn.stored == ["c"]
+    assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist() == ["syn1001", "syn1002", "syn1001"]
+
+
+def test_links_reuse_existing_entity_by_name_under_parent(tmp_path, monkeypatch):
+    mod = load_cel(monkeypatch)
+    split, pending = link_manifest(tmp_path, ["a", "b"])
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    patch_file(mod, monkeypatch, syn)
+    mod.main(["-m", str(pending), "-t", "ToolView"])  # default ledger sits next to the manifest
+    assert syn.stored == ["b"]
+    assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist()[0] == "syn555"
+    assert (tmp_path / "created_ids.csv").exists()
