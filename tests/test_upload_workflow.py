@@ -94,7 +94,8 @@ def run(tmp_path, type_="PublicationView", *extra, manifest=None, syn=None):
     name = {"PublicationView": "publication.csv", "DatasetView": "dataset.csv", "ToolView": "tool.xlsx"}[type_]
     argv = ["--manifest", str(manifest or FIXTURES / "p1" / name), "--type", type_,
             "--out-dir", str(tmp_path / "out"), "--cv-file", str(CV),
-            "--write-log-csv", str(tmp_path / "log.csv"), *extra]
+            *(["--write-log-table", "syn999"] if "--execute" in extra
+              else ["--write-log-csv", str(tmp_path / "log.csv")]), *extra]
     code = uw.main(argv, syn=syn)
     return code, json.loads((tmp_path / "out" / "run.json").read_text())
 
@@ -297,9 +298,14 @@ class LinkSyn:
 
     def __init__(self, existing=None, fail_on=None):
         self.existing, self.stored, self.fail_on = dict(existing or {}), [], fail_on
+        self.updated = []
+        self.concrete, self.urls = {}, {}  # entity id -> concreteType / current external URL
 
     def findEntityId(self, name, parent=None):
         return self.existing.get((parent, name))
+
+    def restGET(self, url):
+        return {"concreteType": self.concrete.get(url.rsplit("/", 1)[-1], "org.sagebionetworks.repo.model.FileEntity")}
 
 
 def link_manifest(tmp_path, names):
@@ -313,10 +319,18 @@ def link_manifest(tmp_path, names):
 
 def patch_file(mod, monkeypatch, syn):
     class FakeFile:
-        def __init__(self, external_url, name, parent_id, synapse_store):
-            self.name, self.parent_id = name, parent_id
+        def __init__(self, external_url=None, name=None, parent_id=None, synapse_store=True, id=None,
+                     download_file=True):
+            self.name, self.parent_id, self.external_url, self.id = name, parent_id, external_url, id
+
+        def get(self, synapse_client):
+            self.external_url = syn.urls.get(self.id, self.external_url)
+            return self
 
         def store(self, synapse_client):
+            if self.id:  # update of an existing File
+                syn.updated.append((self.id, self.external_url))
+                return self
             if syn.fail_on == self.name:
                 raise RuntimeError("boom")
             syn.stored.append(self.name)
@@ -352,11 +366,12 @@ def test_links_reuse_existing_entity_by_name_under_parent(tmp_path, monkeypatch)
     mod = load_cel(monkeypatch)
     split, pending = link_manifest(tmp_path, ["a", "b"])
     syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.urls["syn555"] = "https://x/a"
     patch_file(mod, monkeypatch, syn)
-    mod.main(["-m", str(pending), "-t", "ToolView"])  # default ledger sits next to the manifest
+    mod.main(["-m", str(pending), "-t", "ToolView"])  # no --created-ids: no resume file
     assert syn.stored == ["b"]
     assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist()[0] == "syn555"
-    assert (tmp_path / "created_ids.csv").exists()
+    assert not (tmp_path / "created_ids.csv").exists()
 
 
 # --- stale outputs ---------------------------------------------------------------
@@ -564,3 +579,104 @@ def test_grant_lookup_uses_the_split_files_grant(monkeypatch, tmp_path):
     lookup = mod._build_grant_lookup(str(paths))
     assert lookup[(str(split), "GSE1")] == "CA184898"
     assert lookup[(str(other), "GSE2")] == "CA209923"  # no grant prefix: first listed grant
+
+
+# --- exit-code mapping ------------------------------------------------------------------
+
+
+def test_execute_with_csv_log_fails_in_get_args(tmp_path, env):
+    base = ["--manifest", "m.csv", "--type", "ToolView", "--out-dir", str(tmp_path / "o")]
+    for bad in (["--execute", "--write-log-csv", "l.csv"], ["--write-log-table", "syn1", "--write-log-csv", "l.csv"]):
+        with pytest.raises(SystemExit) as e:
+            uw.get_args(base + bad)
+        assert e.value.code == 2
+    assert uw.get_args(base + ["--execute", "--write-log-table", "syn1"]).execute
+    assert uw.get_args(base + ["--write-log-csv", "l.csv"]).write_log_csv  # dry run
+
+
+def test_bad_recordset_args_create_no_entities(tmp_path, env):
+    with pytest.raises(SystemExit):
+        run(tmp_path, "ToolView", "--execute", "--write-log-csv", str(tmp_path / "l.csv"))
+    assert env["links"] == [] and not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("code,ok", [(0, True), (None, True), (1, False), (2, False), ("msg", False)])
+def test_script_system_exit_is_mapped(tmp_path, env, monkeypatch, code, ok):
+    def exits(argv):
+        raise SystemExit(code)
+
+    patched = uw._load
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=exits) if f == "processing-splits.py"
+                        else patched(f))
+    result, state = run(tmp_path)
+    assert result == (0 if ok else 1)  # never 2, which means "dropped rows"
+    assert state["stages"]["reshape"]["status"] == ("done" if ok else "failed")
+
+
+@pytest.mark.parametrize("code,status,exit_code", [(0, "done", 0), (1, "failed", 1)])
+def test_upload_recordsets_nonzero_marks_upload_failed(tmp_path, env, monkeypatch, code, status, exit_code):
+    real = uw._load
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=lambda argv: code)
+                        if f == "upload_recordsets.py" else real(f))
+    result, state = run(tmp_path)
+    assert result == exit_code and state["stages"]["upload"]["status"] == status
+
+
+
+def test_store_link_same_url_file_is_reused_untouched(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.urls["syn555"] = "https://x/a"
+    patch_file(mod, monkeypatch, syn)
+    assert mod.store_link(syn, "a", "https://x/a", "syn100") == "syn555"
+    assert syn.updated == [] and syn.stored == []
+
+
+def test_store_link_file_with_other_url_is_updated(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.urls["syn555"] = "https://old/a"
+    patch_file(mod, monkeypatch, syn)
+    assert mod.store_link(syn, "a", "https://x/a", "syn100") == "syn555"
+    assert syn.updated == [("syn555", "https://x/a")] and syn.stored == []
+
+
+def test_store_link_non_file_entity_fails_the_row(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.concrete["syn555"] = "org.sagebionetworks.repo.model.Folder"
+    patch_file(mod, monkeypatch, syn)
+    with pytest.raises(ValueError, match=r"syn555.*not a File.*Folder"):
+        mod.store_link(syn, "a", "https://x/a", "syn100")
+    assert syn.updated == [] and syn.stored == []
+
+
+def test_get_names_reads_text_literally(tmp_path, monkeypatch):
+    mod = load_cel(monkeypatch)
+    split = tmp_path / "CA1_tool.csv"
+    split.write_text("Tool Name,Tool Homepage\nNA,http://x/1\nnull,\n007,http://x/3\n")
+    pending = tmp_path / "p.csv"
+    pd.DataFrame({"File Paths": [str(split)], "folderIdTools": ["syn100"]}).to_csv(pending, index=False)
+    got = mod.get_names("Tool Name", "folderIdTools", "Tool Homepage", manifest=str(pending))
+    assert [(n, l) for _, n, l, _ in got] == [("NA", "http://x/1"), ("null", ""), ("007", "http://x/3")]
+    got = mod.get_names("Tool Name", "folderIdTools", "Tool Homepage", data=str(split))
+    assert [n for _, n, _, _ in got] == ["NA", "null", "007"]
+
+
+def test_resuming_upload_keeps_earlier_run_report_dirs(tmp_path, env):
+    run(tmp_path, "ToolView", "--run-id", "run-1")
+    up = tmp_path / "out" / "05_upload"
+    for name in ("run-1", "run-2"):
+        (up / name).mkdir(exist_ok=True)
+        (up / name / "decisions.csv").write_text("x")
+    run(tmp_path, "ToolView", "--from-stage", "upload", "--run-id", "run-2")
+    assert (up / "run-1" / "decisions.csv").exists()  # earlier run kept
+    assert not (up / "run-2" / "decisions.csv").exists()  # current run ID cleared
+
+
+def test_fresh_upload_stage_still_starts_empty(tmp_path, env):
+    run(tmp_path, "ToolView", "--run-id", "run-1")
+    old = tmp_path / "out" / "05_upload" / "run-0"
+    old.mkdir()
+    run(tmp_path, "ToolView", "--from-stage", "links", "--run-id", "run-1")
+    assert not old.exists()

@@ -13,6 +13,7 @@ author: orion.banks
 
 import argparse
 import csv
+import logging
 import tempfile
 from pathlib import Path
 
@@ -35,6 +36,8 @@ import sys
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import utils
+
+logger = logging.getLogger(__name__)
 
 # Central public project where GEO Dataset entities and link folders are created.
 # Must have PUBLIC: READ + DOWNLOAD so files are accessible without touching PI projects.
@@ -85,7 +88,7 @@ def get_args(argv=None):
         default=None,
         help="CSV that records each created entity ID as it is made (row key -> synID). "
         "Rows already listed are skipped on a re-run, so an interrupted run can be resumed. "
-        "Default with -m: created_ids.csv next to the manifest.",
+        "Opt-in: without this flag no resume file is kept.",
     )
     return parser.parse_args(argv)
 
@@ -121,17 +124,38 @@ def record_created_id(path, key: str, synapse_id: str) -> None:
         os.fsync(fh.fileno())
 
 
-def store_link(syn, name: str, link: str, parent_id: str) -> str:
-    """Create the plain File link, or reuse the entity of that name under the parent.
+FILE_ENTITY_TYPE = "org.sagebionetworks.repo.model.FileEntity"
 
-    synapseclient's File.store() already updates a same-name entity under the same
-    parent (create_or_update=True), but looking it up first avoids bumping a new
-    version of an existing link and keeps resume behaviour independent of the library.
+
+def store_link(syn, name: str, link: str, parent_id: str) -> str:
+    """Create the plain File link, or reuse a same-named File under the parent.
+
+    A same-named entity is reused only if it is a File (concreteType FileEntity)
+    whose external URL equals ``link``. A File with another URL gets its URL
+    updated (a new version pointing at ``link``); an entity that is not a File
+    raises ValueError so the row fails with a clear message instead of an
+    unrelated entity's ID going into the manifest.
+
+    Uses the synapseclient.models File: ``File(id=..., download_file=False).get()``
+    loads the file handle (``external_url``); setting ``external_url`` with
+    ``synapse_store=False`` and calling ``store()`` swaps in a new
+    ExternalFileHandle when the URL changed.
     """
     existing = syn.findEntityId(name, parent=parent_id)
-    if existing:
-        return existing
-    return File(external_url=link, name=name, parent_id=parent_id, synapse_store=False).store(synapse_client=syn).id
+    if not existing:
+        return File(external_url=link, name=name, parent_id=parent_id, synapse_store=False).store(synapse_client=syn).id
+    concrete = syn.restGET(f"/entity/{existing}").get("concreteType")
+    if concrete != FILE_ENTITY_TYPE:
+        raise ValueError(
+            f"Cannot link {name!r}: {existing} under {parent_id} already exists and is not a File ({concrete})"
+        )
+    file = File(id=existing, download_file=False).get(synapse_client=syn)
+    if file.external_url != link:
+        logger.info("Updating external URL of %s (%s): %s -> %s", existing, name, file.external_url, link)
+        file.external_url = link
+        file.synapse_store = False
+        file = file.store(synapse_client=syn)
+    return existing
 
 
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
@@ -139,13 +163,13 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
     path_name_link_target = []
 
     if manifest is not None:
-        paths_sheet = pd.read_csv(manifest)
+        paths_sheet = pd.read_csv(manifest, dtype=str, keep_default_na=False)
         paths = paths_sheet["File Paths"].tolist()
         targets = paths_sheet[f"{target}"].tolist()
-        df_path_target_list = [(pd.read_csv(p), p, t) for p, t in zip(paths, targets)]
+        df_path_target_list = [(pd.read_csv(p, dtype=str, keep_default_na=False), p, t) for p, t in zip(paths, targets)]
 
     elif data is not None:
-        df_path_target_list = [(pd.read_csv(data), data, target)]
+        df_path_target_list = [(pd.read_csv(data, dtype=str, keep_default_na=False), data, target)]
 
     for df, path, target in df_path_target_list:
         names = df[f"{name_column}"].tolist()
@@ -268,8 +292,6 @@ def main(argv=None):
 
     manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p,
     created_ids_path = args.created_ids
-    if created_ids_path is None and manifest is not None:
-        created_ids_path = str(Path(manifest).parent / "created_ids.csv")
 
     if data_type == "DatasetView":
 

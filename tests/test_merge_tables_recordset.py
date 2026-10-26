@@ -70,11 +70,13 @@ def test_component_column_is_filled():
     assert df["Component"].tolist() == ["ToolView"]
 
 
-def _publish(existing_columns=None):
+def _publish(existing_columns=None, store_rows=None):
     """Run publish_union against a mocked Synapse table that already exists."""
     schema = mt.union_schema("ToolView")
     existing = mock.MagicMock(id="syn9")
-    existing.columns = {c.name: SimpleNamespace(name=c.name, column_type=c.column_type)
+    if store_rows is not None:
+        existing.store_rows.side_effect = store_rows
+    existing.columns = {c.name: SimpleNamespace(name=c.name, column_type=c.column_type, maximum_size=c.maximum_size)
                         for c in (existing_columns or schema)}
     union = pd.DataFrame(columns=mt.model_contract.template_headers("ToolView"))
     with mock.patch.object(mt.operations, "find_entity_id", return_value="syn9"), \
@@ -90,6 +92,38 @@ def test_republish_clears_rows_before_store_rows():
     assert names.index("delete_rows") < names.index("store_rows")
     assert "ROW_ID, ROW_VERSION" in existing.delete_rows.call_args.kwargs["query"]
     assert result == "syn9"
+
+
+def test_republish_snapshots_before_delete():
+    existing, _ = _publish()
+    names = [c[0] for c in existing.method_calls]
+    assert names.index("snapshot") < names.index("query") < names.index("delete_rows")
+
+
+def test_failed_store_restores_snapshot_rows_and_raises():
+    import pytest
+
+    calls = []
+
+    def store_rows(values, synapse_client):
+        calls.append(values)
+        if len(calls) == 1:
+            raise RuntimeError("rejected")
+
+    with pytest.raises(RuntimeError, match="rejected"):
+        existing, _ = _publish(store_rows=store_rows)
+    assert len(calls) == 2  # union store failed, then previous rows put back
+    assert calls[1] is not calls[0]
+
+
+def test_republish_with_different_maximum_size_stops():
+    import pytest
+    from synapseclient.models import Column, ColumnType
+
+    cols = [Column(name=c.name, column_type=c.column_type, maximum_size=50 if c.maximum_size else None)
+            for c in mt.union_schema("ToolView")]
+    with pytest.raises(ValueError, match="differ from the fixed"):
+        _publish(cols)
 
 
 def test_republish_with_different_columns_stops():
@@ -112,3 +146,17 @@ def test_comma_in_list_item_warns_with_column_and_key(caplog):
         df, _ = _union({"syn1": g}, ["syn1"])
     assert df["GrantView Key"].tolist() == ["CA1, Smith, J"]
     assert any("GrantView Key" in r.message and "t1" in r.message for r in caplog.records)
+
+
+def test_empty_union_is_not_published(tmp_path):
+    import pytest
+    with mock.patch.object(mt, "build_union", return_value=(pd.DataFrame(columns=["Component"]),
+                           {"grants_scanned": 1, "recordsets_found": 0, "missing": 1, "rows": 0,
+                            "duplicate_keys": 0})), \
+         mock.patch.object(mt, "publish_union") as publish:
+        with pytest.raises(SystemExit):
+            mt.run_recordset_mode(mock.MagicMock(), "ToolView", str(tmp_path), ["syn1"], "synT", publish=True)
+        publish.assert_not_called()
+        mt.run_recordset_mode(mock.MagicMock(), "ToolView", str(tmp_path), ["syn1"], "synT",
+                              publish=True, allow_empty=True)
+        publish.assert_called_once()
