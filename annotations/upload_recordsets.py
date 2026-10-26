@@ -19,7 +19,11 @@ RecordSet has another run's unfinished write (a pending write-log row under
 Reports go to ``<report-dir>/<run-id>/<grant>/``: decisions.csv, conflicts.csv,
 validation.csv (``--execute`` only), merged.csv and summary.txt.
 
-The exit status is non-zero if any grant failed; the other grants still run.
+The exit status is 1 if any grant needs attention (failed, missing_recordset,
+locked, retry or verification_mismatch), so a workflow does not treat the
+upload as done; the other grants still run. If foreign versions landed during a
+write, the grant is replayed and written once more immediately (the report goes
+to a ``rerun`` subfolder).
 
 author: orion.banks
 """
@@ -40,6 +44,11 @@ import recordsets
 import utils
 
 logger = logging.getLogger(__name__)
+
+# Statuses that make the exit code non-zero, so a workflow does not mark the upload done.
+NEEDS_ATTENTION = frozenset(
+    {"failed", "missing_recordset", "locked", "retry", "verification_mismatch"}
+)
 
 PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older than this is not ours
 
@@ -86,7 +95,7 @@ def stored_keys(df: pd.DataFrame, key_cols: list[str]) -> list[str]:
     return [recordsets._key_of(row, key_cols) for _, row in df.iterrows()]
 
 
-def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_like) -> dict:
+def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_like, _rerun=False) -> dict:
     """Upload one grant's manifest. Returns a summary dict with a ``status``."""
     component = args.component
     summary = {"grant": report_dir.name, "file": row["File Paths"], "status": "", "message": ""}
@@ -142,15 +151,22 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
 
     def read(v):
-        return recordsets.read_recordset(
+        df = recordsets.read_recordset(
             syn, rs_id, version=v, cache_dir=args.cache_dir, list_cols=list_cols
         )
+        dupes = recordsets.duplicate_keys(df, key)
+        if dupes:
+            logger.warning("%s v%s has duplicate keys (the last row of each wins): %s", rs_id, v, dupes)
+        return df
 
     versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
     base, owned, decisions = recordsets.replay(versions, log_map, key, set_like)
     mode = "first write (no replay)" if not log_map else f"replayed v1..v{latest}"
     merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
+    # Columns that are no longer schema properties are dropped by a Grid import; compare without them.
+    stored = recordsets.schema_columns(component) | set(key)
+    merged = merged[[c for c in merged.columns if c in stored]]
     report_dir.mkdir(parents=True, exist_ok=True)
     merged_path = report_dir / "merged.csv"
     recordsets.to_csv(merged, merged_path)
@@ -159,7 +175,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     summary.update(rows=len(merged), decisions=len(decisions), conflicts=len(conflicts), mode=mode)
     # Nothing to write: every version adds to the history later runs read.
-    if not recordsets.differences(merged, current, key, set_like):
+    if not recordsets.differences(merged, _only(current, stored), key, set_like):
         summary.update(status="unchanged", message=f"{mode}; RecordSet already matches; nothing written")
         return summary
     if not args.execute:
@@ -204,7 +220,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     summary["version"] = version
 
     written = read(version)
-    problems = recordsets.differences(merged, written, key, set_like)
+    problems = recordsets.differences(merged, _only(written, stored), key, set_like)
     validation = recordsets.get_validation(syn, rs_id, version, report_dir, stored_keys(written, key))
     if validation is not None:
         validation.to_csv(report_dir / "validation.csv", index=False)
@@ -226,7 +242,22 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         status = "verification_mismatch"
         notes.append(f"v{version} differs from the merged frame ({len(problems)} differences)")
     summary.update(status=status, message=f"{mode}; " + "; ".join(notes))
+    if midwrite and not _rerun and status not in ("verification_mismatch",):
+        # Replay once more now: it restores the edits our write overwrote.
+        first = dict(summary)
+        second = process_grant(syn, row, args, write_log, report_dir / "rerun", list_cols, set_like, _rerun=True)
+        second["grant"] = first["grant"]
+        second["rerun"] = True
+        second["message"] = (
+            f"rerun after foreign versions {midwrite} landed mid-write "
+            f"(first pass {first['status']}, v{first['version']}); {second['message']}"
+        )
+        return second
     return summary
+
+
+def _only(df: pd.DataFrame, columns) -> pd.DataFrame:
+    return df[[c for c in df.columns if c in columns]]
 
 
 def principal_id(syn) -> str:
@@ -275,7 +306,7 @@ def main(argv=None, syn=None):
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)
             summary = {"grant": str(grant), "file": row["File Paths"], "status": "failed", "message": repr(err)}
-        if summary["status"] in ("failed", "missing_recordset"):
+        if summary["status"] in NEEDS_ATTENTION:
             failed += 1
         report_dir.mkdir(parents=True, exist_ok=True)
         line = summary_line(summary)
@@ -284,7 +315,7 @@ def main(argv=None, syn=None):
         summaries.append(summary)
 
     pd.DataFrame(summaries).to_csv(run_dir / "summary.csv", index=False)
-    print(f"{len(summaries) - failed} of {len(summaries)} grants ok; {failed} failed")
+    print(f"{len(summaries) - failed} of {len(summaries)} grants ok; {failed} need attention")
     return 1 if failed else 0
 
 

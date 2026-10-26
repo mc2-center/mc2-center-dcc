@@ -280,6 +280,15 @@ def check_upload_keys(upload: pd.DataFrame, key) -> pd.DataFrame:
     return out
 
 
+def duplicate_keys(df: pd.DataFrame, key) -> list[str]:
+    """Key strings that occur more than once in a stored version."""
+    key_cols = key_columns(key)
+    if df.empty or any(c not in df.columns for c in key_cols):
+        return []
+    keys = [KEY_SEP.join(str(r[c]).strip() for c in key_cols) for r in df[key_cols].to_dict("records")]
+    return sorted({k for k in keys if keys.count(k) > 1}) if len(set(keys)) != len(keys) else []
+
+
 def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
     """``(latest version number, upsert key columns)``, without downloading the file."""
     entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)

@@ -62,6 +62,7 @@ class FakeSynapse:
         self.writes.append(written)
         if self.midwrite is not None:
             self.versions.append(self.midwrite)
+            self.midwrite = None  # lands once
         created = []
         for _ in range(1 + self.extra_exports):
             self.versions.append(written)
@@ -189,7 +190,7 @@ def test_lock_from_another_runs_pending_row_skips_the_grant(tmp_path):
     rs.CsvWriteLog(log).start("synRS", 1, "other-run", "7")
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     code, rep = run(tmp_path, fake, log=log)
-    assert code == 0 and fake.writes == []
+    assert code == 1 and fake.writes == []  # non-zero: the upload is not done
     assert status_of(rep) == "locked"
 
 
@@ -268,7 +269,7 @@ def test_every_export_is_logged_with_the_base_version(tmp_path):
     assert rs.CsvWriteLog(tmp_path / "log.csv").pipeline_map("synRS") == {2: 1, 3: 1}
 
 
-def test_contributor_export_mid_write_is_reported_and_kept_on_the_next_run(tmp_path):
+def test_contributor_export_mid_write_triggers_one_immediate_rerun(tmp_path):
     v1 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
     log = tmp_path / "log.csv"
     rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
@@ -276,12 +277,60 @@ def test_contributor_export_mid_write_is_reported_and_kept_on_the_next_run(tmp_p
     fake = FakeSynapse([v1], midwrite=mid)
     code, rep = run(tmp_path, fake, log=log, run_id="r1")
     text = (rep / "syn100" / "summary.txt").read_text()
-    assert "foreign versions landed mid-write: [2]" in text
-    # the pipeline's v3 (base 1, written over the edit) is logged with base 1 ...
-    assert rs.CsvWriteLog(log).pipeline_map("synRS")[3] == 1
+    assert "rerun after foreign versions [2] landed mid-write" in text
+    # v3 (base 1) overwrote the edit; the rerun's replay restored it as v4
+    assert rs.CsvWriteLog(log).pipeline_map("synRS") == {1: 0, 3: 1, 4: 3}
+    assert fake.versions[-1].set_index(KEY).loc["p1", "PublicationTitle"] == "Contributor title"
+    assert (rep / "syn100" / "rerun" / "merged.csv").exists()
+    assert len(fake.writes) == 2  # at most one rerun
+
+
+def test_dropped_schema_property_column_does_not_force_a_write(tmp_path):
+    log = tmp_path / "log.csv"
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    run(tmp_path, fake, log=log, run_id="r1")
+    stale = fake.versions[-1].copy()
+    stale["DroppedProperty"] = "legacy"  # an old column Synapse no longer keeps
+    fake.versions[-1] = stale
+    n = len(fake.versions)
     code, rep = run(tmp_path, fake, log=log, run_id="r2")
-    # ... so the next replay keeps the contributor's title and writes it back
-    assert fake.writes[-1].set_index(KEY).loc["p1", "PublicationTitle"] == "Contributor title"
+    assert status_of(rep) == "unchanged" and len(fake.versions) == n
+    assert "DroppedProperty" not in (rep / "syn100" / "merged.csv").read_text()
+
+
+def test_duplicate_keys_in_a_stored_version_warn(tmp_path, caplog):
+    fake = FakeSynapse([stored(["p1", "A", ""], ["p1", "B", ""])])
+    with caplog.at_level("WARNING"):
+        run(tmp_path, fake, execute=False)
+    assert "duplicate keys" in caplog.text
+
+
+def test_retry_and_verification_mismatch_exit_non_zero(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    real_write = fake.write
+
+    def corrupting(*a, **kw):
+        out = real_write(*a, **kw)
+        fake.versions[out[-1] - 1] = stored(["p1", "Altered by Grid", ""])
+        return out
+
+    fake.write = corrupting
+    code, _ = run(tmp_path, fake)
+    assert code == 1
+    fake2 = FakeSynapse([stored(["p1", "Old", ""])])
+    calls = {"n": 0}
+    real_info = fake2.info
+
+    def moving(syn, rs_id):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            fake2.versions.append(stored(["p1", "Someone", ""]))
+        return real_info(syn, rs_id)
+
+    fake2.info = moving
+    (tmp_path / "second").mkdir()
+    code, _ = run(tmp_path / "second", fake2)
+    assert code == 1
 
 
 def test_foreign_version_after_write_is_changed_after_write_not_mismatch(tmp_path):
