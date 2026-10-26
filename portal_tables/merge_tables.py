@@ -150,7 +150,7 @@ def build_union(syn, component, grant_ids):
             logger.warning("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
             missing.append(grant)
             continue
-        frames.append(recordsets.read_recordset(syn, rs_id))
+        frames.append(recordsets.read_recordset(syn, rs_id, list_cols=recordsets.list_columns(component)))
 
     headers = model_contract.template_headers(component)
     if frames:

@@ -9,7 +9,13 @@ write (``portal_tables/recordsets.py``: reconcile, then merge the upload), and
 writes the result through a Grid session so Synapse validates it.
 
 Dry run is the default: everything is computed and reported, nothing is
-written to Synapse and validation is skipped. Use ``--execute`` to write.
+written to Synapse and validation is skipped. Use ``--execute`` to write; it
+needs ``--write-log-table`` (a CSV log is for dry runs and tests). The state is
+rebuilt by a deterministic replay of every version with per-cell ownership
+(see ``portal_tables/recordsets.py``); a cell owned by a contributor is never
+overwritten by the upload and is reported in conflicts.csv. A grant whose
+RecordSet has another run's unfinished write (a pending write-log row under
+2 h old) is skipped with status ``locked``.
 Reports go to ``<report-dir>/<run-id>/<grant>/``: decisions.csv, conflicts.csv,
 validation.csv (``--execute`` only), merged.csv and summary.txt.
 
@@ -35,8 +41,6 @@ import utils
 
 logger = logging.getLogger(__name__)
 
-CHANGED_DURING_WRITE = "changed during write; reconciled on the next run"
-
 
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
@@ -48,8 +52,8 @@ def get_args(argv=None):
         help="component of the manifests, e.g. PublicationView",
     )
     log = parser.add_mutually_exclusive_group(required=True)
-    log.add_argument("--write-log-table", help="Synapse ID of the write-log table")
-    log.add_argument("--write-log-csv", help="local CSV write log (tests, dry runs)")
+    log.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
+    log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
     parser.add_argument("--report-dir", required=True, help="directory for the per-grant reports")
     parser.add_argument(
         "--execute", action="store_true", help="write to Synapse; the default is a dry run"
@@ -62,7 +66,10 @@ def get_args(argv=None):
     parser.add_argument(
         "--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp"
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.execute and not args.write_log_table:
+        parser.error("--execute needs --write-log-table; a CSV log is for dry runs and tests only")
+    return args
 
 
 def folder_column(paths: pd.DataFrame) -> str:
@@ -111,39 +118,39 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     if absent:
         summary.update(status="failed", message=f"upload lacks key column(s) {absent}")
         return summary
+    try:
+        upload = recordsets.check_upload_keys(upload, key)
+    except ValueError as err:
+        summary.update(status="failed", message=f"bad upload keys: {err}")
+        return summary
 
-    logged = write_log.pipeline_versions(rs_id)
-    pipeline_last = max(logged) if logged else None
-    if pipeline_last is not None and latest < pipeline_last:
-        summary.update(status="failed", message=(
-            f"write log has v{pipeline_last} but {rs_id} is at v{latest}"))
+    locker = write_log.locked_by(rs_id, args.run_id)
+    if locker:
+        summary.update(status="locked", message=(
+            f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old); skipped"))
+        return summary
+
+    # A run that died after exporting leaves a pending row; claim its versions.
+    recovered = recordsets.recover_pending(
+        syn, rs_id, write_log, latest, record=args.execute, now_run=args.run_id
+    )
+    if recovered:
+        summary["recovered"] = sorted(recovered)
+    log_map = {**write_log.pipeline_map(rs_id), **recovered}
+    if log_map and latest < max(log_map):
+        summary.update(status="failed", message=f"write log has v{max(log_map)} but {rs_id} is at v{latest}")
         return summary
 
     def read(v):
-        return recordsets.read_recordset(syn, rs_id, version=v, cache_dir=args.cache_dir)
+        return recordsets.read_recordset(
+            syn, rs_id, version=v, cache_dir=args.cache_dir, list_cols=list_cols
+        )
 
-    current = read(latest)
-    decisions = pd.DataFrame(columns=recordsets.DECISION_COLUMNS)
-    edited = set()
-    if pipeline_last is None:
-        base, mode = current, "first write (no reconciliation)"
-    elif latest == pipeline_last:
-        base, mode = current, "no newer versions (no reconciliation)"
-    else:
-        history = [read(v) for v in range(1, pipeline_last + 1)]
-        foreign = [(v, read(v)) for v in range(pipeline_last + 1, latest)]
-        foreign.append((latest, current))
-        base, decisions, edited = recordsets.reconcile_versions(foreign, history[-1], history, key, set_like)
-        mode = f"reconciled v{pipeline_last}..v{latest}"
-
-    # Contributor-wins must hold on every run, not only the one that saw the edit:
-    # a cell whose current value a contributor introduced stays theirs.
-    edited = edited | recordsets.contributor_owned_cells(
-        upload, base, key, latest, logged, read, set_like
-    )
-    merged, conflicts = recordsets.merge_upload(
-        base, upload, key, edited, set_like
-    )
+    versions = [(v, read(v)) for v in range(1, latest + 1)]
+    current = versions[-1][1]
+    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like)
+    mode = "first write (no replay)" if not log_map else f"replayed v1..v{latest}"
+    merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
     report_dir.mkdir(parents=True, exist_ok=True)
     merged_path = report_dir / "merged.csv"
     recordsets.to_csv(merged, merged_path)
@@ -159,25 +166,56 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="dryrun", message=f"dry run: {mode}; nothing written")
         return summary
 
-    versions = recordsets.write_via_grid(syn, rs_id, merged_path)
-    for v in versions:
-        write_log.record(rs_id, v, args.run_id, len(merged))
-    version = versions[-1]
+    principal = principal_id(syn)
+    write_log.start(rs_id, latest, args.run_id, principal)
+    created = []
+
+    def on_version(v):
+        write_log.record(rs_id, v, args.run_id, len(merged), base=latest, principal=principal)
+        created.append(v)
+
+    try:
+        recordsets.write_via_grid(syn, rs_id, merged_path, on_version=on_version)
+    except Exception:
+        # Exports that completed are already logged. Claim a version whose export
+        # raised after it was created, or resolve the pending row as aborted.
+        try:
+            newest, _ = recordsets.recordset_info(syn, rs_id)
+            recordsets.recover_pending(syn, rs_id, write_log, newest)
+        except Exception:
+            logger.exception("%s: could not resolve the pending write-log row", rs_id)
+        raise
+    version = created[-1]
     summary["version"] = version
 
-    written = recordsets.read_recordset(syn, rs_id, version=None)
+    written = read(version)
     problems = recordsets.differences(merged, written, key, set_like)
-    keys = stored_keys(written, key)
-    validation = recordsets.get_validation(syn, rs_id, version, report_dir, keys)
+    validation = recordsets.get_validation(syn, rs_id, version, report_dir, stored_keys(written, key))
     if validation is not None:
         validation.to_csv(report_dir / "validation.csv", index=False)
         summary["invalid_rows"] = int((~validation["is_valid"].astype(str).str.lower().eq("true")).sum())
+    notes = [f"wrote v{version}"]
+    midwrite = [v for v in range(latest + 1, version) if v not in created]
+    if midwrite:
+        summary["foreign_midwrite"] = midwrite
+        notes.append(f"foreign versions landed mid-write: {midwrite}; the next run's replay handles them")
+    newest, _ = recordsets.recordset_info(syn, rs_id)
+    status = "written"
+    if summary.get("invalid_rows"):
+        status = "written_with_invalid"
+    if newest > version:
+        status = "changed_after_write"
+        notes.append(f"v{newest} exists after the write; the next run's replay handles it")
     if problems:
         (report_dir / "verification.txt").write_text("\n".join(problems) + "\n")
-        summary.update(status="verification_mismatch", message=f"{CHANGED_DURING_WRITE} ({len(problems)} differences)")
-    else:
-        summary.update(status="written", message=f"{mode}; wrote v{version}, verified")
+        status = "verification_mismatch"
+        notes.append(f"v{version} differs from the merged frame ({len(problems)} differences)")
+    summary.update(status=status, message=f"{mode}; " + "; ".join(notes))
     return summary
+
+
+def principal_id(syn) -> str:
+    return str(syn.getUserProfile()["ownerId"])
 
 
 def folder_column_name(row) -> str:
@@ -190,7 +228,7 @@ def _write_report(path: Path, df: pd.DataFrame) -> None:
 
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows"):
+    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s["message"]:

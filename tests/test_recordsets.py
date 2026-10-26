@@ -14,86 +14,7 @@ def df(*rows, cols=(K, "Title", "Assay")):
     return pd.DataFrame(list(rows), columns=list(cols))
 
 
-def decisions_of(d):
-    return {(r.key, r.column): r.decision for r in d.itertuples()}
 
-
-def run(current, pipe, history=None, set_like=()):
-    return rs.reconcile(current, pipe, history or [pipe], K, set_like)
-
-
-def test_equal_cells_record_nothing():
-    base = df(["a", "T", ["x"]])
-    out, d = run(base, base)
-    assert d.empty and out.equals(base)
-
-
-def test_kept_edit():
-    pipe = df(["a", "T", ""])
-    cur = df(["a", "Edited", ""])
-    out, d = run(cur, pipe)
-    assert decisions_of(d) == {("a", "Title"): "kept_edit"}
-    assert out.loc[0, "Title"] == "Edited"
-    assert d.loc[0, "current_value"] == "Edited" and d.loc[0, "pipeline_value"] == "T"
-
-
-def test_restored_revert_to_old_value():
-    v1 = df(["a", "Old", ""])
-    v2 = df(["a", "New", ""])  # pipeline's last write
-    cur = df(["a", "Old", ""])  # contributor reverted
-    out, d = run(cur, v2, [v1, v2])
-    assert decisions_of(d) == {("a", "Title"): "restored_revert"}
-    assert out.loc[0, "Title"] == "New"
-
-
-def test_multiple_foreign_versions_edit_then_new_value_is_kept():
-    v1 = df(["a", "Old", ""])
-    v2 = df(["a", "New", ""])
-    # foreign v3 and v4 collapse into the current content: a value never seen in history
-    cur = df(["a", "Third", ""])
-    out, d = run(cur, v2, [v1, v2])
-    assert decisions_of(d) == {("a", "Title"): "kept_edit"}
-    assert out.loc[0, "Title"] == "Third"
-
-
-def test_contributor_added_row_kept():
-    pipe = df(["a", "T", ""])
-    cur = df(["a", "T", ""], ["b", "Mine", ""])
-    out, d = run(cur, pipe)
-    assert decisions_of(d) == {("b", ""): "kept_contributor_row"}
-    assert set(out[K]) == {"a", "b"}
-
-
-def test_missing_row_restored():
-    pipe = df(["a", "T", ""], ["b", "U", ""])
-    cur = df(["a", "T", ""])
-    out, d = run(cur, pipe)
-    assert decisions_of(d) == {("b", ""): "restored_missing"}
-    assert out.set_index(K).loc["b", "Title"] == "U"
-
-
-def test_list_cells_order_matters_unless_set_like():
-    pipe = df(["a", "T", ["x", "y"]])
-    cur = df(["a", "T", ["y", "x"]])
-    _, d = run(cur, pipe)
-    assert decisions_of(d) == {("a", "Assay"): "kept_edit"}
-    out, d = run(cur, pipe, set_like={"Assay"})
-    assert d.empty
-
-
-def test_list_edit_and_empty_list_equals_blank():
-    pipe = df(["a", "T", ["x"]], ["b", "T", ""])
-    cur = df(["a", "T", ["x", "z"]], ["b", "T", []])
-    out, d = run(cur, pipe, set_like={"Assay"})
-    assert decisions_of(d) == {("a", "Assay"): "kept_edit"}
-    assert out.set_index(K).loc["a", "Assay"] == ["x", "z"]
-
-
-def test_column_missing_from_current_counts_as_blank():
-    pipe = df(["a", "T", ["x"]])
-    cur = pd.DataFrame({K: ["a"], "Title": ["T"]})
-    out, d = run(cur, pipe)
-    assert decisions_of(d) == {("a", "Assay"): "kept_edit"}
 
 
 def test_merge_upload_updates_appends_and_reports_conflicts():
@@ -123,14 +44,6 @@ def test_merge_upload_adds_new_columns():
     assert merged.loc[0, "Doi"] == "10.1"
 
 
-def test_composite_key():
-    cols = ("A", "B", "V")
-    cur = pd.DataFrame([["1", "x", "new"]], columns=cols)
-    pipe = pd.DataFrame([["1", "x", "old"]], columns=cols)
-    out, d = rs.reconcile(cur, pipe, [pipe], ["A", "B"])
-    assert d.loc[0, "key"] == "1|x" and d.loc[0, "decision"] == "kept_edit"
-
-
 def test_differences():
     a = df(["a", "T", ["x", "y"]])
     assert rs.differences(a, df(["a", "T", ["y", "x"]]), K, {"Assay"}) == []
@@ -152,18 +65,6 @@ def test_parse_cell_and_csv_round_trip(tmp_path):
     assert back.loc[0, "Assay"] == ["x", "y"] and back.loc[1, "Assay"] == ""
 
 
-def test_read_recordset_parses_json_arrays(tmp_path):
-    path = tmp_path / "rs.csv"
-    path.write_text(f'{K},Title,Assay\na,"Hi, there","[""RNA Sequencing"",""Whole Genome Sequencing""]"\nb,,\n')
-    with mock.patch.object(rs, "RecordSet") as cls:
-        cls.return_value.get.return_value = SimpleNamespace(path=str(path))
-        out = rs.read_recordset("syn", "syn1", version=3)
-    assert cls.call_args.kwargs["version_number"] == 3
-    assert out.loc[0, "Assay"] == ["RNA Sequencing", "Whole Genome Sequencing"]
-    assert out.loc[0, "Title"] == "Hi, there"
-    assert out.loc[1, "Title"] == "" and out.loc[1, "Assay"] == ""
-
-
 def test_parse_upload_splits_list_columns():
     up = pd.DataFrame({K: ["a"], "Assay": ["RNA Sequencing, Mass Spectrometry"], "Title": ["x, y"]})
     out = rs.parse_upload(up, {"Assay"})
@@ -175,42 +76,6 @@ def test_set_like_columns_from_schema():
     assert {"Assay", "Tissue", "TumorType"} <= rs.set_like_columns("PublicationView")
     assert "PublicationAuthors" not in rs.set_like_columns("PublicationView")
     assert "PublicationAuthors" in rs.list_columns("PublicationView")
-
-
-def test_csv_write_log(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "sub" / "log.csv")
-    assert log.pipeline_versions("syn1") == [] and log.last_version("syn1") is None
-    log.record("syn1", 2, "run1", 10)
-    log.record("syn1", 5, "run2", 12)
-    log.record("syn2", 9, "run2", 1)
-    assert log.pipeline_versions("syn1") == [2, 5]
-    assert log.last_version("syn1") == 5
-    header = (tmp_path / "sub" / "log.csv").read_text().splitlines()[0]
-    assert header == "recordSetId,version,runId,writtenOn,rowsWritten"
-
-
-def test_synapse_write_log_queries_and_stores():
-    with mock.patch.object(rs, "Table") as table:
-        table.return_value.query.return_value = pd.DataFrame({"version": [3, 1]})
-        log = rs.SynapseTableWriteLog("syn", "syn99")
-        assert log.pipeline_versions("syn1") == [1, 3]
-        assert "recordSetId = 'syn1'" in table.return_value.query.call_args.kwargs["query"]
-        log.record("syn1", 4, "r", 7)
-        row = table.return_value.store_rows.call_args.kwargs["values"].iloc[0]
-        assert (row.recordSetId, row.version, row.runId, row.rowsWritten) == ("syn1", 4, "r", 7)
-
-
-def _grid(stats_sequence, versions):
-    grid = mock.MagicMock()
-    exports = iter(zip(stats_sequence, versions))
-
-    def export(**kw):
-        s, v = next(exports)
-        grid.validation_summary_statistics = SimpleNamespace(number_of_unknown_children=s)
-        grid.record_set_version_number = v
-
-    grid.export_to_record_set.side_effect = export
-    return grid
 
 
 def test_write_via_grid_order_wait_and_cleanup():
@@ -253,110 +118,345 @@ def test_get_validation_maps_row_index_to_key(tmp_path):
     assert list(out["key"]) == ["k0", "k1"]
 
 
-def test_reconcile_versions_stale_session_keeps_wiped_edit():
-    cols = (K, "Title", "Assay")
-    v5 = pd.DataFrame([["a", "Pipeline", ""], ["b", "Pipeline", ""]], columns=cols)  # pipeline's write
-    v6 = pd.DataFrame([["a", "A edit", ""], ["b", "Pipeline", ""]], columns=cols)  # A's edit
-    # B's stale session was opened at v5: A's edit is gone, B edited b's title and added row c
-    v7 = pd.DataFrame([["a", "Pipeline", ""], ["b", "B edit", ""], ["c", "B row", ""]], columns=cols)
-    state, d, edited = rs.reconcile_versions([(6, v6), (7, v7)], v5, [v5], K)
-    s = state.set_index(K)
-    assert s.loc["a", "Title"] == "A edit"
-    assert s.loc["b", "Title"] == "B edit"
-    assert s.loc["c", "Title"] == "B row"
-    got = {(r.version, r.key, r.column, r.decision) for r in d.itertuples()}
-    assert got == {
-        (6, "a", "Title", "kept_edit"),
-        (7, "a", "Title", "restored_revert"),
-        (7, "b", "Title", "kept_edit"),
-        (7, "c", "", "kept_contributor_row"),
+def _grid(stats_sequence, versions):
+    grid = mock.MagicMock()
+    exports = iter(zip(stats_sequence, versions))
+
+    def export(**kw):
+        s, v = next(exports)
+        grid.validation_summary_statistics = SimpleNamespace(number_of_unknown_children=s)
+        grid.record_set_version_number = v
+
+    grid.export_to_record_set.side_effect = export
+    return grid
+
+
+
+
+def rep(*versions, log=None, set_like=()):
+    """replay() over frames v1..vN; ``log`` is {pipeline version: base}."""
+    return rs.replay(list(enumerate(versions, start=1)), log or {}, K, set_like)
+
+
+def dec(d):
+    return {(r.version, r.key, r.column, r.decision) for r in d.itertuples()}
+
+
+def cell(state, key, column):
+    return state.set_index(K).loc[key, column]
+
+
+# --- replay ---
+
+
+def test_first_write_baseline_is_latest_all_pipeline_owned():
+    state, owned, d = rep(df(["a", "Old", ""]), df(["a", "Newer", ""]))
+    assert cell(state, "a", "Title") == "Newer" and owned == set() and d.empty
+
+
+def test_pre_log_data_is_pipeline_owned_and_upload_applies_without_conflict():
+    v1 = df(["a", "Migrated", ""])  # created by the migration, never logged
+    v2 = df(["a", "Migrated", ["x"]])  # pipeline's first write, base 1
+    state, owned, d = rep(v1, v2, log={2: 1})
+    assert owned == set()
+    merged, conflicts = rs.merge_upload(state, df(["a", "Upload", ["x"]]), K, owned)
+    assert cell(merged, "a", "Title") == "Upload" and conflicts.empty
+
+
+def test_contributor_edit_kept_and_reported_then_wins_over_upload():
+    v1 = df(["a", "Pipeline", ""])
+    v2 = df(["a", "Mine", ""])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    assert dec(d) == {(2, "a", "Title", "kept_edit")}
+    assert owned == {("a", "Title")}
+    merged, conflicts = rs.merge_upload(state, df(["a", "Pipeline", ""]), K, owned)
+    assert cell(merged, "a", "Title") == "Mine"
+    assert conflicts.to_dict("records") == [
+        {"key": "a", "column": "Title", "contributor_value": "Mine", "upload_value": "Pipeline"}]
+
+
+def test_contributor_edit_still_wins_on_a_later_run_after_the_pipeline_carried_it():
+    v1 = df(["a", "Pipeline", ""])
+    v2 = df(["a", "Mine", ""])
+    v3 = df(["a", "Mine", ""])  # pipeline wrote the merged frame, base 2
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 3: 2})
+    assert owned == {("a", "Title")} and d.empty
+
+
+def test_contributor_export_between_read_and_write_is_not_overwritten():
+    v1 = df(["a", "Pipeline", ""])
+    v2 = df(["a", "Mine", ""])  # landed after the pipeline read v1
+    v3 = df(["a", "Pipeline 2", ""])  # pipeline's write, base 1: never saw v2
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 3: 1})
+    assert cell(state, "a", "Title") == "Mine" and owned == {("a", "Title")}
+    # nothing is reported for versions at or before the newest logged one
+    assert d.empty
+    merged, conflicts = rs.merge_upload(state, df(["a", "Pipeline 2", ""]), K, owned)
+    assert cell(merged, "a", "Title") == "Mine" and len(conflicts) == 1
+
+
+def test_unseen_edit_decision_reported_when_newer_than_log():
+    v1 = df(["a", "Pipeline", ""])
+    v2 = df(["a", "Mine", ""])
+    v3 = df(["a", "Pipeline 2", ""])
+    _, _, d = rep(v1, v2, v3, log={1: 0})  # v3 not (yet) logged: a foreign version
+    assert dec(d) == {(2, "a", "Title", "kept_edit"), (3, "a", "Title", "kept_edit")}
+    _, _, d = rep(v1, v2, v3, log={3: 1})
+    assert dec(d) == set()
+
+
+def test_v5_v6_v7_stale_session_keeps_a_edit_and_b_edit():
+    v5 = df(["a", "Pipeline", ""], ["b", "Pipeline", ""])
+    v6 = df(["a", "A edit", ""], ["b", "Pipeline", ""])
+    v7 = df(["a", "Pipeline", ""], ["b", "B edit", ""], ["c", "B row", ""])
+    state, owned, d = rep(v5, v6, v7, log={1: 0})
+    assert cell(state, "a", "Title") == "A edit"
+    assert cell(state, "b", "Title") == "B edit" and cell(state, "c", "Title") == "B row"
+    assert dec(d) == {
+        (2, "a", "Title", "kept_edit"), (3, "a", "Title", "restored_revert"),
+        (3, "b", "Title", "kept_edit"), (3, "c", "", "kept_contributor_row"),
     }
-    assert edited == {("a", "Title"), ("b", "Title")}
-    # the pipeline's own upload does not overwrite either edit
-    _, conflicts = rs.merge_upload(state, v5, K, edited)
-    assert {(c.key, c.column) for c in conflicts.itertuples()} == {("a", "Title"), ("b", "Title")}
+    assert owned == {("a", "Title"), ("b", "Title"), ("c", "Title")}
 
 
-def test_reconcile_versions_without_foreign_is_identity():
-    v5 = df(["a", "T", ""])
-    state, d, edited = rs.reconcile_versions([], v5, [v5], K)
-    assert state.equals(v5) and d.empty and edited == set()
+def test_stale_revert_then_pipeline_rewrite_makes_the_value_pipeline_owned():
+    # A pipeline (v1), B edit (v2), stale A revert (v3), filler export (v4),
+    # pipeline A (v5, base 4), then an upload C applies.
+    a = df(["k", "A", ""])
+    b = df(["k", "B", ""])
+    state, owned, _ = rep(a, b, a, a, a, log={1: 0, 5: 4})
+    assert cell(state, "k", "Title") == "A" and owned == set()
+    merged, conflicts = rs.merge_upload(state, df(["k", "C", ""]), K, owned)
+    assert cell(merged, "k", "Title") == "C" and conflicts.empty
 
 
-def _owned(versions, logged, upload, state, set_like=()):
-    reads = []
-
-    def read(v):
-        reads.append(v)
-        return versions[v - 1]
-
-    owned = rs.contributor_owned_cells(upload, state, K, len(versions), logged, read, set_like)
-    return owned, reads
-
-
-def test_owned_origin_foreign_vs_pipeline():
-    v1 = df(["a", "P", ""], ["b", "P", ""])
-    v2 = df(["a", "Mine", ""], ["b", "P", ""])  # contributor
-    v3 = df(["a", "Mine", ""], ["b", "P2", ""])  # pipeline wrote v3 (b changed by pipeline)
-    state = v3
-    upload = df(["a", "Up", ""], ["b", "Up", ""])
-    owned, _ = _owned([v1, v2, v3], {1, 3}, upload, state)
-    assert owned == {("a", "Title")}
-
-
-def test_owned_only_reads_cells_that_differ():
+def test_contributor_row_blank_cells_stay_pipeline_owned():
     v1 = df(["a", "T", ""])
-    owned, reads = _owned([v1], {1}, df(["a", "T", ""]), v1)
-    assert owned == set() and reads == []
+    v2 = df(["a", "T", ""], ["r", "Mine", ""])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    assert dec(d) == {(2, "r", "", "kept_contributor_row")}
+    assert owned == {("r", "Title")}
+    merged, conflicts = rs.merge_upload(state, df(["r", "Upload", ["x"]]), K, owned)
+    assert cell(merged, "r", "Assay") == ["x"]  # filled: blank cells are the pipeline's
+    assert cell(merged, "r", "Title") == "Mine" and len(conflicts) == 1
 
 
-def test_owned_value_present_before_first_logged_version_is_foreign():
-    v1 = df(["a", "Legacy", ""])
-    v2 = df(["a", "Legacy", ""])
-    owned, _ = _owned([v1, v2], {2}, df(["a", "Up", ""]), v2)
-    assert owned == {("a", "Title")}
+def test_deleted_contributor_row_is_restored():
+    v1 = df(["a", "T", ""])
+    v2 = df(["a", "T", ""], ["r", "Mine", ""])
+    v3 = df(["a", "T", ""])
+    state, owned, d = rep(v1, v2, v3, log={1: 0})
+    assert set(state[K]) == {"a", "r"} and cell(state, "r", "Title") == "Mine"
+    assert (3, "r", "", "restored_missing") in dec(d)
 
 
-def test_owned_nothing_logged_is_first_write():
-    v1 = df(["a", "Legacy", ""])
-    assert _owned([v1], set(), df(["a", "Up", ""]), v1)[0] == set()
+def test_pipeline_version_keeps_state_rows_it_lacks():
+    v1 = df(["a", "T", ""], ["b", "T", ""])
+    v2 = df(["a", "T", ""])  # a pipeline version missing b
+    state, _, d = rep(v1, v2, log={1: 0, 2: 1})
+    assert set(state[K]) == {"a", "b"}
 
 
-def test_owned_set_like_and_new_keys():
+def test_clearing_a_never_blank_cell_is_an_edit_and_a_seen_blank_is_a_revert():
+    v1 = df(["a", "T", ""])
+    v2 = df(["a", "", ""])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    assert dec(d) == {(2, "a", "Title", "kept_edit")}
+    # a cell that was once blank: going back to blank is a stale revert
+    w1 = df(["a", "", ""])
+    w2 = df(["a", "T", ""])
+    w3 = df(["a", "", ""])
+    state, _, d = rep(w1, w2, w3, log={2: 1})
+    assert cell(state, "a", "Title") == "T"
+    assert (3, "a", "Title", "restored_revert") in dec(d)
+
+
+def test_set_like_list_order_is_not_an_edit():
     v1 = df(["a", "T", ["x", "y"]])
     v2 = df(["a", "T", ["y", "x"]])
-    owned, _ = _owned([v1, v2], {1}, df(["a", "T", ["x", "y"]], ["new", "N", ""]), v2, {"Assay"})
-    assert owned == set()
+    assert rep(v1, v2, log={1: 0}, set_like={"Assay"})[2].empty
+    assert dec(rep(v1, v2, log={1: 0})[2]) == {(2, "a", "Assay", "kept_edit")}
 
 
-def _fake_entity(tmp_path, text):
-    path = tmp_path / "dl.csv"
-    path.write_text(text)
-    return SimpleNamespace(path=str(path))
+def test_composite_key_uses_unit_separator():
+    cols = ("A", "B", "V")
+    v1 = pd.DataFrame([["1", "x", "old"]], columns=cols)
+    v2 = pd.DataFrame([["1", "x", "new"]], columns=cols)
+    _, _, d = rs.replay([(1, v1), (2, v2)], {1: 0}, ["A", "B"])
+    assert d.loc[0, "key"] == "1\x1fx"
+
+
+# --- cells and keys ---
+
+
+def test_numeric_strings_compare_equal_but_not_leading_zeros():
+    assert rs._cells_equal("2020", "2020.0", False)
+    assert rs._cells_equal("-1.50", "-1.5", False)
+    assert not rs._cells_equal("007", "7", False)
+    assert not rs._cells_equal("2020", "2021", False)
+    assert not rs._cells_equal("abc", "ABC", False)
+
+
+def test_check_upload_keys_rejects_blank_and_duplicate_and_strips():
+    ok = rs.check_upload_keys(pd.DataFrame({K: [" a ", "b"], "T": ["1", "2"]}), K)
+    assert list(ok[K]) == ["a", "b"]
+    with pytest.raises(ValueError, match="duplicate keys.*a"):
+        rs.check_upload_keys(pd.DataFrame({K: ["a", " a"], "T": ["1", "2"]}), K)
+    with pytest.raises(ValueError, match="blank key"):
+        rs.check_upload_keys(pd.DataFrame({K: ["a", " "], "T": ["1", "2"]}), K)
+
+
+def test_read_recordset_parses_json_only_in_list_columns(tmp_path):
+    path = tmp_path / "rs.csv"
+    path.write_text(f'{K},Title,Assay\na,"[1]","[""RNA Sequencing"",""Whole Genome Sequencing""]"\nb,,\n')
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = SimpleNamespace(path=str(path))
+        out = rs.read_recordset("syn", "syn1", version=3, list_cols={"Assay"})
+        plain = rs.read_recordset("syn", "syn1", version=3)
+    assert cls.call_args.kwargs["version_number"] == 3
+    assert out.loc[0, "Title"] == "[1]"
+    assert out.loc[0, "Assay"] == ["RNA Sequencing", "Whole Genome Sequencing"]
+    assert out.loc[1, "Title"] == "" and out.loc[1, "Assay"] == ""
+    assert plain.loc[0, "Assay"].startswith("[")
 
 
 def test_read_recordset_cache_miss_then_hit(tmp_path):
     cache = tmp_path / "cache"
+    dl = tmp_path / "dl.csv"
+    dl.write_text(f"{K},Title\na,x\n")
     with mock.patch.object(rs, "RecordSet") as cls:
-        cls.return_value.get.return_value = _fake_entity(tmp_path, f"{K},Title\na,x\n")
+        cls.return_value.get.return_value = SimpleNamespace(path=str(dl))
         first = rs.read_recordset("syn", "syn1", version=4, cache_dir=cache)
         assert (cache / "syn1" / "v4.csv").exists() and cls.return_value.get.call_count == 1
         second = rs.read_recordset("syn", "syn1", version=4, cache_dir=cache)
-        assert cls.return_value.get.call_count == 1  # hit: no download
+        assert cls.return_value.get.call_count == 1
         assert first.equals(second)
-        rs.read_recordset("syn", "syn1", version=None, cache_dir=cache)  # latest is never cached
+        rs.read_recordset("syn", "syn1", version=None, cache_dir=cache)
         rs.read_recordset("syn", "syn1", version=None, cache_dir=cache)
         assert cls.return_value.get.call_count == 3
-        assert not (cache / "syn1" / "vNone.csv").exists()
 
 
-def test_owned_value_carried_by_pipeline_versions_stays_owned():
-    v1 = df(["a", "P", ""])
-    v2 = df(["a", "Mine", ""])  # contributor
-    v3 = df(["a", "P", ""])  # stale-session export wiped it
-    v4 = df(["a", "Mine", ""])  # pipeline restored it
-    owned, _ = _owned([v1, v2, v3, v4], {1, 4}, df(["a", "Up", ""]), v4)
-    assert owned == {("a", "Title")}
-    # a pipeline value that never had a foreign origin is not owned
-    owned, _ = _owned([v1, v3, v1], {1, 2, 3}, df(["a", "Up", ""]), v1)
-    assert owned == set()
+# --- write log v2 ---
+
+
+def test_csv_write_log_v2(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "sub" / "log.csv")
+    assert log.pipeline_map("syn1") == {} and log.last_version("syn1") is None
+    log.start("syn1", 4, "run1", "42")
+    assert log.pipeline_map("syn1") == {}  # pending has no version
+    log.record("syn1", 5, "run1", 10, base=4, principal="42")
+    log.record("syn1", 7, "run2", 12, base=6, principal="42", status="recovered")
+    log.record("syn2", 9, "run2", 1)
+    assert log.pipeline_map("syn1") == {5: 4, 7: 6}
+    assert log.pipeline_versions("syn1") == [5, 7] and log.last_version("syn1") == 7
+    header = (tmp_path / "sub" / "log.csv").read_text().splitlines()[0]
+    assert header == ",".join(rs.WRITE_LOG_COLUMNS)
+    assert log.unresolved_pending("syn1") == []  # run1 has a written row
+
+
+def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 3, "other", "7")
+    assert log.locked_by("syn1", "me") == "other"
+    assert log.locked_by("syn1", "other") is None  # a run is not locked by itself
+    assert log.locked_by("syn2", "me") is None
+    later = pd.Timestamp.now(tz="UTC") + pd.Timedelta(hours=2, minutes=1)
+    assert log.locked_by("syn1", "me", now=later) is None
+    log.record("syn1", 4, "other", 5, base=3, principal="7")  # resolved
+    assert log.locked_by("syn1", "me") is None
+
+
+def test_crash_recovery_by_principal_and_time_from_the_pending_row(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.record("syn1", 1, "r0", 3, base=0, principal="42")
+    log.start("syn1", 1, "dead", "42")
+    pending_on = log.unresolved_pending("syn1")[0]["writtenOn"]
+    meta = {
+        2: ("42", pending_on - pd.Timedelta(minutes=5)),  # before the pending row: not ours
+        3: ("99", pending_on + pd.Timedelta(minutes=1)),  # a contributor
+        4: ("42", pending_on + pd.Timedelta(minutes=2)),  # the dead run's export, never logged
+        5: ("42", pending_on + pd.Timedelta(minutes=3)),  # its second export
+    }
+    found = rs.recover_pending("syn", "syn1", log, 5, meta=lambda v: meta[v])
+    assert found == {4: 1, 5: 1}
+    assert log.pipeline_map("syn1") == {1: 0, 4: 1, 5: 1}
+    assert log.unresolved_pending("syn1") == []
+    df_ = log._read("syn1")
+    assert set(df_.loc[df_["version"].isin([4, 5]), "status"]) == {"recovered"}
+    # replay then treats v4/v5 as pipeline versions with base 1 and v2/v3 as foreign
+    assert rs.recover_pending("syn", "syn1", log, 5, meta=lambda v: meta[v]) == {}
+
+
+def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "dead", "42")
+    on = log.unresolved_pending("syn1")[0]["writtenOn"]
+    meta = lambda v: ("42", on + pd.Timedelta(minutes=1))
+    assert rs.recover_pending("syn", "syn1", log, 2, meta=meta, record=False) == {2: 1}
+    assert log.pipeline_map("syn1") == {} and len(log.unresolved_pending("syn1")) == 1
+    assert rs.recover_pending("syn", "syn1", log, 1, meta=meta) == {}
+    assert log.unresolved_pending("syn1") == []
+    assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
+
+
+def test_recovery_skips_the_live_runs_own_pending_row(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "live", "42")
+    assert rs.recover_pending("syn", "syn1", log, 3, meta=lambda v: 1 / 0, now_run="live") == {}
+
+
+def test_synapse_write_log_queries_and_stores():
+    with mock.patch.object(rs, "Table") as table:
+        table.return_value.query.return_value = pd.DataFrame({
+            "recordSetId": ["syn1", "syn1"], "version": [3, 1], "baseVersion": [2, 0],
+            "runId": ["a", "b"], "principalId": ["1", "1"], "status": ["written", "recovered"],
+            "writtenOn": [0, 0], "rowsWritten": [1, 1]})
+        log = rs.SynapseTableWriteLog("syn", "syn99")
+        assert log.pipeline_map("syn1") == {3: 2, 1: 0}
+        assert "recordSetId = 'syn1'" in table.return_value.query.call_args.kwargs["query"]
+        log.start("syn1", 4, "r", "42")
+        row = table.return_value.store_rows.call_args.kwargs["values"].iloc[0]
+        assert (row.recordSetId, row.baseVersion, row.status, row.principalId) == ("syn1", 4, "pending", "42")
+        assert pd.isna(row.version)
+        log.record("syn1", 5, "r", 7, base=4, principal="42")
+        row = table.return_value.store_rows.call_args.kwargs["values"].iloc[0]
+        assert (row.version, row.baseVersion, row.rowsWritten, row.status) == (5, 4, 7, "written")
+
+
+def test_create_write_log_table_has_the_v2_columns():
+    with mock.patch.object(rs, "Table") as table:
+        table.return_value.store.return_value.id = "syn5"
+        assert rs.create_write_log_table("syn", "synParent") == "syn5"
+    names = [c.name for c in table.call_args.kwargs["columns"]]
+    assert names == rs.WRITE_LOG_COLUMNS
+
+
+# --- write_via_grid callbacks ---
+
+
+def test_write_via_grid_calls_on_version_after_each_export():
+    grid = _grid([3, 0], [7, 8])
+    seen = []
+    with mock.patch.object(rs, "Grid") as cls, mock.patch.object(rs.time, "sleep"):
+        cls.return_value.create.return_value = grid
+        assert rs.write_via_grid("syn", "syn1", "x.csv", on_version=seen.append) == [7, 8]
+    assert seen == [7, 8]
+
+
+def test_grid_delete_failure_is_logged_and_does_not_mask_the_result(caplog):
+    grid = _grid([0], [7])
+    grid.delete.side_effect = RuntimeError("not the creator")
+    with mock.patch.object(rs, "Grid") as cls, mock.patch.object(rs.time, "sleep"):
+        cls.return_value.create.return_value = grid
+        assert rs.write_via_grid("syn", "syn1", "x.csv") == [7]
+    assert "could not delete grid session" in caplog.text
+
+
+def test_grid_delete_failure_does_not_mask_the_original_exception():
+    grid = mock.MagicMock()
+    grid.import_csv.side_effect = ValueError("original")
+    grid.delete.side_effect = RuntimeError("delete failed")
+    with mock.patch.object(rs, "Grid") as cls, mock.patch.object(rs.time, "sleep"):
+        cls.return_value.create.return_value = grid
+        with pytest.raises(ValueError, match="original"):
+            rs.write_via_grid("syn", "syn1", "x.csv")

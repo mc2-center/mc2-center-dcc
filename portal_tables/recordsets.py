@@ -1,21 +1,47 @@
-"""Shared library for shared RecordSets: read, write through Grid, reconcile.
+"""Shared library for shared RecordSets: read, write through Grid, replay, merge.
 
 Gate G1: each grant has one RecordSet per type (``MC2Center_<Component>_RecordSet``
 in the grant's data-type folder) that the pipeline and contributors both edit.
-The pipeline writes only through a Grid session (``write_via_grid``), which
-validates and versions the data, and logs every version it writes in a
-:class:`WriteLog`. Before a new upload, :func:`reconcile` compares the latest
-version with what the pipeline last wrote so contributor edits survive, and
-:func:`merge_upload` applies the upload on top.
+The pipeline writes only through a Grid session (:func:`write_via_grid`), which
+validates and versions the data. Every version it creates is recorded in a
+:class:`WriteLog` (write log v2), together with ``baseVersion``, the latest
+version the run had read and reconciled against.
+
+Replay (:func:`replay`) rebuilds the current state deterministically from the
+whole version history, tracking per cell its ``value``, ``owner`` (P pipeline,
+C contributor) and ``set_at`` (version):
+
+* Baseline [owner decision]: with nothing logged, the latest version is the
+  baseline, all P (a first write). Otherwise the baseline is the last version
+  before the first logged one (or empty), all P: pre-log and migration data
+  belong to the pipeline. Every value seen in pre-log versions joins the
+  per-cell ``history``.
+* Pipeline version ``v`` (base ``b``): a differing cell keeps the state value if
+  its owner is C and ``set_at > b`` (the pipeline overwrote an edit it never
+  saw; ``kept_unseen_edit``), else takes the version's value as P. State keys
+  missing from ``v`` are kept (``kept_unseen_row``); new keys are added as P.
+* Foreign version ``v``: new keys are added (``kept_contributor_row``;
+  non-blank cells C, blank cells P so the pipeline can fill them). Per cell:
+  equal, nothing; a value already in the cell's history is a stale-session
+  revert, state kept (``restored_revert``); otherwise a contributor edit
+  (``kept_edit``: value, owner C, ``set_at = v``). A state key missing from
+  ``v`` is restored whatever its owner (``restored_missing``); a real deletion
+  is done by the DCC.
+* After each version all its cell values are added to the history.
+
+:func:`merge_upload` then applies an upload to the replayed state: a differing
+cell owned by C is kept and reported as a conflict (contributor wins), any
+other cell takes the upload value.
 
 Cell values: a list-valued cell is a Python ``list`` of strings (stored in the
-RecordSet CSV as a JSON array); every other cell is a string, blank is ``""``.
+RecordSet CSV as a JSON array) and only list columns are parsed; every other
+cell is a string, blank is ``""``.
 
-List comparison rule: a list cell is compared order-insensitively only in
-*set-like* columns, which are the schema's array properties whose items are an
-enum (Assay, Tissue, Tumor Type, ...; see :func:`set_like_columns`). Any other
-list (authors, keywords, aliases) is compared as is, so a reorder counts as an
-edit. An empty list and ``""`` are the same value.
+Comparison: a list cell is compared order-insensitively only in *set-like*
+columns, the schema's array properties whose items are an enum (see
+:func:`set_like_columns`); other lists compare as is. An empty list equals
+``""``. Plain decimal numeric strings that parse to the same float are equal
+(``2020`` == ``2020.0``); leading zeros (``007``) never count as numeric.
 """
 
 from __future__ import annotations
@@ -23,6 +49,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import re
 import shutil
 import time
 from datetime import datetime, timezone
@@ -37,12 +64,16 @@ import utils
 
 logger = logging.getLogger(__name__)
 
-KEY_SEP = "|"
+KEY_SEP = "\x1f"
 
 DECISION_COLUMNS = ["key", "column", "decision", "current_value", "pipeline_value", "version"]
 CONFLICT_COLUMNS = ["key", "column", "contributor_value", "upload_value"]
 
-WRITE_LOG_COLUMNS = ["recordSetId", "version", "runId", "writtenOn", "rowsWritten"]
+WRITE_LOG_COLUMNS = [
+    "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
+]
+LOCK_HOURS = 2
+_NUMERIC = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
 
 
 # --- cells -------------------------------------------------------------------
@@ -82,8 +113,16 @@ def _norm(value, set_like: bool = False):
     return value
 
 
+def _canon(value, set_like: bool = False):
+    """Hashable canonical form: ``_norm`` plus numeric strings as floats."""
+    n = _norm(value, set_like)
+    if isinstance(n, str) and _NUMERIC.fullmatch(n.strip()):
+        return ("#", float(n))
+    return n
+
+
 def _cells_equal(a, b, set_like: bool) -> bool:
-    return _norm(a, set_like) == _norm(b, set_like)
+    return _canon(a, set_like) == _canon(b, set_like)
 
 
 def key_columns(key) -> list[str]:
@@ -91,7 +130,7 @@ def key_columns(key) -> list[str]:
 
 
 def _key_of(row, key_cols: list[str]) -> str:
-    return KEY_SEP.join(str(row[c]) for c in key_cols)
+    return KEY_SEP.join(str(row[c]).strip() for c in key_cols)
 
 
 def to_csv(df: pd.DataFrame, path) -> None:
@@ -154,35 +193,64 @@ def _split_list_cell(value: str) -> list[str]:
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "mc2-center-dcc" / "recordsets"
 
 
-def _load_csv(path) -> pd.DataFrame:
+def _load_csv(path, list_cols=()) -> pd.DataFrame:
     try:
         df = pd.read_csv(path, dtype=str, keep_default_na=False)
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
-    return df.map(parse_cell)
+    for column in df.columns:
+        if column in list_cols:
+            df[column] = df[column].map(parse_cell)
+    return df.astype(object)
 
 
-def read_recordset(syn, rs_id: str, version: int | None = None, cache_dir=None) -> pd.DataFrame:
+def read_recordset(
+    syn, rs_id: str, version: int | None = None, cache_dir=None, list_cols=()
+) -> pd.DataFrame:
     """Read a RecordSet version (default: latest) with string dtype.
 
-    JSON-array cells become Python lists, other cells stay strings, empty
-    cells are ``""``. With ``cache_dir`` and an explicit ``version``, the CSV
-    is cached on disk as ``<cache_dir>/<rs_id>/v<version>.csv`` (versions are
-    immutable) and read from there on later calls. The latest version
-    (``version=None``) is never cached.
+    JSON-array cells become Python lists only in ``list_cols`` (see
+    :func:`list_columns`); every other cell stays a string, empty is ``""``.
+    With ``cache_dir`` and an explicit ``version``, the CSV is cached on disk
+    as ``<cache_dir>/<rs_id>/v<version>.csv`` (versions are immutable, the
+    latest included) and read from there on later calls. ``version=None`` is
+    never cached.
     """
     cached = None
     if cache_dir is not None and version is not None:
         cached = Path(cache_dir) / rs_id / f"v{version}.csv"
         if cached.exists():
-            return _load_csv(cached)
+            return _load_csv(cached, list_cols)
     entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
     if cached is not None:
         cached.parent.mkdir(parents=True, exist_ok=True)
         tmp = cached.with_name(cached.name + ".part")
         shutil.copyfile(entity.path, tmp)
         tmp.replace(cached)
-    return _load_csv(entity.path)
+    return _load_csv(entity.path, list_cols)
+
+
+def check_upload_keys(upload: pd.DataFrame, key) -> pd.DataFrame:
+    """Upload with key cells stripped; raises ValueError on blank or duplicate keys."""
+    key_cols = key_columns(key)
+    out = upload.copy()
+    for column in key_cols:
+        out[column] = out[column].map(lambda v: str(v).strip())
+    keys = [_key_of(row, key_cols) for _, row in out.iterrows()]
+    blank = [i + 2 for i, (_, row) in enumerate(out.iterrows()) if any(row[c] == "" for c in key_cols)]
+    seen, dupes = set(), []
+    for k in keys:
+        if k in seen and k not in dupes:
+            dupes.append(k)
+        seen.add(k)
+    problems = []
+    if blank:
+        problems.append(f"blank key in file line(s) {blank}")
+    if dupes:
+        problems.append(f"duplicate keys {dupes}")
+    if problems:
+        raise ValueError("; ".join(problems))
+    return out
 
 
 def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
@@ -201,18 +269,92 @@ def find_recordset(syn, folder_id: str, component: str) -> str | None:
 # --- write log --------------------------------------------------------------
 
 
+def _to_dt(value):
+    """A write-log time (datetime, epoch milliseconds or ISO text) as a UTC Timestamp."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return pd.NaT
+    if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
+        return pd.to_datetime(int(value), unit="ms", utc=True)
+    return pd.to_datetime(value, utc=True)
+
+
+def _int_or_none(value):
+    return None if value is None or (not isinstance(value, str) and pd.isna(value)) else int(value)
+
+
 class WriteLog:
-    """Which RecordSet versions the pipeline wrote."""
+    """Write log v2: which RecordSet versions the pipeline wrote, and which runs are in flight.
+
+    Columns: ``recordSetId, version`` (null while ``pending``), ``baseVersion``
+    (the latest version the run read and reconciled against), ``runId``,
+    ``principalId`` (the runner's Synapse user ID), ``status`` (``pending``,
+    ``written``, ``recovered``, or ``aborted`` when a run failed before any
+    export), ``writtenOn``, ``rowsWritten``. Subclasses implement ``_read`` and
+    ``_append``.
+    """
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        raise NotImplementedError
+
+    def _append(self, row: dict) -> None:
+        raise NotImplementedError
+
+    def _row(self, rs_id, version, base, run_id, principal, status, rows) -> dict:
+        return {
+            "recordSetId": rs_id, "version": version, "baseVersion": base, "runId": run_id,
+            "principalId": str(principal), "status": status,
+            "writtenOn": datetime.now(timezone.utc), "rowsWritten": rows,
+        }
+
+    def start(self, rs_id: str, base: int, run_id: str, principal) -> None:
+        """Record a ``pending`` row before any Grid session is opened."""
+        self._append(self._row(rs_id, None, base, run_id, principal, "pending", None))
+
+    def record(self, rs_id, version, run_id, rows, base=None, principal="", status="written") -> None:
+        """Record a version the pipeline created (``written`` or ``recovered``).
+
+        ``base`` defaults to ``version - 1``.
+        """
+        base = version - 1 if base is None and version is not None else base
+        self._append(self._row(rs_id, version, base, run_id, principal, status, rows))
+
+    def abort(self, rs_id: str, base: int, run_id: str, principal) -> None:
+        """Resolve a ``pending`` row whose run failed before creating any version."""
+        self._append(self._row(rs_id, None, base, run_id, principal, "aborted", None))
+
+    def pipeline_map(self, rs_id: str) -> dict[int, int]:
+        """``{version: baseVersion}`` of every pipeline version (written or recovered)."""
+        df = self._read(rs_id)
+        df = df[df["status"].isin(["written", "recovered"]) & df["version"].notna()]
+        return {int(v): int(b) if pd.notna(b) else int(v) - 1 for v, b in zip(df["version"], df["baseVersion"])}
 
     def pipeline_versions(self, rs_id: str) -> list[int]:
-        raise NotImplementedError
-
-    def record(self, rs_id: str, version: int, run_id: str, rows: int) -> None:
-        raise NotImplementedError
+        return sorted(self.pipeline_map(rs_id))
 
     def last_version(self, rs_id: str) -> int | None:
         versions = self.pipeline_versions(rs_id)
         return max(versions) if versions else None
+
+    def unresolved_pending(self, rs_id: str) -> list[dict]:
+        """``pending`` rows whose runId has no written, recovered or aborted row."""
+        df = self._read(rs_id)
+        done = set(df.loc[df["status"].isin(["written", "recovered", "aborted"]), "runId"])
+        out = []
+        for _, row in df[df["status"] == "pending"].iterrows():
+            if row["runId"] not in done:
+                out.append({
+                    "runId": row["runId"], "baseVersion": _int_or_none(row["baseVersion"]),
+                    "principalId": str(row["principalId"]), "writtenOn": _to_dt(row["writtenOn"]),
+                })
+        return out
+
+    def locked_by(self, rs_id: str, run_id: str, now=None) -> str | None:
+        """runId of another run with an unresolved ``pending`` row younger than 2 h, else None."""
+        now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
+        for row in self.unresolved_pending(rs_id):
+            if row["runId"] != run_id and now - row["writtenOn"] < pd.Timedelta(hours=LOCK_HOURS):
+                return row["runId"]
+        return None
 
 
 class SynapseTableWriteLog(WriteLog):
@@ -222,43 +364,38 @@ class SynapseTableWriteLog(WriteLog):
         self.syn = syn
         self.table_id = table_id
 
-    def pipeline_versions(self, rs_id: str) -> list[int]:
-        df = Table(id=self.table_id).query(
-            query=f"SELECT version FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        return Table(id=self.table_id).query(
+            query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
             include_row_id_and_row_version=False,
             synapse_client=self.syn,
         )
-        return sorted(int(v) for v in df["version"].dropna())
 
-    def record(self, rs_id: str, version: int, run_id: str, rows: int) -> None:
-        row = pd.DataFrame(
-            [{
-                "recordSetId": rs_id,
-                "version": int(version),
-                "runId": run_id,
-                "writtenOn": int(time.time() * 1000),
-                "rowsWritten": int(rows),
-            }]
-        )
-        Table(id=self.table_id).store_rows(values=row, synapse_client=self.syn)
+    def _append(self, row: dict) -> None:
+        values = dict(row)
+        values["writtenOn"] = int(values["writtenOn"].timestamp() * 1000)
+        frame = pd.DataFrame([values], columns=WRITE_LOG_COLUMNS)
+        for column in ("version", "baseVersion", "rowsWritten"):
+            frame[column] = frame[column].astype("Int64")
+        Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
 
 
 class CsvWriteLog(WriteLog):
-    """The same log as a local CSV, for tests and ``--dryrun``."""
+    """The same log as a local CSV, for tests and dry runs."""
 
     def __init__(self, path):
         self.path = Path(path)
 
-    def _read(self) -> pd.DataFrame:
+    def _read(self, rs_id: str) -> pd.DataFrame:
         if not self.path.exists():
             return pd.DataFrame(columns=WRITE_LOG_COLUMNS)
-        return pd.read_csv(self.path, dtype=str, keep_default_na=False)
+        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
+        df = df[df["recordSetId"] == rs_id].copy()
+        for column in ("version", "baseVersion", "rowsWritten"):
+            df[column] = pd.to_numeric(df[column].replace("", pd.NA))
+        return df
 
-    def pipeline_versions(self, rs_id: str) -> list[int]:
-        df = self._read()
-        return sorted(int(v) for v in df.loc[df["recordSetId"] == rs_id, "version"])
-
-    def record(self, rs_id: str, version: int, run_id: str, rows: int) -> None:
+    def _append(self, row: dict) -> None:
         new = not self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path, "a", newline="", encoding="utf-8") as fh:
@@ -266,7 +403,8 @@ class CsvWriteLog(WriteLog):
             if new:
                 writer.writerow(WRITE_LOG_COLUMNS)
             writer.writerow(
-                [rs_id, int(version), run_id, datetime.now(timezone.utc).isoformat(), int(rows)]
+                ["" if row[c] is None else (row[c].isoformat() if c == "writtenOn" else row[c])
+                 for c in WRITE_LOG_COLUMNS]
             )
 
 
@@ -278,7 +416,10 @@ def create_write_log_table(syn, parent_id: str, name: str = "MC2Center_RecordSet
     columns = [
         Column(name="recordSetId", column_type=ColumnType.ENTITYID),
         Column(name="version", column_type=ColumnType.INTEGER),
+        Column(name="baseVersion", column_type=ColumnType.INTEGER),
         Column(name="runId", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="principalId", column_type=ColumnType.STRING, maximum_size=20),
+        Column(name="status", column_type=ColumnType.STRING, maximum_size=20),
         Column(name="writtenOn", column_type=ColumnType.DATE),
         Column(name="rowsWritten", column_type=ColumnType.INTEGER),
     ]
@@ -286,7 +427,50 @@ def create_write_log_table(syn, parent_id: str, name: str = "MC2Center_RecordSet
     return table.id
 
 
-# --- reconcile / merge -------------------------------------------------------
+def recordset_version_meta(syn, rs_id: str, version: int) -> tuple[str, pd.Timestamp]:
+    """``(modifiedBy, modifiedOn)`` of one RecordSet version, without downloading it."""
+    entity = RecordSet(id=rs_id, version_number=version, download_file=False).get(synapse_client=syn)
+    return str(entity.modified_by), _to_dt(entity.modified_on)
+
+
+def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True, now_run=None) -> dict[int, int]:
+    """Recover versions created by runs that died after exporting.
+
+    For each unresolved ``pending`` row, a version above its ``baseVersion``
+    that is not logged, was modified by the row's ``principalId`` and after the
+    row's ``writtenOn``, is a pipeline version with that base: recorded as
+    ``recovered`` (when ``record``) and returned as ``{version: base}``. A
+    pending row with nothing to recover is resolved as ``aborted``. Rows of
+    ``now_run`` (the live run) are skipped.
+    """
+    meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
+    logged = write_log.pipeline_map(rs_id)
+    found: dict[int, int] = {}
+    for row in write_log.unresolved_pending(rs_id):
+        if row["runId"] == now_run or row["baseVersion"] is None:
+            continue
+        mine = []
+        for v in range(row["baseVersion"] + 1, latest + 1):
+            if v in logged or v in found:
+                continue
+            by, on = meta(v)
+            if by == row["principalId"] and pd.notna(on) and on > row["writtenOn"]:
+                mine.append(v)
+        for v in mine:
+            found[v] = row["baseVersion"]
+            if record:
+                write_log.record(rs_id, v, row["runId"], None, base=row["baseVersion"],
+                                 principal=row["principalId"], status="recovered")
+        if not mine and record:
+            write_log.abort(rs_id, row["baseVersion"], row["runId"], row["principalId"])
+        logger.warning("%s: run %s died after its pending row; recovered versions %s",
+                       rs_id, row["runId"], sorted(mine))
+    return found
+
+
+# --- replay / merge ----------------------------------------------------------
+
+P, C = "P", "C"
 
 
 def _frames_by_key(df: pd.DataFrame, key_cols: list[str], columns: list[str]) -> dict[str, dict]:
@@ -304,179 +488,116 @@ def _all_columns(frames, key_cols) -> list[str]:
     return columns
 
 
-def reconcile(current, pipeline_last, history, key, set_like=(), version=""):
-    """Fold contributor edits into the pipeline's last write.
+def _is_blank(value) -> bool:
+    return _norm(value) == ""
 
-    ``current`` is the latest version; ``pipeline_last`` the rows at the
-    pipeline's most recent write; ``history`` the rows at every version up to
-    and including that one (a list of DataFrames). Anything newer than
-    ``pipeline_last`` is a contributor edit. ``set_like`` names list columns
-    compared order-insensitively; ``version`` tags every decision with the
-    version ``current`` came from.
 
-    Per key in the union:
+def replay(versions, log_map, key, set_like=()):
+    """Rebuild the current state from every version, tracking cell ownership.
 
-    * only in ``pipeline_last``: restore the pipeline row (``restored_missing``)
-    * only in ``current``: keep it (``kept_contributor_row``)
-    * in both, per non-key column: equal, nothing; the current value equals a
-      value the cell had in ``history`` (so it is a revert to an old value):
-      restore the pipeline value (``restored_revert``); else keep the current
-      value (``kept_edit``)
-
-    Returns ``(reconciled DataFrame, decisions DataFrame)``; decisions have the
-    columns ``key, column, decision, current_value, pipeline_value``.
+    ``versions`` is ``[(version, DataFrame)]`` for every version ``1..latest``;
+    ``log_map`` is ``{pipeline version: baseVersion}`` from the write log. The
+    rules are in the module docstring. Returns ``(state, owned, decisions)``:
+    the state DataFrame, the set of ``(key, column)`` cells owned by a
+    contributor, and the decisions (``key, column, decision, current_value,
+    pipeline_value, version``) for versions newer than the newest logged one,
+    where ``current_value`` is the value in that version and
+    ``pipeline_value`` the state's value before it.
     """
     key_cols = key_columns(key)
     set_like = set(set_like)
-    columns = _all_columns([current, pipeline_last, *history], key_cols)
-    cur = _frames_by_key(current, key_cols, columns)
-    pipe = _frames_by_key(pipeline_last, key_cols, columns)
-    hist = [_frames_by_key(h, key_cols, columns) for h in history]
+    versions = sorted(versions, key=lambda t: t[0])
+    columns = _all_columns([df for _, df in versions], key_cols)
+    frames = {v: _frames_by_key(df, key_cols, columns) for v, df in versions}
+    latest = versions[-1][0]
+    non_key = [c for c in columns if c not in key_cols]
 
-    rows, decisions = [], []
+    history: dict[tuple, set] = {}
+    decisions: list[dict] = []
+    state: dict[str, dict] = {}  # key -> {column: [value, owner, set_at]}
 
-    def decide(k, column, decision, cur_v="", pipe_v=""):
-        decisions.append(
-            {"key": k, "column": column, "decision": decision,
-             "current_value": cur_v, "pipeline_value": pipe_v, "version": version}
-        )
+    def remember(frame):
+        for k, row in frame.items():
+            for c in non_key:
+                history.setdefault((k, c), set()).add(_canon(row[c], c in set_like))
 
-    for k, cur_row in cur.items():
-        if k not in pipe:
-            rows.append(cur_row)
-            decide(k, "", "kept_contributor_row")
+    def fresh(row, owner_of, v):
+        return {c: [row[c], owner_of(row[c]), v] for c in columns}
+
+    if not log_map:
+        for v in frames:
+            remember(frames[v])
+        state = {k: fresh(r, lambda _: P, latest) for k, r in frames[latest].items()}
+        first, report_after = latest + 1, latest
+    else:
+        first, report_after = min(log_map), max(log_map)
+        for v in frames:
+            if v < first:
+                remember(frames[v])
+        if first - 1 in frames:
+            state = {k: fresh(r, lambda _: P, first - 1) for k, r in frames[first - 1].items()}
+
+    def decide(v, k, column, decision, cur="", pipe=""):
+        if v > report_after:
+            decisions.append({"key": k, "column": column, "decision": decision,
+                              "current_value": cur, "pipeline_value": pipe, "version": v})
+
+    for v in sorted(frames):
+        if v < first:
             continue
-        pipe_row, out = pipe[k], dict(cur_row)
-        for column in columns:
-            if column in key_cols:
-                continue
-            c, p = cur_row[column], pipe_row[column]
-            if _cells_equal(c, p, column in set_like):
-                continue
-            was_old_value = any(
-                k in h and _cells_equal(h[k][column], c, column in set_like) for h in hist
-            )
-            if was_old_value:
-                out[column] = p
-                decide(k, column, "restored_revert", c, p)
-            else:
-                decide(k, column, "kept_edit", c, p)
-        rows.append(out)
-    for k, pipe_row in pipe.items():
-        if k not in cur:
-            rows.append(dict(pipe_row))
-            decide(k, "", "restored_missing")
+        frame = frames[v]
+        if v in log_map:
+            base = log_map[v]
+            for k, row in frame.items():
+                if k not in state:
+                    state[k] = fresh(row, lambda _: P, v)
+                    continue
+                for c in non_key:
+                    cell = state[k][c]
+                    if _cells_equal(row[c], cell[0], c in set_like):
+                        continue
+                    if cell[1] == C and cell[2] > base:
+                        decide(v, k, c, "kept_unseen_edit", row[c], cell[0])
+                    else:
+                        state[k][c] = [row[c], P, v]
+            for k in state:
+                if k not in frame:
+                    decide(v, k, "", "kept_unseen_row")
+        else:
+            for k, row in frame.items():
+                if k not in state:
+                    state[k] = fresh(row, lambda x: P if _is_blank(x) else C, v)
+                    decide(v, k, "", "kept_contributor_row")
+                    continue
+                for c in non_key:
+                    cell = state[k][c]
+                    if _cells_equal(row[c], cell[0], c in set_like):
+                        continue
+                    if _canon(row[c], c in set_like) in history.get((k, c), ()):
+                        decide(v, k, c, "restored_revert", row[c], cell[0])
+                    else:
+                        decide(v, k, c, "kept_edit", row[c], cell[0])
+                        state[k][c] = [row[c], C, v]
+            for k in state:
+                if k not in frame:
+                    decide(v, k, "", "restored_missing")
+        remember(frame)
 
-    reconciled = pd.DataFrame(rows, columns=columns)
-    return reconciled, pd.DataFrame(decisions, columns=DECISION_COLUMNS)
-
-
-def reconcile_versions(foreign, pipeline_last, history, key, set_like=()):
-    """Fold foreign versions into the pipeline's last write, oldest first.
-
-    ``foreign`` is a list of ``(version, DataFrame)`` newer than
-    ``pipeline_last``, in version order; ``history`` the versions up to and
-    including the pipeline's. Each step is ``reconcile(current=f,
-    pipeline_last=state, history=history)`` and then ``f`` joins ``history``,
-    so an edit that a later stale-session export wiped is seen as a revert to
-    a known value and restored. Returns ``(state, decisions, edited)``:
-    decisions from every step tagged with their version, and the
-    ``(key, column)`` cells that hold a contributor edit in the final state
-    (a ``kept_edit`` at some step whose final value differs from
-    ``pipeline_last``), for :func:`merge_upload`.
-    """
-    key_cols = key_columns(key)
-    set_like = set(set_like)
-    state, history, parts = pipeline_last, list(history), []
-    for version, frame in foreign:
-        state, step = reconcile(frame, state, history, key, set_like, version=version)
-        parts.append(step)
-        history.append(frame)
-    decisions = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=DECISION_COLUMNS)
-    columns = _all_columns([state, pipeline_last], key_cols)
-    final = _frames_by_key(state, key_cols, columns)
-    base = _frames_by_key(pipeline_last, key_cols, columns)
-    edited = {
-        (k, c)
-        for k, c in edited_cells(decisions)
-        if k in final and k in base and not _cells_equal(final[k][c], base[k][c], c in set_like)
-    }
-    return state, decisions, edited
-
-
-def contributor_owned_cells(upload, state, key, latest, logged, read, set_like=()):
-    """``(key, column)`` cells of ``state`` that a contributor owns and the upload must not change.
-
-    Only cells where the upload differs from ``state`` are examined. For each,
-    find the newest version (``latest`` down to 1) holding the state's value,
-    then extend back while the cell keeps that value; the oldest version of
-    that run is the origin. If the origin is not in ``logged`` (the write
-    log's versions) a contributor introduced the value and owns the cell.
-    If the origin is a pipeline version, the pipeline may merely have carried
-    a contributor value (kept or restored it), so the search continues below
-    the run for an earlier occurrence of the same value; the cell is owned if
-    any such run originates in a foreign version, otherwise the upload wins.
-    A value found in no version (e.g. a new key) is not owned. Versions before the first logged one count
-    as foreign, so versions created by a migration must be logged. With
-    nothing logged at all this is a first write and nothing is owned.
-
-    ``read(version)`` returns a version's DataFrame; versions are read lazily,
-    at most once each.
-    """
-    logged = set(logged)
-    if not logged:
-        return set()
-    key_cols = key_columns(key)
-    set_like = set(set_like)
-    columns = _all_columns([state, upload], key_cols)
-    cur = _frames_by_key(state, key_cols, columns)
-    loaded: dict[int, dict] = {}
-
-    def value(version, k, column):
-        if version not in loaded:
-            loaded[version] = _frames_by_key(read(version), key_cols, columns)
-        row = loaded[version].get(k)
-        return None if row is None else row[column]
-
-    def same(version, k, column):
-        v = value(version, k, column)
-        return v is not None and _cells_equal(v, cur[k][column], column in set_like)
-
-    owned = set()
-    for k, up_row in _frames_by_key(upload, key_cols, columns).items():
-        if k not in cur:
-            continue
-        for column in upload.columns:
-            if column in key_cols or _cells_equal(up_row[column], cur[k][column], column in set_like):
-                continue
-            top = latest
-            while top >= 1:
-                origin = next((v for v in range(top, 0, -1) if same(v, k, column)), None)
-                if origin is None:
-                    break
-                while origin > 1 and same(origin - 1, k, column):
-                    origin -= 1
-                if origin not in logged:
-                    owned.add((k, column))
-                    break
-                # A pipeline version may only have carried the value over (kept or
-                # restored a contributor edit): look for an earlier foreign origin.
-                top = origin - 1
-    return owned
-
-
-def edited_cells(decisions: pd.DataFrame) -> set[tuple[str, str]]:
-    """``(key, column)`` pairs of the ``kept_edit`` decisions."""
-    kept = decisions[decisions["decision"] == "kept_edit"]
-    return set(zip(kept["key"], kept["column"]))
+    rows = [{c: cells[c][0] for c in columns} for cells in state.values()]
+    owned = {(k, c) for k, cells in state.items() for c in non_key if cells[c][1] == C}
+    return (
+        pd.DataFrame(rows, columns=columns),
+        owned,
+        pd.DataFrame(decisions, columns=DECISION_COLUMNS),
+    )
 
 
 def merge_upload(reconciled, upload, key, edited, set_like=()):
-    """Upsert ``upload`` rows into ``reconciled``; contributors win on edited cells.
+    """Upsert ``upload`` rows into ``reconciled`` (a replayed state); contributors win.
 
     Existing keys are updated cell by cell, new keys appended, keys absent from
-    the upload left alone. For a cell in ``edited`` (the ``kept_edit``
-    decisions) where the upload value differs, the reconciled value is kept
+    the upload left alone. For a cell in ``edited`` (``replay``'s contributor-owned
+    cells) where the upload value differs, the state value is kept
     and a conflict recorded. Returns ``(merged DataFrame, conflicts DataFrame)``
     with columns ``key, column, contributor_value, upload_value``.
     """
@@ -540,6 +661,7 @@ def write_via_grid(
     validation_wait: int = 60,
     retry_wait: int = 30,
     max_exports: int = 4,
+    on_version=None,
 ) -> list[int]:
     """Upsert ``csv_path`` into the RecordSet through a Grid session; return every version created.
 
@@ -550,7 +672,9 @@ def write_via_grid(
     export summary's unknown-row count is then checked, and while rows are
     still unknown the session waits ``retry_wait`` seconds and exports again
     (at most ``max_exports`` exports; each creates a version with the same
-    data). All created versions are returned, oldest first; log each one.
+    data). ``on_version(v)`` is called right after each export, so the caller
+    can log it before anything else can fail. A failing ``grid.delete`` is
+    logged and never masks the result or the original exception.
     """
     grid = Grid(record_set_id=rs_id).create(
         attach_to_previous_session=False, timeout=timeout, synapse_client=syn
@@ -562,6 +686,8 @@ def write_via_grid(
             time.sleep(wait)
             grid.export_to_record_set(timeout=timeout, synapse_client=syn)
             versions.append(grid.record_set_version_number)
+            if on_version is not None:
+                on_version(grid.record_set_version_number)
             stats = grid.validation_summary_statistics
             unknown = getattr(stats, "number_of_unknown_children", 0) if stats else 0
             if not unknown:
@@ -575,7 +701,10 @@ def write_via_grid(
             logger.warning("%s: rows still unvalidated after %d exports", rs_id, max_exports)
         return versions
     finally:
-        grid.delete(synapse_client=syn)
+        try:
+            grid.delete(synapse_client=syn)
+        except Exception:
+            logger.exception("%s: could not delete grid session %s", rs_id, getattr(grid, "session_id", ""))
 
 
 def get_validation(syn, rs_id: str, version: int, download_location, keys: list[str]):

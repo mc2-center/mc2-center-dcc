@@ -18,7 +18,7 @@ def _union(rs_by_grant, grants):
          mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
          mock.patch.object(
              mt.recordsets, "read_recordset",
-             side_effect=lambda syn, rs: rs_by_grant[rs.removeprefix("rs-folder-")].copy(),
+             side_effect=lambda syn, rs, **kw: rs_by_grant[rs.removeprefix("rs-folder-")].copy(),
          ):
         return mt.build_union(mock.MagicMock(), "ToolView", grants)
 
