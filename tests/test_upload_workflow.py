@@ -533,4 +533,20 @@ def test_run_id_is_passed_to_upload_recordsets(tmp_path, env):
     assert argv[argv.index("--run-id") + 1] == "batch-7" and state["run_id"] == "batch-7"
 
 
+# --- stray reference file -----------------------------------------------------------
+
+
+def test_split_ignores_grant_folder_reference(tmp_path, env, monkeypatch):
+    split_main = uw._load("split_manifest_grants.py").main
+
+    def with_stray(argv):
+        split_main(argv)
+        (Path(argv[2]) / "grant_folder_reference_2026-01-01.csv").write_text("grantNumber\n")
+
+    monkeypatch.setattr(uw._load("split_manifest_grants.py"), "main", with_stray)
+    code, state = run(tmp_path)
+    files = state["stages"]["split"]["outputs"]["files"]
+    assert len(files) == 3 and not any("grant_folder_reference" in f for f in files)
+
+
 # --- end ---

@@ -366,7 +366,8 @@ def stage_split(run, args):
     if args.cv_file:
         argv += ["--cv-file", args.cv_file]
     _load("split_manifest_grants.py").main(argv)
-    files = sorted(str(p) for p in d.glob("*.csv"))
+    # gen-mp-csv drops grant_folder_reference_<date>.csv next to the split files
+    files = sorted(str(p) for p in d.glob("*.csv") if not p.name.startswith("grant_folder_reference_"))
     if not files:
         raise RuntimeError("split produced no files")
     return {"dir": str(d), "files": files}
