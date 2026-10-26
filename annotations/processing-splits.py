@@ -3,7 +3,7 @@ processing-splits.py
 
 Processes the split manifest files listed in the gen-mp-csv.py output.
 Renames legacy headers, adds missing template columns, truncates long
-free-text cells with "(Read more on Pubmed)", and orders the columns to match
+schema free-text cells (never enum, list, pattern or format columns) with "(Read more on Pubmed)", and orders the columns to match
 templates/<component>.csv at the pinned data-models release. Every column that
 is dropped is logged.
 
@@ -45,10 +45,25 @@ def is_alias_column(name):
     return name.endswith(" Alias")
 
 
-def truncate_long_text(df):
-    """Apply the 500 -> 400 character cap to free-text columns only."""
+def truncate_long_text(df, component):
+    """Apply the 500 -> 400 character cap to the component's free-text columns.
+
+    Only schema free-text columns are capped (see
+    ``model_contract.free_text_columns``). Any other column, such as a
+    multi-value enum cell, is never cut, even when over the limit; that is
+    logged as a warning instead.
+    """
+    free_text = model_contract.free_text_columns(component)
     for column in df.columns:
-        if is_id_or_key_column(column) or is_alias_column(column):
+        is_long = df[column].map(lambda x: isinstance(x, str) and len(x) > MAX_LEN)
+        if not is_long.any():
+            continue
+        if column not in free_text or is_id_or_key_column(column) or is_alias_column(column):
+            for row in df.index[is_long]:
+                logger.warning(
+                    "Not truncating %r in row %s: %d characters, but it is not a free-text column",
+                    column, row, len(df.at[row, column]),
+                )
             continue
         df[column] = df[column].apply(
             lambda x: (
@@ -80,7 +95,7 @@ def process_df(df, component=None):
     if dropped:
         logger.warning("Dropping columns not in the %s template: %s", component, dropped)
 
-    df = truncate_long_text(df)
+    df = truncate_long_text(df, component)
     return df[col_order]
 
 

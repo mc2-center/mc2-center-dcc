@@ -203,6 +203,29 @@ def test_folder_lookup(genmp_mod, ca_number, mapping, expected):
 def test_alias_columns_not_truncated(proc_mod):
     long = ", ".join(f"GSE{100000 + i}" for i in range(80))
     df = pd.DataFrame({"Publication Dataset Alias": [long], "Publication Abstract": ["x" * 600]})
-    out = proc_mod.truncate_long_text(df)
+    out = proc_mod.truncate_long_text(df, "PublicationView")
     assert out.loc[0, "Publication Dataset Alias"] == long
     assert out.loc[0, "Publication Abstract"].endswith("(Read more on Pubmed)")
+
+
+def test_long_multi_value_assay_is_not_truncated_but_warned(proc_mod, caplog):
+    assay = ", ".join(["Immunohistochemistry Staining Method"] * 15)
+    assert len(assay) > 500
+    df = pd.DataFrame(
+        {"Assay": [assay], "Publication Abstract": ["x" * 600], "Tissue": ["Breast"]},
+        index=[7],
+    )
+    with caplog.at_level(logging.WARNING):
+        out = proc_mod.truncate_long_text(df, "PublicationView")
+    assert out.loc[7, "Assay"] == assay
+    assert "Read more" not in out.loc[7, "Assay"]
+    assert "'Assay'" in caplog.text and "row 7" in caplog.text
+    # a long Abstract is still capped
+    abstract = out.loc[7, "Publication Abstract"]
+    assert abstract == "x" * 400 + "(Read more on Pubmed)"
+
+
+def test_free_text_columns_follow_the_schema():
+    free = model_contract.free_text_columns("PublicationView")
+    assert {"Publication Abstract", "Publication Title"} <= free
+    assert not {"Assay", "Tissue", "Publication Doi", "Publication Authors", "Publication Year"} & free

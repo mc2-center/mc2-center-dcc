@@ -256,6 +256,26 @@ def _schema_headers(component: str) -> list[str]:
     return headers
 
 
+def free_text_columns(component: str) -> set[str]:
+    """Display names of ``component``'s free-text columns.
+
+    Free text is a schema property (``json_schemas/<component>.json``) that
+    is ``type: string`` with no ``enum``, ``items``, ``pattern`` or
+    ``format``. Enum, list, pattern and format columns hold controlled
+    values and must not be shortened.
+    """
+    with open(fetch(f"json_schemas/{component}.json"), encoding="utf-8") as fh:
+        properties = json.load(fh)["properties"]
+    by_label = {label: display for display, label in label_map().items()}
+    return {
+        by_label[key]
+        for key, prop in properties.items()
+        if key in by_label
+        and prop.get("type") == "string"
+        and not {"enum", "items", "pattern", "format"} & prop.keys()
+    }
+
+
 def duo_id_to_code() -> dict[str, str]:
     """DUO term ID (``DUO:0000042``) -> short code (``GRU``)."""
     df = pd.read_csv(fetch("modules/shared/duo.csv"), dtype=str).fillna("")
