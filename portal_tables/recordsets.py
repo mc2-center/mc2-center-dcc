@@ -21,11 +21,18 @@ C contributor) and ``set_at`` (version):
   missing from ``v`` are kept (``kept_unseen_row``); new keys are added as P.
 * Foreign version ``v``: new keys are added (``kept_contributor_row``;
   non-blank cells C, blank cells P so the pipeline can fill them). A Grid
-  export is the snapshot its session opened on plus the user's edits, so the
-  version's snapshot is taken to be the earlier version it agrees with on the
-  most cells (newest on ties; :func:`_session_base`). An exact copy of an older
-  version is read as a deliberate contributor undo [owner decision], so its
-  snapshot is ``v - 1``. Per cell: equal to the
+  export is the snapshot its session opened on plus the user's edits. The
+  snapshot is ``v - 1`` (a fresh session) unless the export is a *complete
+  reversion* of an older version ``u``: every cell that differs between ``u``
+  and ``v - 1`` has ``u``'s value in ``v`` (rows added or deleted since ``u``
+  count cell by cell), something changed since ``u``, and ``v`` is not an
+  exact copy of an older version. Then the session was stale and its snapshot
+  is the newest such ``u`` (:func:`_session_base`, computed incrementally from
+  per-step diffs). Ambiguous cases go to the contributor [owner decision]: a
+  partial reversion, or an exact copy of an older version, is a deliberate
+  undo, snapshot ``v - 1``. Note a fresh session that reverts *everything* the
+  pipeline changed is indistinguishable from a stale one and is treated as
+  stale. Per cell: equal to the
   state, nothing; equal to the snapshot but not the state, the session never
   touched it and it is stale, state kept (``restored_revert``); otherwise a
   contributor edit (``kept_edit``: value, owner C, ``set_at = v``), even when
@@ -44,8 +51,9 @@ cell is a string, blank is ``""``.
 Comparison: a list cell is compared order-insensitively only in *set-like*
 columns, the schema's array properties whose items are an enum (see
 :func:`set_like_columns`); other lists compare as is. An empty list equals
-``""``. Plain decimal numeric strings that parse to the same float are equal
-(``2020`` == ``2020.0``); leading zeros (``007``) never count as numeric.
+``""``. Plain numbers compare exactly as ``Decimal`` (``2020`` == ``2020.0``;
+a 20-digit string never equals a different one; no float); leading zeros
+(``007``) and exponents never count as numeric.
 """
 
 from __future__ import annotations
@@ -59,6 +67,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -84,6 +93,8 @@ LOCK_HOURS = 2
 # this long before the pending row was written.
 CLOCK_TOLERANCE = pd.Timedelta(minutes=10)
 _NUMERIC = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
+_NUMBER_START = frozenset("-0123456789")
+_ABSENT = ("<absent>",)  # a cell of a row that a version does not have
 
 
 # --- cells -------------------------------------------------------------------
@@ -124,10 +135,16 @@ def _norm(value, set_like: bool = False):
 
 
 def _canon(value, set_like: bool = False):
-    """Hashable canonical form: ``_norm`` plus numeric strings as floats."""
+    """Hashable canonical form: ``_norm`` plus plain numbers as exact ``Decimal``.
+
+    ``2020`` and ``2020.0`` are equal; integers and decimals are never
+    converted to float, so long digit strings stay distinct.
+    """
     n = _norm(value, set_like)
-    if isinstance(n, str) and _NUMERIC.fullmatch(n.strip()):
-        return ("#", float(n))
+    if isinstance(n, str) and n and n[0] in _NUMBER_START:
+        text = n.strip()
+        if _NUMERIC.fullmatch(text):
+            return ("#", Decimal(text))
     return n
 
 
@@ -515,8 +532,8 @@ P, C = "P", "C"
 def _frames_by_key(df: pd.DataFrame, key_cols: list[str], columns: list[str]) -> dict[str, dict]:
     """key string -> {column: value}, every frame reindexed to the same columns."""
     out = {}
-    for _, row in df.reindex(columns=columns, fill_value="").iterrows():
-        out[_key_of(row, key_cols)] = {c: row[c] for c in columns}
+    for record in df.reindex(columns=columns, fill_value="").to_dict("records"):
+        out[KEY_SEP.join(str(record[c]).strip() for c in key_cols)] = record
     return out
 
 
@@ -531,32 +548,51 @@ def _is_blank(value) -> bool:
     return _norm(value) == ""
 
 
-def _session_base(frames, v, non_key, set_like) -> int:
-    """The earlier version that version ``v`` was most likely exported from.
+def _session_base(cf, diffs, fingerprints, v) -> int:
+    """The version a foreign version ``v`` was exported from: ``v - 1`` or an older stale base.
 
-    The one agreeing with ``v`` on the most cells (newest on ties). A fresh
-    session gives ``v - 1``; a stale session gives the older version it was
-    opened on.
+    A Grid export is the snapshot its session opened on plus the user's edits.
+    A fresh session opens on ``v - 1``. A session opened earlier, on ``u``
+    (``u <= v - 2``), is recognised only by a *complete reversion*: every cell
+    that differs between ``u`` and ``v - 1`` (a row missing from one side
+    counts as differing, cell by cell) has ``u``'s value in ``v``, so the
+    session undid everything changed since ``u``. The newest such ``u`` wins;
+    a ``u`` with nothing changed since is skipped. Anything weaker (a partial
+    reversion) is a contributor's undo and gets snapshot ``v - 1``, as does an
+    exact copy of an older version [owner decisions: ambiguous cases go to the
+    contributor].
+
+    The walk is incremental: ``diffs[w]`` holds the cell changes of the step
+    ``w - 1 -> w``, folded in one step at a time while ``u`` moves down,
+    keeping the cells changed since ``u`` and how many of them ``v`` reverts.
     """
-    target = frames[v]
-    best, best_score = v - 1, -1
-    for u in sorted((u for u in frames if u < v), reverse=True):
-        other = frames[u]
-        score = sum(
-            1
-            for k in target.keys() & other.keys()
-            for c in non_key
-            if _cells_equal(target[k][c], other[k][c], c in set_like)
-        )
-        if score > best_score:
-            best, best_score = u, score
-    # An exact copy of an older version is either an untouched stale session or
-    # a contributor undoing the changes since; the data can't tell them apart.
-    # Owner decision (2026-10-26): read it as a deliberate contributor undo.
-    exact = target.keys() == frames[best].keys() and best_score == len(target) * len(non_key)
-    if exact and best != v - 1:
+    if v < 3:
         return v - 1
-    return best
+    if any(fingerprints[u] == fingerprints[v] and cf[u] == cf[v] for u in range(1, v - 1)):
+        return v - 1  # an exact copy of an older version: a deliberate undo
+    target, previous = cf[v], cf[v - 1]
+
+    def in_v(k, i):
+        row = target.get(k)
+        return _ABSENT if row is None else row[i]
+
+    def in_previous(k, i):
+        row = previous.get(k)
+        return _ABSENT if row is None else row[i]
+
+    changed: dict[tuple, object] = {}  # cell -> its value in u, for cells differing from v - 1
+    reverted = 0  # how many of them v sets back to u's value
+    for u in range(v - 2, 0, -1):
+        for cell, old in diffs[u + 1].items():
+            k, i = cell
+            if cell in changed:
+                reverted -= changed.pop(cell) == in_v(k, i)
+            if old != in_previous(k, i):
+                changed[cell] = old
+                reverted += old == in_v(k, i)
+        if changed and reverted == len(changed):
+            return u
+    return v - 1
 
 
 def replay(versions, log_map, key, set_like=()):
@@ -575,47 +611,78 @@ def replay(versions, log_map, key, set_like=()):
     set_like = set(set_like)
     versions = sorted(versions, key=lambda t: t[0])
     columns = _all_columns([df for _, df in versions], key_cols)
-    frames = {v: _frames_by_key(df, key_cols, columns) for v, df in versions}
-    latest = versions[-1][0]
     non_key = [c for c in columns if c not in key_cols]
+    flags = [c in set_like for c in non_key]
+    frames = {v: _frames_by_key(df, key_cols, columns) for v, df in versions}
+    # canonical cells of every version: key -> tuple aligned with non_key. Rows
+    # unchanged since the previous version reuse its tuple; string cells are memoised.
+    memo: dict[str, object] = {}
+
+    def canon_cell(value, flag):
+        if isinstance(value, str):
+            if value not in memo:
+                memo[value] = _canon(value)
+            return memo[value]
+        return _canon(value, flag)
+
+    cf: dict[int, dict] = {}
+    previous = None
+    for v, _ in versions:
+        out = {}
+        for k, r in frames[v].items():
+            if previous is not None and k in frames[previous] and frames[previous][k] == r:
+                out[k] = cf[previous][k]
+            else:
+                out[k] = tuple(canon_cell(r[c], f) for c, f in zip(non_key, flags))
+        cf[v], previous = out, v
+    latest = versions[-1][0]
 
     decisions: list[dict] = []
-    state: dict[str, dict] = {}  # key -> {column: [value, owner, set_at]}
+    state: dict[str, dict] = {}  # key -> {column: [value, owner, set_at, canonical value]}
 
-    def fresh(row, owner_of, v):
-        return {c: [row[c], owner_of(row[c]), v] for c in columns}
+    def fresh(k, v, owner_of):
+        row, crow = frames[v][k], cf[v][k]
+        cells = {c: [row[c], owner_of(row[c]), v, crow[i]] for i, c in enumerate(non_key)}
+        cells.update({c: [row[c], P, v, row[c]] for c in key_cols})
+        return cells
 
     if not log_map:
-        state = {k: fresh(r, lambda _: P, latest) for k, r in frames[latest].items()}
+        state = {k: fresh(k, latest, lambda _: P) for k in frames[latest]}
         first, report_after = latest + 1, latest
     else:
         first, report_after = min(log_map), max(log_map)
         if first - 1 in frames:
-            state = {k: fresh(r, lambda _: P, first - 1) for k, r in frames[first - 1].items()}
+            state = {k: fresh(k, first - 1, lambda _: P) for k in frames[first - 1]}
 
     def decide(v, k, column, decision, cur="", pipe=""):
         if v > report_after:
             decisions.append({"key": k, "column": column, "decision": decision,
                               "current_value": cur, "pipeline_value": pipe, "version": v})
 
+    diffs = fingerprints = None
+    if log_map and any(v not in log_map and v >= first for v in frames):
+        diffs = _version_diffs(cf, latest)
+        fingerprints = {v: hash(frozenset(cf[v].items())) for v in cf}
+
     for v in sorted(frames):
         if v < first:
             continue
-        frame = frames[v]
+        frame, crows = frames[v], cf[v]
         if v in log_map:
             base = log_map[v]
             for k, row in frame.items():
                 if k not in state:
-                    state[k] = fresh(row, lambda _: P, v)
+                    state[k] = fresh(k, v, lambda _: P)
                     continue
-                for c in non_key:
+                crow = crows[k]
+                for i, c in enumerate(non_key):
                     cell = state[k][c]
-                    if _cells_equal(row[c], cell[0], c in set_like):
+                    if crow[i] == cell[3]:
                         continue
                     if cell[1] == C and cell[2] > base:
                         decide(v, k, c, "kept_unseen_edit", row[c], cell[0])
                     else:
-                        state[k][c] = [row[c], P, v]
+                        state[k][c] = [row[c], P, v, crow[i]]
             for k in state:
                 if k not in frame:
                     decide(v, k, "", "kept_unseen_row")
@@ -625,21 +692,22 @@ def replay(versions, log_map, key, set_like=()):
             # touched: if it differs from the state, it is stale. Only cells
             # that differ from the snapshot are contributor edits, even when
             # they match an older value (e.g. undoing a pipeline change).
-            snapshot = frames[_session_base(frames, v, non_key, set_like)] if v > 1 else {}
+            snapshot = cf[_session_base(cf, diffs, fingerprints, v)] if v > 1 else {}
             for k, row in frame.items():
                 if k not in state:
-                    state[k] = fresh(row, lambda x: P if _is_blank(x) else C, v)
+                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) else C)
                     decide(v, k, "", "kept_contributor_row")
                     continue
-                for c in non_key:
+                crow, srow = crows[k], snapshot.get(k)
+                for i, c in enumerate(non_key):
                     cell = state[k][c]
-                    if _cells_equal(row[c], cell[0], c in set_like):
+                    if crow[i] == cell[3]:
                         continue
-                    if k in snapshot and _cells_equal(row[c], snapshot[k][c], c in set_like):
+                    if srow is not None and crow[i] == srow[i]:
                         decide(v, k, c, "restored_revert", row[c], cell[0])
                     else:
                         decide(v, k, c, "kept_edit", row[c], cell[0])
-                        state[k][c] = [row[c], C, v]
+                        state[k][c] = [row[c], C, v, crow[i]]
             for k in state:
                 if k not in frame:
                     decide(v, k, "", "restored_missing")
@@ -651,6 +719,31 @@ def replay(versions, log_map, key, set_like=()):
         owned,
         pd.DataFrame(decisions, columns=DECISION_COLUMNS),
     )
+
+
+def _version_diffs(cf, latest) -> dict[int, dict]:
+    """``{w: {(key, column index): old canonical value}}`` for each step ``w - 1 -> w``.
+
+    A cell of a row that is absent on one side has the value ``_ABSENT`` there.
+    """
+    diffs = {}
+    for w in range(2, latest + 1):
+        prev, cur, out = cf[w - 1], cf[w], {}
+        for k, row in cur.items():
+            old = prev.get(k)
+            if old is None:
+                for i in range(len(row)):
+                    out[(k, i)] = _ABSENT
+            elif old != row:
+                for i, (a, b) in enumerate(zip(old, row)):
+                    if a != b:
+                        out[(k, i)] = a
+        for k, old in prev.items():
+            if k not in cur:
+                for i, a in enumerate(old):
+                    out[(k, i)] = a
+        diffs[w] = out
+    return diffs
 
 
 def merge_upload(reconciled, upload, key, edited, set_like=()):

@@ -568,3 +568,131 @@ def test_stale_session_edit_to_an_old_value_is_kept():
     state, owned, d = rep(v0, v1, v2, v3, log={2: 1, 3: 2})
     assert state.set_index(K).loc["p1", "Title"] == "Z"
     assert (4, "p1", "Title", "kept_edit") in dec(d)
+
+
+# --- complete-reversion snapshot rule ---
+
+W = ("T1", "T2", "T3", "T4", "T5")
+
+
+def wide(*rows):
+    return pd.DataFrame(list(rows), columns=[K, *W])
+
+
+def test_partial_reversion_is_a_contributor_undo_and_the_fix_is_kept():
+    v1 = wide(["a", "x1", "x2", "x3", "u", "u"])
+    v2 = wide(["a", "p1", "p2", "p3", "u", "u"])  # pipeline changed three cells
+    # a fresh session on v2 reverts two of them and fixes an unrelated cell
+    v3 = wide(["a", "x1", "x2", "p3", "fixed", "u"])
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 2: 1})
+    s = state.set_index(K).loc["a"]
+    assert (s["T1"], s["T2"], s["T3"], s["T4"]) == ("x1", "x2", "p3", "fixed")
+    assert {x.decision for x in d.itertuples()} == {"kept_edit"}
+    assert owned == {("a", "T1"), ("a", "T2"), ("a", "T4")}
+
+
+def test_true_stale_session_restores_untouched_cells_and_keeps_its_edit():
+    v1 = wide(["a", "x1", "x2", "x3", "u", "u"])
+    v2 = wide(["a", "p1", "p2", "p3", "u", "u"])  # pipeline write the session never saw
+    v3 = wide(["a", "x1", "x2", "x3", "fixed", "u"])  # opened on v1: all reverted, one edit
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 2: 1})
+    s = state.set_index(K).loc["a"]
+    assert (s["T1"], s["T2"], s["T3"], s["T4"]) == ("p1", "p2", "p3", "fixed")
+    assert dec(d) == {(3, "a", c, "restored_revert") for c in ("T1", "T2", "T3")} | {(3, "a", "T4", "kept_edit")}
+    assert owned == {("a", "T4")}
+
+
+def test_exact_copy_of_an_older_version_is_a_contributor_undo():
+    v1 = wide(["a", "x1", "x2", "x3", "u", "u"])
+    v2 = wide(["a", "p1", "p2", "p3", "u", "u"])
+    state, owned, d = rep(v1, v2, v1, log={1: 0, 2: 1})
+    assert state.set_index(K).loc["a", "T1"] == "x1"
+    assert owned == {("a", c) for c in ("T1", "T2", "T3")}
+
+
+def test_rows_added_after_the_stale_base_count_as_reverted_when_missing():
+    v1 = wide(["a", "x1", "x2", "x3", "u", "u"])
+    v2 = wide(["a", "p1", "x2", "x3", "u", "u"], ["n", "n1", "n2", "n3", "n4", "n5"])  # pipeline adds row n
+    v3 = wide(["a", "x1", "x2", "x3", "fixed", "u"])  # stale: no n, a reverted
+    state, owned, d = rep(v1, v2, v3, log={1: 0, 2: 1})
+    s = state.set_index(K)
+    assert s.loc["a", "T1"] == "p1" and s.loc["a", "T4"] == "fixed" and "n" in s.index
+    assert (3, "n", "", "restored_missing") in dec(d)
+
+
+def _reference_base(frames, v, non_key):
+    """Brute force of the rule: newest u <= v-2 with a complete reversion, not exact, else v-1."""
+    from_v = frames[v]
+
+    def val(frame, k, c):
+        return frame[k][c] if k in frame else rs._ABSENT
+
+    if any(frames[u] == from_v for u in range(1, v - 1)):
+        return v - 1
+    for u in range(v - 2, 0, -1):
+        cells = {(k, c) for k in set(frames[u]) | set(frames[v - 1]) for c in non_key
+                 if val(frames[u], k, c) != val(frames[v - 1], k, c)}
+        if cells and all(val(frames[u], k, c) == val(from_v, k, c) for k, c in cells):
+            return u
+    return v - 1
+
+
+def test_incremental_session_base_matches_the_brute_force_rule():
+    import random
+
+    rng = random.Random(7)
+    for trial in range(60):
+        n_versions = rng.randint(3, 9)
+        keys = [f"k{i}" for i in range(rng.randint(1, 5))]
+        frames = {1: {k: {c: rng.choice("abc") for c in W} for k in keys[: rng.randint(1, len(keys))]}}
+        for v in range(2, n_versions + 1):
+            f = {k: dict(r) for k, r in frames[v - 1].items()}
+            for _ in range(rng.randint(0, 4)):
+                op = rng.random()
+                k = rng.choice(keys)
+                if op < 0.7 and k in f:
+                    f[k][rng.choice(W)] = rng.choice("abcd")
+                elif op < 0.85 and k not in f:
+                    f[k] = {c: rng.choice("abc") for c in W}
+                elif k in f and len(f) > 1:
+                    del f[k]
+            frames[v] = f
+        cf = {v: {k: tuple(r[c] for c in W) for k, r in f.items()} for v, f in frames.items()}
+        diffs = rs._version_diffs(cf, n_versions)
+        fps = {v: hash(frozenset(cf[v].items())) for v in cf}
+        for v in range(2, n_versions + 1):
+            assert rs._session_base(cf, diffs, fps, v) == _reference_base(frames, v, list(W)), (trial, v)
+
+
+def test_numbers_compare_exactly():
+    a, b = "12345678901234567890", "12345678901234567891"
+    assert not rs._cells_equal(a, b, False)
+    assert rs._cells_equal(a, a, False)
+    assert rs._cells_equal("2020", "2020.0", False)
+    assert rs._cells_equal("0.10", "0.1", False)
+    assert not rs._cells_equal("0.1", "0.10000000000000000001", False)
+    assert not rs._cells_equal("1e3", "1000", False)  # not a plain number
+
+
+@pytest.mark.slow
+def test_replay_benchmark_200_versions_500_rows_18_columns():
+    import random
+    import time as _time
+
+    rng = random.Random(1)
+    cols = [f"C{i}" for i in range(17)]
+    keys = [f"k{i}" for i in range(500)]
+    rows = {k: {c: str(rng.randint(0, 9)) for c in cols} for k in keys}
+    versions, log = [], {}
+    for v in range(1, 201):
+        for _ in range(30):
+            rows[rng.choice(keys)][rng.choice(cols)] = str(rng.randint(0, 99))
+        frame = pd.DataFrame([{K: k, **r} for k, r in rows.items()])
+        versions.append((v, frame.copy()))
+        if v % 3 == 0:
+            log[v] = v - 1
+    start = _time.perf_counter()
+    state, owned, d = rs.replay(versions, log, K)
+    elapsed = _time.perf_counter() - start
+    print(f"replay of 200 versions x 500 rows x 18 columns: {elapsed:.2f}s")
+    assert len(state) == 500 and elapsed < 5
