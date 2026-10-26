@@ -134,7 +134,7 @@ dmypy.json
 great_expectations/
 .vscode/
 
-outputs/
+output/
 upload_check*
 *manifests/
 annotations/inputs/*
