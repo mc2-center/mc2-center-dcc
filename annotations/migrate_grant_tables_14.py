@@ -70,6 +70,7 @@ import value_maps
 logger = logging.getLogger(__name__)
 
 VIEW_ID = "syn52750482"  # MC2_All_Project_Tables
+UNION_PARENT = "syn28742843"  # CCKP - MC2 Admin: holds the legacy <Component>_UNION MaterializedViews
 COMPONENTS = ["PublicationView", "DatasetView", "ToolView", "EducationalResource"]
 KEYS = {c: f"{c}Id" for c in COMPONENTS}  # class-label upsert key of each component
 FOLDER_MAP = merge_tables.FOLDER_MAP
@@ -103,7 +104,8 @@ def get_args(argv=None):
     parser.add_argument("--redo", nargs="+", default=[], help="grant numbers to repeat although done (dry run only)")
     parser.add_argument(
         "--union-id",
-        help="dry run: Synapse ID of the legacy <Component>_UNION MaterializedView to compare with (full runs only)",
+        help="dry run: the legacy <Component>_UNION MaterializedView to compare with (full runs only); "
+        f"default: look it up by name in {UNION_PARENT}",
     )
     parser.add_argument(
         "--cache-dir", default=str(recordsets.DEFAULT_CACHE_DIR),
@@ -506,17 +508,20 @@ def comparison(syn, args, legacy_keys: dict[str, list[str]], source_keys: dict[s
     else:
         grants = list(legacy_keys)
         legacy = [k for g in grants for k in legacy_keys[g]]
-        if args.union_id and full_run:
-            view = Table(id=args.union_id).query(
-                query=f"SELECT {key_display} FROM {args.union_id}",
+        union_id = args.union_id or operations.find_entity_id(
+            name=f"{component}_UNION", parent=UNION_PARENT, synapse_client=syn
+        )
+        if union_id and full_run:
+            view = Table(id=union_id).query(
+                query=f"SELECT {key_display} FROM {union_id}",
                 include_row_id_and_row_version=False, synapse_client=syn,
             )
             actual = [str(k).strip() for k in view[key_display]]
-            res, more = compare_keys(f"legacy view {args.union_id} vs converted frames", actual, legacy, "legacy view")
+            res, more = compare_keys(f"legacy view {union_id} vs converted frames", actual, legacy, "legacy view")
             ok &= res
             lines += more
         else:
-            why = "no --union-id" if not args.union_id else "the run is filtered (--grants / --limit)"
+            why = "no legacy view found" if not union_id else "the run is filtered or skipped tables (--grants / --limit / grants outside the Grants table)"
             lines.append(f"legacy MaterializedView not compared ({why}); comparing with the source tables")
             source = [k for g in grants for k in source_keys[g]]
             res, more = compare_keys("converted frames vs source tables", source, legacy, "source tables")

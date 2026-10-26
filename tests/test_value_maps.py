@@ -104,7 +104,7 @@ def test_canonical_doi_is_unchanged():
     assert row["PublicationDoi"] == "https://doi.org/10.1/abc" and changes.empty
 
 
-@pytest.mark.parametrize("placeholder", ["No DOI Listed", "DOI Not Available", "no doi listed"])
+@pytest.mark.parametrize("placeholder", ["No DOI Listed", "DOI Not Available", "no doi listed", "https://doi.org/No DOI listed", "https://doi.org/"])
 def test_doi_placeholders_become_blank(placeholder):
     row, changes, _ = run(normalizer(), PublicationDoi=placeholder)
     assert row["PublicationDoi"] == ""

@@ -146,7 +146,9 @@ def load_enum_maps(component: str) -> dict[str, EnumMap]:
 def normalize_doi(value: str):
     """``(new, rule)`` for a DOI cell; ``rule`` is ``"unmapped"`` when it holds no DOI."""
     text = value.strip()
-    if text.casefold() in DOI_PLACEHOLDERS:
+    # a placeholder may already carry the prefix ("https://doi.org/No DOI listed"), or be only the prefix
+    bare = re.sub(r"^https?://(dx\.)?doi\.org/", "", text, flags=re.IGNORECASE).strip().casefold()
+    if bare in DOI_PLACEHOLDERS or (bare == "" and text != ""):
         return "", "doi_placeholder"
     match = _DOI_RE.search(text)
     if not match:
