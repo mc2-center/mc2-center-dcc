@@ -114,16 +114,19 @@ def test_reconcile_and_write_keeps_contributor_edit_and_reports_conflict(tmp_pat
     fake = FakeSynapse([v1, v2])
     code, rep = run(tmp_path, fake, log=log)
     assert code == 0
-    written = fake.writes[0].set_index(KEY)
-    assert written.loc["p1", "PublicationTitle"] == "Contributor title"
-    assert "p3" in written.index
+    # The merge equals v2 (the contributor's edits win), so nothing is written.
+    assert fake.writes == []
+    assert "unchanged" in (rep / "syn100" / "summary.txt").read_text()
+    merged = pd.read_csv(rep / "syn100" / "merged.csv", dtype=str, keep_default_na=False).set_index(KEY)
+    assert merged.loc["p1", "PublicationTitle"] == "Contributor title"
+    assert "p3" in merged.index
     decisions = pd.read_csv(rep / "syn100" / "decisions.csv", dtype=str, keep_default_na=False)
     assert set(decisions["decision"]) == {"kept_edit", "kept_contributor_row"}
     conflicts = pd.read_csv(rep / "syn100" / "conflicts.csv", dtype=str, keep_default_na=False)
     assert conflicts.to_dict("records") == [
         {"key": "p1", "column": "PublicationTitle", "contributor_value": "Contributor title",
          "upload_value": "Pipeline title"}]
-    assert rs.CsvWriteLog(log).pipeline_versions("synRS") == [1, 3]
+    assert rs.CsvWriteLog(log).pipeline_versions("synRS") == [1]
 
 
 def test_dry_run_writes_nothing_but_reports(tmp_path):
@@ -221,11 +224,12 @@ def test_contributor_value_survives_later_runs(tmp_path):
     for n in (1, 2):
         code, rep = run(tmp_path, fake, log=log)
         assert code == 0
-        written = fake.writes[-1].set_index(KEY)
-        assert written.loc["p1", "PublicationTitle"] == "Contributor title", f"run {n}"
+        merged = pd.read_csv(rep / "syn100" / "merged.csv", dtype=str, keep_default_na=False).set_index(KEY)
+        assert merged.loc["p1", "PublicationTitle"] == "Contributor title", f"run {n}"
         conflicts = pd.read_csv(rep / "syn100" / "conflicts.csv", dtype=str, keep_default_na=False)
         assert list(conflicts["column"]) == ["PublicationTitle"], f"run {n}"
-    assert rs.CsvWriteLog(log).pipeline_versions("synRS") == [1, 3, 4]
+    # Run 1 writes (the upload also fills Assay); run 2 finds nothing to change.
+    assert len(fake.writes) == 1
 
 
 def test_pipeline_originated_value_is_overwritten(tmp_path):
@@ -250,3 +254,12 @@ def test_stale_session_scenario_second_run_keeps_both_edits(tmp_path):
         written = fake.writes[-1].set_index(KEY)
         assert written.loc["p1", "PublicationTitle"] == "A edit"
         assert written.loc["p2", "PublicationTitle"] == "B edit"
+
+
+def test_unchanged_upload_writes_nothing(tmp_path):
+    # The stored rows already equal make_inputs()'s upload.
+    fake = FakeSynapse([stored(["p1", "Pipeline title", ["RNA Sequencing", "Mass Spectrometry"]],
+                               ["p2", "Second", ""])])
+    code, rep = run(tmp_path, fake)
+    assert code == 0 and fake.writes == []
+    assert "unchanged" in (rep / "syn100" / "summary.txt").read_text()

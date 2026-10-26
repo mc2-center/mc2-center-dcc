@@ -151,6 +151,10 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     _write_report(report_dir / "conflicts.csv", conflicts)
 
     summary.update(rows=len(merged), decisions=len(decisions), conflicts=len(conflicts), mode=mode)
+    # Nothing to write: every version adds to the history later runs read.
+    if not recordsets.differences(merged, current, key, set_like):
+        summary.update(status="unchanged", message=f"{mode}; RecordSet already matches; nothing written")
+        return summary
     if not args.execute:
         summary.update(status="dryrun", message=f"dry run: {mode}; nothing written")
         return summary
