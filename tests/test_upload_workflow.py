@@ -649,3 +649,15 @@ def test_store_link_non_file_entity_fails_the_row(monkeypatch):
     with pytest.raises(ValueError, match=r"syn555.*not a File.*Folder"):
         mod.store_link(syn, "a", "https://x/a", "syn100")
     assert syn.updated == [] and syn.stored == []
+
+
+def test_get_names_reads_text_literally(tmp_path, monkeypatch):
+    mod = load_cel(monkeypatch)
+    split = tmp_path / "CA1_tool.csv"
+    split.write_text("Tool Name,Tool Homepage\nNA,http://x/1\nnull,\n007,http://x/3\n")
+    pending = tmp_path / "p.csv"
+    pd.DataFrame({"File Paths": [str(split)], "folderIdTools": ["syn100"]}).to_csv(pending, index=False)
+    got = mod.get_names("Tool Name", "folderIdTools", "Tool Homepage", manifest=str(pending))
+    assert [(n, l) for _, n, l, _ in got] == [("NA", "http://x/1"), ("null", ""), ("007", "http://x/3")]
+    got = mod.get_names("Tool Name", "folderIdTools", "Tool Homepage", data=str(split))
+    assert [n for _, n, _, _ in got] == ["NA", "null", "007"]

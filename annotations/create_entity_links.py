@@ -163,13 +163,13 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
     path_name_link_target = []
 
     if manifest is not None:
-        paths_sheet = pd.read_csv(manifest)
+        paths_sheet = pd.read_csv(manifest, dtype=str, keep_default_na=False)
         paths = paths_sheet["File Paths"].tolist()
         targets = paths_sheet[f"{target}"].tolist()
-        df_path_target_list = [(pd.read_csv(p), p, t) for p, t in zip(paths, targets)]
+        df_path_target_list = [(pd.read_csv(p, dtype=str, keep_default_na=False), p, t) for p, t in zip(paths, targets)]
 
     elif data is not None:
-        df_path_target_list = [(pd.read_csv(data), data, target)]
+        df_path_target_list = [(pd.read_csv(data, dtype=str, keep_default_na=False), data, target)]
 
     for df, path, target in df_path_target_list:
         names = df[f"{name_column}"].tolist()
