@@ -100,6 +100,19 @@ def _load(filename):
     return _modules[filename]
 
 
+def call_main(fn, *args):
+    """Call a script's main(); a SystemExit it raises is mapped to a stage result:
+    code 0 (or None) is success, anything else a stage failure. Exit code 2 of this
+    driver is reserved for "finished with dropped rows"."""
+    try:
+        return fn(*args)
+    except SystemExit as exit_:
+        code = exit_.code
+        if code in (0, None):
+            return None
+        raise RuntimeError(f"{getattr(fn, '__module__', 'script')} main() exited with {code!r}") from exit_
+
+
 def now():
     return datetime.now().isoformat(timespec="seconds")
 
@@ -365,7 +378,7 @@ def stage_split(run, args):
     argv = [str(args.manifest), mtype, str(d), "--csv"]
     if args.cv_file:
         argv += ["--cv-file", args.cv_file]
-    _load("split_manifest_grants.py").main(argv)
+    call_main(_load("split_manifest_grants.py").main, argv)
     # gen-mp-csv drops grant_folder_reference_<date>.csv next to the split files
     files = sorted(str(p) for p in d.glob("*.csv") if not p.name.startswith("grant_folder_reference_"))
     if not files:
@@ -378,7 +391,7 @@ def stage_paths(run, args):
     _, dtype, _, folder_col = CONFIG[args.type]
     out = d / "paths.csv"
     split_dir = run.output("split", "dir")
-    _load("gen-mp-csv.py").main(split_dir, str(out), dtype)
+    call_main(_load("gen-mp-csv.py").main, split_dir, str(out), dtype)
     paths = read_csv(out)
     missing = paths[paths[folder_col].str.strip() == ""]["File Paths"].tolist()
     for m in missing:
@@ -390,7 +403,7 @@ def stage_reshape(run, args):
     d = run.stage_dir("reshape")
     paths = retarget(read_csv(run.output("paths", "paths_csv")), d)
     out = write_paths_csv(paths, d / "paths.csv")
-    _load("processing-splits.py").main([out])
+    call_main(_load("processing-splits.py").main, [out])
     return {"paths_csv": out, "files": paths["File Paths"].tolist()}
 
 
@@ -451,8 +464,8 @@ def stage_links(run, args, syn=None):
 
     if len(paths):
         # created_ids.csv lets an interrupted run resume without re-storing finished rows
-        _load("create_entity_links.py").main(["-m", pending, "-t", args.type,
-                                              "--created-ids", str(d / "created_ids.csv")])
+        call_main(_load("create_entity_links.py").main,
+                  ["-m", pending, "-t", args.type, "--created-ids", str(d / "created_ids.csv")])
     final = merge_reused(paths, original, d, d / "final")
     outputs["paths_csv"] = write_paths_csv(final, d / "paths.csv")
     return "done", outputs, None
@@ -475,7 +488,8 @@ def stage_upload(run, args):
                  else ["--write-log-csv", args.write_log_csv])
         if args.execute:
             argv.append("--execute")
-        code = _load("upload_recordsets.py").main(argv)
+        code = call_main(_load("upload_recordsets.py").main, argv)
+        # non-zero (1) covers failures and locked/retry/verification_mismatch grants
         if code:
             raise RuntimeError(f"upload_recordsets.py reported failures (exit {code})")
         return {"paths_csv": paths_csv, "run_id": args.run_id, "reports": str(d / args.run_id)}
@@ -523,6 +537,12 @@ def get_args(argv=None):
         p.error("--force-new cannot be combined with --from-stage")
     if args.target == "recordset" and not (args.write_log_table or args.write_log_csv):
         p.error("--target recordset needs --write-log-table (or --write-log-csv)")
+    if args.target == "recordset":
+        # Fail before `links` creates any entity, not at the upload stage.
+        if args.execute and not args.write_log_table:
+            p.error("--execute with --target recordset needs --write-log-table (a CSV log is for dry runs only)")
+        if args.write_log_table and args.write_log_csv:
+            p.error("--write-log-table and --write-log-csv are mutually exclusive")
     if args.target == "schematic-table" and args.execute and not args.schematic_config:
         p.error("--target schematic-table with --execute needs --schematic-config")
     return args

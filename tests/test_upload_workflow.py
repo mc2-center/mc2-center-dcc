@@ -94,7 +94,8 @@ def run(tmp_path, type_="PublicationView", *extra, manifest=None, syn=None):
     name = {"PublicationView": "publication.csv", "DatasetView": "dataset.csv", "ToolView": "tool.xlsx"}[type_]
     argv = ["--manifest", str(manifest or FIXTURES / "p1" / name), "--type", type_,
             "--out-dir", str(tmp_path / "out"), "--cv-file", str(CV),
-            "--write-log-csv", str(tmp_path / "log.csv"), *extra]
+            *(["--write-log-table", "syn999"] if "--execute" in extra
+              else ["--write-log-csv", str(tmp_path / "log.csv")]), *extra]
     code = uw.main(argv, syn=syn)
     return code, json.loads((tmp_path / "out" / "run.json").read_text())
 
@@ -564,3 +565,45 @@ def test_grant_lookup_uses_the_split_files_grant(monkeypatch, tmp_path):
     lookup = mod._build_grant_lookup(str(paths))
     assert lookup[(str(split), "GSE1")] == "CA184898"
     assert lookup[(str(other), "GSE2")] == "CA209923"  # no grant prefix: first listed grant
+
+
+# --- exit-code mapping ------------------------------------------------------------------
+
+
+def test_execute_with_csv_log_fails_in_get_args(tmp_path, env):
+    base = ["--manifest", "m.csv", "--type", "ToolView", "--out-dir", str(tmp_path / "o")]
+    for bad in (["--execute", "--write-log-csv", "l.csv"], ["--write-log-table", "syn1", "--write-log-csv", "l.csv"]):
+        with pytest.raises(SystemExit) as e:
+            uw.get_args(base + bad)
+        assert e.value.code == 2
+    assert uw.get_args(base + ["--execute", "--write-log-table", "syn1"]).execute
+    assert uw.get_args(base + ["--write-log-csv", "l.csv"]).write_log_csv  # dry run
+
+
+def test_bad_recordset_args_create_no_entities(tmp_path, env):
+    with pytest.raises(SystemExit):
+        run(tmp_path, "ToolView", "--execute", "--write-log-csv", str(tmp_path / "l.csv"))
+    assert env["links"] == [] and not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("code,ok", [(0, True), (None, True), (1, False), (2, False), ("msg", False)])
+def test_script_system_exit_is_mapped(tmp_path, env, monkeypatch, code, ok):
+    def exits(argv):
+        raise SystemExit(code)
+
+    patched = uw._load
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=exits) if f == "processing-splits.py"
+                        else patched(f))
+    result, state = run(tmp_path)
+    assert result == (0 if ok else 1)  # never 2, which means "dropped rows"
+    assert state["stages"]["reshape"]["status"] == ("done" if ok else "failed")
+
+
+@pytest.mark.parametrize("code,status,exit_code", [(0, "done", 0), (1, "failed", 1)])
+def test_upload_recordsets_nonzero_marks_upload_failed(tmp_path, env, monkeypatch, code, status, exit_code):
+    real = uw._load
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=lambda argv: code)
+                        if f == "upload_recordsets.py" else real(f))
+    result, state = run(tmp_path)
+    assert result == exit_code and state["stages"]["upload"]["status"] == status
+
