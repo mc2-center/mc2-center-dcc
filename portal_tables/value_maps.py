@@ -12,6 +12,9 @@ cells; list columns are split into Python lists) and records every change as
   (``all_valid_values.csv``).
 * ``duo_code``: a short data use code (``RTN``) replaced by its DUO ID.
 * ``license_blanked``: a License value with no SPDX match is dropped (O6).
+* ``truncated``: an enum or list cell ending ``(Read more on Pubmed)``, cut off
+  by an old export; reported with the value unchanged (not unmapped), it needs
+  recovering from the source record.
 * ``doi``: a DOI rewritten to ``https://doi.org/...`` (D-Q1).
 * ``doi_placeholder``: ``No DOI Listed`` / ``DOI Not Available`` blanked (D-Q22).
 
@@ -35,6 +38,7 @@ CHANGE_COLUMNS = ["key", "column", "from", "to", "rule"]
 UNMAPPED_COLUMNS = ["key", "column", "value"]
 
 DOI_PLACEHOLDERS = frozenset({"no doi listed", "doi not available"})
+TRUNCATED_SUFFIX = "(Read more on Pubmed)"
 DOI_PREFIX = "https://doi.org/"
 _DOI_RE = re.compile(r"(10\.\d{4,9}/\S+)", re.IGNORECASE)
 _DUO_VALID = re.compile(r"^(DUO:\d{7}|DUOPlus\d+|Pending Annotation)$")
@@ -202,6 +206,8 @@ class Normalizer:
         """``(new, rule)``; ``rule`` None keeps ``value``, ``"unmapped"`` leaves it and reports it."""
         if (column, value) in self.overrides:
             return self.overrides[(column, value)], "override"
+        if value.endswith(TRUNCATED_SUFFIX) and (column in self.enum_maps or column in self.list_cols):
+            return value, "truncated"
         if column.endswith("Doi"):
             return normalize_doi(value)
         if column == "DatasetDataUseCodes":
@@ -244,6 +250,9 @@ class Normalizer:
         new, rule = self._value(column, value)
         if rule == "license_blanked":
             unmapped.append({"key": key, "column": column, "value": value})  # blanked and reported (O6)
+        if rule == "truncated":
+            changes.append({"key": key, "column": column, "from": value, "to": value, "rule": rule})
+            return value
         if rule == "unmapped":
             unmapped.append({"key": key, "column": column, "value": value})
             return value

@@ -167,3 +167,24 @@ def test_for_component_wires_the_duo_codes():
     norm = vm.Normalizer.for_component("DatasetView")
     row, _, _ = run(norm, DatasetDataUseCodes="RTN, NPUNCU")
     assert row["DatasetDataUseCodes"] == ["DUO:0000029", "DUO:0000018"]
+
+
+def test_truncated_values_are_reported_unchanged_and_not_unmapped():
+    row, changes, unmapped = run(normalizer(), Assay="Sin(Read more on Pubmed), rna-seq",
+                                 PublicationAccessibility="Op(Read more on Pubmed)")
+    assert row["Assay"] == ["Sin(Read more on Pubmed)", "RNA Sequencing"]
+    assert row["PublicationAccessibility"] == "Op(Read more on Pubmed)"
+    truncated = changes[changes["rule"] == "truncated"]
+    assert truncated["from"].tolist() == truncated["to"].tolist() == ["Sin(Read more on Pubmed)", "Op(Read more on Pubmed)"]
+    assert unmapped.empty
+
+
+def test_truncated_suffix_in_a_free_text_column_is_ignored():
+    _, changes, _ = run(normalizer(), PublicationTitle="A title (Read more on Pubmed)")
+    assert changes.empty
+
+
+def test_override_beats_truncated():
+    norm = normalizer({("Assay", "Sin(Read more on Pubmed)"): "RNA Sequencing"})
+    row, changes, _ = run(norm, Assay="Sin(Read more on Pubmed)")
+    assert row["Assay"] == ["RNA Sequencing"] and changes["rule"].tolist() == ["override"]
