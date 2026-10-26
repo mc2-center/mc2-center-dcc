@@ -18,6 +18,7 @@ author: orion.banks
 from synapseclient import operations
 from synapseclient.models import MaterializedView, RecordSet, SchemaStorageStrategy, Table
 import argparse
+from datetime import datetime
 import logging
 import os
 import pandas as pd
@@ -217,31 +218,52 @@ def union_schema(component):
     ]
 
 
+def _column_shape(c):
+    """(name, type, maximum_size) of a column; maximum_size only applies to STRING."""
+    ctype = str(getattr(c.column_type, "value", c.column_type))
+    return (c.name, ctype, getattr(c, "maximum_size", None) if ctype == "STRING" else None)
+
+
 def publish_union(syn, component, union, target):
     """LIVE WRITE: store ``union`` as table ``<component>_UNION`` in ``target``.
 
-    An existing table is cleared first (its columns must match the fixed
-    schema), so a re-publish replaces the rows instead of appending.
+    An existing table (its columns, including STRING maximum_size, must match the
+    fixed schema) is replaced: snapshot it, delete its rows, store the union, and
+    put the snapshot's rows back if ``store_rows`` fails, so a failed re-publish
+    does not leave the table empty. (Mirrors utils.update_table's
+    snapshot/delete/store/restore; that function is not reused because it
+    requires a non-empty frame, rewrites newlines in cells, and checks the
+    portal crosswalk, none of which apply to a union table.)
     """
     name = f"{component}_UNION"
     schema = union_schema(component)
+    values = union[model_contract.template_headers(component)]  # extra (non-template) columns are not in the schema
     existing_id = operations.find_entity_id(name=name, parent=target, synapse_client=syn)
-    if existing_id is not None:
-        existing = Table(id=existing_id).get(include_columns=True, synapse_client=syn)
-        have = [(c.name, str(getattr(c.column_type, "value", c.column_type))) for c in existing.columns.values()]
-        want = [(c.name, str(getattr(c.column_type, "value", c.column_type))) for c in schema]
-        if have != want:
-            raise ValueError(
-                f"Existing table {existing_id} ({name}) has columns that differ from the "
-                f"fixed {component} schema; refusing to publish.\n  existing: {have}\n  expected: {want}"
-            )
-        existing.delete_rows(query=f"SELECT ROW_ID, ROW_VERSION FROM {existing_id}", synapse_client=syn)
-        table = existing
-    else:
+    if existing_id is None:
         table = Table(name=name, parent_id=target, columns=schema).store(synapse_client=syn)
-    # extra (non-template) columns are not in the fixed schema
-    table.store_rows(values=union[model_contract.template_headers(component)], synapse_client=syn)
-    return table.id
+        table.store_rows(values=values, synapse_client=syn)
+        return table.id
+
+    existing = Table(id=existing_id).get(include_columns=True, synapse_client=syn)
+    have = [_column_shape(c) for c in existing.columns.values()]
+    want = [_column_shape(c) for c in schema]
+    if have != want:
+        raise ValueError(
+            f"Existing table {existing_id} ({name}) has columns that differ from the "
+            f"fixed {component} schema; refusing to publish.\n  existing: {have}\n  expected: {want}"
+        )
+    existing.snapshot(label=f"pre-union-{datetime.now():%Y-%m-%d-%H-%M-%S}", synapse_client=syn)
+    previous = existing.query(
+        query=f"SELECT * FROM {existing_id}", include_row_id_and_row_version=False, synapse_client=syn
+    )
+    existing.delete_rows(query=f"SELECT ROW_ID, ROW_VERSION FROM {existing_id}", synapse_client=syn)
+    try:
+        existing.store_rows(values=values, synapse_client=syn)
+    except Exception:
+        logger.error("Storing the union in %s failed; restoring the previous %d rows", existing_id, len(previous))
+        existing.store_rows(values=previous, synapse_client=syn)
+        raise
+    return existing.id
 
 
 def run_recordset_mode(syn, component, output_dir, grant_ids=None, target=None, publish=False):
