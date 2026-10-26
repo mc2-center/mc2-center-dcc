@@ -146,3 +146,17 @@ def test_comma_in_list_item_warns_with_column_and_key(caplog):
         df, _ = _union({"syn1": g}, ["syn1"])
     assert df["GrantView Key"].tolist() == ["CA1, Smith, J"]
     assert any("GrantView Key" in r.message and "t1" in r.message for r in caplog.records)
+
+
+def test_empty_union_is_not_published(tmp_path):
+    import pytest
+    with mock.patch.object(mt, "build_union", return_value=(pd.DataFrame(columns=["Component"]),
+                           {"grants_scanned": 1, "recordsets_found": 0, "missing": 1, "rows": 0,
+                            "duplicate_keys": 0})), \
+         mock.patch.object(mt, "publish_union") as publish:
+        with pytest.raises(SystemExit):
+            mt.run_recordset_mode(mock.MagicMock(), "ToolView", str(tmp_path), ["syn1"], "synT", publish=True)
+        publish.assert_not_called()
+        mt.run_recordset_mode(mock.MagicMock(), "ToolView", str(tmp_path), ["syn1"], "synT",
+                              publish=True, allow_empty=True)
+        publish.assert_called_once()

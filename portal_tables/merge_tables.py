@@ -72,6 +72,11 @@ def get_args():
         help="RecordSet mode: LIVE WRITE. Store the union as a Synapse table in -t.",
     )
     parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="RecordSet mode: let --publish replace the table with an empty union.",
+    )
+    parser.add_argument(
         "--grant-projects",
         nargs="+",
         default=None,
@@ -266,7 +271,8 @@ def publish_union(syn, component, union, target):
     return existing.id
 
 
-def run_recordset_mode(syn, component, output_dir, grant_ids=None, target=None, publish=False):
+def run_recordset_mode(syn, component, output_dir, grant_ids=None, target=None, publish=False,
+                       allow_empty=False):
     if grant_ids is None:
         grant_ids = list_grant_projects(syn)
     union, stats = build_union(syn, component, grant_ids)
@@ -279,6 +285,13 @@ def run_recordset_mode(syn, component, output_dir, grant_ids=None, target=None, 
         f"rows={stats['rows']}, duplicate keys={stats['duplicate_keys']}\nWrote {path}"
     )
     if publish:
+        # No RecordSets found (or a bad grant list) gives an empty union; never let
+        # that silently empty the published table.
+        if union.empty and not allow_empty:
+            raise SystemExit(
+                f"{component} union is empty ({stats['recordsets_found']} RecordSets found); "
+                "not publishing. Use --allow-empty to replace the table anyway."
+            )
         print(f"Published table {publish_union(syn, component, union, target)}")
     return union, stats
 
@@ -292,7 +305,8 @@ def main():
         raise SystemExit("--target_record_set requires -n")
     syn = utils.syn_login()
     if args.target_record_set:
-        run_recordset_mode(syn, args.n, args.output_dir, args.grant_projects, args.t, args.publish)
+        run_recordset_mode(syn, args.n, args.output_dir, args.grant_projects, args.t, args.publish,
+                           args.allow_empty)
         return
     source, target, table_type, record_sets = args.s, args.t, args.n, args.target_record_set
 
