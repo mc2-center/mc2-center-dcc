@@ -65,10 +65,12 @@ DATASET_NAME_COLUMN = "Dataset Alias"
 # Where create_entity_links.py puts GEO/SRA Dataset entities (_CENTRAL_PROJECT_SYNID
 # there: create_synapse_dataset(syn, accession, _CENTRAL_PROJECT_SYNID) creates a
 # Dataset named after the accession directly under the central project, next to
-# the "datasets" folder holding its "<accession>_links" folder).
+# the "datasets" folder holding its "<accession>_links" folder) and the
+# DatasetCollection it adds them to (_COLLECTION_SYNID there). A test keeps these
+# copies equal to create_entity_links.py's.
 CENTRAL_PROJECT_SYNID = "syn76986881"
+COLLECTION_SYNID = "syn77025587"
 DATASETS_FOLDER = "datasets"
-ACCESSION_RE = re.compile(r"\b(GSE\d+|GDS\d+|SR[PX]\d+|PRJNA\d+|PRJEB\d+)\b")
 
 _modules = {}
 
@@ -167,24 +169,70 @@ def retarget(paths: pd.DataFrame, new_dir: Path, copy=True):
 
 
 def parse_accession(name, link):
+    """GEO/SRP accession for a manifest row, from geo_synapse's own parser (the one
+    create_entity_links uses, so the two cannot disagree). Raises if geo_synapse is
+    not importable: there is deliberately no fallback parser. An empty link falls
+    back to the alias when it is itself a bare GSE/SRP/ERP/DRP accession (by
+    building the canonical URL, so geo_synapse still makes the decision)."""
     try:
         from geo_synapse.mc2_table import parse_accession as pa
+    except ImportError as err:
+        raise RuntimeError(
+            "geo_synapse is not importable; it is required to recognise GEO/SRA accessions "
+            "(https://github.com/sagebio-ada/geo_dataset_creation)"
+        ) from err
+    if not str(link).strip():
+        alias = str(name).strip()
+        if re.fullmatch(r"GSE\d+", alias, re.IGNORECASE):
+            link = f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={alias}"
+        elif re.fullmatch(r"(SRP|ERP|DRP)\d+", alias, re.IGNORECASE):
+            link = f"https://www.ncbi.nlm.nih.gov/sra?term={alias}"
+    return pa(f"[{name}]({link})")
 
-        return pa(f"[{name}]({link})")
-    except ImportError:
-        m = ACCESSION_RE.search(f"{name} {link}")
-        return m.group(1) if m else None
+
+def _grant_annotation(syn, entity_id):
+    raw = syn.restGET(f"/entity/{entity_id}/annotations2").get("annotations", {})
+    return [v.strip() for val in raw.get("grantNumber", {}).get("value", []) for v in re.split(r"[,;]", str(val))]
 
 
-def find_existing_dataset(syn, accession):
-    """Synapse ID of an existing Dataset entity for `accession` in the central
-    project, or None. Read-only."""
-    from synapseclient.core.exceptions import SynapseFileNotFoundError
+class DatasetIndex:
+    """Read-only lookups deciding whether an accession's Dataset can be reused."""
 
-    try:
-        return syn.findEntityId(accession, parent=CENTRAL_PROJECT_SYNID)
-    except SynapseFileNotFoundError:
-        return None
+    def __init__(self, syn):
+        self.syn = syn
+        self._entities = {}
+        self._collection = None
+
+    def collection_ids(self):
+        if self._collection is None:
+            coll = self.syn.restGET(f"/entity/{COLLECTION_SYNID}")
+            self._collection = {i.get("entityId") for i in coll.get("items", [])}
+        return self._collection
+
+    def lookup(self, accession):
+        """(entity_id, grants, reason): entity_id is set only for an indexed Dataset
+        (a Dataset, with items, in the dataset collection)."""
+        if accession not in self._entities:
+            self._entities[accession] = self._lookup(accession)
+        return self._entities[accession]
+
+    def _lookup(self, accession):
+        eid = self.syn.findEntityId(accession, parent=CENTRAL_PROJECT_SYNID)
+        if not eid:
+            return None, [], "no entity of that name in the central project"
+        ent = self.syn.restGET(f"/entity/{eid}")
+        if not ent.get("concreteType", "").endswith(".Dataset"):
+            return None, [], f"{eid} is not a Dataset ({ent.get('concreteType')})"
+        if not ent.get("items"):
+            return None, [], f"{eid} has no items"
+        if eid not in self.collection_ids():
+            return None, [], f"{eid} is not in collection {COLLECTION_SYNID}"
+        return eid, _grant_annotation(self.syn, eid), None
+
+
+def grant_of(path):
+    """Grant a split file belongs to (the CAxxxxxx prefix of its file name)."""
+    return Path(path).name.split("_")[0]
 
 
 def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
@@ -208,27 +256,43 @@ def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
 
 
 def reuse_existing_datasets(syn, paths: pd.DataFrame, pk, link_column, dir_: Path, report: list):
-    """Split each file into rows whose accession already has a Dataset entity
+    """Split each file into rows whose accession already has an indexed Dataset
     (IDs filled in, kept aside in dir_/reused/) and the rest (left in the file
     for create_entity_links, which cannot take pre-existing IDs). Files with no
-    unmatched rows are dropped from the returned paths."""
+    unmatched rows are dropped from the returned paths.
+
+    An entity is reused only if it is a Dataset with items, in the dataset
+    collection, and already associated with this row's grant (its grantNumber
+    annotation lists it). Anything else is passed through: create_entity_links
+    then calls geo_synapse, whose create_synapse_dataset reuses a same-named
+    Dataset (Dataset.store() merges into the existing entity), run_one adds the
+    missing items, re-annotates (grantNumber/studyId for this grant) and adds it
+    to the collection if absent; a non-Dataset of that name makes indexing fail
+    and the row falls back to a plain File link. A Dataset for a *different*
+    grant is passed through, not reused, because associating it with this grant
+    is run_one's job (re-running it also replaces the earlier grantNumber)."""
+    index = DatasetIndex(syn)
     reused_dir = dir_ / "reused"
     reused_dir.mkdir(exist_ok=True)
-    cache, keep = {}, []
+    keep = []
     for _, prow in paths.iterrows():
         path = prow["File Paths"]
+        grant = grant_of(path)
         df = read_csv(path)
         matched = {}
         for i, row in df.iterrows():
             acc = parse_accession(row[DATASET_NAME_COLUMN], row[link_column])
             if not acc:
                 continue
-            if acc not in cache:
-                cache[acc] = find_existing_dataset(syn, acc)
-            if cache[acc]:
-                matched[i] = cache[acc]
-                logger.info("Reusing %s for %s (%s)", cache[acc], acc, Path(path).name)
-                report.append({"file": path, "accession": acc, "entity_id": cache[acc]})
+            eid, grants, reason = index.lookup(acc)
+            if eid and grant not in grants:
+                eid, reason = None, f"{eid} is not associated with grant {grant} (grants: {grants})"
+            if eid:
+                matched[i] = eid
+                logger.info("Reusing %s for %s (%s)", eid, acc, Path(path).name)
+                report.append({"file": path, "accession": acc, "entity_id": eid})
+            else:
+                logger.info("Not reusing an entity for %s (%s): %s", acc, Path(path).name, reason)
         if matched:
             hit = df.loc[list(matched)].copy()
             hit[pk] = [matched[i] for i in hit.index]

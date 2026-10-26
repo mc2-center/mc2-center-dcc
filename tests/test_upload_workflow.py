@@ -37,6 +37,20 @@ def env(monkeypatch):
 
     monkeypatch.setattr(genmp, "query_synapse_for_folder_info", fake_query)
 
+    # geo_synapse is not a dependency of this repo's tests: stand in for its parser
+    import re
+
+    def fake_parse(cell):
+        m = re.search(r"\]\(([^)]+)\)", cell or "")
+        m = m and re.search(r"[?&](?:acc|term)=((?:GSE|SRP|ERP|DRP)\d+)", m.group(1), re.I)
+        return m.group(1).upper() if m else None
+
+    pkg, mod = types.ModuleType("geo_synapse"), types.ModuleType("geo_synapse.mc2_table")
+    mod.parse_accession = fake_parse
+    pkg.mc2_table = mod
+    monkeypatch.setitem(sys.modules, "geo_synapse", pkg)
+    monkeypatch.setitem(sys.modules, "geo_synapse.mc2_table", mod)
+
     rec = types.SimpleNamespace(main=lambda argv: calls["upload"].append(argv) or 0)
     links = types.SimpleNamespace(main=lambda argv: calls["links"].append(argv))
     real_load = uw._load
@@ -46,16 +60,34 @@ def env(monkeypatch):
 
 
 class FakeSyn:
-    def __init__(self, existing):
+    """Read-only Synapse fake. `existing` maps accession -> ID; `entities` overrides
+    the default entity (an indexed Dataset with items, in the collection, annotated
+    with all three fixture grants)."""
+
+    def __init__(self, existing, entities=None, collection=True):
         self.existing = existing
+        self.entities = entities or {}
+        self.collection = collection
 
     def findEntityId(self, name, parent=None):
-        from synapseclient.core.exceptions import SynapseFileNotFoundError
-
         assert parent == uw.CENTRAL_PROJECT_SYNID
-        if name in self.existing:
-            return self.existing[name]
-        raise SynapseFileNotFoundError("nope")
+        return self.existing.get(name)
+
+    def _entity(self, eid):
+        default = {"concreteType": "org.sagebionetworks.repo.model.table.Dataset",
+                   "items": [{"entityId": "syn1", "versionNumber": 1}], "grants": GRANTS}
+        return {**default, **self.entities.get(eid, {})}
+
+    def restGET(self, url):
+        parts = url.strip("/").split("/")
+        eid = parts[1]
+        if eid == uw.COLLECTION_SYNID:
+            ids = list(self.existing.values()) if self.collection else []
+            return {"items": [{"entityId": i, "versionNumber": 1} for i in ids]}
+        ent = self._entity(eid)
+        if parts[-1] == "annotations2":
+            return {"annotations": {"grantNumber": {"value": ent["grants"]}} if ent["grants"] else {}}
+        return {"concreteType": ent["concreteType"], "items": ent["items"]}
 
 
 def run(tmp_path, type_="PublicationView", *extra, manifest=None, syn=None):
@@ -147,6 +179,50 @@ def test_existing_geo_accession_is_reused(tmp_path, env):
     # ...and the final files carry the existing ID
     rows = pd.concat([pd.read_csv(f, dtype=str) for f in (links / "final").glob("*.csv")])
     assert set(rows.loc[rows["Dataset Alias"] == "GSE150001", "DatasetView_id"]) == {"syn999"}
+
+
+def reuse_run(tmp_path, syn):
+    code, state = run(tmp_path, "DatasetView", "--execute", syn=syn)
+    links = tmp_path / "out" / "04_links"
+    pending = pd.read_csv(links / "pending_paths.csv")
+    pending_aliases = [a for p in pending["File Paths"] for a in pd.read_csv(p)["Dataset Alias"]]
+    return state, pending_aliases
+
+
+@pytest.mark.parametrize("entity", [
+    {"concreteType": "org.sagebionetworks.repo.model.Folder"},
+    {"items": []},
+    {"grants": ["CA000000"]},   # indexed, but for another grant: run_one must associate it
+    {"grants": []},
+])
+def test_unusable_existing_entity_is_passed_through(tmp_path, env, entity):
+    state, pending = reuse_run(tmp_path, FakeSyn({"GSE150001": "syn999"}, {"syn999": entity}))
+    assert state["stages"]["links"]["outputs"]["reused"] == 0
+    assert pending.count("GSE150001") == 2
+
+
+def test_entity_outside_the_collection_is_passed_through(tmp_path, env):
+    state, pending = reuse_run(tmp_path, FakeSyn({"GSE150001": "syn999"}, collection=False))
+    assert state["stages"]["links"]["outputs"]["reused"] == 0 and pending.count("GSE150001") == 2
+
+
+def test_reuse_is_per_grant(tmp_path, env):
+    syn = FakeSyn({"GSE150001": "syn999"}, {"syn999": {"grants": ["CA209923"]}})
+    state, pending = reuse_run(tmp_path, syn)
+    assert state["stages"]["links"]["outputs"]["reused"] == 1  # CA209923's file only
+    assert pending.count("GSE150001") == 1
+
+
+def test_accession_parsing_requires_geo_synapse(tmp_path, env, monkeypatch):
+    monkeypatch.setitem(sys.modules, "geo_synapse.mc2_table", None)
+    code, state = run(tmp_path, "DatasetView", "--execute", syn=FakeSyn({}))
+    assert code == 1 and "geo_synapse" in state["stages"]["links"]["note"]
+
+
+def test_collection_constants_match_create_entity_links():
+    src = (ANNOTATIONS / "create_entity_links.py").read_text()
+    assert f'_CENTRAL_PROJECT_SYNID = "{uw.CENTRAL_PROJECT_SYNID}"' in src
+    assert f'_COLLECTION_SYNID = "{uw.COLLECTION_SYNID}"' in src
 
 
 def test_dry_run_still_reports_reuse_without_creating(tmp_path, env):
