@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -102,8 +103,19 @@ class Run:
         if self.path.exists():
             self.state = json.loads(self.path.read_text())
 
-    def stage_dir(self, stage):
-        d = self.out_dir / f"{STAGES.index(stage) + 1:02d}_{stage}"
+    def stage_path(self, stage):
+        return self.out_dir / f"{STAGES.index(stage) + 1:02d}_{stage}"
+
+    def stage_dir(self, stage, keep=()):
+        """Fresh directory for a starting stage: anything a previous attempt left
+        there (including reused/, final/ and report dirs) is removed, except the
+        top-level names in `keep`."""
+        d = self.stage_path(stage)
+        if d.exists():
+            for child in d.iterdir():
+                if child.name in keep:
+                    continue
+                shutil.rmtree(child) if child.is_dir() else child.unlink()
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -369,7 +381,8 @@ def stage_links(run, args, syn=None):
     reshaped = run.output("reshape", "paths_csv")
     if args.type not in LINK_COLUMNS:
         return "skipped", {"paths_csv": reshaped}, f"{args.type} has no link entities"
-    d = run.stage_dir("links")
+    # Resuming at links keeps created_ids.csv: it is how finished rows are skipped.
+    d = run.stage_dir("links", keep=("created_ids.csv",) if args.from_stage == "links" else ())
     link_column, pk = LINK_COLUMNS[args.type]
     folder_col = CONFIG[args.type][3]
 

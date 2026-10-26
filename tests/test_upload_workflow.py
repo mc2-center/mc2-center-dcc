@@ -356,3 +356,36 @@ def test_links_reuse_existing_entity_by_name_under_parent(tmp_path, monkeypatch)
     assert syn.stored == ["b"]
     assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist()[0] == "syn555"
     assert (tmp_path / "created_ids.csv").exists()
+
+
+# --- stale outputs ---------------------------------------------------------------
+
+
+def test_stage_directories_are_cleared_when_a_stage_starts(tmp_path, env):
+    run(tmp_path, "DatasetView", syn=FakeSyn({"GSE150001": "syn999"}))
+    out = tmp_path / "out"
+    stale = [out / "03_reshape" / "stale.csv", out / "04_links" / "reused" / "stale.csv",
+             out / "04_links" / "final" / "stale.csv", out / "05_upload" / "old-run" / "decisions.csv"]
+    for f in stale:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    run(tmp_path, "DatasetView", "--from-stage", "reshape", syn=FakeSyn({"GSE150001": "syn999"}))
+    assert not any(f.exists() for f in stale)
+    assert (out / "02_paths" / "paths.csv").exists()  # earlier stages are untouched
+
+
+def test_resume_keeps_earlier_stage_directories_and_created_ids(tmp_path, env):
+    run(tmp_path, "ToolView")
+    out = tmp_path / "out"
+    (out / "04_links" / "created_ids.csv").write_text("key,synapse_id\nk,syn1\n")
+    (out / "04_links" / "note.txt").write_text("x")
+    run(tmp_path, "ToolView", "--from-stage", "links", "--execute")
+    assert (out / "04_links" / "created_ids.csv").read_text().startswith("key,synapse_id\nk,syn1")
+    assert not (out / "04_links" / "note.txt").exists()
+    run(tmp_path, "ToolView", "--from-stage", "upload", "--execute")
+    assert (out / "04_links" / "created_ids.csv").exists()
+    run(tmp_path, "ToolView", "--from-stage", "reshape", "--execute")  # a fresh links stage starts clean
+    assert not (out / "04_links" / "created_ids.csv").exists()
+
+
+# --- end ---
