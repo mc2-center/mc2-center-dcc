@@ -79,6 +79,11 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     upload = pd.read_csv(row["File Paths"], dtype=str, keep_default_na=False)
     upload = model_contract.normalize_headers(upload, to="keys")
+    # Synapse keeps only schema properties on a Grid import (Component is not one).
+    extra = [c for c in upload.columns if c not in recordsets.schema_columns(component)]
+    if extra:
+        logger.info("%s: not stored in the RecordSet, dropped: %s", report_dir.name, extra)
+        upload = upload.drop(columns=extra)
     upload = recordsets.parse_upload(upload, list_cols)
 
     folder_id = row[folder_column_name(row)]

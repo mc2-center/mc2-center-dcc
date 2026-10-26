@@ -199,3 +199,13 @@ def test_stale_session_scenario_keeps_wiped_edit(tmp_path):
     assert written.loc["p2", "PublicationTitle"] == "B edit"
     decisions = pd.read_csv(rep / "syn100" / "decisions.csv", dtype=str, keep_default_na=False)
     assert set(decisions["version"]) == {"2", "3"}
+
+
+def test_non_schema_columns_are_not_uploaded(tmp_path):
+    # A Grid import drops columns that aren't schema properties (Component),
+    # so they must not reach the merge or the verification.
+    assert "Component" not in rs.schema_columns("PublicationView")
+    assert "PublicationTitle" in rs.schema_columns("PublicationView")
+    code, rep = run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), execute=False)
+    merged = pd.read_csv(rep / "syn100" / "merged.csv", dtype=str)
+    assert "Component" not in merged.columns

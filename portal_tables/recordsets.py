@@ -110,6 +110,16 @@ def _array_properties(component: str) -> dict[str, dict]:
     return {k: v for k, v in properties.items() if v.get("type") == "array"}
 
 
+def schema_columns(component: str) -> set[str]:
+    """Class-label names of every property in the component's schema.
+
+    A Grid import keeps only these; any other column (e.g. ``Component``) is
+    dropped by Synapse, so uploads leave them out before merging.
+    """
+    with open(model_contract.fetch(f"json_schemas/{component}.json"), encoding="utf-8") as fh:
+        return set(json.load(fh)["properties"])
+
+
 def list_columns(component: str) -> set[str]:
     """Class-label names of the component's list (array) columns."""
     return set(_array_properties(component))
