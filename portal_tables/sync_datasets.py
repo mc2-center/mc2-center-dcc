@@ -47,9 +47,13 @@ def restore_display_names(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def duo_code_to_id() -> dict[str, str]:
-    """Short code (``RTN``) -> DUO ID (``DUO:0000029``), from duo.csv plus legacy codes."""
+    """Short code (``RTN``) -> DUO ID (``DUO:0000029``).
+
+    Built from the data-models duo.csv codes (``USE``, ``RST``) plus the
+    official DUO shorthands (``US``, ``RS``), so both spellings map to one ID.
+    """
     mapping = {code: duo_id for duo_id, code in model_contract.duo_id_to_code().items()}
-    mapping.update(utils.LEGACY_DUO_CODES)
+    mapping.update(utils.DUO_SHORTHANDS)
     return mapping
 
 
@@ -57,7 +61,8 @@ def translate_access(code: str, code_to_id: dict) -> str:
     """Access text for one data use code.
 
     Manifests store ``DUO:`` IDs, ``DUOPlus*`` and ``Pending Annotation``,
-    which are looked up directly. Short codes (still held by the live manifest
+    which are looked up directly (an aliased ID such as ``DUO:00000044`` is
+    resolved by ``translate_duo``). Short codes (still held by the live manifest
     until it is migrated) are first translated to their DUO ID. A code with
     no entry gets a logged warning and fallback text instead of raising.
     """

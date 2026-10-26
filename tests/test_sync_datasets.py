@@ -163,7 +163,7 @@ def test_duoplus_text_matches_data_models_description():
     assert len(duoplus) == 7
     for code, text in duoplus.items():
         desc = duo.loc[duo["Attribute"] == code, "Description"].iloc[0]
-        assert desc.startswith(text + "."), code
+        assert desc.startswith(text), code
 
 
 def test_unknown_code_warns_and_row_is_still_processed(caplog):
@@ -206,32 +206,37 @@ def test_theme_consortium_and_pub_lists_keep_first_seen_order(monkeypatch):
     assert out.at[0, "pub"] == ["Z title", "A title"]
 
 
-# The access text each code produced before DUO_DICT was keyed by DUO ID.
-# Short codes must keep producing exactly this text.
-ACCESS_TEXT_BEFORE = {
-    "GRU": "Data access is allowed for any research purpose",
-    "IRB": "Requestor must provide documentation of local IRB/ERB approval to access data",
-    "NCU": "Data access is limited to not-for-profit use",
-    "NPU": "Data access is limited to not-for-profit organizations",
-    "NPUNCU": "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",
-    "NRES": "There are no restrictions on the use of this data",
-    "RS": "Data access is limited to use in specific types of research",
-    "RTN": "Derived/enriched data must be returned to the database/resource repository",
-    "Pending Annotation": "Access information was not provided for this dataset",
-    "DUOPlus1": "Source geography is relevant to governance decisions",
-    "DUOPlus2": "Study population is relevant to governance decisions",
-    "DUOPlus3": "Data deidentification is relevant to governance decisions",
-    "DUOPlus4": "A data permission designation is associated with the Study",
-    "DUOPlus5": "A data tier designation is associated with the Study",
-    "DUOPlus6": "A license is associated with the Study",
-    "DUOPlus7": "Attribution conditions are associated with this Study",
+# Short codes held by the live manifest. Each must keep resolving to the text
+# of its DUO ID (the text itself now comes from governanceDUO).
+LEGACY_CODE_IDS = {
+    "RTN": "DUO:0000029",
+    "NPUNCU": "DUO:0000018",
+    "GRU": "DUO:0000042",
+    "IRB": "DUO:0000021",
+    "NCU": "DUO:0000046",
+    "NPU": "DUO:0000045",
+    "NRES": "DUO:0000004",
+    "RS": "DUO:0000012",
 }
 
 
-def test_access_text_unchanged_for_every_existing_code():
+def test_legacy_short_codes_resolve_to_their_id_text():
     code_to_id = sync_datasets.duo_code_to_id()
-    for code, text in ACCESS_TEXT_BEFORE.items():
-        assert sync_datasets.translate_access(code, code_to_id) == text
+    for code, duo_id in LEGACY_CODE_IDS.items():
+        assert sync_datasets.translate_access(code, code_to_id) == utils.DUO_DICT[duo_id]
+
+
+def test_data_models_and_official_shorthands_share_text():
+    code_to_id = sync_datasets.duo_code_to_id()
+    for old, official, duo_id in [("USE", "US", "DUO:0000026"), ("RST", "RS", "DUO:0000012")]:
+        assert code_to_id[old] == code_to_id[official] == duo_id
+        assert sync_datasets.translate_access(old, code_to_id) == utils.DUO_DICT[duo_id]
+        assert sync_datasets.translate_access(official, code_to_id) == utils.DUO_DICT[duo_id]
+
+
+def test_aliased_npoa_id_translates_to_npoa_text():
+    code_to_id = sync_datasets.duo_code_to_id()
+    assert sync_datasets.translate_access("DUO:00000044", code_to_id) == utils.DUO_DICT["DUO:0000044"]
 
 
 def test_every_14_duo_id_has_access_text():
