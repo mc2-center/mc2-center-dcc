@@ -217,7 +217,7 @@ def test_write_via_grid_order_wait_and_cleanup():
     grid = _grid([0], [7])
     with mock.patch.object(rs, "Grid") as cls, mock.patch.object(rs.time, "sleep") as sleep:
         cls.return_value.create.return_value = grid
-        assert rs.write_via_grid("syn", "syn1", "x.csv", timeout=5, validation_wait=45) == 7
+        assert rs.write_via_grid("syn", "syn1", "x.csv", timeout=5, validation_wait=45) == [7]
     assert cls.call_args.kwargs == {"record_set_id": "syn1"}
     assert cls.return_value.create.call_args.kwargs["attach_to_previous_session"] is False
     assert grid.import_csv.call_args.kwargs["path"] == "x.csv"
@@ -229,7 +229,7 @@ def test_write_via_grid_re_exports_while_rows_unknown():
     grid = _grid([3, 0], [7, 8])
     with mock.patch.object(rs, "Grid") as cls, mock.patch.object(rs.time, "sleep") as sleep:
         cls.return_value.create.return_value = grid
-        assert rs.write_via_grid("syn", "syn1", "x.csv", validation_wait=45, retry_wait=10) == 8
+        assert rs.write_via_grid("syn", "syn1", "x.csv", validation_wait=45, retry_wait=10) == [7, 8]
     assert [c.args[0] for c in sleep.call_args_list] == [45, 10]
 
 
@@ -251,3 +251,33 @@ def test_get_validation_maps_row_index_to_key(tmp_path):
         cls.return_value.get.return_value.get_detailed_validation_results.return_value = results
         out = rs.get_validation("syn", "syn1", 4, tmp_path, ["k0", "k1"])
     assert list(out["key"]) == ["k0", "k1"]
+
+
+def test_reconcile_versions_stale_session_keeps_wiped_edit():
+    cols = (K, "Title", "Assay")
+    v5 = pd.DataFrame([["a", "Pipeline", ""], ["b", "Pipeline", ""]], columns=cols)  # pipeline's write
+    v6 = pd.DataFrame([["a", "A edit", ""], ["b", "Pipeline", ""]], columns=cols)  # A's edit
+    # B's stale session was opened at v5: A's edit is gone, B edited b's title and added row c
+    v7 = pd.DataFrame([["a", "Pipeline", ""], ["b", "B edit", ""], ["c", "B row", ""]], columns=cols)
+    state, d, edited = rs.reconcile_versions([(6, v6), (7, v7)], v5, [v5], K)
+    s = state.set_index(K)
+    assert s.loc["a", "Title"] == "A edit"
+    assert s.loc["b", "Title"] == "B edit"
+    assert s.loc["c", "Title"] == "B row"
+    got = {(r.version, r.key, r.column, r.decision) for r in d.itertuples()}
+    assert got == {
+        (6, "a", "Title", "kept_edit"),
+        (7, "a", "Title", "restored_revert"),
+        (7, "b", "Title", "kept_edit"),
+        (7, "c", "", "kept_contributor_row"),
+    }
+    assert edited == {("a", "Title"), ("b", "Title")}
+    # the pipeline's own upload does not overwrite either edit
+    _, conflicts = rs.merge_upload(state, v5, K, edited)
+    assert {(c.key, c.column) for c in conflicts.itertuples()} == {("a", "Title"), ("b", "Title")}
+
+
+def test_reconcile_versions_without_foreign_is_identity():
+    v5 = df(["a", "T", ""])
+    state, d, edited = rs.reconcile_versions([], v5, [v5], K)
+    assert state.equals(v5) and d.empty and edited == set()

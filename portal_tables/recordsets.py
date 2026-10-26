@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 KEY_SEP = "|"
 
-DECISION_COLUMNS = ["key", "column", "decision", "current_value", "pipeline_value"]
+DECISION_COLUMNS = ["key", "column", "decision", "current_value", "pipeline_value", "version"]
 CONFLICT_COLUMNS = ["key", "column", "contributor_value", "upload_value"]
 
 WRITE_LOG_COLUMNS = ["recordSetId", "version", "runId", "writtenOn", "rowsWritten"]
@@ -273,14 +273,15 @@ def _all_columns(frames, key_cols) -> list[str]:
     return columns
 
 
-def reconcile(current, pipeline_last, history, key, set_like=()):
+def reconcile(current, pipeline_last, history, key, set_like=(), version=""):
     """Fold contributor edits into the pipeline's last write.
 
     ``current`` is the latest version; ``pipeline_last`` the rows at the
     pipeline's most recent write; ``history`` the rows at every version up to
     and including that one (a list of DataFrames). Anything newer than
     ``pipeline_last`` is a contributor edit. ``set_like`` names list columns
-    compared order-insensitively.
+    compared order-insensitively; ``version`` tags every decision with the
+    version ``current`` came from.
 
     Per key in the union:
 
@@ -306,7 +307,7 @@ def reconcile(current, pipeline_last, history, key, set_like=()):
     def decide(k, column, decision, cur_v="", pipe_v=""):
         decisions.append(
             {"key": k, "column": column, "decision": decision,
-             "current_value": cur_v, "pipeline_value": pipe_v}
+             "current_value": cur_v, "pipeline_value": pipe_v, "version": version}
         )
 
     for k, cur_row in cur.items():
@@ -337,6 +338,39 @@ def reconcile(current, pipeline_last, history, key, set_like=()):
 
     reconciled = pd.DataFrame(rows, columns=columns)
     return reconciled, pd.DataFrame(decisions, columns=DECISION_COLUMNS)
+
+
+def reconcile_versions(foreign, pipeline_last, history, key, set_like=()):
+    """Fold foreign versions into the pipeline's last write, oldest first.
+
+    ``foreign`` is a list of ``(version, DataFrame)`` newer than
+    ``pipeline_last``, in version order; ``history`` the versions up to and
+    including the pipeline's. Each step is ``reconcile(current=f,
+    pipeline_last=state, history=history)`` and then ``f`` joins ``history``,
+    so an edit that a later stale-session export wiped is seen as a revert to
+    a known value and restored. Returns ``(state, decisions, edited)``:
+    decisions from every step tagged with their version, and the
+    ``(key, column)`` cells that hold a contributor edit in the final state
+    (a ``kept_edit`` at some step whose final value differs from
+    ``pipeline_last``), for :func:`merge_upload`.
+    """
+    key_cols = key_columns(key)
+    set_like = set(set_like)
+    state, history, parts = pipeline_last, list(history), []
+    for version, frame in foreign:
+        state, step = reconcile(frame, state, history, key, set_like, version=version)
+        parts.append(step)
+        history.append(frame)
+    decisions = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=DECISION_COLUMNS)
+    columns = _all_columns([state, pipeline_last], key_cols)
+    final = _frames_by_key(state, key_cols, columns)
+    base = _frames_by_key(pipeline_last, key_cols, columns)
+    edited = {
+        (k, c)
+        for k, c in edited_cells(decisions)
+        if k in final and k in base and not _cells_equal(final[k][c], base[k][c], c in set_like)
+    }
+    return state, decisions, edited
 
 
 def edited_cells(decisions: pd.DataFrame) -> set[tuple[str, str]]:
@@ -414,8 +448,8 @@ def write_via_grid(
     validation_wait: int = 60,
     retry_wait: int = 30,
     max_exports: int = 4,
-) -> int:
-    """Upsert ``csv_path`` into the RecordSet through a Grid session; return the new version.
+) -> list[int]:
+    """Upsert ``csv_path`` into the RecordSet through a Grid session; return every version created.
 
     Fresh session, import, wait for validation, export (a new RecordSet
     version), delete the session. The grid session exposes no validation
@@ -424,17 +458,18 @@ def write_via_grid(
     export summary's unknown-row count is then checked, and while rows are
     still unknown the session waits ``retry_wait`` seconds and exports again
     (at most ``max_exports`` exports; each creates a version with the same
-    data). The final export's version is returned.
+    data). All created versions are returned, oldest first; log each one.
     """
     grid = Grid(record_set_id=rs_id).create(
         attach_to_previous_session=False, timeout=timeout, synapse_client=syn
     )
     try:
         grid.import_csv(path=str(csv_path), timeout=timeout, synapse_client=syn)
-        wait = validation_wait
+        wait, versions = validation_wait, []
         for attempt in range(1, max_exports + 1):
             time.sleep(wait)
             grid.export_to_record_set(timeout=timeout, synapse_client=syn)
+            versions.append(grid.record_set_version_number)
             stats = grid.validation_summary_statistics
             unknown = getattr(stats, "number_of_unknown_children", 0) if stats else 0
             if not unknown:
@@ -446,7 +481,7 @@ def write_via_grid(
             wait = retry_wait
         else:
             logger.warning("%s: rows still unvalidated after %d exports", rs_id, max_exports)
-        return grid.record_set_version_number
+        return versions
     finally:
         grid.delete(synapse_client=syn)
 

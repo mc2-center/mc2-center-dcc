@@ -111,17 +111,20 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     current = recordsets.read_recordset(syn, rs_id, version=latest)
     decisions = pd.DataFrame(columns=recordsets.DECISION_COLUMNS)
+    edited = set()
     if pipeline_last is None:
         base, mode = current, "first write (no reconciliation)"
     elif latest == pipeline_last:
         base, mode = current, "no newer versions (no reconciliation)"
     else:
         history = [recordsets.read_recordset(syn, rs_id, version=v) for v in range(1, pipeline_last + 1)]
-        base, decisions = recordsets.reconcile(current, history[-1], history, key, set_like)
+        foreign = [(v, recordsets.read_recordset(syn, rs_id, version=v)) for v in range(pipeline_last + 1, latest)]
+        foreign.append((latest, current))
+        base, decisions, edited = recordsets.reconcile_versions(foreign, history[-1], history, key, set_like)
         mode = f"reconciled v{pipeline_last}..v{latest}"
 
     merged, conflicts = recordsets.merge_upload(
-        base, upload, key, recordsets.edited_cells(decisions), set_like
+        base, upload, key, edited, set_like
     )
     report_dir.mkdir(parents=True, exist_ok=True)
     merged_path = report_dir / "merged.csv"
@@ -134,8 +137,10 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="dryrun", message=f"dry run: {mode}; nothing written")
         return summary
 
-    version = recordsets.write_via_grid(syn, rs_id, merged_path)
-    write_log.record(rs_id, version, args.run_id, len(merged))
+    versions = recordsets.write_via_grid(syn, rs_id, merged_path)
+    for v in versions:
+        write_log.record(rs_id, v, args.run_id, len(merged))
+    version = versions[-1]
     summary["version"] = version
 
     written = recordsets.read_recordset(syn, rs_id, version=None)

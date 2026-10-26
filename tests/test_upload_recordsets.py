@@ -40,6 +40,7 @@ class FakeSynapse:
         self.versions = list(versions)
         self.find = find if find is not None else (lambda folder: "synRS")
         self.key = list(key)
+        self.extra_exports = 0
         self.drift = drift  # frame appended after our write, simulating a foreign edit
         self.writes = []
 
@@ -56,7 +57,10 @@ class FakeSynapse:
         written = pd.read_csv(csv_path, dtype=str, keep_default_na=False).map(rs.parse_cell)
         self.writes.append(written)
         self.versions.append(written)
-        ours = len(self.versions)
+        ours = [len(self.versions)]
+        for _ in range(self.extra_exports):
+            self.versions.append(written)
+            ours.append(len(self.versions))
         if self.drift is not None:
             self.versions.append(self.drift)
         return ours
@@ -171,3 +175,27 @@ def test_log_ahead_of_recordset_fails(tmp_path):
     rs.CsvWriteLog(log).record("synRS", 5, "old", 2)
     code, rep = run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), log=log)
     assert code == 1
+
+
+def test_every_export_is_logged(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    fake.extra_exports = 1
+    code, _ = run(tmp_path, fake)
+    assert code == 0
+    assert rs.CsvWriteLog(tmp_path / "log.csv").pipeline_versions("synRS") == [2, 3]
+
+
+def test_stale_session_scenario_keeps_wiped_edit(tmp_path):
+    v5 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
+    v6 = stored(["p1", "A edit", ""], ["p2", "Second", ""])
+    v7 = stored(["p1", "Pipeline title", ""], ["p2", "B edit", ""])  # B's stale export wiped A's edit
+    log = tmp_path / "log.csv"
+    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)  # the pipeline's last write is v1 (= v5 above)
+    fake = FakeSynapse([v5, v6, v7])
+    code, rep = run(tmp_path, fake, log=log)
+    assert code == 0
+    written = fake.writes[0].set_index(KEY)
+    assert written.loc["p1", "PublicationTitle"] == "A edit"
+    assert written.loc["p2", "PublicationTitle"] == "B edit"
+    decisions = pd.read_csv(rep / "syn100" / "decisions.csv", dtype=str, keep_default_na=False)
+    assert set(decisions["version"]) == {"2", "3"}
