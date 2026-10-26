@@ -83,3 +83,18 @@ def test_portal_shape(tmp_path):
     assert row["dataset"] == "ds1"  # SRX alias dropped
     assert row["pubMedLink"] == "[PMID:1](http://p/1)"
     assert row["assay"] == ["RNA-seq"]
+
+
+def test_blank_and_no_doi_listed_become_doi_not_available(tmp_path):
+    m = manifest(NEW_HEADERS)
+    m["Publication Doi"] = ["", "No DOI Listed"]
+    m["Pubmed Id"] = [1, 2]
+    m = pd.concat([m, m.assign(**{"Pubmed Id": [3, 4], "Publication Doi": ["10.1/x", "  "]})])
+    path = tmp_path / "m.csv"
+    m.to_csv(path, index=False)
+    prepared = sp.prepare_manifest(pd.read_csv(path, dtype=str))
+    db = sp.add_missing_info(prepared, GRANTS, ["theme", "consortium", "grantName"])
+    out = sp.clean_table(db, LIVE_TYPES).set_index("pubMedId")
+    assert out["doi"].to_dict() == {
+        1: "DOI Not Available", 2: "DOI Not Available", 3: "10.1/x", 4: "DOI Not Available",
+    }

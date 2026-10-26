@@ -270,3 +270,13 @@ def test_access_texts_containing_commas_are_not_split():
     rows = [dict(MANIFEST_14[0], **{"Dataset Data Use Codes": "RTN, NPUNCU"})]
     out = run(rows)
     assert out["accessInformation"].iloc[0] == [utils.DUO_DICT["DUO:0000029"], npuncu]
+
+
+def test_no_doi_listed_is_standardized_for_datasets():
+    rows = [
+        dict(MANIFEST_14[0], **{"Dataset Doi": "No DOI Listed", "PublicationView Key": "123"}),
+        dict(MANIFEST_14[1], **{"Dataset Doi": ""}),
+    ]
+    out = run(rows).set_index("datasetAlias")
+    assert out.loc["setA", "doi"] == "DOI Not Available"  # not the linked publication's DOI
+    assert out.loc["setB", "doi"] == "DOI Not Available"  # blank, no publication

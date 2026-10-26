@@ -196,7 +196,9 @@ def add_missing_info(
             try:
                 datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
             except IndexError:
-                datasets.at[_, "DatasetDoi"] = "DOI Not Available"
+                datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
+        if str(datasets.at[_, "DatasetDoi"]).strip() == utils.NO_DOI_LISTED:
+            datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
         d = [translate_access(code, code_to_id) for code in row["DatasetDataUseCodes"].split(",")]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         # Keep the texts as a list: several contain commas, so joining them

@@ -25,6 +25,15 @@ def add_missing_info(
         for pmid, url in zip(pubs["PubmedId"], pubs["PubmedUrl"])
     ]
 
+    # A blank DOI, or the manifest's "No DOI Listed", shows as "DOI Not
+    # Available" (the text sync_datasets writes for datasets).
+    pubs["PublicationDoi"] = [
+        utils.DOI_NOT_AVAILABLE
+        if not str(doi).strip() or str(doi).strip() == utils.NO_DOI_LISTED
+        else doi
+        for doi in pubs["PublicationDoi"].fillna("")
+    ]
+
     pattern = re.compile(r"(')([\s\w/-]+)(')")
 
     for _, row in pubs.iterrows():

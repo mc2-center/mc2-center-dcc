@@ -73,6 +73,10 @@ REPO_DICT = {
     "None" : "No repository designated"
 }
 
+# Portal text for a resource with no DOI. Manifests may carry "No DOI Listed".
+DOI_NOT_AVAILABLE = "DOI Not Available"
+NO_DOI_LISTED = "No DOI Listed"
+
 REPO_REGEX = r"(https|http)(:\/\/)(www\.|)(.*\/)(.*?)(\/|)|(Pending Annotation)"
 
 def syn_login() -> Synapse:
