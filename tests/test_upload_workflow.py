@@ -388,4 +388,60 @@ def test_resume_keeps_earlier_stage_directories_and_created_ids(tmp_path, env):
     assert not (out / "04_links" / "created_ids.csv").exists()
 
 
+# --- resume / new-run argument checks ------------------------------------------------
+
+
+def test_run_json_records_identity(tmp_path, env):
+    code, state = run(tmp_path)
+    import hashlib
+
+    assert state["manifest_sha256"] == hashlib.sha256((FIXTURES / "p1" / "publication.csv").read_bytes()).hexdigest()
+    assert state["cv_file"] == str(CV) and state["type"] == "PublicationView" and state["target"] == "recordset"
+
+
+def test_resume_refuses_changed_arguments(tmp_path, env, capsys):
+    run(tmp_path)
+    with pytest.raises(SystemExit) as e:  # different --cv-file
+        uw.main(["--manifest", str(FIXTURES / "p1" / "publication.csv"), "--type", "PublicationView",
+                 "--out-dir", str(tmp_path / "out"), "--write-log-csv", "l.csv", "--from-stage", "upload"])
+    assert "cv_file" in str(e.value)
+    with pytest.raises(SystemExit) as e:  # different target
+        run(tmp_path, "PublicationView", "--from-stage", "upload", "--target", "schematic-table")
+    assert "target" in str(e.value)
+    with pytest.raises(SystemExit) as e:  # different type
+        run(tmp_path, "ToolView", "--from-stage", "upload")
+    assert "type" in str(e.value)
+    edited = tmp_path / "edited.csv"  # same path semantics, different content
+    edited.write_bytes((FIXTURES / "p1" / "publication.csv").read_bytes() + b"\n")
+    with pytest.raises(SystemExit) as e:
+        run(tmp_path, "PublicationView", "--from-stage", "upload", manifest=edited)
+    assert "manifest" in str(e.value) and "manifest_sha256" in str(e.value)
+
+
+def test_manifest_content_change_is_detected_at_same_path(tmp_path, env):
+    manifest = tmp_path / "m.csv"
+    manifest.write_bytes((FIXTURES / "p1" / "publication.csv").read_bytes())
+    run(tmp_path, manifest=manifest)
+    manifest.write_bytes(manifest.read_bytes() + b"\n")
+    with pytest.raises(SystemExit) as e:
+        run(tmp_path, "PublicationView", "--from-stage", "upload", manifest=manifest)
+    assert "manifest_sha256" in str(e.value)
+
+
+def test_new_run_in_used_out_dir_needs_force_new(tmp_path, env):
+    run(tmp_path, "PublicationView")
+    run(tmp_path, "PublicationView")  # same manifest and type: fine
+    with pytest.raises(SystemExit) as e:
+        run(tmp_path, "ToolView")
+    assert "--force-new" in str(e.value)
+    # the refused run left the earlier one intact
+    assert json.loads((tmp_path / "out" / "run.json").read_text())["type"] == "PublicationView"
+    code, state = run(tmp_path, "ToolView", "--force-new")
+    assert code == 0 and state["type"] == "ToolView"
+    assert not list((tmp_path / "out" / "01_split").glob("*_publication.csv"))
+    with pytest.raises(SystemExit):
+        uw.get_args(["--manifest", "m.csv", "--type", "ToolView", "--out-dir", "o", "--write-log-csv", "l",
+                     "--force-new", "--from-stage", "links"])
+
+
 # --- end ---

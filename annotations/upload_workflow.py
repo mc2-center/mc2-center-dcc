@@ -25,6 +25,7 @@ author: orion.banks
 """
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import logging
@@ -125,8 +126,10 @@ class Run:
     def save(self):
         self.state.update(
             manifest=str(self.args.manifest),
+            manifest_sha256=self.args.manifest_sha256,
             type=self.args.type,
             target=self.args.target,
+            cv_file=self.args.cv_file,
             execute=self.args.execute,
             updated=now(),
         )
@@ -475,7 +478,12 @@ def get_args(argv=None):
     p.add_argument("--cv-file", help="all_valid_values.csv path/URL for split (default: pinned release)")
     p.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     p.add_argument("--from-stage", choices=STAGES, help="resume at this stage, reusing earlier outputs in run.json")
+    p.add_argument("--force-new", action="store_true",
+                   help="start a new run in an out-dir holding a different manifest/type's run: "
+                        "wipes the out-dir's stage folders")
     args = p.parse_args(argv)
+    if args.force_new and args.from_stage:
+        p.error("--force-new cannot be combined with --from-stage")
     if args.target == "recordset" and not (args.write_log_table or args.write_log_csv):
         p.error("--target recordset needs --write-log-table (or --write-log-csv)")
     if args.target == "schematic-table" and args.execute and not args.schematic_config:
@@ -483,19 +491,63 @@ def get_args(argv=None):
     return args
 
 
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def check_same_run(run, args):
+    """Refuse --from-stage unless the arguments that shaped the earlier stages are
+    unchanged: manifest path and content, type, target and --cv-file."""
+    current = {"manifest": str(args.manifest), "manifest_sha256": args.manifest_sha256,
+               "type": args.type, "target": args.target, "cv_file": args.cv_file}
+    diffs = [f"  {k}: run.json has {run.state.get(k)!r}, now {v!r}"
+             for k, v in current.items() if run.state.get(k) != v]
+    if diffs:
+        sys.exit(f"Cannot resume at {args.from_stage}: arguments differ from the run recorded in {run.path}:\n"
+                 + "\n".join(diffs) + "\nRerun without --from-stage (add --force-new to discard the old run).")
+
+
+def check_out_dir_free(run, args):
+    """A new run in an out-dir that already holds a different run's stages needs --force-new."""
+    leftovers = [run.stage_path(s) for s in STAGES if run.stage_path(s).exists()]
+    if not (run.path.exists() or leftovers) or args.force_new:
+        return
+    if not run.path.exists():
+        sys.exit(f"{run.out_dir} holds stage folders but no run.json; use an empty --out-dir or --force-new.")
+    diffs = [k for k, v in (("manifest", str(args.manifest)), ("manifest_sha256", args.manifest_sha256),
+                            ("type", args.type)) if run.state.get(k) != v]
+    if diffs:
+        sys.exit(f"{run.out_dir} holds a run with a different {', '.join(diffs)} (see {run.path}); "
+                 "use another --out-dir or --force-new to wipe its stage folders.")
+
+
 def main(argv=None, syn=None):
     args = get_args(argv)
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     args.manifest = Path(args.manifest).resolve()
+    args.manifest_sha256 = sha256_of(args.manifest)
     run = Run(out_dir, args)
 
     start = STAGES.index(args.from_stage) if args.from_stage else 0
+    if args.from_stage:
+        check_same_run(run, args)
+    else:
+        check_out_dir_free(run, args)
+        if args.force_new:
+            for s in STAGES:
+                shutil.rmtree(run.stage_path(s), ignore_errors=True)
+            run.state = {"stages": {}}
     for earlier in STAGES[:start]:
         if run.state["stages"].get(earlier, {}).get("status") not in ("done", "skipped"):
             sys.exit(f"Cannot resume at {args.from_stage}: stage {earlier!r} has not finished in {run.path}")
     for later in STAGES[start:]:
         run.state["stages"].pop(later, None)
+    run.save()  # never leave a run.json that still lists the stages about to be redone
 
     print(f"{'EXECUTE' if args.execute else 'Dry run'}: {args.type} -> {args.target}, out {out_dir}")
     for stage in STAGES[start:]:
