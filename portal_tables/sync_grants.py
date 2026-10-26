@@ -6,7 +6,7 @@ table, by first truncating the table, then re-adding the rows.
 
 import sys
 
-from synapseclient.models import EntityView
+from synapseclient.models import EntityView, Table
 import crosswalk
 import utils
 from create_grant_projects import COMPONENT, process_new_grants
@@ -44,6 +44,17 @@ def check_grant_ids(table):
         )
 
 
+def check_portal_grant_ids(syn, table_id):
+    """``check_grant_ids`` on the live portal table (read-only)."""
+    check_grant_ids(
+        Table(id=table_id).query(
+            query=f"SELECT grantId, grantViewId FROM {table_id}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        )
+    )
+
+
 def main():
     """Main function. Returns the process exit code (1 if any grant failed)."""
     syn = utils.syn_login()
@@ -59,6 +70,11 @@ def main():
 
     # Fail before any project is created if the live table drifted.
     live_types = crosswalk.check_crosswalk(syn, args.portal_table_id, COMPONENT)
+
+    # A live row with no project would be rewritten by the sync and never
+    # retried; fail before process_new_grants creates any project or team
+    # (also on a dry run).
+    check_portal_grant_ids(syn, args.portal_table_id)
 
     manifest = process_new_grants(
         args.manifest_id, args.portal_table_id, args.dryrun, synapse_client=syn,

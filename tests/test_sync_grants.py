@@ -281,6 +281,7 @@ def test_main_writes_successes_and_exits_nonzero_on_failure():
     with patch.object(sync_grants.utils, "syn_login"), \
             patch.object(sync_grants.utils, "get_args", return_value=args), \
             patch.object(sync_grants.crosswalk, "check_crosswalk", return_value={}), \
+            patch.object(sync_grants, "check_portal_grant_ids"), \
             patch.object(sync_grants, "process_new_grants", return_value=staged), \
             patch.object(sync_grants.crosswalk, "to_portal", return_value=final), \
             patch.object(sync_grants, "update_scopes"), \
@@ -288,3 +289,21 @@ def test_main_writes_successes_and_exits_nonzero_on_failure():
         assert sync_grants.main() == 1
     update.assert_called_once()
     assert update.call_args.args[2] is final
+
+
+@pytest.mark.parametrize("dryrun", [False, True])
+def test_main_checks_live_grant_ids_before_creating_anything(dryrun):
+    live = pd.DataFrame({"grantId": ["syn1", "None"], "grantViewId": ["OLD1", "BAD1"]})
+    args = MagicMock(dryrun=dryrun, verbose=False, noprint=True, manifest_id="m",
+                     portal_table_id="t", output_csv="x")
+    table = MagicMock()
+    table.return_value.query.return_value = live
+    with patch.object(sync_grants.utils, "syn_login"), \
+            patch.object(sync_grants.utils, "get_args", return_value=args), \
+            patch.object(sync_grants.crosswalk, "check_crosswalk", return_value={}), \
+            patch.object(sync_grants, "Table", table), \
+            patch.object(sync_grants, "process_new_grants") as process:
+        with pytest.raises(ValueError, match="BAD1"):
+            sync_grants.main()
+    process.assert_not_called()
+    assert "FROM t" in table.return_value.query.call_args.kwargs["query"]
