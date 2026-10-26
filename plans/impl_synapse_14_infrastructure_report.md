@@ -137,3 +137,4 @@ After the second review, `1a2fd19` replaced ownership inference with a replay th
 | Another run's pending row | `locked`, grant skipped. Once that row was resolved (`aborted`), the run went through. |
 
 Write log after the test: pending/written pairs for v18, v22 and v24; v23 `recovered`; the other run's row `aborted`.
+| Third-review fixes (`2ad3401`, `0e7ccc6`, `3484769`), complete-reversion snapshot rule | **Stale session with an edit:** opened at v26; the pipeline wrote p2 "newer" (v27); the stale session saved a p3 abstract edit (v28), reverting p2's title. Next run (v29): p2 `restored_revert`, the p3 abstract `kept_edit`, conflict reported. **Partial undo:** not exercised live (the test row's title was already contributor-owned); covered by unit tests, including a randomized comparison with a brute-force version of the rule. |
