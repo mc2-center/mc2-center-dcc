@@ -280,3 +280,26 @@ def test_no_doi_listed_is_standardized_for_datasets():
     out = run(rows).set_index("datasetAlias")
     assert out.loc["setA", "doi"] == "DOI Not Available"  # not the linked publication's DOI
     assert out.loc["setB", "doi"] == "DOI Not Available"  # blank, no publication
+
+
+def _doi_for(pub_dois):
+    pubs = pd.DataFrame(
+        {
+            "pubMedId": [1001, 1002],
+            "publicationTitle": ["T1", "T2"],
+            "doi": pub_dois,
+            "publicationYear": [2020, 2021],
+        }
+    )
+    row = dict(MANIFEST_14[1], **{"Dataset Doi": "", "PublicationView Key": "1001,1002"})
+    out = sync_datasets.add_missing_info(None, prepare([row], legacy=False), GRANTS, pubs)
+    return out.at[0, "DatasetDoi"]
+
+
+def test_blank_first_publication_doi_falls_through_to_first_non_blank():
+    assert _doi_for([float("nan"), "10.2/b"]) == "10.2/b"
+    assert _doi_for(["", "10.2/b"]) == "10.2/b"
+
+
+def test_all_blank_publication_dois_give_not_available():
+    assert _doi_for([float("nan"), ""]) == utils.DOI_NOT_AVAILABLE
