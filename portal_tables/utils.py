@@ -276,6 +276,46 @@ def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[
     return out
 
 
+def check_cell_sizes(table_id: str, columns: dict, df: pd.DataFrame) -> None:
+    """Raise ``ValueError`` if a cell or list in ``df`` exceeds its live column's limits.
+
+    ``columns`` is the live table's ``{name: Column}``; ``df``'s columns are
+    live names. Checks ``maximumSize`` of STRING, STRING_LIST (per item) and
+    LINK columns, and ``maximumListLength`` of list columns. Synapse rejects
+    such cells only after the rows have been deleted, so this runs first.
+    """
+    for name in df.columns:
+        col = columns.get(name)
+        if col is None:
+            continue
+        col_type = str(getattr(col.column_type, "value", col.column_type)).split(".")[-1]
+        max_size = col.maximum_size if isinstance(col.maximum_size, int) else None
+        max_items = col.maximum_list_length if isinstance(col.maximum_list_length, int) else None
+        is_list = col_type.endswith("_LIST")
+        sized = col_type in ("STRING", "STRING_LIST", "LINK")
+        for idx, value in df[name].items():
+            if isinstance(value, (list, tuple)):
+                if is_list and max_items is not None and len(value) > max_items:
+                    raise ValueError(
+                        f"{table_id}: column {name!r} row {idx} has {len(value)} list "
+                        f"items; the limit is {max_items}. Refusing to truncate the table."
+                    )
+                items = value if sized else []
+            elif isinstance(value, str) and sized and not is_list:
+                items = [value]
+            else:
+                continue
+            if max_size is None:
+                continue
+            for item in items:
+                if isinstance(item, str) and len(item) > max_size:
+                    raise ValueError(
+                        f"{table_id}: column {name!r} row {idx} has a value of length "
+                        f"{len(item)}; the limit is {max_size}. Refusing to truncate "
+                        "the table."
+                    )
+
+
 def update_table(
     syn: Synapse, table_id: str, df: pd.DataFrame, component: str | None = None
 ) -> None:
@@ -346,6 +386,9 @@ def update_table(
                 f"provided ({list(df.columns)}); refusing to truncate the table."
             )
         df = strip_newlines(df.set_axis(live_columns[: len(df.columns)], axis="columns"))
+
+    # Synapse rejects an oversized cell only after the delete below.
+    check_cell_sizes(table_id, table.columns, df)
 
     today = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
     print(f"Creating new table version with label: {today}...")
