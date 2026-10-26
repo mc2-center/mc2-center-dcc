@@ -199,7 +199,9 @@ def add_missing_info(
                 datasets.at[_, "DatasetDoi"] = "DOI Not Available"
         d = [translate_access(code, code_to_id) for code in row["DatasetDataUseCodes"].split(",")]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
-        datasets.at[_, "DatasetDataUseCodes"] = ",".join(d)
+        # Keep the texts as a list: several contain commas, so joining them
+        # here and splitting again in clean_table would break them apart.
+        datasets.at[_, "DatasetDataUseCodes"] = d
 
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
         download_type, download_id = utils.identify_download_type(
@@ -227,14 +229,15 @@ def clean_table(df: pd.DataFrame, live_types: dict) -> pd.DataFrame:
         "GrantViewKey",
         "PublicationViewKey",
         "iconTags",
-        "DatasetDataUseCodes",
     ]
 
     for col in cols:
         df[col] = utils.convert_to_stringlist(df[col])
 
+    # DatasetDataUseCodes already holds a list of access texts (which may
+    # contain commas), so it is deduped below but never string-split.
     for _, row in df.iterrows():
-        for col in cols:
+        for col in cols + ["DatasetDataUseCodes"]:
             # Dedupe keeping first-seen order: set() order is arbitrary, which
             # made the portal's single DatasetViewId differ between runs.
             df.at[_, col] = list(dict.fromkeys(row[col]))

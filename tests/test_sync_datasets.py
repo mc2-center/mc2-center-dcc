@@ -262,3 +262,11 @@ def test_identify_download_type_accepts_both_keys(monkeypatch):
     for key in ("DatasetViewId", "DatasetView_id"):
         REAL_IDENTIFY(None, pd.Series({key: "syn5, syn6"}), "Synapse")
     assert seen == ["syn5", "syn5"]
+
+
+def test_access_texts_containing_commas_are_not_split():
+    npuncu = utils.DUO_DICT["DUO:0000018"]
+    assert "," in npuncu  # the case that used to be split into fragments
+    rows = [dict(MANIFEST_14[0], **{"Dataset Data Use Codes": "RTN, NPUNCU"})]
+    out = run(rows)
+    assert out["accessInformation"].iloc[0] == [utils.DUO_DICT["DUO:0000029"], npuncu]
