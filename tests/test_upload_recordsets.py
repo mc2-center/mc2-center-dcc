@@ -119,8 +119,8 @@ def test_first_write_is_plain_upsert_pending_then_written(tmp_path):
     log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log.pipeline_map("synRS") == {2: 1}
     statuses = log._read("synRS")
-    assert statuses["status"].tolist() == ["pending", "written"]
-    assert statuses["principalId"].tolist() == ["42", "42"]
+    assert statuses["status"].tolist() == ["pending", "written", "done"]
+    assert statuses["principalId"].tolist() == ["42", "42", "42"]
     assert (rep / "syn100" / "validation.csv").exists()
     assert status_of(rep) == "written"
     assert pd.read_csv(rep / "syn100" / "decisions.csv").empty

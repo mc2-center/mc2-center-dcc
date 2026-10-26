@@ -141,9 +141,9 @@ def _canon(value, set_like: bool = False):
     converted to float, so long digit strings stay distinct.
     """
     n = _norm(value, set_like)
-    if isinstance(n, str) and n and n[0] in _NUMBER_START:
+    if isinstance(n, str):
         text = n.strip()
-        if _NUMERIC.fullmatch(text):
+        if text and text[0] in _NUMBER_START and _NUMERIC.fullmatch(text):
             return ("#", Decimal(text))
     return n
 
@@ -323,9 +323,13 @@ class WriteLog:
 
     Columns: ``recordSetId, version`` (null while ``pending``), ``baseVersion``
     (the latest version the run read and reconciled against), ``runId``,
-    ``principalId`` (the runner's Synapse user ID), ``status`` (``pending``,
-    ``written``, ``recovered``, or ``aborted`` when a run failed before any
-    export), ``writtenOn``, ``rowsWritten``. Subclasses implement ``_read`` and
+    ``principalId`` (the runner's Synapse user ID), ``status`` (``pending``;
+    ``written`` per export; ``done`` once every export of the write is logged;
+    ``recovered``; or ``aborted`` when a run created nothing), ``writtenOn``,
+    ``rowsWritten``. A ``pending`` row is resolved only by a later ``done``,
+    ``recovered`` or ``aborted`` row with the same ``runId`` and
+    ``baseVersion``, so a reused runId, a rerun, or a write with several exports
+    keeps its lock and stays recoverable until it finishes. Subclasses implement ``_read`` and
     ``_append``.
     """
 
@@ -354,6 +358,10 @@ class WriteLog:
         base = version - 1 if base is None and version is not None else base
         self._append(self._row(rs_id, version, base, run_id, principal, status, rows))
 
+    def finish(self, rs_id: str, base: int, run_id: str, principal) -> None:
+        """Resolve a ``pending`` row once every export of its write is logged."""
+        self._append(self._row(rs_id, None, base, run_id, principal, "done", None))
+
     def abort(self, rs_id: str, base: int, run_id: str, principal) -> None:
         """Resolve a ``pending`` row whose run failed before creating any version."""
         self._append(self._row(rs_id, None, base, run_id, principal, "aborted", None))
@@ -372,12 +380,17 @@ class WriteLog:
         return max(versions) if versions else None
 
     def unresolved_pending(self, rs_id: str) -> list[dict]:
-        """``pending`` rows whose runId has no written, recovered or aborted row."""
+        """``pending`` rows not yet resolved by a later ``done``/``recovered``/``aborted``
+        row of the same runId and baseVersion."""
         df = self._read(rs_id)
-        done = set(df.loc[df["status"].isin(["written", "recovered", "aborted"]), "runId"])
+        closers = [
+            (r["runId"], _int_or_none(r["baseVersion"]), _to_dt(r["writtenOn"]))
+            for _, r in df[df["status"].isin(["done", "recovered", "aborted"])].iterrows()
+        ]
         out = []
         for _, row in df[df["status"] == "pending"].iterrows():
-            if row["runId"] not in done:
+            base, when = _int_or_none(row["baseVersion"]), _to_dt(row["writtenOn"])
+            if not any(r == row["runId"] and b == base and w >= when for r, b, w in closers):
                 out.append({
                     "runId": row["runId"], "baseVersion": _int_or_none(row["baseVersion"]),
                     "principalId": str(row["principalId"]), "writtenOn": _to_dt(row["writtenOn"]),
@@ -494,7 +507,8 @@ def recordset_version_meta(syn, rs_id: str, version: int) -> tuple[str, pd.Times
     return str(entity.modified_by), _to_dt(entity.modified_on)
 
 
-def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True) -> dict[int, int]:
+def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
+                    run_id=None, skip_younger_than=None, now=None) -> dict[int, int]:
     """Recover versions created by runs that died after exporting.
 
     For each unresolved ``pending`` row, a version above its ``baseVersion``
@@ -503,13 +517,21 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True) -> di
     that base: recorded as ``recovered`` (when ``record``) and returned as
     ``{version: base}``. A pending row with nothing to recover is resolved as
     ``aborted``. Call it before this run's own ``start``; a crashed export of
-    the same runId is recovered like any other.
+    the same runId is recovered like any other. Before ``start``, pass
+    ``skip_younger_than=LOCK_HOURS``: a younger row belongs to a live run
+    (``locked_by`` already let us through), and must not be aborted under it.
+    After a failed write, pass ``run_id`` to resolve only this run's own row.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
     logged = write_log.pipeline_map(rs_id)
     found: dict[int, int] = {}
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
     for row in write_log.unresolved_pending(rs_id):
         if row["baseVersion"] is None:
+            continue
+        if run_id is not None and row["runId"] != run_id:
+            continue
+        if skip_younger_than is not None and now - row["writtenOn"] < pd.Timedelta(hours=skip_younger_than):
             continue
         mine = []
         for v in range(row["baseVersion"] + 1, latest + 1):

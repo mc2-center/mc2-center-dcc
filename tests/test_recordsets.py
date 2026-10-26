@@ -362,7 +362,10 @@ def test_csv_write_log_v2(tmp_path):
     assert log.pipeline_versions("syn1") == [5, 7] and log.last_version("syn1") == 7
     header = (tmp_path / "sub" / "log.csv").read_text().splitlines()[0]
     assert header == ",".join(rs.WRITE_LOG_COLUMNS)
-    assert log.unresolved_pending("syn1") == []  # run1 has a written row
+    # a written row doesn't close the write (more exports may follow); done does
+    assert [r["runId"] for r in log.unresolved_pending("syn1")] == ["run1"]
+    log.finish("syn1", 4, "run1", "42")
+    assert log.unresolved_pending("syn1") == []
 
 
 def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
@@ -373,7 +376,9 @@ def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
     assert log.locked_by("syn2", "me") is None
     later = pd.Timestamp.now(tz="UTC") + pd.Timedelta(hours=2, minutes=1)
     assert log.locked_by("syn1", "me", now=later) is None
-    log.record("syn1", 4, "other", 5, base=3, principal="7")  # resolved
+    log.record("syn1", 4, "other", 5, base=3, principal="7")  # an export: still writing
+    assert log.locked_by("syn1", "me") == "other"
+    log.finish("syn1", 3, "other", "7")  # resolved
     assert log.locked_by("syn1", "me") is None
 
 
@@ -696,3 +701,40 @@ def test_replay_benchmark_200_versions_500_rows_18_columns():
     elapsed = _time.perf_counter() - start
     print(f"replay of 200 versions x 500 rows x 18 columns: {elapsed:.2f}s")
     assert len(state) == 500 and elapsed < 5
+
+
+def test_rerun_and_reused_run_id_keep_their_lock(tmp_path):
+    # Same runId writes v6 (base 4) and finishes, then a rerun starts at base 6:
+    # its pending row must not be resolved by the first write's rows.
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 4, "RUN", "42")
+    log.record("syn1", 6, "RUN", 3, base=4, principal="42")
+    log.finish("syn1", 4, "RUN", "42")
+    log.start("syn1", 6, "RUN", "42")
+    assert [r["baseVersion"] for r in log.unresolved_pending("syn1")] == [6]
+    assert log.locked_by("syn1", "OTHER") == "RUN"
+    log.start("syn1", 6, "OTHER", "42")
+    assert log.earlier_pending("syn1", "OTHER") == "RUN"
+
+
+def test_second_export_crash_is_recovered(tmp_path):
+    # A write exported v2 (logged) and v3, then died before logging v3 or done.
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "R", "42")
+    log.record("syn1", 2, "R", 3, base=1, principal="42")
+    on = log.unresolved_pending("syn1")[0]["writtenOn"] + pd.Timedelta(minutes=1)
+    found = rs.recover_pending(None, "syn1", log, 3, meta=lambda v: ("42", on), run_id="R")
+    assert found == {3: 1}
+    assert log.unresolved_pending("syn1") == []
+
+
+def test_pre_start_recovery_leaves_a_young_live_row_alone(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 5, "B", "42")  # run B just started; nothing exported yet
+    found = rs.recover_pending(None, "syn1", log, 5, meta=lambda v: ("42", pd.NaT),
+                               skip_younger_than=rs.LOCK_HOURS)
+    assert found == {} and [r["runId"] for r in log.unresolved_pending("syn1")] == ["B"]
+
+
+def test_leading_space_number_compares_as_number():
+    assert rs._cells_equal(" 2020", "2020.0", False)

@@ -142,7 +142,9 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
 
     # A run that died after exporting leaves a pending row; claim its versions.
-    recovered = recordsets.recover_pending(syn, rs_id, write_log, latest, record=args.execute)
+    recovered = recordsets.recover_pending(
+        syn, rs_id, write_log, latest, record=args.execute, skip_younger_than=recordsets.LOCK_HOURS
+    )
     if recovered:
         summary["recovered"] = sorted(recovered)
     log_map = {**write_log.pipeline_map(rs_id), **recovered}
@@ -184,21 +186,6 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     principal = principal_id(syn)
     write_log.start(rs_id, latest, args.run_id, principal)
-    # Lock race: another run may have started between our check and our pending
-    # row. The earlier pending row (ties by runId) keeps the lock.
-    winner = write_log.earlier_pending(rs_id, args.run_id)
-    if winner:
-        write_log.abort(rs_id, latest, args.run_id, principal)
-        summary.update(status="locked", message=f"run {winner} started its write first; skipped")
-        return summary
-    # The merge was computed against ``latest``; if the RecordSet moved, replay again next run.
-    now_latest, _ = recordsets.recordset_info(syn, rs_id)
-    if now_latest != latest:
-        write_log.abort(rs_id, latest, args.run_id, principal)
-        summary.update(status="retry", message=(
-            f"{rs_id} moved from v{latest} to v{now_latest} before the write; nothing written, "
-            "the next run replays it"))
-        return summary
     created = []
 
     def on_version(v):
@@ -206,13 +193,29 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         created.append(v)
 
     try:
+        # Lock race: another run may have started between our check and our pending
+        # row. The earlier pending row (ties by runId) keeps the lock.
+        winner = write_log.earlier_pending(rs_id, args.run_id)
+        if winner:
+            write_log.abort(rs_id, latest, args.run_id, principal)
+            summary.update(status="locked", message=f"run {winner} started its write first; skipped")
+            return summary
+        # The merge was computed against ``latest``; if the RecordSet moved, replay again next run.
+        now_latest, _ = recordsets.recordset_info(syn, rs_id)
+        if now_latest != latest:
+            write_log.abort(rs_id, latest, args.run_id, principal)
+            summary.update(status="retry", message=(
+                f"{rs_id} moved from v{latest} to v{now_latest} before the write; nothing written, "
+                "the next run replays it"))
+            return summary
         recordsets.write_via_grid(syn, rs_id, merged_path, on_version=on_version)
-    except Exception:
+        write_log.finish(rs_id, latest, args.run_id, principal)
+    except BaseException:
         # Exports that completed are already logged. Claim a version whose export
-        # raised after it was created, or resolve the pending row as aborted.
+        # raised after it was created, or resolve our pending row as aborted.
         try:
             newest, _ = recordsets.recordset_info(syn, rs_id)
-            recordsets.recover_pending(syn, rs_id, write_log, newest)
+            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=args.run_id)
         except Exception:
             logger.exception("%s: could not resolve the pending write-log row", rs_id)
         raise
