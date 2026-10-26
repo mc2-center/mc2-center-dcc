@@ -78,7 +78,7 @@ def main():
     syn = utils.syn_login()
     args = utils.get_args("people")
 
-    manifest = model_contract.read_manifest(syn, args.manifest_id).fillna("")
+    manifest = utils.fill_blank(model_contract.read_manifest(syn, args.manifest_id))
     manifest = prepare_manifest(manifest)
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)

@@ -82,7 +82,8 @@ def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tu
             query=f"SELECT * FROM {tableId}",
             include_row_id_and_row_version=False,
             synapse_client=syn,
-        ).fillna("")
+        )
+        table = utils.fill_blank(table)
         name = table["Component"].iat[1]  # grab name of data type from table (second row, as before)
         manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
         manifestPath.parent.mkdir(parents=True, exist_ok=True)  # create folder to store CSVs

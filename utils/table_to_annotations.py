@@ -127,7 +127,7 @@ def get_table(
     whole_table = is_record_set or legacy_component is not None or cols == "*"
 
     if whole_table:
-        table = model_contract.read_manifest(syn, source_id).fillna("")
+        table = _portal_utils.fill_blank(model_contract.read_manifest(syn, source_id))
         if legacy_component is not None:
             table = model_contract.rename_legacy_headers(table, legacy_component)
         if type(wanted) == list:
@@ -142,14 +142,12 @@ def get_table(
         # FileView isn't pulled whole.
         if type(cols) == list:
             cols = ", ".join(["".join(['"', col, '"']) for col in cols])
-        table = (
-            Table(id=source_id)
-            .query(
+        table = _portal_utils.fill_blank(
+            Table(id=source_id).query(
                 query=f"SELECT {cols} FROM {source_id}",
                 include_row_id_and_row_version=False,
                 synapse_client=syn,
             )
-            .fillna("")
         )
 
     print(f"Data acquired from Synapse table {source_id}")

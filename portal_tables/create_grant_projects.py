@@ -212,7 +212,7 @@ def create_grant_projects(syn, grants):
     be created map to ``("None", "None")``.
     """
 
-    grants = grants.fillna("")
+    grants = utils.fill_blank(grants)
     grant_info_dict = {}
     for _, row in grants.iterrows():
         name = _syn_prettify(row["GrantName"])

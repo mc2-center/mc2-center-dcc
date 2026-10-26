@@ -160,6 +160,24 @@ def strip_newlines(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def fill_blank(df: pd.DataFrame, numeric: bool = True) -> pd.DataFrame:
+    """Replace nulls with empty strings, also in nullable-dtype columns.
+
+    ``df.fillna("")`` raises ``TypeError`` on Int64/Float64/boolean columns
+    that hold nulls (what ``Table.query`` can return); filled columns come
+    back as ``object``. With ``numeric=False`` numeric and boolean columns
+    are left as they are, nulls included, for callers that store the frame
+    back to a table.
+    """
+    if not numeric:
+        out = df.copy()
+        for c in df.columns:
+            if not (pd.api.types.is_numeric_dtype(df[c]) or pd.api.types.is_bool_dtype(df[c])):
+                out[c] = df[c].astype(object).where(df[c].notna(), "")
+        return out
+    return df.astype(object).where(df.notna(), "")
+
+
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 

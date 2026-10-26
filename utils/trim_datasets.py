@@ -75,7 +75,7 @@ def main():
         config_df = pd.read_csv(config, keep_default_na=False, header=0)
         print("\nDataset trimming config read successfully!")
     elif "syn" in config:
-        config_df = model_contract.read_manifest(syn, config).fillna("")
+        config_df = _portal_utils.fill_blank(model_contract.read_manifest(syn, config))
         print(f"Data trimming config acquired from Synapse table {config}!")
     else:
         print(

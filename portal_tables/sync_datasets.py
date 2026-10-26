@@ -300,7 +300,7 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = model_contract.read_manifest(syn, args.manifest_id).fillna("")
+    manifest = utils.fill_blank(model_contract.read_manifest(syn, args.manifest_id))
     manifest = restore_display_names(manifest)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     manifest = model_contract.normalize_headers(

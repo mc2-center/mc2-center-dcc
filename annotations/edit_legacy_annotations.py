@@ -96,10 +96,13 @@ def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
     for table_id in scope_ids:
         print(f"Updating annotations found in table ID: {table_id}")
         table = Table(id=table_id)
-        updated_table = update_nonpreferred_terms(
-            table.query(query=f"SELECT * FROM {table_id}", synapse_client=syn).fillna(""),
-            cv_dict
+        # Stored back by store_rows(): fill text columns only, so nulls in
+        # numeric columns stay null instead of becoming "".
+        current = utils.fill_blank(
+            table.query(query=f"SELECT * FROM {table_id}", synapse_client=syn),
+            numeric=False,
         )
+        updated_table = update_nonpreferred_terms(current, cv_dict)
         if dryrun:
             updated_table.to_csv(table_id + "-updated.csv", index=False)
         else:

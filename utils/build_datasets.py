@@ -193,7 +193,7 @@ def main():
         dsp_df = pd.read_csv(dsp, keep_default_na=False, header=0)
         print("\nData Sharing Plan read successfully!")
     elif "syn" in dsp:
-        dsp_df = model_contract.read_manifest(syn, dsp).fillna("")
+        dsp_df = _portal_utils.fill_blank(model_contract.read_manifest(syn, dsp))
         print(f"Data Sharing Plan acquired from Synapse table {dsp}!")
     else:
         print(

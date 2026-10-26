@@ -78,7 +78,9 @@ def get_annotations(table_id, updated_df, syn):
 def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
 
     # annots_query is already a DataFrame (Table.query() returns one directly).
-    annots_df = annots_query.fillna("")
+    # Numeric columns are filled too (nullable dtypes can't take ""); the
+    # type-fixing loop below turns the "" in them back into nulls.
+    annots_df = _portal_utils.fill_blank(annots_query)
     # preserve original index
     index_rows = dict(zip(annots_df.pubMedId, annots_df.index))
 
@@ -135,7 +137,7 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
                 lambda v: (v.split(", ") if v else None) if isinstance(v, str) else v
             )
         elif col_type in (int, float):
-            # fillna("") left "" in numeric columns; convert it back to null.
+            # fill_blank() left "" in numeric columns; convert it back to null.
             final_df[column_name] = pd.to_numeric(
                 final_df[column_name].where(final_df[column_name] != "", pd.NA)
             )

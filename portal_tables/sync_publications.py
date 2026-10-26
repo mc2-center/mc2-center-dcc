@@ -65,7 +65,7 @@ def clean_table(df: pd.DataFrame, live_types: dict[str, str]) -> pd.DataFrame:
 
 def prepare_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
     """Give the raw manifest class-label headers (13.1.0 or 14.0.0 input)."""
-    manifest = manifest.fillna("")
+    manifest = utils.fill_blank(manifest)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     # iconTags is an enrichment column that comes with the manifest.
     return model_contract.normalize_headers(manifest, to="keys", passthrough=["iconTags"])

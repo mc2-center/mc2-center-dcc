@@ -35,7 +35,10 @@ def get_df(syn, publications_table_id):
     # `syn.store(Table(table_id, df))` this replaced tolerated a partial
     # column set; store_rows() does not.
     pubs_query = f"SELECT * FROM {publications_table_id}"
-    pubs_df = Table(id=publications_table_id).query(query=pubs_query, synapse_client=syn).fillna("")
+    pubs_df = Table(id=publications_table_id).query(query=pubs_query, synapse_client=syn)
+    # Stored back by store_rows(): fill text columns only, so a null year or
+    # other number stays null instead of becoming "".
+    pubs_df = _portal_utils.fill_blank(pubs_df, numeric=False)
 
     return pubs_df
 
