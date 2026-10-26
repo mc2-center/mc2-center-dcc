@@ -472,7 +472,13 @@ def stage_links(run, args, syn=None):
 
 
 def stage_upload(run, args):
-    d = run.stage_dir("upload")
+    # Resuming at upload keeps earlier <run-id>/ report directories (they are the
+    # audit trail of earlier attempts); only this run ID's own directory is cleared.
+    keep = ()
+    if args.from_stage == "upload":
+        existing = run.stage_path("upload")
+        keep = tuple(c.name for c in existing.iterdir() if c.name != args.run_id) if existing.is_dir() else ()
+    d = run.stage_dir("upload", keep=keep)
     links = run.state["stages"]["links"]
     if args.execute and "dry run" in links.get("note", ""):
         raise RuntimeError("links was skipped in a dry run; resume with --from-stage links --execute")

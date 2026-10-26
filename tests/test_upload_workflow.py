@@ -661,3 +661,22 @@ def test_get_names_reads_text_literally(tmp_path, monkeypatch):
     assert [(n, l) for _, n, l, _ in got] == [("NA", "http://x/1"), ("null", ""), ("007", "http://x/3")]
     got = mod.get_names("Tool Name", "folderIdTools", "Tool Homepage", data=str(split))
     assert [n for _, n, _, _ in got] == ["NA", "null", "007"]
+
+
+def test_resuming_upload_keeps_earlier_run_report_dirs(tmp_path, env):
+    run(tmp_path, "ToolView", "--run-id", "run-1")
+    up = tmp_path / "out" / "05_upload"
+    for name in ("run-1", "run-2"):
+        (up / name).mkdir(exist_ok=True)
+        (up / name / "decisions.csv").write_text("x")
+    run(tmp_path, "ToolView", "--from-stage", "upload", "--run-id", "run-2")
+    assert (up / "run-1" / "decisions.csv").exists()  # earlier run kept
+    assert not (up / "run-2" / "decisions.csv").exists()  # current run ID cleared
+
+
+def test_fresh_upload_stage_still_starts_empty(tmp_path, env):
+    run(tmp_path, "ToolView", "--run-id", "run-1")
+    old = tmp_path / "out" / "05_upload" / "run-0"
+    old.mkdir()
+    run(tmp_path, "ToolView", "--from-stage", "links", "--run-id", "run-1")
+    assert not old.exists()
