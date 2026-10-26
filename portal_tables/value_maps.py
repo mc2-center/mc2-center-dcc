@@ -240,6 +240,8 @@ class Normalizer:
         if value == "":
             return ""
         new, rule = self._value(column, value)
+        if rule == "license_blanked":
+            unmapped.append({"key": key, "column": column, "value": value})  # blanked and reported (O6)
         if rule == "unmapped":
             unmapped.append({"key": key, "column": column, "value": value})
             return value

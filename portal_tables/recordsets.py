@@ -892,6 +892,11 @@ def write_via_grid(
             logger.exception("%s: could not delete grid session %s", rs_id, getattr(grid, "session_id", ""))
 
 
+def principal_id(syn) -> str:
+    """The runner's Synapse user ID, as logged in the write log."""
+    return str(syn.getUserProfile()["ownerId"])
+
+
 class WriteRefused(Exception):
     """A logged write was not started: ``status`` is ``locked`` or ``retry``."""
 

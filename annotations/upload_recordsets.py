@@ -237,7 +237,7 @@ def _only(df: pd.DataFrame, columns) -> pd.DataFrame:
 
 
 def principal_id(syn) -> str:
-    return str(syn.getUserProfile()["ownerId"])
+    return recordsets.principal_id(syn)
 
 
 def folder_column_name(row) -> str:

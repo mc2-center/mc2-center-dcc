@@ -83,7 +83,7 @@ def test_license_maps_to_spdx_and_blanks_what_it_cannot_map():
     assert row["License"] == ["Apache-2.0", "MIT"]
     assert sorted(changes["rule"]) == ["license_blanked", "nonpreferred", "nonpreferred"]
     assert changes[changes["rule"] == "license_blanked"].iloc[0]["from"] == "Our own terms"
-    assert unmapped.empty  # blanked, not unmapped: the blanking is itself the recorded change
+    assert unmapped["value"].tolist() == ["Our own terms"]  # blanked and reported (O6)
 
 
 @pytest.mark.parametrize("raw", [
