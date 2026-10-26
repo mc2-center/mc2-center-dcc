@@ -48,7 +48,9 @@ tooling built for it.
 Gets new rows from Phase 1's output into Synapse's **per-grant source
 tables**. Run once per component (PublicationView / DatasetView / ToolView).
 
-**Being replaced by task D15.** The scripts below are today's manual steps,
+**Replaced by task D15 (`annotations/upload_workflow.py`, now implemented; see `annotations/README.md`).** The driver runs stages `split`, `paths`, `reshape`, `links`, `upload` into `<out-dir>/<NN>_<stage>/` with a `run.json` and `--from-stage` resume, defaults to a dry run, and builds in the empty-link, duplicate-GEO-dataset and `SYNAPSE_AUTH_TOKEN` gaps below. The numbered steps are what it chains.
+
+*Original description:* The scripts below are today's manual steps,
 still driven by the broken `upload-workflow.sh`. D15 collapses them into one
 command, `annotations/upload_workflow.py --manifest … --type … --out-dir …
 --target {recordset,schematic-table}`, which runs split → gen-mp-csv →

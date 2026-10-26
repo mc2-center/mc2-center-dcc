@@ -1,0 +1,197 @@
+"""D15: annotations/upload_workflow.py, dry run end to end on the D8 handoff fixtures.
+
+Synapse is mocked: gen-mp-csv's query is a canned grant/folder table, the
+upload scripts are replaced by recorders, and Synapse entity lookups use a fake.
+"""
+
+import importlib.util
+import json
+import sys
+import types
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+ANNOTATIONS = Path(__file__).resolve().parent.parent / "annotations"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "handoff"
+CV = FIXTURES / "all_valid_values.csv"
+GRANTS = ["CA209997", "CA209923", "CA184898"]
+
+spec = importlib.util.spec_from_file_location("upload_workflow", ANNOTATIONS / "upload_workflow.py")
+uw = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(uw)
+
+
+@pytest.fixture
+def env(monkeypatch):
+    """Mock Synapse-facing pieces; returns a record of upload/link calls."""
+    calls = {"links": [], "upload": []}
+    genmp = uw._load("gen-mp-csv.py")
+
+    def fake_query(ref_path, data_type, folder_col, grant_col):
+        ref = pd.DataFrame({"grantNumber": GRANTS, grant_col: ["syn0", "syn1", "syn2"],
+                            folder_col: ["syn100", "syn101", "syn102"]})
+        ref.to_csv(ref_path, index=False)
+        return ref
+
+    monkeypatch.setattr(genmp, "query_synapse_for_folder_info", fake_query)
+
+    rec = types.SimpleNamespace(main=lambda argv: calls["upload"].append(argv) or 0)
+    links = types.SimpleNamespace(main=lambda argv: calls["links"].append(argv))
+    real_load = uw._load
+    monkeypatch.setattr(uw, "_load", lambda f: {"upload_recordsets.py": rec,
+                                                "create_entity_links.py": links}.get(f) or real_load(f))
+    return calls
+
+
+class FakeSyn:
+    def __init__(self, existing):
+        self.existing = existing
+
+    def findEntityId(self, name, parent=None):
+        from synapseclient.core.exceptions import SynapseFileNotFoundError
+
+        assert parent == uw.CENTRAL_PROJECT_SYNID
+        if name in self.existing:
+            return self.existing[name]
+        raise SynapseFileNotFoundError("nope")
+
+
+def run(tmp_path, type_="PublicationView", *extra, manifest=None, syn=None):
+    name = {"PublicationView": "publication.csv", "DatasetView": "dataset.csv", "ToolView": "tool.xlsx"}[type_]
+    argv = ["--manifest", str(manifest or FIXTURES / "p1" / name), "--type", type_,
+            "--out-dir", str(tmp_path / "out"), "--cv-file", str(CV),
+            "--write-log-csv", str(tmp_path / "log.csv"), *extra]
+    code = uw.main(argv, syn=syn)
+    return code, json.loads((tmp_path / "out" / "run.json").read_text())
+
+
+def test_dry_run_writes_stage_folders_and_run_json(tmp_path, env):
+    code, state = run(tmp_path)
+    assert code == 0
+    out = tmp_path / "out"
+    for d in ["01_split", "02_paths", "03_reshape", "05_upload"]:
+        assert (out / d).is_dir()
+    assert list(state["stages"]) == ["split", "paths", "reshape", "links", "upload"]
+    for s in state["stages"].values():
+        assert s["started"] and s["finished"]
+    assert state["stages"]["links"]["status"] == "skipped"
+    assert state["execute"] is False
+    assert len(list((out / "01_split").glob("*_publication.csv"))) == 3
+    assert "--execute" not in env["upload"][0]
+    assert env["links"] == []
+
+
+def test_links_skipped_in_dry_run_and_created_on_execute(tmp_path, env):
+    code, state = run(tmp_path, "ToolView")
+    assert env["links"] == []
+    assert "dry run" in state["stages"]["links"]["note"]
+    code, state = run(tmp_path, "ToolView", "--execute")
+    assert code == 0 and len(env["links"]) == 1
+    assert env["links"][0][-2:] == ["-t", "ToolView"]
+    assert "--execute" in env["upload"][-1]
+
+
+def test_from_stage_resumes(tmp_path, env):
+    run(tmp_path)
+    split_stamp = json.loads((tmp_path / "out" / "run.json").read_text())["stages"]["split"]["finished"]
+    code, state = run(tmp_path, "PublicationView", "--from-stage", "upload")
+    assert code == 0
+    assert state["stages"]["split"]["finished"] == split_stamp
+    assert len(env["upload"]) == 2
+
+
+def test_resume_requires_earlier_stages(tmp_path, env):
+    with pytest.raises(SystemExit):
+        run(tmp_path, "PublicationView", "--from-stage", "reshape")
+
+
+def test_resume_execute_after_dry_run_must_redo_links(tmp_path, env):
+    run(tmp_path, "ToolView")
+    code, state = run(tmp_path, "ToolView", "--from-stage", "upload", "--execute")
+    assert code == 1 and state["stages"]["upload"]["status"] == "failed"
+
+
+def test_empty_link_rows_dropped_and_empty_files_removed(tmp_path, env):
+    df = pd.read_excel(FIXTURES / "p1" / "tool.xlsx", sheet_name="manifest")
+    # tool0 is one of two CA209997 rows; tool1 is CA209923's only row (and also in CA184898)
+    df.loc[df["Tool Name"].isin(["tool0", "tool1"]), "Tool Homepage"] = None
+    manifest = tmp_path / "tools.csv"
+    df.to_csv(manifest, index=False)
+    code, state = run(tmp_path, "ToolView", manifest=manifest)
+    assert code == 0
+    links = tmp_path / "out" / "04_links"
+    dropped = pd.read_csv(links / "dropped_rows.csv")
+    assert len(dropped) == 3  # tool0 once, tool1 in two grant files
+    assert "Tool Homepage" in dropped["reason"].iloc[0]
+    final = sorted((links / "final").glob("*.csv"))
+    assert final and all(len(pd.read_csv(f)) > 0 for f in final)
+    assert not any("CA209923" in f.name for f in final)
+    uploaded = pd.read_csv(state["stages"]["upload"]["outputs"]["paths_csv"])
+    assert not any("CA209923" in p for p in uploaded["File Paths"])
+
+
+def test_existing_geo_accession_is_reused(tmp_path, env):
+    syn = FakeSyn({"GSE150001": "syn999"})
+    code, state = run(tmp_path, "DatasetView", "--execute", syn=syn)
+    assert code == 0
+    links = tmp_path / "out" / "04_links"
+    reused = pd.read_csv(links / "reused_entities.csv")
+    assert set(reused["accession"]) == {"GSE150001"} and set(reused["entity_id"]) == {"syn999"}
+    # create_entity_links never sees the matched row
+    pending = pd.read_csv(env["links"][0][1])
+    for p in pending["File Paths"]:
+        assert "GSE150001" not in pd.read_csv(p)["Dataset Alias"].tolist()
+    # ...and the final files carry the existing ID
+    rows = pd.concat([pd.read_csv(f, dtype=str) for f in (links / "final").glob("*.csv")])
+    assert set(rows.loc[rows["Dataset Alias"] == "GSE150001", "DatasetView_id"]) == {"syn999"}
+
+
+def test_dry_run_still_reports_reuse_without_creating(tmp_path, env):
+    code, state = run(tmp_path, "DatasetView", syn=FakeSyn({"GSE150000": "syn5"}))
+    assert env["links"] == [] and state["stages"]["links"]["outputs"]["reused"] == 1
+
+
+def test_target_selection(tmp_path, env, monkeypatch):
+    run(tmp_path)  # default recordset
+    assert "PublicationView" in env["upload"][0] and "--write-log-csv" in env["upload"][0]
+
+    ran = []
+    monkeypatch.setattr(uw.subprocess, "run",
+                        lambda cmd, env=None: ran.append((cmd, env)) or types.SimpleNamespace(returncode=0))
+    out2 = tmp_path / "b"
+    base = ["--manifest", str(FIXTURES / "p1" / "publication.csv"), "--type", "PublicationView",
+            "--out-dir", str(out2), "--cv-file", str(CV), "--target", "schematic-table"]
+    assert uw.main(base) == 0 and ran == []  # dry run: not invoked
+    assert json.loads((out2 / "run.json").read_text())["stages"]["upload"]["outputs"]["ran"] is False
+
+    monkeypatch.setenv("SYNAPSE_AUTH_TOKEN", "tok")
+    assert uw.main(base + ["--schematic-config", "c.yml", "--execute", "--from-stage", "upload"]) == 0
+    cmd, senv = ran[0]
+    assert "upload-manifests.py" in cmd[1] and cmd[-2:] == ["-c", "c.yml"]
+    assert senv["SYNAPSE_AUTH_TOKEN"] == "tok"
+    assert len(env["upload"]) == 1  # the recordset uploader was only used by the first run
+
+
+def test_recordset_target_needs_write_log():
+    with pytest.raises(SystemExit):
+        uw.get_args(["--manifest", "m.csv", "--type", "ToolView", "--out-dir", "o"])
+
+
+def test_create_entity_links_main_takes_argv(monkeypatch):
+    """Backward-compatible main(argv=None) refactor: argv parses, no argv reads sys.argv."""
+    for name in ["geo_synapse", "geo_synapse.mc2_table", "geo_synapse.synapse_ops", "geo_synapse.pipeline"]:
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    sys.modules["geo_synapse.mc2_table"].parse_accession = lambda s: None
+    sys.modules["geo_synapse.mc2_table"].find_project_for_grant = lambda *a: None
+    for n in ["find_or_create_folder", "create_synapse_dataset", "add_to_dataset_collection"]:
+        setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
+    sys.modules["geo_synapse.pipeline"].run_one = None
+    spec2 = importlib.util.spec_from_file_location("cel", ANNOTATIONS / "create_entity_links.py")
+    mod = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(mod)
+    args = mod.get_args(["-m", "p.csv", "-t", "ToolView"])
+    assert (args.m, args.t) == ("p.csv", "ToolView")
+    monkeypatch.setattr(sys, "argv", ["x", "-t", "DatasetView"])
+    assert mod.get_args().t == "DatasetView"

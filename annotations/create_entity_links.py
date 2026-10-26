@@ -41,7 +41,7 @@ _COLLECTION_SYNID = "syn77025587"        # DatasetCollection in _CENTRAL_PROJECT
 _DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders
 
 
-def get_args():
+def get_args(argv=None):
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -77,7 +77,7 @@ def get_args():
         type=str,
         help="The path to a csv containing metadata of the type indicated.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
@@ -195,11 +195,11 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
     return lookup
 
 
-def main():
+def main(argv=None):
 
     syn = utils.syn_login()
 
-    args = get_args()
+    args = get_args(argv)
 
     manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p,
 
