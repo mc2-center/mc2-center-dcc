@@ -61,3 +61,9 @@ def test_no_recordsets_gives_header_only_union(tmp_path, capsys):
     out = (tmp_path / "ToolView_UNION.csv").read_text().splitlines()
     assert out == [",".join(mt.model_contract.template_headers("ToolView"))]
     assert "rows=0" in capsys.readouterr().out
+
+
+def test_component_column_is_filled():
+    # RecordSets have no Component column (a Grid import drops it).
+    df, _ = _union({"syn1": _rs(["t1"], ["A"])}, ["syn1"])
+    assert df["Component"].tolist() == ["ToolView"]

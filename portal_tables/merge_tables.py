@@ -162,6 +162,9 @@ def build_union(syn, component, grant_ids):
     for col in headers:
         if col not in union.columns:
             union[col] = ""
+    # A Grid import drops Component (not a schema property); restore it.
+    if "Component" in headers:
+        union["Component"] = component
     extra = [c for c in union.columns if c not in headers]
     if extra:
         logger.warning("Columns not in the %s template, kept at the end: %s", component, extra)
