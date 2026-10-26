@@ -50,7 +50,9 @@ import logging
 import os
 import re
 import sys
+import urllib.error
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 import jsonschema
@@ -263,14 +265,31 @@ def _instance(row: dict, properties: dict) -> dict:
     return out
 
 
-def validate_frame(frame: pd.DataFrame, component: str) -> pd.DataFrame:
+@lru_cache(maxsize=None)
+def load_schema(component: str, ref: str | None = None) -> dict:
+    """``json_schemas/<component>.json`` at the data-models tag ``ref`` (e.g. ``v14.0.1``).
+
+    An unavailable tag logs a warning and falls back to ``MODEL_REF``'s schema.
+    """
+    try:
+        path = model_contract.fetch(f"json_schemas/{component}.json", ref=ref)
+    except (urllib.error.URLError, FileNotFoundError) as err:
+        logger.warning("Schema %s at data-models %s is not available (%s); validating against %s",
+                       component, ref, err, model_contract.MODEL_REF)
+        path = model_contract.fetch(f"json_schemas/{component}.json")
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def validate_frame(frame: pd.DataFrame, component: str, ref: str | None = None) -> pd.DataFrame:
     """Local jsonschema failures: ``key, field, validator, message``.
+
+    The schema is the one at data-models tag ``ref`` (``--schema-version``).
 
     Array cells are the lists in ``frame`` (a string holds one string, as
     ``GrantViewKey`` does). Blank cells are absent, so ``required`` fails for them.
     """
-    with open(model_contract.fetch(f"json_schemas/{component}.json"), encoding="utf-8") as fh:
-        schema = json.load(fh)
+    schema = load_schema(component, ref)
     cls = jsonschema.validators.validator_for(schema)
     validator = cls(schema, format_checker=_format_checker())
     key = KEYS[component]
@@ -423,7 +442,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         return summary, None, source_keys
     if dropped:
         logger.info("%s: not schema columns, dropped: %s", entry["grant"], dropped)
-    validation = validate_frame(converted, component)
+    validation = validate_frame(converted, component, f"v{args.schema_version}")
     converted_path = report_dir / "converted.csv"
     _write(converted, converted_path)
     _write(changes, report_dir / "changes.csv")

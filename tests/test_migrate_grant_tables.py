@@ -461,3 +461,31 @@ def test_dry_run_compares_with_the_legacy_view_when_given(tmp_path):
     with mock.patch.object(mig, "Table", lambda id: table):
         code, rep = run(tmp_path, fake, "--union-id", "synMV", run_id="r2")
     assert code == 1 and "DIFFERENT" in (rep / "comparison.txt").read_text()
+
+
+# --- schema version ---------------------------------------------------------------
+
+
+def test_validation_uses_the_schema_at_the_requested_tag(monkeypatch):
+    mig.load_schema.cache_clear()
+    seen = []
+    real = mig.model_contract.fetch
+    monkeypatch.setattr(mig.model_contract, "fetch", lambda path, ref=None: (seen.append(ref), real(path))[1])
+    mig.load_schema("PublicationView", "v14.0.1")
+    assert seen == ["v14.0.1"]
+    mig.load_schema.cache_clear()
+
+
+def test_unavailable_schema_tag_warns_and_falls_back(monkeypatch, caplog):
+    mig.load_schema.cache_clear()
+    real = mig.model_contract.fetch
+
+    def fetch(path, ref=None):
+        if ref:
+            raise mig.urllib.error.HTTPError("u", 404, "Not Found", None, None)
+        return real(path)
+
+    monkeypatch.setattr(mig.model_contract, "fetch", fetch)
+    schema = mig.load_schema("PublicationView", "v99.0.0")
+    assert "properties" in schema and "not available" in caplog.text
+    mig.load_schema.cache_clear()

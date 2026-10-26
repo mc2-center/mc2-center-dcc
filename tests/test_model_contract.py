@@ -243,3 +243,21 @@ def test_read_manifest_unsupported_type():
     syn = _FakeSyn("org.sagebionetworks.repo.model.Folder")
     with pytest.raises(ValueError, match="unsupported entity type"):
         mc.read_manifest(syn, "syn1")
+
+
+def test_fetch_ref_uses_a_per_ref_cache_and_url(tmp_path, monkeypatch):
+    monkeypatch.delenv("MC2_MODEL_DIR", raising=False)
+    monkeypatch.setattr(mc, "CACHE_DIR", tmp_path / mc.MODEL_REF)
+    urls = []
+
+    class Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b"{}"
+
+    monkeypatch.setattr(mc.urllib.request, "urlopen", lambda url, timeout: (urls.append(url), Resp())[1])
+    path = mc.fetch("json_schemas/X.json", ref="v14.0.1")
+    assert path == tmp_path / "v14.0.1" / "json_schemas" / "X.json"
+    assert urls == ["https://raw.githubusercontent.com/mc2-center/data-models/v14.0.1/json_schemas/X.json"]
+    mc.fetch("json_schemas/X.json", ref="v14.0.1")  # cached
+    assert len(urls) == 1

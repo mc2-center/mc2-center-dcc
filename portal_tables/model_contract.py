@@ -129,11 +129,12 @@ def rename_legacy_headers(df: pd.DataFrame, component: str) -> pd.DataFrame:
     return df.rename(columns=applied)
 
 
-def fetch(path: str) -> Path:
-    """Return a local path for ``path`` in data-models at ``MODEL_REF``.
+def fetch(path: str, ref: str | None = None) -> Path:
+    """Return a local path for ``path`` in data-models at ``ref`` (default ``MODEL_REF``).
 
-    With ``MC2_MODEL_DIR`` set, resolve inside that directory. Otherwise
-    download once into the cache and reuse it.
+    With ``MC2_MODEL_DIR`` set, resolve inside that directory (``ref`` is
+    ignored). Otherwise download once into the per-ref cache and reuse it; an
+    unavailable tag raises ``urllib.error.HTTPError``.
     """
     override = os.environ.get("MC2_MODEL_DIR")
     if override:
@@ -141,11 +142,12 @@ def fetch(path: str) -> Path:
         if not local.exists():
             raise FileNotFoundError(f"{path} not found under MC2_MODEL_DIR={override}")
         return local
-    cached = CACHE_DIR / path
+    ref = ref or MODEL_REF
+    cached = (CACHE_DIR if ref == MODEL_REF else CACHE_DIR.parent / ref) / path
     if not cached.exists():
         cached.parent.mkdir(parents=True, exist_ok=True)
         tmp = cached.with_name(cached.name + ".part")
-        with urllib.request.urlopen(f"{RAW}/{path}", timeout=60) as resp:
+        with urllib.request.urlopen(f"{RAW.rsplit('/', 1)[0]}/{ref}/{path}", timeout=60) as resp:
             tmp.write_bytes(resp.read())
         tmp.replace(cached)
     return cached
