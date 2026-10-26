@@ -41,6 +41,14 @@ class FakeSynapse:
         self.created_folders = []
         self.writes = []
         self.next_id = 100
+        self.reference_source = None  # merged-manifest frame (13.1.0 headers) or None
+        self.reference_reads = 0
+
+    def read_reference(self, syn, component):
+        self.reference_reads += 1
+        if self.reference_source is None:
+            raise RuntimeError("no merged manifest")
+        return self.reference_source.copy()
 
     # views / tables
     def list_tables(self, syn, component):
@@ -113,6 +121,7 @@ def run(tmp_path, fake, *extra, execute=False, log=None, run_id="r1", component=
          mock.patch.object(mig, "grants_map", fake.grants_map), \
          mock.patch.object(mig, "project_of", fake.project_of), \
          mock.patch.object(mig, "read_source", fake.read_source), \
+         mock.patch.object(mig, "read_reference", fake.read_reference), \
          mock.patch.object(mig.operations, "find_entity_id", fake.find_entity_id), \
          mock.patch.object(mig, "Folder", fake.Folder), \
          mock.patch.object(mig, "create_record_based_metadata_task", fake.create_task), \
@@ -158,7 +167,7 @@ def status_of(rep, grant="CA1"):
 
 def test_conversion_renames_headers_normalizes_values_and_keeps_schema_columns():
     norm = mig.value_maps.Normalizer.for_component("PublicationView")
-    converted, changes, unmapped, dropped = mig.convert_table(source_table(), "PublicationView", norm)
+    converted, changes, unmapped, dropped, resolutions = mig.convert_table(source_table(), "PublicationView", norm)
     assert converted.columns.tolist() == [KEY, "GrantViewKey", "PublicationTitle", "PublicationDoi", "Assay",
                                           "TumorType", "PublicationAccessibility"]
     assert sorted(dropped) == ["Component", "Id", "entityId"]
@@ -178,15 +187,88 @@ def test_unknown_header_fails_the_conversion():
         mig.convert_table(table, "PublicationView", norm)
 
 
-def test_duplicate_and_blank_keys_fail_the_conversion():
+def test_blank_keys_still_fail_the_conversion():
     norm = mig.value_maps.Normalizer.for_component("PublicationView")
     table = source_table()
-    table.loc[1, "PublicationView_id"] = "p1"
-    with pytest.raises(mig.ConversionError, match=r"duplicate keys \['p1'\]"):
-        mig.convert_table(table, "PublicationView", norm)
     table.loc[1, "PublicationView_id"] = " "
     with pytest.raises(mig.ConversionError, match="blank key"):
         mig.convert_table(table, "PublicationView", norm)
+
+
+def dup_table(second_title="Second copy", first_id="10", second_id="11", blank_second=False):
+    table = source_table()
+    table.loc[1, "PublicationView_id"] = "p1"
+    table.loc[1, "Publication Title"] = second_title
+    for column in ("Publication Doi", "Publication Tumor Type", "Publication Assay", "Publication Accessibility"):
+        table.loc[1, column] = table.loc[0, column]
+    table.loc[0, "Id"], table.loc[1, "Id"] = first_id, second_id
+    if blank_second:
+        table.loc[1, "Publication Tumor Type"] = ""
+        table.loc[0, "Publication Tumor Type"] = "Adenocarcinoma"
+    return table
+
+
+def reference_for(title):
+    return pd.DataFrame([["p1", "CA123456", title, "Adenocarcinoma"]],
+                        columns=["PublicationView_id", "GrantView Key", "Publication Title", "Tumor Type"])
+
+
+def convert_dup(table, ref_frame):
+    norm = mig.value_maps.Normalizer.for_component("PublicationView")
+    ref = None if ref_frame is None else mig.reference_frame(ref_frame, "PublicationView", norm)
+    return mig.convert_table(table, "PublicationView", norm, lambda: ref)
+
+
+def test_duplicate_key_keeps_the_row_that_matches_the_merged_manifest():
+    converted, _, _, _, res = convert_dup(dup_table(), reference_for("Second copy"))
+    assert converted["PublicationTitle"].tolist() == ["Second copy"]
+    assert res.to_dict("records") == [{"key": "p1", "kept_row": "row 2 (Id 11)", "dropped_row": "row 1 (Id 10)",
+                                       "reason": "matches the merged manifest"}]
+    converted, _, _, _, res = convert_dup(dup_table(), reference_for("First"))
+    assert converted["PublicationTitle"].tolist() == ["First"] and res.iloc[0]["kept_row"] == "row 1 (Id 10)"
+
+
+def test_duplicate_key_neither_match_keeps_the_most_complete_row():
+    converted, _, _, _, res = convert_dup(dup_table(blank_second=True), reference_for("Something else"))
+    assert converted["PublicationTitle"].tolist() == ["First"]
+    assert res.iloc[0]["reason"].startswith("no row matches the merged manifest; most complete row")
+
+
+def test_duplicate_key_both_match_keeps_the_most_complete_row():
+    table = dup_table(second_title="First", blank_second=True)
+    converted, _, _, _, res = convert_dup(table, reference_for("First").drop(columns=["Tumor Type"]))
+    assert converted["TumorType"].tolist() == [["Adenocarcinoma"]]
+    assert res.iloc[0]["reason"].startswith("both rows match the merged manifest; most complete row")
+
+
+def test_duplicate_key_tie_keeps_the_higher_legacy_id():
+    converted, _, _, _, res = convert_dup(dup_table(first_id="9", second_id="10"), None)
+    assert converted["PublicationTitle"].tolist() == ["Second copy"]
+    assert "tie on completeness" in res.iloc[0]["reason"] and "higher legacy Id" in res.iloc[0]["reason"]
+    assert res.iloc[0]["reason"].startswith("no merged manifest to compare")
+    converted, _, _, _, _ = convert_dup(dup_table(first_id="100", second_id="20"), None)
+    assert converted["PublicationTitle"].tolist() == ["First"]  # numeric, not text, comparison
+
+
+def test_duplicate_key_absent_from_the_manifest_is_reported_as_such():
+    other = reference_for("x")
+    other["PublicationView_id"] = "zzz"
+    _, _, _, _, res = convert_dup(dup_table(), other)
+    assert res.iloc[0]["reason"].startswith("key is not in the merged manifest")
+
+
+def test_resolution_leaves_changes_of_the_dropped_row_out():
+    table = dup_table(second_title="Second copy")
+    table.loc[0, "Publication Doi"] = "10.1000/first"
+    table.loc[1, "Publication Doi"] = "10.1000/second"
+    _, changes, _, _, _ = convert_dup(table, reference_for("Second copy"))
+    assert "https://doi.org/10.1000/second" in changes["to"].tolist()
+    assert "https://doi.org/10.1000/first" not in changes["to"].tolist()
+
+
+def test_every_component_has_a_merged_manifest_reference():
+    for component, resource in mig.REFERENCE_RESOURCE.items():
+        assert mig.utils.CONFIG[resource]["manifest"].startswith("syn")
 
 
 def test_local_validation_reports_key_field_and_message():
@@ -237,13 +319,36 @@ def test_unknown_header_fails_that_grant_and_the_others_continue(tmp_path):
     assert code == 1
 
 
-def test_duplicate_key_fails_that_grant(tmp_path):
-    dup = source_table()
-    dup.loc[1, "PublicationView_id"] = "p1"
-    fake = FakeSynapse({"synT1": ("CA1", "synP1", dup)})
+def test_duplicate_key_is_resolved_not_failed_and_reported(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", dup_table())})
+    fake.reference_source = reference_for("Second copy")
     code, rep = run(tmp_path, fake)
-    assert status_of(rep) == "failed" and "duplicate keys" in (rep / "CA1" / "summary.txt").read_text()
-    assert code == 1
+    assert status_of(rep) == "dryrun"
+    resolved = pd.read_csv(rep / "CA1" / "duplicates_resolved.csv", dtype=str)
+    assert resolved.columns.tolist() == ["key", "kept_row", "dropped_row", "reason"] and len(resolved) == 1
+    assert "duplicates_resolved=1" in (rep / "CA1" / "summary.txt").read_text()
+    converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str)
+    assert converted["PublicationTitle"].tolist() == ["Second copy"]
+    assert "duplicate keys resolved: 1" in (rep / "run_summary.txt").read_text()
+
+
+def test_merged_manifest_is_read_once_per_run_and_only_when_needed(tmp_path):
+    tables = {"synT1": ("CA1", "synP1", dup_table()), "synT2": ("CA2", "synP2", dup_table()),
+              "synT3": ("CA3", "synP3", source_table())}
+    fake = FakeSynapse(tables)
+    fake.reference_source = reference_for("Second copy")
+    run(tmp_path, fake)
+    assert fake.reference_reads == 1
+    fake = FakeSynapse({"synT3": ("CA3", "synP3", source_table())})
+    run(tmp_path, fake, out="out2")
+    assert fake.reference_reads == 0
+
+
+def test_unreadable_merged_manifest_falls_back_to_completeness(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", dup_table(first_id="9", second_id="10"))})
+    code, rep = run(tmp_path, fake)  # read_reference raises
+    assert status_of(rep) == "dryrun"
+    assert "no merged manifest to compare" in (rep / "CA1" / "duplicates_resolved.csv").read_text()
 
 
 def test_grants_and_limit_filters(tmp_path):
@@ -508,3 +613,41 @@ def test_unavailable_schema_tag_warns_and_falls_back(monkeypatch, caplog):
     schema = mig.load_schema("PublicationView", "v99.0.0")
     assert "properties" in schema and "not available" in caplog.text
     mig.load_schema.cache_clear()
+
+
+# --- worklists, truncated values, validation never blocks -------------------------
+
+
+def test_validation_worklist_is_combined_sorted_by_field_with_current_values(tmp_path):
+    table = source_table()
+    table.loc[0, "Publication Accessibility"] = "Embargoed"
+    tables = {"synT1": ("CA1", "synP1", table), "synT2": ("CA2", "synP2", source_table())}
+    code, rep = run(tmp_path, FakeSynapse(tables))
+    work = pd.read_csv(rep / "validation_worklist.csv", dtype=str, keep_default_na=False)
+    assert work.columns.tolist() == ["grant", "key", "field", "validator", "message", "current_value"]
+    assert work["field"].tolist() == sorted(work["field"].tolist())
+    row = work[work["field"] == "PublicationAccessibility"].iloc[0]
+    assert (row["grant"], row["key"], row["validator"], row["current_value"]) == ("CA1", "p1", "enum", "Embargoed")
+    assert set(work["grant"]) == {"CA1", "CA2"}
+    assert code == 2
+
+
+def test_truncated_values_are_listed_separately(tmp_path):
+    table = source_table()
+    table.loc[0, "Publication Assay"] = "Sin(Read more on Pubmed), Mass Spectrometry"
+    code, rep = run(tmp_path, FakeSynapse({"synT1": ("CA1", "synP1", table)}))
+    truncated = pd.read_csv(rep / "truncated.csv", dtype=str)
+    assert truncated.to_dict("records") == [
+        {"grant": "CA1", "key": "p1", "column": "Assay", "value": "Sin(Read more on Pubmed)"}]
+    text = (rep / "run_summary.txt").read_text()
+    assert "truncated values (need recovering from source records): 1" in text
+    assert "truncated" not in text.split("changes by rule:")[1].splitlines()[0]
+    assert pd.read_csv(rep / "CA1" / "unmapped.csv").empty
+
+
+def test_validation_failures_do_not_block_a_migration(tmp_path):
+    fake = FakeSynapse()  # the fixture rows lack required fields
+    code, rep = run(tmp_path, fake, execute=True)
+    assert status_of(rep) == "migrated" and len(fake.writes) == 1
+    assert int((rep / "CA1" / "validation.csv").read_text().count("\n")) > 1
+    assert code == 2

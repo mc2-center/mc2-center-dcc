@@ -78,6 +78,10 @@ UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Cent
 COMPONENTS = ["PublicationView", "DatasetView", "ToolView", "EducationalResource"]
 KEYS = {c: f"{c}Id" for c in COMPONENTS}  # class-label upsert key of each component
 FOLDER_MAP = merge_tables.FOLDER_MAP
+# utils.CONFIG resource of the curated merged manifest of each component.
+REFERENCE_RESOURCE = {"PublicationView": "publication", "DatasetView": "dataset", "ToolView": "tool",
+                      "EducationalResource": "education"}
+RESOLUTION_COLUMNS = ["key", "kept_row", "dropped_row", "reason"]
 
 # Statuses that make the exit code 1.
 NEEDS_ATTENTION = frozenset({"failed", "locked", "retry", "verification_mismatch"})
@@ -229,32 +233,142 @@ def legacy_renames(component: str) -> dict[str, str]:
     return renames
 
 
-def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer"):
-    """``(converted, changes, unmapped, dropped)`` for one grant table.
+def _to_labels(source: pd.DataFrame, component: str, strict: bool = True) -> pd.DataFrame:
+    """Text cells with 14.0.x class-label headers.
 
-    Raises :class:`ConversionError` for unknown headers, a missing key column,
-    or blank or duplicate keys (the keys are listed).
+    Raises :class:`ConversionError` for unknown headers (``strict``; otherwise
+    they are dropped) or a missing key column.
     """
-    key = KEYS[component]
     df = pd.DataFrame({c: _as_text(source[c]) for c in source.columns})
     renames = legacy_renames(component)
     df = df.rename(columns={c: renames[c] for c in df.columns if c in renames and renames[c] not in df.columns})
     labels = model_contract.label_map()
     unknown = [c for c in df.columns if c not in model_contract.PASSTHROUGH and c not in labels]
     if unknown:
-        raise ConversionError(f"unknown headers: {unknown}")
+        if strict:
+            raise ConversionError(f"unknown headers: {unknown}")
+        df = df.drop(columns=unknown)
     df = model_contract.normalize_headers(df, to="keys")
-    if key not in df.columns:
-        raise ConversionError(f"key column {key} is missing")
+    if KEYS[component] not in df.columns:
+        raise ConversionError(f"key column {KEYS[component]} is missing")
+    return df
+
+
+def read_reference(syn, component: str) -> pd.DataFrame:
+    """The curated merged manifest of the component (read-only)."""
+    return model_contract.read_manifest(syn, utils.CONFIG[REFERENCE_RESOURCE[component]]["manifest"])
+
+
+def reference_frame(source: pd.DataFrame, component: str, normalizer) -> pd.DataFrame | None:
+    """The merged manifest converted like a grant table (schema columns, normalized values), or None."""
+    key = KEYS[component]
+    try:
+        df = _to_labels(source, component, strict=False)
+    except ConversionError as err:
+        logger.warning("Merged manifest for %s is not usable as a reference: %s", component, err)
+        return None
+    schema = recordsets.schema_columns(component)
+    df = df[[c for c in df.columns if c in schema]]
+    df = df[df[key].map(lambda v: str(v).strip() != "")]
+    out, _, _ = normalizer.normalize_frame(df, key)
+    out[key] = out[key].map(lambda v: str(v).strip())
+    return out.reset_index(drop=True)
+
+
+def _blank(value) -> bool:
+    return value == "" or value == [] or value is None
+
+
+def _id_value(value) -> tuple[int, int]:
+    try:
+        return 1, int(str(value).strip())
+    except ValueError:
+        return 0, 0
+
+
+def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference):
+    """Keep one row of each duplicated key: ``(frame, resolutions)``.
+
+    The kept row is the one equal to the merged manifest's row of that key on
+    the columns both have (after the same conversion); if neither row or both
+    match, or the key is not in the manifest, the row with the fewest blank
+    cells; on a tie the higher legacy ``Id``. ``reference`` is a callable
+    returning the converted merged manifest (or None), called once if needed.
+    ``resolutions`` has ``key, kept_row, dropped_row, reason`` (source row numbers).
+    """
+    key = KEYS[component]
+    keys = df[key].map(lambda v: str(v).strip())
+    dup = keys.duplicated(keep=False) & (keys != "")
+    if not dup.any():
+        return df, pd.DataFrame(columns=RESOLUTION_COLUMNS)
+    set_like = recordsets.set_like_columns(component)
+    norm, _, _ = normalizer.normalize_frame(df, key)
+    ref = reference()
+    ref_rows: dict[str, list[dict]] = {}
+    if ref is not None:
+        for row in ref.to_dict("records"):
+            ref_rows.setdefault(row[key], []).append(row)
+    ids = list(legacy_id) if legacy_id is not None else [""] * len(df)
+
+    def label(i):
+        return f"row {i + 1}" + (f" (Id {ids[i]})" if str(ids[i]).strip() else "")
+
+    def matches(i, candidates):
+        row = norm.iloc[i]
+        return any(
+            all(recordsets._cells_equal(row[c], cand[c], c in set_like) for c in norm.columns if c in cand and c != key)
+            for cand in candidates
+        )
+
+    drop, resolutions = set(), []
+    for k in dict.fromkeys(keys[dup]):
+        rows = [i for i in range(len(df)) if keys.iloc[i] == k]
+        hits = [i for i in rows if matches(i, ref_rows.get(k, []))]
+        if len(hits) == 1:
+            kept, reason = hits[0], "matches the merged manifest"
+        else:
+            pool = hits or rows
+            if hits:
+                why = "both rows match the merged manifest" if len(hits) == len(rows) else "several rows match the merged manifest"
+            elif k in ref_rows:
+                why = "no row matches the merged manifest"
+            else:
+                why = "key is not in the merged manifest" if ref is not None else "no merged manifest to compare"
+            blanks = {i: sum(_blank(norm.iloc[i][c]) for c in norm.columns) for i in pool}
+            best = min(blanks.values())
+            top = [i for i in pool if blanks[i] == best]
+            if len(top) == 1:
+                kept, reason = top[0], f"{why}; most complete row ({best} blank cells)"
+            else:
+                kept = max(top, key=lambda i: _id_value(ids[i]))
+                reason = f"{why}; tie on completeness ({best} blank cells), higher legacy Id"
+        for i in rows:
+            if i != kept:
+                drop.add(i)
+                resolutions.append({"key": k, "kept_row": label(kept), "dropped_row": label(i), "reason": reason})
+    keep = [i for i in range(len(df)) if i not in drop]
+    return df.iloc[keep].reset_index(drop=True), pd.DataFrame(resolutions, columns=RESOLUTION_COLUMNS)
+
+
+def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", reference=lambda: None):
+    """``(converted, changes, unmapped, dropped, resolutions)`` for one grant table.
+
+    A key that occurs twice is resolved to one row (:func:`resolve_duplicates`,
+    against ``reference``). Raises :class:`ConversionError` for unknown headers,
+    a missing key column, or blank keys.
+    """
+    key = KEYS[component]
+    df = _to_labels(source, component).reset_index(drop=True)
+    legacy_id = df["Id"] if "Id" in df.columns else None
     schema = recordsets.schema_columns(component)
     dropped = [c for c in df.columns if c not in schema]
-    df = df[[c for c in df.columns if c in schema]]
+    df, resolutions = resolve_duplicates(df[[c for c in df.columns if c in schema]], legacy_id, component, normalizer, reference)
     df, changes, unmapped = normalizer.normalize_frame(df, key)
     try:
         df = recordsets.check_upload_keys(df, key)
     except ValueError as err:
         raise ConversionError(f"bad keys: {err}") from err
-    return df.reset_index(drop=True), changes, unmapped, dropped
+    return df.reset_index(drop=True), changes, unmapped, dropped, resolutions
 
 
 # --- local validation ---------------------------------------------------------
@@ -442,7 +556,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     summary.update(status="migrated", message="; ".join(notes))
 
 
-def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like):
+def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None):
     """Convert (and with ``--execute`` migrate) one grant table.
 
     Returns ``(summary, converted, source_keys)``; ``converted`` is None when the
@@ -456,7 +570,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     source_key = f"{component}_id"
     source_keys = [str(v).strip() for v in source[source_key]] if source_key in source.columns else []
     try:
-        converted, changes, unmapped, dropped = convert_table(source, component, normalizer)
+        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference)
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
@@ -469,9 +583,12 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     _write(unmapped, report_dir / "unmapped.csv")
     _write(validation, report_dir / "validation.csv")
     _write(validation_counts(validation), report_dir / "validation_counts.csv")
+    if len(resolutions):
+        _write(resolutions, report_dir / "duplicates_resolved.csv")
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
-        dropped=dropped,
+        dropped=dropped, duplicates_resolved=len(resolutions),
+        truncated=int((changes["rule"] == "truncated").sum()),
     )
     if not args.execute:
         summary.update(status="dryrun", message="dry run: nothing written")
@@ -483,7 +600,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
     for field in ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
-                  "validation_failures", "invalid_rows", "recovered"):
+                  "validation_failures", "duplicates_resolved", "truncated", "invalid_rows", "recovered"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s.get("message"):
@@ -573,14 +690,13 @@ def comparison(syn, args, legacy_keys: dict[str, list[str]], source_keys: dict[s
 
 
 def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
-    """Totals over every grant: changes by rule, unmapped values, validation failures."""
+    """Totals over every grant: changes by rule, unmapped and truncated values, duplicates, validation failures."""
     lines = []
     changes = [f["changes"] for f in frames.values() if f.get("changes") is not None and len(f["changes"])]
-    if changes:
-        by_rule = pd.concat(changes).groupby("rule").size().sort_values(ascending=False)
-        lines.append("changes by rule: " + ", ".join(f"{r}={n}" for r, n in by_rule.items()))
-    else:
-        lines.append("changes by rule: none")
+    all_changes = pd.concat(changes) if changes else pd.DataFrame(columns=value_maps.CHANGE_COLUMNS)
+    by_rule = all_changes[all_changes["rule"] != "truncated"].groupby("rule").size().sort_values(ascending=False)
+    lines.append("changes by rule: " + (", ".join(f"{r}={n}" for r, n in by_rule.items()) or "none"))
+    lines.append(f"duplicate keys resolved: {sum(int(s.get('duplicates_resolved', 0)) for s in summaries)}")
     unmapped = [f["unmapped"] for f in frames.values() if f.get("unmapped") is not None and len(f["unmapped"])]
     if unmapped:
         counts = pd.concat(unmapped).groupby(["column", "value"]).size().sort_values(ascending=False)
@@ -588,6 +704,9 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
         lines += [f"  {c} = {v!r}: {n}" for (c, v), n in counts.head(25).items()]
     else:
         lines.append("unmapped values: none")
+    truncated = truncated_values(frames)
+    lines.append(f"truncated values (need recovering from source records): {len(truncated)}")
+    lines += [f"  {r.grant} / {r.key} / {r.column}: {r.value!r}" for r in truncated.head(25).itertuples()]
     validation = [f["validation"] for f in frames.values() if f.get("validation") is not None and len(f["validation"])]
     if validation:
         counts = pd.concat(validation).groupby(["field", "validator"]).size().sort_values(ascending=False)
@@ -596,6 +715,37 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
     else:
         lines.append("local validation failures: none")
     return "\n".join(lines)
+
+
+def truncated_values(frames: dict[str, dict]) -> pd.DataFrame:
+    """``grant, key, column, value`` of every cell reported as truncated."""
+    rows = []
+    for grant, f in frames.items():
+        changes = f.get("changes")
+        if changes is None or changes.empty:
+            continue
+        for r in changes[changes["rule"] == "truncated"].to_dict("records"):
+            rows.append({"grant": grant, "key": r["key"], "column": r["column"], "value": r["from"]})
+    return pd.DataFrame(rows, columns=["grant", "key", "column", "value"])
+
+
+WORKLIST_COLUMNS = ["grant", "key", "field", "validator", "message", "current_value"]
+
+
+def validation_worklist(frames: dict[str, dict], key: str) -> pd.DataFrame:
+    """Every local validation failure of the run with the cell's current value, sorted by field."""
+    rows = []
+    for grant, f in frames.items():
+        validation, converted = f.get("validation"), f.get("converted")
+        if validation is None or validation.empty:
+            continue
+        cells = converted.set_index(key).to_dict("index") if converted is not None else {}
+        for r in validation.itertuples():
+            current = cells.get(r.key, {}).get(r.field, "")
+            rows.append({"grant": grant, "key": r.key, "field": r.field, "validator": r.validator,
+                         "message": r.message, "current_value": current})
+    out = pd.DataFrame(rows, columns=WORKLIST_COLUMNS)
+    return out.sort_values(["field", "grant", "key"], kind="stable").reset_index(drop=True)
 
 
 def main(argv=None, syn=None):
@@ -612,6 +762,18 @@ def main(argv=None, syn=None):
     state_path = out_dir / "state.json"
     state = load_state(state_path)
     mode = "execute" if args.execute else "dryrun"
+
+    ref_cache = []
+
+    def reference():
+        """The converted merged manifest, read once per run (None when unusable)."""
+        if not ref_cache:
+            try:
+                ref_cache.append(reference_frame(read_reference(syn, component), component, normalizer))
+            except Exception:
+                logger.exception("Could not read the merged manifest for %s", component)
+                ref_cache.append(None)
+        return ref_cache[0]
 
     tables, skipped = select_grant_tables(syn, args)
     print(f"Run {args.run_id}: {'EXECUTE' if args.execute else 'dry run'}, {component}, {len(tables)} grant tables")
@@ -646,7 +808,7 @@ def main(argv=None, syn=None):
                 raise ConversionError(f"project {entry['project']} has more than one {component} table; one RecordSet per grant")
             seen_projects.add(entry["project"])
             summary, converted, s_keys = process_grant(
-                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like
+                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference
             )
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)
@@ -687,6 +849,8 @@ def main(argv=None, syn=None):
     pd.DataFrame(summaries).to_csv(run_dir / "summary.csv", index=False)
     report = run_report(summaries, frames)
     (run_dir / "run_summary.txt").write_text(report + "\n")
+    validation_worklist(frames, KEYS[component]).to_csv(run_dir / "validation_worklist.csv", index=False)
+    truncated_values(frames).to_csv(run_dir / "truncated.csv", index=False)
 
     unmapped_total = sum(int(s.get("unmapped", 0)) for s in summaries)
     invalid_total = sum(int(s.get("validation_failures", 0)) + int(s.get("invalid_rows", 0)) for s in summaries)
@@ -705,7 +869,7 @@ def main(argv=None, syn=None):
 def _frames_from(report_dir: Path) -> dict:
     """The changes, unmapped and validation reports a grant wrote (for the run report)."""
     out = {}
-    for name in ("changes", "unmapped", "validation"):
+    for name in ("changes", "unmapped", "validation", "converted"):
         path = report_dir / f"{name}.csv"
         out[name] = pd.read_csv(path, dtype=str, keep_default_na=False) if path.exists() else None
     return out
