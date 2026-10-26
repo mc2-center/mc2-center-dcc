@@ -44,6 +44,6 @@ Executed against `plans/impl_dcc_14_alignment.md`, 2026-10-23, on branch `model-
 - **Grant creation path** has only been tested with mocks: the first real run with a new grant is its first live test. A project found by name is trusted as that grant's project.
 - **D17a deletions** and the newly unreferenced files (`attribute_dictionary.py`, `utils/reporter_project_query.py`, `utils/clean_reporter_results.py`) need the owner.
 - **People sync** fails until I4b adds `HTAN`, `NCI` and `Sage Bionetworks` to the Consortium table.
-- **DUO text:** `DUO_DICT` is keyed by DUO ID and covers all 24 DUO terms in 14.0.0, plus `DUOPlus1-7` and `Pending Annotation`; short codes in the live manifest still resolve. Owner to review the wording of the 17 new entries.
+- **DUO text:** `DUO_DICT` is keyed by DUO ID and covers all 24 DUO terms in 14.0.0, plus `DUOPlus1-7` and `Pending Annotation`; short codes in the live manifest still resolve. **Superseded 2026-10-26:** the text is now generated from governanceDUO into `portal_tables/duo_terms.csv` (`26840f4`, `d01c959`). Both data-models and official DUO shorthands are accepted, and so is NPOA's `DUO:00000044`. See `plans/cckp_14_cutover_plan.md` D-Q17–D-Q21 and Appendix A.
 - **Live data oddities seen in review (not caused here):** education `dataType` holds synIDs live; one dataset title has a corrupted thin space; tools `portalDisplay` is written as `"true"` (as before).
 - Blocked on I3: D11, D12 RecordSet mode, D15.

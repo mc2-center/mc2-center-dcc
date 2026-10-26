@@ -36,7 +36,7 @@ Ship order: P0 PR first (independent of everything); P1 together with the DCC PR
 - Bug fixed: Tumor Type has both `Not Applicable` and `Not-Applicable`; sorted schema order made the alias map pick the hyphenated form and collapse one paper to `Pan-cancer`. The spaced form now wins.
 
 ## Open items
-- **DOI form (owner decision):** `Publication Doi` and `Tool Doi` are `format: uri`, and the PublicationView description asks for `https://www.doi.org/{doi}`; the pipeline writes bare DOIs, so every publication row is now flagged. Dataset DOIs are already URLs.
-- **Upstream model gaps:** duplicate Tumor Type values `Not Applicable` / `Not-Applicable`; `immunoassay` casing in the JSON-LD.
-- **Not done:** P4 branch rebases (`feature/manifest-review-app`, `cckp-dataset-linkage`, `refactor/extract-metadata-fill-logic`) rewrite shared branches and need the owner's go-ahead.
+- **DOI form (owner decision):** `Publication Doi` and `Tool Doi` are `format: uri`, and the PublicationView description asks for `https://www.doi.org/{doi}`; the pipeline writes bare DOIs, so every publication row is now flagged. Dataset DOIs are already URLs. [REVIEW: use prefixed DOI format]
+- **Upstream model gaps:** duplicate Tumor Type values `Not Applicable` / `Not-Applicable`; `immunoassay` casing in the JSON-LD. [REVIEW: 'Not Applicable' and 'Immunoassay' are the correct terms]
+- **Not done:** P4 branch rebases (`feature/manifest-review-app`, `cckp-dataset-linkage`, `refactor/extract-metadata-fill-logic`) rewrite shared branches and need the owner's go-ahead. [REVIEW: ignore this for now]
 - `DatasetView_id` / `ToolView_id` are reported missing on every row (the DCC assigns them), which adds noise to the report.
