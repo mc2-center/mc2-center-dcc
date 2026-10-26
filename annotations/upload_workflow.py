@@ -139,6 +139,7 @@ class Run:
         self.state.update(
             manifest=str(self.args.manifest),
             manifest_sha256=self.args.manifest_sha256,
+            run_id=self.args.run_id,
             type=self.args.type,
             target=self.args.target,
             cv_file=self.args.cv_file,
@@ -468,7 +469,7 @@ def stage_upload(run, args):
 
     if args.target == "recordset":
         argv = ["--paths-csv", paths_csv, "--component", args.type, "--report-dir", str(d),
-                "--run-id", "reports"]
+                "--run-id", args.run_id]
         argv += (["--write-log-table", args.write_log_table] if args.write_log_table
                  else ["--write-log-csv", args.write_log_csv])
         if args.execute:
@@ -476,7 +477,7 @@ def stage_upload(run, args):
         code = _load("upload_recordsets.py").main(argv)
         if code:
             raise RuntimeError(f"upload_recordsets.py reported failures (exit {code})")
-        return {"paths_csv": paths_csv, "reports": str(d / "reports")}
+        return {"paths_csv": paths_csv, "run_id": args.run_id, "reports": str(d / args.run_id)}
 
     cmd = [sys.executable, str(HERE / "upload-manifests.py"), "-m", paths_csv, "-t", args.type]
     if args.schematic_config:
@@ -511,6 +512,8 @@ def get_args(argv=None):
     p.add_argument("--cv-file", help="all_valid_values.csv path/URL for split (default: pinned release)")
     p.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     p.add_argument("--from-stage", choices=STAGES, help="resume at this stage, reusing earlier outputs in run.json")
+    p.add_argument("--run-id", help="run ID for upload_recordsets reports/write log "
+                                    "(default: <out-dir name>-<timestamp>)")
     p.add_argument("--force-new", action="store_true",
                    help="start a new run in an out-dir holding a different manifest/type's run: "
                         "wipes the out-dir's stage folders")
@@ -565,6 +568,7 @@ def main(argv=None, syn=None):
     args.manifest = Path(args.manifest).resolve()
     args.manifest_sha256 = sha256_of(args.manifest)
     run = Run(out_dir, args)
+    args.run_id = args.run_id or f"{re.sub(r'[^A-Za-z0-9._-]', '_', out_dir.name)}-{datetime.now():%Y%m%dT%H%M%S}"
 
     start = STAGES.index(args.from_stage) if args.from_stage else 0
     if args.from_stage:

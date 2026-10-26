@@ -516,4 +516,21 @@ def test_alias_accession_is_reused_before_empty_link_drop(tmp_path, env):
     assert [r["name"] for r in state["dropped_rows"]] == ["GSE150000"] and code == 2
 
 
+# --- run id -------------------------------------------------------------------------
+
+
+def test_run_id_is_passed_to_upload_recordsets(tmp_path, env):
+    import re
+
+    code, state = run(tmp_path)
+    argv = env["upload"][0]
+    rid = argv[argv.index("--run-id") + 1]
+    assert re.fullmatch(r"out-\d{8}T\d{6}", rid) and state["run_id"] == rid
+    assert state["stages"]["upload"]["outputs"]["reports"].endswith(rid)
+
+    code, state = run(tmp_path, "PublicationView", "--run-id", "batch-7")
+    argv = env["upload"][1]
+    assert argv[argv.index("--run-id") + 1] == "batch-7" and state["run_id"] == "batch-7"
+
+
 # --- end ---
