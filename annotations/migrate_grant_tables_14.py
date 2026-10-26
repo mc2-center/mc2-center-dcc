@@ -73,6 +73,8 @@ logger = logging.getLogger(__name__)
 
 VIEW_ID = "syn52750482"  # MC2_All_Project_Tables
 UNION_PARENT = "syn28742843"  # CCKP - MC2 Admin: holds the legacy <Component>_UNION MaterializedViews
+# Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
+UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
 COMPONENTS = ["PublicationView", "DatasetView", "ToolView", "EducationalResource"]
 KEYS = {c: f"{c}Id" for c in COMPONENTS}  # class-label upsert key of each component
 FOLDER_MAP = merge_tables.FOLDER_MAP
@@ -100,6 +102,11 @@ def get_args(argv=None):
     parser.add_argument("--out-dir", help="default: output/migration_14/<component>")
     parser.add_argument(
         "--overrides", help="CSV of curated corrections: column, current_value, proposed_value"
+    )
+    parser.add_argument(
+        "--include-unlisted", action=argparse.BooleanOptionalAction, default=True,
+        help="also migrate projects that hold a grant-level table but are not in the Grants table, "
+        "labelled by project name (default: on)",
     )
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     parser.add_argument("--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp")
@@ -145,12 +152,12 @@ def grants_map(syn) -> dict[str, str]:
     return {g: n for g, n in zip(df["grantId"], df["grantNumber"]) if g}
 
 
-def project_of(syn, entity_id: str) -> str | None:
-    """ID of the project an entity sits in."""
+def project_of(syn, entity_id: str) -> tuple[str | None, str | None]:
+    """``(ID, name)`` of the project an entity sits in."""
     for item in syn.restGET(f"/entity/{entity_id}/path")["path"]:
         if str(item.get("type", "")).endswith("Project"):
-            return item["id"]
-    return None
+            return item["id"], item.get("name")
+    return None, None
 
 
 def read_source(syn, table_id: str) -> pd.DataFrame:
@@ -159,30 +166,43 @@ def read_source(syn, table_id: str) -> pd.DataFrame:
     )
 
 
+def safe_name(label: str) -> str:
+    """A grant label as a directory name."""
+    return re.sub(r"[^\w.-]+", "_", label).strip("_") or "grant"
+
+
 def select_grant_tables(syn, args) -> tuple[list[dict], list[str]]:
-    """``(tables, skipped)``: tables to migrate (``grant, project, table``) and a note per skipped one."""
+    """``(tables, skipped)``: tables to migrate (``grant``, ``project``, ``table``) and a note per skipped one.
+
+    ``grant`` is the grant number; a project that is not in the Grants table is
+    a grant labelled by its project name (``UNLISTED_LABELS``) unless
+    ``--no-include-unlisted``.
+    """
     grants = grants_map(syn)
-    by_number = {n: g for g, n in grants.items()}
+    by_label = {n: g for g, n in grants.items()}
+    by_label.update({label: project for project, label in UNLISTED_LABELS.items()})
     wanted = None
     if args.grants:
-        unknown = [g for g in args.grants if g not in by_number]
+        unknown = [g for g in args.grants if g not in by_label]
         if unknown:
             raise SystemExit(f"Grant number(s) not in the Grants table: {unknown}")
-        wanted = {by_number[g] for g in args.grants}
+        wanted = {by_label[g] for g in args.grants}
     tables, skipped, seen = [], [], set()
     for table_id in list_grant_tables(syn, args.component)["id"]:
         if args.limit is not None and len(tables) >= args.limit:
             break
-        if wanted is not None and len(seen & wanted) == len(wanted):
+        if wanted is not None and wanted <= seen:
             break
-        project = project_of(syn, table_id)
+        project, name = project_of(syn, table_id)
         seen.add(project)
-        if project not in grants:
+        unlisted = project not in grants
+        if unlisted and not args.include_unlisted:
             skipped.append(f"{table_id}: project {project} is not in the Grants table")
             continue
         if wanted is not None and project not in wanted:
             continue
-        tables.append({"grant": str(grants[project]), "project": project, "table": table_id})
+        label = UNLISTED_LABELS.get(project) or name or project if unlisted else str(grants[project])
+        tables.append({"grant": label, "project": project, "table": table_id, "unlisted": unlisted})
     return tables, skipped
 
 
@@ -540,7 +560,7 @@ def comparison(syn, args, legacy_keys: dict[str, list[str]], source_keys: dict[s
             ok &= res
             lines += more
         else:
-            why = "no legacy view found" if not union_id else "the run is filtered or skipped tables (--grants / --limit / grants outside the Grants table)"
+            why = "no legacy view found" if not union_id else "the run is filtered (--grants / --limit), skipped tables or has failed grants"
             lines.append(f"legacy MaterializedView not compared ({why}); comparing with the source tables")
             source = [k for g in grants for k in source_keys[g]]
             res, more = compare_keys("converted frames vs source tables", source, legacy, "source tables")
@@ -603,7 +623,7 @@ def main(argv=None, syn=None):
     for entry in tables:
         grant = entry["grant"]
         projects[grant] = entry["project"]
-        report_dir = run_dir / grant
+        report_dir = run_dir / safe_name(grant)
         previous = state["grants"].get(grant, {})
         if (
             grant not in args.redo
@@ -652,7 +672,7 @@ def main(argv=None, syn=None):
     ok_grants = [s["grant"] for s in summaries if s["grant"] in legacy_keys and s["status"] not in NEEDS_ATTENTION]
     compared = [g for g in ok_grants if not args.execute or
                 next(s for s in summaries if s["grant"] == g)["status"] in DONE["execute"]]
-    full_run = not args.grants and args.limit is None and not skipped
+    full_run = not args.grants and args.limit is None and not skipped and not failed_grants
     if compared:
         compare_ok, text = comparison(
             syn, args,

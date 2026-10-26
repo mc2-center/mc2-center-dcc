@@ -50,7 +50,8 @@ class FakeSynapse:
         return dict(self.grants)
 
     def project_of(self, syn, table_id):
-        return self.tables[table_id][1]
+        project = self.tables[table_id][1]
+        return project, f"Project {project}"
 
     def read_source(self, syn, table_id):
         return self.tables[table_id][2].copy()
@@ -274,12 +275,30 @@ def test_unmapped_value_gives_exit_2_without_failures(tmp_path):
     assert unmapped["value"].tolist() == ["Not a tumor type"]
 
 
-def test_tables_of_projects_outside_the_grants_table_are_skipped(tmp_path, capsys):
+def test_unlisted_projects_are_skipped_with_no_include_unlisted(tmp_path, capsys):
     fake = FakeSynapse({"synT1": ("CA1", "synP1", source_table()), "synT2": ("CA2", "synP2", source_table())},
                        grants={"synP1": "CA1"})
-    code, rep = run(tmp_path, fake)
+    code, rep = run(tmp_path, fake, "--no-include-unlisted")
     assert sorted(p.name for p in rep.iterdir() if p.is_dir()) == ["CA1"]
     assert "synT2: project synP2 is not in the Grants table" in capsys.readouterr().out
+
+
+def test_unlisted_projects_are_included_by_default_labelled_by_name(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", source_table()), "synT2": ("x", "synP2", source_table()),
+                        "synT3": ("y", "syn52963211", source_table())},
+                       grants={"synP1": "CA1"})
+    code, rep = run(tmp_path, fake)
+    dirs = sorted(p.name for p in rep.iterdir() if p.is_dir())
+    assert dirs == ["Affiliated_Non-Grant_Associated", "CA1", "Project_synP2"]
+    assert "Affiliated/Non-Grant Associated" in (rep / "Affiliated_Non-Grant_Associated" / "summary.txt").read_text()
+    assert "Project synP2" in (rep / "Project_synP2" / "summary.txt").read_text()
+
+
+def test_unlisted_grant_can_be_selected_by_its_label(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", source_table()), "synT3": ("y", "syn52963211", source_table())},
+                       grants={"synP1": "CA1"})
+    code, rep = run(tmp_path, fake, "--grants", "Affiliated/Non-Grant Associated")
+    assert [p.name for p in rep.iterdir() if p.is_dir()] == ["Affiliated_Non-Grant_Associated"]
 
 
 # --- execute ----------------------------------------------------------------------
