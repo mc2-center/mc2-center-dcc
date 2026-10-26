@@ -153,7 +153,8 @@ def test_empty_link_rows_dropped_and_empty_files_removed(tmp_path, env):
     manifest = tmp_path / "tools.csv"
     df.to_csv(manifest, index=False)
     code, state = run(tmp_path, "ToolView", manifest=manifest)
-    assert code == 0
+    assert code == 2  # rows were dropped: distinct from failure (1)
+    assert len(state["dropped_rows"]) == 3 and "reason" in state["dropped_rows"][0]
     links = tmp_path / "out" / "04_links"
     dropped = pd.read_csv(links / "dropped_rows.csv")
     assert len(dropped) == 3  # tool0 once, tool1 in two grant files
@@ -472,6 +473,47 @@ def test_run_json_has_no_stale_done_records_while_running(tmp_path, env, monkeyp
     monkeypatch.setattr(uw, "stage_split", peek)
     run(tmp_path)
     assert seen == {}
+
+
+# --- dropped rows / unresolved folders -------------------------------------------------
+
+
+def test_clean_run_exits_zero_and_records_nothing_dropped(tmp_path, env):
+    code, state = run(tmp_path, "ToolView")
+    assert code == 0 and state["dropped_rows"] == [] and state["unresolved_folder_files"] == []
+
+
+def blank_first_folder(tmp_path, folder_col):
+    paths_csv = tmp_path / "out" / "02_paths" / "paths.csv"
+    paths = pd.read_csv(paths_csv, dtype=str, keep_default_na=False)
+    paths.loc[0, folder_col] = ""
+    paths.to_csv(paths_csv, index=False)
+    return paths.loc[0, "File Paths"]
+
+
+@pytest.mark.parametrize("type_,col", [("ToolView", "folderIdTools"), ("PublicationView", "folderIdPublication")])
+def test_unresolved_folder_files_excluded_for_every_type(tmp_path, env, type_, col):
+    run(tmp_path, type_)
+    gone = Path(blank_first_folder(tmp_path, col)).name
+    code, state = run(tmp_path, type_, "--from-stage", "reshape")
+    assert code == 2
+    assert [Path(f).name for f in state["unresolved_folder_files"]] == [gone]
+    uploaded = pd.read_csv(state["stages"]["upload"]["outputs"]["paths_csv"])
+    assert gone not in [Path(p).name for p in uploaded["File Paths"]] and len(uploaded) == 2
+
+
+def test_alias_accession_is_reused_before_empty_link_drop(tmp_path, env):
+    df = pd.read_csv(FIXTURES / "p1" / "dataset.csv", dtype=str, keep_default_na=False)
+    df.loc[df["Dataset Alias"] == "GSE150000", "Dataset Url"] = ""
+    manifest = tmp_path / "datasets.csv"
+    df.to_csv(manifest, index=False)
+    code, state = run(tmp_path, "DatasetView", "--execute", manifest=manifest, syn=FakeSyn({"GSE150000": "syn5"}))
+    assert not any(r["name"] == "GSE150000" for r in state["dropped_rows"])
+    final = pd.concat([pd.read_csv(f, dtype=str) for f in (tmp_path / "out" / "04_links" / "final").glob("*.csv")])
+    assert set(final.loc[final["Dataset Alias"] == "GSE150000", "DatasetView_id"]) == {"syn5"}
+    # without an existing entity the same row is dropped
+    code, state = run(tmp_path, "DatasetView", "--force-new", manifest=manifest, syn=FakeSyn({}))
+    assert [r["name"] for r in state["dropped_rows"]] == ["GSE150000"] and code == 2
 
 
 # --- end ---

@@ -16,10 +16,22 @@ Each stage writes to <out-dir>/<NN>_<stage>/ and <out-dir>/run.json records the
 finished stages, their outputs and timestamps. ``--from-stage`` resumes a run.
 The default is a dry run: nothing is written to Synapse.
 
-Before ``links`` the driver (a) drops rows whose link column is empty (logged),
-dropping any split file left empty, and (b) for DatasetView, reuses Dataset
-entities that already exist in the central project for a row's GEO/SRA
-accession instead of creating a second one.
+Before ``links`` the driver (a) excludes split files whose grant has no target
+folder (every type, logged), (b) for DatasetView, reuses Dataset entities that
+already exist in the central project for a row's GEO/SRA accession instead of
+creating a second one (only an indexed Dataset for the same grant; see
+``reuse_existing_datasets``), then (c) drops rows whose link column is empty
+(logged), dropping any split file left empty. The dropped rows and excluded
+files are listed in run.json (``dropped_rows``, ``unresolved_folder_files``).
+
+Each stage starts with an empty directory (``--from-stage`` keeps the earlier
+stages'). ``--from-stage`` refuses if the manifest (path or SHA-256), type, target
+or --cv-file differ from run.json; a new run in an out-dir holding another
+manifest's or type's run needs ``--force-new`` (wipes the stage folders).
+
+Exit codes: 0 all stages finished and nothing was dropped; 1 a stage failed (or
+the run was interrupted; run.json marks the stage failed); 2 all stages finished
+but rows were dropped or files excluded, so the upload is incomplete by design.
 
 author: orion.banks
 """
@@ -260,7 +272,7 @@ def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
         for i in df.index[empty]:
             label = df.iloc[i].get("Tool Name") or df.iloc[i].get(DATASET_NAME_COLUMN) or f"row {i}"
             logger.warning("Dropping %s row %d (%s): empty %r", Path(prow["File Paths"]).name, i, label, link_column)
-            report.append({"file": prow["File Paths"], "row": i, "name": label, "reason": f"empty {link_column}"})
+            report.append({"file": prow["File Paths"], "row": int(i), "name": label, "reason": f"empty {link_column}"})
         df = df[~empty]
         if df.empty:
             logger.warning("Dropping %s: no rows left", Path(prow["File Paths"]).name)
@@ -380,25 +392,37 @@ def stage_reshape(run, args):
     return {"paths_csv": out, "files": paths["File Paths"].tolist()}
 
 
+def exclude_unresolved_folders(paths: pd.DataFrame, folder_col):
+    """Drop split files whose grant has no target folder (logged). Returns
+    (kept paths, excluded file paths)."""
+    unresolved = paths[folder_col].str.strip() == ""
+    excluded = paths[unresolved]["File Paths"].tolist()
+    for p in excluded:
+        logger.warning("Excluding %s: no target folder resolved for its grant", p)
+    return paths[~unresolved], excluded
+
+
 def stage_links(run, args, syn=None):
-    reshaped = run.output("reshape", "paths_csv")
-    if args.type not in LINK_COLUMNS:
-        return "skipped", {"paths_csv": reshaped}, f"{args.type} has no link entities"
+    reshaped = read_csv(run.output("reshape", "paths_csv"))
+    folder_col = CONFIG[args.type][3]
     # Resuming at links keeps created_ids.csv: it is how finished rows are skipped.
     d = run.stage_dir("links", keep=("created_ids.csv",) if args.from_stage == "links" else ())
+    run.state["dropped_rows"] = []
+    run.state["unresolved_folder_files"] = []
+
+    if args.type not in LINK_COLUMNS:
+        kept, excluded = exclude_unresolved_folders(reshaped, folder_col)
+        run.state["unresolved_folder_files"] = excluded
+        out = write_paths_csv(kept, d / "paths.csv")
+        return "skipped", {"paths_csv": out, "excluded_no_folder": len(excluded)}, f"{args.type} has no link entities"
+
     link_column, pk = LINK_COLUMNS[args.type]
-    folder_col = CONFIG[args.type][3]
+    original = retarget(reshaped, d)
+    paths, excluded = exclude_unresolved_folders(original, folder_col)
+    run.state["unresolved_folder_files"] = excluded
 
-    original = retarget(read_csv(reshaped), d)
-    unresolved = original[folder_col].str.strip() == ""
-    for p in original[unresolved]["File Paths"]:
-        logger.warning("Excluding %s from links: no target folder", p)
-    paths = original[~unresolved]
-
-    dropped = []
-    paths = drop_empty_link_rows(paths, link_column, dropped)
-    pd.DataFrame(dropped, columns=["file", "row", "name", "reason"]).to_csv(d / "dropped_rows.csv", index=False)
-
+    # Reuse comes first so a row whose alias carries a reusable accession is not
+    # dropped for an empty link.
     reused = []
     if args.type == "DatasetView":
         if syn is None:
@@ -408,8 +432,14 @@ def stage_links(run, args, syn=None):
         paths = reuse_existing_datasets(syn, paths, pk, link_column, d, reused)
     pd.DataFrame(reused, columns=["file", "accession", "entity_id"]).to_csv(d / "reused_entities.csv", index=False)
 
+    dropped = []
+    paths = drop_empty_link_rows(paths, link_column, dropped)
+    pd.DataFrame(dropped, columns=["file", "row", "name", "reason"]).to_csv(d / "dropped_rows.csv", index=False)
+    run.state["dropped_rows"] = dropped
+
     pending = write_paths_csv(paths, d / "pending_paths.csv")
-    outputs = {"pending_paths_csv": pending, "dropped": len(dropped), "reused": len(reused)}
+    outputs = {"pending_paths_csv": pending, "dropped": len(dropped), "reused": len(reused),
+               "excluded_no_folder": len(excluded)}
 
     if not args.execute:
         # Nothing is created; the filtered (and ID-reusing) files are still produced.
@@ -467,7 +497,10 @@ def stage_upload(run, args):
 
 
 def get_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
+    p = argparse.ArgumentParser(
+        description=__doc__.strip().split("\n")[0],
+        epilog="exit codes: 0 ok; 1 a stage failed; 2 finished, but rows were dropped or files excluded "
+               "(see run.json)")
     p.add_argument("--manifest", required=True, help="manifest CSV or .xlsx")
     p.add_argument("--type", required=True, choices=COMPONENTS)
     p.add_argument("--out-dir", required=True)
@@ -547,6 +580,9 @@ def main(argv=None, syn=None):
             sys.exit(f"Cannot resume at {args.from_stage}: stage {earlier!r} has not finished in {run.path}")
     for later in STAGES[start:]:
         run.state["stages"].pop(later, None)
+    if start <= STAGES.index("links"):
+        run.state.pop("dropped_rows", None)
+        run.state.pop("unresolved_folder_files", None)
     run.save()  # never leave a run.json that still lists the stages about to be redone
 
     print(f"{'EXECUTE' if args.execute else 'Dry run'}: {args.type} -> {args.target}, out {out_dir}")
@@ -572,6 +608,11 @@ def main(argv=None, syn=None):
         run.record(stage, status, started, outputs, note)
         if note:
             print(f"   {status}: {note}")
+    dropped, excluded = run.state.get("dropped_rows"), run.state.get("unresolved_folder_files")
+    if dropped or excluded:
+        print(f"Finished with {len(dropped or [])} dropped row(s) and {len(excluded or [])} file(s) excluded "
+              f"for an unresolved folder (listed in {run.path}); exit code 2")
+        return 2
     print(f"Finished; see {run.path}")
     return 0
 
