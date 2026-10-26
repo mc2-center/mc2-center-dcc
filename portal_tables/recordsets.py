@@ -55,7 +55,9 @@ import json
 import logging
 import re
 import shutil
+import os
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -77,6 +79,10 @@ WRITE_LOG_COLUMNS = [
     "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
 ]
 LOCK_HOURS = 2
+# Recovery compares Synapse's server-side modifiedOn with the runner's local
+# writtenOn, so the two clocks may disagree; accept a version modified up to
+# this long before the pending row was written.
+CLOCK_TOLERANCE = pd.Timedelta(minutes=10)
 _NUMERIC = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
 
 
@@ -228,7 +234,7 @@ def read_recordset(
     entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
     if cached is not None:
         cached.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cached.with_name(cached.name + ".part")
+        tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
         shutil.copyfile(entity.path, tmp)
         tmp.replace(cached)
     return _load_csv(entity.path, list_cols)
@@ -352,13 +358,38 @@ class WriteLog:
                 })
         return out
 
-    def locked_by(self, rs_id: str, run_id: str, now=None) -> str | None:
-        """runId of another run with an unresolved ``pending`` row younger than 2 h, else None."""
+    def locked_by(self, rs_id: str, run_id: str, now=None, since=None) -> str | None:
+        """runId of a run with an unresolved ``pending`` row younger than 2 h, else None.
+
+        A row of this very ``run_id`` written at or after ``since`` (this
+        process's start) is our own and is ignored; an older one with the same
+        runId belongs to an earlier process (a crash, or a run still going) and
+        counts. Without ``since``, same-runId rows are ignored.
+        """
         now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
         for row in self.unresolved_pending(rs_id):
-            if row["runId"] != run_id and now - row["writtenOn"] < pd.Timedelta(hours=LOCK_HOURS):
+            if row["runId"] == run_id and (since is None or row["writtenOn"] >= since):
+                continue
+            if now - row["writtenOn"] < pd.Timedelta(hours=LOCK_HOURS):
                 return row["runId"]
         return None
+
+    def earlier_pending(self, rs_id: str, run_id: str, now=None) -> str | None:
+        """runId of another live pending row that beats ``run_id``'s own, else None.
+
+        Used right after ``start`` to settle a lock race: the row with the
+        earlier ``writtenOn`` (ties broken by runId) keeps the lock.
+        """
+        now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
+        rows = self.unresolved_pending(rs_id)
+        mine = [(r["writtenOn"], r["runId"]) for r in rows if r["runId"] == run_id]
+        if not mine:
+            return None
+        mine_key = max(mine)
+        others = [(r["writtenOn"], r["runId"]) for r in rows
+                  if r["runId"] != run_id and now - r["writtenOn"] < pd.Timedelta(hours=LOCK_HOURS)]
+        beating = [o for o in others if o < mine_key]
+        return min(beating)[1] if beating else None
 
 
 class SynapseTableWriteLog(WriteLog):
@@ -437,28 +468,29 @@ def recordset_version_meta(syn, rs_id: str, version: int) -> tuple[str, pd.Times
     return str(entity.modified_by), _to_dt(entity.modified_on)
 
 
-def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True, now_run=None) -> dict[int, int]:
+def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True) -> dict[int, int]:
     """Recover versions created by runs that died after exporting.
 
     For each unresolved ``pending`` row, a version above its ``baseVersion``
-    that is not logged, was modified by the row's ``principalId`` and after the
-    row's ``writtenOn``, is a pipeline version with that base: recorded as
-    ``recovered`` (when ``record``) and returned as ``{version: base}``. A
-    pending row with nothing to recover is resolved as ``aborted``. Rows of
-    ``now_run`` (the live run) are skipped.
+    that is not logged, was modified by the row's ``principalId`` and not
+    earlier than ``writtenOn - CLOCK_TOLERANCE`` is a pipeline version with
+    that base: recorded as ``recovered`` (when ``record``) and returned as
+    ``{version: base}``. A pending row with nothing to recover is resolved as
+    ``aborted``. Call it before this run's own ``start``; a crashed export of
+    the same runId is recovered like any other.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
     logged = write_log.pipeline_map(rs_id)
     found: dict[int, int] = {}
     for row in write_log.unresolved_pending(rs_id):
-        if row["runId"] == now_run or row["baseVersion"] is None:
+        if row["baseVersion"] is None:
             continue
         mine = []
         for v in range(row["baseVersion"] + 1, latest + 1):
             if v in logged or v in found:
                 continue
             by, on = meta(v)
-            if by == row["principalId"] and pd.notna(on) and on > row["writtenOn"]:
+            if by == row["principalId"] and pd.notna(on) and on >= row["writtenOn"] - CLOCK_TOLERANCE:
                 mine.append(v)
         for v in mine:
             found[v] = row["baseVersion"]
@@ -467,8 +499,11 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True, now_r
                                  principal=row["principalId"], status="recovered")
         if not mine and record:
             write_log.abort(rs_id, row["baseVersion"], row["runId"], row["principalId"])
-        logger.warning("%s: run %s died after its pending row; recovered versions %s",
-                       rs_id, row["runId"], sorted(mine))
+        if mine:
+            logger.warning("%s: run %s died after its pending row; recovered versions %s",
+                           rs_id, row["runId"], sorted(mine))
+        else:
+            logger.info("%s: run %s left a pending row and created no version", rs_id, row["runId"])
     return found
 
 

@@ -41,6 +41,8 @@ import utils
 
 logger = logging.getLogger(__name__)
 
+PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older than this is not ours
+
 
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
@@ -124,16 +126,14 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="failed", message=f"bad upload keys: {err}")
         return summary
 
-    locker = write_log.locked_by(rs_id, args.run_id)
+    locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
     if locker:
         summary.update(status="locked", message=(
             f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old); skipped"))
         return summary
 
     # A run that died after exporting leaves a pending row; claim its versions.
-    recovered = recordsets.recover_pending(
-        syn, rs_id, write_log, latest, record=args.execute, now_run=args.run_id
-    )
+    recovered = recordsets.recover_pending(syn, rs_id, write_log, latest, record=args.execute)
     if recovered:
         summary["recovered"] = sorted(recovered)
     log_map = {**write_log.pipeline_map(rs_id), **recovered}
@@ -168,6 +168,21 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     principal = principal_id(syn)
     write_log.start(rs_id, latest, args.run_id, principal)
+    # Lock race: another run may have started between our check and our pending
+    # row. The earlier pending row (ties by runId) keeps the lock.
+    winner = write_log.earlier_pending(rs_id, args.run_id)
+    if winner:
+        write_log.abort(rs_id, latest, args.run_id, principal)
+        summary.update(status="locked", message=f"run {winner} started its write first; skipped")
+        return summary
+    # The merge was computed against ``latest``; if the RecordSet moved, replay again next run.
+    now_latest, _ = recordsets.recordset_info(syn, rs_id)
+    if now_latest != latest:
+        write_log.abort(rs_id, latest, args.run_id, principal)
+        summary.update(status="retry", message=(
+            f"{rs_id} moved from v{latest} to v{now_latest} before the write; nothing written, "
+            "the next run replays it"))
+        return summary
     created = []
 
     def on_version(v):

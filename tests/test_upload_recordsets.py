@@ -327,3 +327,37 @@ def test_failed_write_resolves_the_pending_row(tmp_path):
     log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
     assert log.unresolved_pending("synRS") == []
+
+
+def test_lock_race_loser_aborts_and_reports_locked(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    real_start = rs.WriteLog.start
+
+    def start_after_rival(self, rs_id, base, run_id, principal):
+        # a rival's pending row, written a moment earlier, appears before ours
+        real_start(self, rs_id, base, "rival", "7")
+        real_start(self, rs_id, base, run_id, principal)
+
+    with mock.patch.object(rs.WriteLog, "start", start_after_rival):
+        code, rep = run(tmp_path, fake, log=tmp_path / "log.csv")
+    assert status_of(rep) == "locked" and fake.writes == []
+    assert log._read("synRS")["status"].tolist() == ["pending", "pending", "aborted"]
+
+
+def test_recordset_moving_before_the_write_aborts_with_retry(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    calls = {"n": 0}
+    real_info = fake.info
+
+    def moving_info(syn, rs_id):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the re-check right before the write
+            fake.versions.append(stored(["p1", "Someone", ""]))
+        return real_info(syn, rs_id)
+
+    fake.info = moving_info
+    code, rep = run(tmp_path, fake)
+    assert status_of(rep) == "retry" and fake.writes == []
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]

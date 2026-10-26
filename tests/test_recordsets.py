@@ -383,7 +383,7 @@ def test_crash_recovery_by_principal_and_time_from_the_pending_row(tmp_path):
     log.start("syn1", 1, "dead", "42")
     pending_on = log.unresolved_pending("syn1")[0]["writtenOn"]
     meta = {
-        2: ("42", pending_on - pd.Timedelta(minutes=5)),  # before the pending row: not ours
+        2: ("42", pending_on - pd.Timedelta(minutes=15)),  # beyond the clock tolerance: not ours
         3: ("99", pending_on + pd.Timedelta(minutes=1)),  # a contributor
         4: ("42", pending_on + pd.Timedelta(minutes=2)),  # the dead run's export, never logged
         5: ("42", pending_on + pd.Timedelta(minutes=3)),  # its second export
@@ -410,10 +410,68 @@ def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(tmp_path):
     assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
 
 
-def test_recovery_skips_the_live_runs_own_pending_row(tmp_path):
+def test_recovery_accepts_clock_skew_within_the_tolerance(tmp_path):
     log = rs.CsvWriteLog(tmp_path / "log.csv")
-    log.start("syn1", 1, "live", "42")
-    assert rs.recover_pending("syn", "syn1", log, 3, meta=lambda v: 1 / 0, now_run="live") == {}
+    log.start("syn1", 1, "dead", "42")
+    on = log.unresolved_pending("syn1")[0]["writtenOn"]
+    skewed = lambda v: ("42", on - pd.Timedelta(minutes=9))  # server clock 9 min behind
+    assert rs.recover_pending("syn", "syn1", log, 2, meta=skewed) == {2: 1}
+    log2 = rs.CsvWriteLog(tmp_path / "log2.csv")
+    log2.start("syn1", 1, "dead", "42")
+    on = log2.unresolved_pending("syn1")[0]["writtenOn"]
+    assert rs.recover_pending("syn", "syn1", log2, 2, meta=lambda v: ("42", on - pd.Timedelta(minutes=11))) == {}
+
+
+def test_recovery_covers_a_pending_row_of_the_same_run_id(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "same", "42")
+    on = log.unresolved_pending("syn1")[0]["writtenOn"]
+    found = rs.recover_pending("syn", "syn1", log, 2, meta=lambda v: ("42", on + pd.Timedelta(seconds=5)))
+    assert found == {2: 1} and log.pipeline_map("syn1") == {2: 1}
+
+
+def test_lock_counts_a_same_run_id_row_older_than_this_process(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "same", "42")
+    started_before = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=1)
+    started_after = pd.Timestamp.now(tz="UTC") + pd.Timedelta(minutes=1)
+    assert log.locked_by("syn1", "same", since=started_after) == "same"  # row predates this process
+    assert log.locked_by("syn1", "same", since=started_before) is None  # our own row
+    assert log.locked_by("syn1", "same") is None
+
+
+def test_earlier_pending_row_wins_the_lock_race(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "first", "7")
+    log.start("syn1", 1, "second", "8")
+    assert log.earlier_pending("syn1", "second") == "first"
+    assert log.earlier_pending("syn1", "first") is None
+    assert log.earlier_pending("syn1", "nobody") is None
+    # an aborted (resolved) earlier row no longer beats us
+    log.abort("syn1", 1, "first", "7")
+    assert log.earlier_pending("syn1", "second") is None
+
+
+def test_no_recovered_warning_for_an_aborted_row(tmp_path, caplog):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 1, "dead", "42")
+    with caplog.at_level("WARNING"):
+        rs.recover_pending("syn", "syn1", log, 1, meta=lambda v: 1 / 0)
+    assert "recovered versions" not in caplog.text
+
+
+def test_cache_temp_name_is_unique_per_process(tmp_path):
+    dl = tmp_path / "dl.csv"
+    dl.write_text(f"{K},Title\na,x\n")
+    seen = []
+    real = rs.shutil.copyfile
+    with mock.patch.object(rs, "RecordSet") as cls, \
+         mock.patch.object(rs.shutil, "copyfile", side_effect=lambda a, b: (seen.append(str(b)), real(a, b))[1]):
+        cls.return_value.get.return_value = SimpleNamespace(path=str(dl))
+        rs.read_recordset("syn", "syn1", version=1, cache_dir=tmp_path / "c")
+        rs.read_recordset("syn", "syn1", version=2, cache_dir=tmp_path / "c")
+    assert all(".part" in n and str(rs.os.getpid()) in n for n in seen)
+    assert seen[0].split("v1.csv")[1] != seen[1].split("v2.csv")[1]
 
 
 def test_synapse_write_log_queries_and_stores():
