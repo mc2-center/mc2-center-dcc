@@ -250,6 +250,13 @@ def test_duplicate_key_tie_keeps_the_higher_legacy_id():
     assert converted["PublicationTitle"].tolist() == ["First"]  # numeric, not text, comparison
 
 
+def test_duplicate_key_tie_compares_uuid_ids_as_text():
+    converted, _, _, _, res = convert_dup(dup_table(first_id="3fbe8ce2-83cb", second_id="9d2b6960-a613"), None)
+    assert converted["PublicationTitle"].tolist() == ["Second copy"]
+    converted, _, _, _, _ = convert_dup(dup_table(first_id="9d2b6960-a613", second_id="3fbe8ce2-83cb"), None)
+    assert converted["PublicationTitle"].tolist() == ["First"]
+
+
 def test_duplicate_key_absent_from_the_manifest_is_reported_as_such():
     other = reference_for("x")
     other["PublicationView_id"] = "zzz"

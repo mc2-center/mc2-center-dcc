@@ -279,11 +279,13 @@ def _blank(value) -> bool:
     return value == "" or value == [] or value is None
 
 
-def _id_value(value) -> tuple[int, int]:
+def _id_value(value) -> tuple[int, int, str]:
+    """Sort key of a legacy ``Id``: integers numerically, anything else (a UUID) as text, below integers."""
+    text = str(value).strip()
     try:
-        return 1, int(str(value).strip())
+        return 1, int(text), ""
     except ValueError:
-        return 0, 0
+        return 0, 0, text
 
 
 def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference):
