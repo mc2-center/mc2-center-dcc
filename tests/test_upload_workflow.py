@@ -298,9 +298,14 @@ class LinkSyn:
 
     def __init__(self, existing=None, fail_on=None):
         self.existing, self.stored, self.fail_on = dict(existing or {}), [], fail_on
+        self.updated = []
+        self.concrete, self.urls = {}, {}  # entity id -> concreteType / current external URL
 
     def findEntityId(self, name, parent=None):
         return self.existing.get((parent, name))
+
+    def restGET(self, url):
+        return {"concreteType": self.concrete.get(url.rsplit("/", 1)[-1], "org.sagebionetworks.repo.model.FileEntity")}
 
 
 def link_manifest(tmp_path, names):
@@ -314,10 +319,18 @@ def link_manifest(tmp_path, names):
 
 def patch_file(mod, monkeypatch, syn):
     class FakeFile:
-        def __init__(self, external_url, name, parent_id, synapse_store):
-            self.name, self.parent_id = name, parent_id
+        def __init__(self, external_url=None, name=None, parent_id=None, synapse_store=True, id=None,
+                     download_file=True):
+            self.name, self.parent_id, self.external_url, self.id = name, parent_id, external_url, id
+
+        def get(self, synapse_client):
+            self.external_url = syn.urls.get(self.id, self.external_url)
+            return self
 
         def store(self, synapse_client):
+            if self.id:  # update of an existing File
+                syn.updated.append((self.id, self.external_url))
+                return self
             if syn.fail_on == self.name:
                 raise RuntimeError("boom")
             syn.stored.append(self.name)
@@ -353,6 +366,7 @@ def test_links_reuse_existing_entity_by_name_under_parent(tmp_path, monkeypatch)
     mod = load_cel(monkeypatch)
     split, pending = link_manifest(tmp_path, ["a", "b"])
     syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.urls["syn555"] = "https://x/a"
     patch_file(mod, monkeypatch, syn)
     mod.main(["-m", str(pending), "-t", "ToolView"])  # default ledger sits next to the manifest
     assert syn.stored == ["b"]
@@ -607,3 +621,31 @@ def test_upload_recordsets_nonzero_marks_upload_failed(tmp_path, env, monkeypatc
     result, state = run(tmp_path)
     assert result == exit_code and state["stages"]["upload"]["status"] == status
 
+
+
+def test_store_link_same_url_file_is_reused_untouched(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.urls["syn555"] = "https://x/a"
+    patch_file(mod, monkeypatch, syn)
+    assert mod.store_link(syn, "a", "https://x/a", "syn100") == "syn555"
+    assert syn.updated == [] and syn.stored == []
+
+
+def test_store_link_file_with_other_url_is_updated(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.urls["syn555"] = "https://old/a"
+    patch_file(mod, monkeypatch, syn)
+    assert mod.store_link(syn, "a", "https://x/a", "syn100") == "syn555"
+    assert syn.updated == [("syn555", "https://x/a")] and syn.stored == []
+
+
+def test_store_link_non_file_entity_fails_the_row(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn.concrete["syn555"] = "org.sagebionetworks.repo.model.Folder"
+    patch_file(mod, monkeypatch, syn)
+    with pytest.raises(ValueError, match=r"syn555.*not a File.*Folder"):
+        mod.store_link(syn, "a", "https://x/a", "syn100")
+    assert syn.updated == [] and syn.stored == []
