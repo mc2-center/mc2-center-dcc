@@ -550,3 +550,17 @@ def test_split_ignores_grant_folder_reference(tmp_path, env, monkeypatch):
 
 
 # --- end ---
+
+
+def test_grant_lookup_uses_the_split_files_grant(monkeypatch, tmp_path):
+    # GrantView Key can list several grants; the split file is per grant.
+    mod = load_cel(monkeypatch)
+    split = tmp_path / "CA184898_dataset.csv"
+    pd.DataFrame({"Dataset Alias": ["GSE1"], "GrantView Key": ["CA209923, CA184898"]}).to_csv(split, index=False)
+    other = tmp_path / "misc.csv"
+    pd.DataFrame({"Dataset Alias": ["GSE2"], "GrantView Key": ["CA209923, CA184898"]}).to_csv(other, index=False)
+    paths = tmp_path / "paths.csv"
+    pd.DataFrame({"File Paths": [str(split), str(other)]}).to_csv(paths, index=False)
+    lookup = mod._build_grant_lookup(str(paths))
+    assert lookup[(str(split), "GSE1")] == "CA184898"
+    assert lookup[(str(other), "GSE2")] == "CA209923"  # no grant prefix: first listed grant

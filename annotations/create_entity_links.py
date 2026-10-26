@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import re
 from synapseclient import Synapse
 from synapseclient.models import File
 
@@ -234,6 +235,12 @@ def _index_geo_dataset(
         return None, str(e)
 
 
+def _file_grant(path: str) -> str:
+    """Grant number a split file is named for (``CA123456_dataset.csv``), or ""."""
+    match = re.match(r"(CA\d{6})_", os.path.basename(str(path)))
+    return match.group(1) if match else ""
+
+
 def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
     """Build a (manifest_path, dataset_alias) → grant_number lookup from split manifests."""
     lookup = {}
@@ -244,7 +251,8 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
             df = pd.read_csv(path, dtype=str).fillna("")
             for _, mrow in df.iterrows():
                 alias = mrow.get("Dataset Alias", "")
-                grant = mrow.get("GrantView Key", "")
+                # The split file is per grant; GrantView Key can list several.
+                grant = _file_grant(path) or mrow.get("GrantView Key", "").split(",")[0].strip()
                 if alias:
                     lookup[(path, alias)] = grant
         except Exception:
@@ -291,7 +299,7 @@ def main(argv=None):
         pnt = get_names(name_column, target_column, link_column, data=data)
 
     else:
-        pnt = list((None, name, link, target))
+        pnt = [(None, name, link, target)]
 
     # For DatasetView, GEO/SRA accessions get a full Dataset entity with FTP file
     # links instead of a plain File link entity.
