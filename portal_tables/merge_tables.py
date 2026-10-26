@@ -131,6 +131,21 @@ def _join_cell(value):
     return ", ".join(str(v) for v in value) if isinstance(value, list) else value
 
 
+def _join_lists(df, key_col):
+    """", "-join list cells, warning (column and key) when an item has a comma."""
+    keys = df[key_col] if key_col in df.columns else None
+    for col in df.columns:
+        for i, value in enumerate(df[col]):
+            if isinstance(value, list) and any("," in str(v) for v in value):
+                key = keys.iloc[i] if keys is not None else f"row {i}"
+                logger.warning(
+                    "List item containing a comma in column '%s' (key %s) will split "
+                    "when the ', '-joined cell is parsed downstream", col, key,
+                )
+        df[col] = df[col].map(_join_cell)
+    return df
+
+
 def build_union(syn, component, grant_ids):
     """Read each grant's RecordSet and union them. Returns (frame, stats).
 
@@ -157,8 +172,8 @@ def build_union(syn, component, grant_ids):
         union = pd.concat(frames, ignore_index=True, sort=False).fillna("")
     else:
         union = pd.DataFrame()
-    union = union.map(_join_cell)
     union = model_contract.normalize_headers(union, to="display")
+    union = _join_lists(union, f"{component}_id")
     for col in headers:
         if col not in union.columns:
             union[col] = ""
@@ -189,7 +204,11 @@ def union_schema(component):
     """Fixed Synapse schema from the template headers (free-text columns get LARGETEXT)."""
     from synapseclient.models import Column, ColumnType
 
-    free = model_contract.free_text_columns(component)
+    to_display = {label: display for display, label in model_contract.label_map().items()}
+    # joined list cells can exceed STRING(1000), so they are LARGETEXT too
+    free = set(model_contract.free_text_columns(component)) | {
+        to_display.get(c, c) for c in recordsets.list_columns(component)
+    }
     return [
         Column(name=h, column_type=ColumnType.LARGETEXT)
         if h in free
@@ -199,9 +218,27 @@ def union_schema(component):
 
 
 def publish_union(syn, component, union, target):
-    """LIVE WRITE: store ``union`` as table ``<component>_UNION`` in ``target``."""
-    table = Table(name=f"{component}_UNION", parent_id=target, columns=union_schema(component))
-    table = table.store(synapse_client=syn)
+    """LIVE WRITE: store ``union`` as table ``<component>_UNION`` in ``target``.
+
+    An existing table is cleared first (its columns must match the fixed
+    schema), so a re-publish replaces the rows instead of appending.
+    """
+    name = f"{component}_UNION"
+    schema = union_schema(component)
+    existing_id = operations.find_entity_id(name=name, parent=target, synapse_client=syn)
+    if existing_id is not None:
+        existing = Table(id=existing_id).get(include_columns=True, synapse_client=syn)
+        have = [(c.name, str(getattr(c.column_type, "value", c.column_type))) for c in existing.columns.values()]
+        want = [(c.name, str(getattr(c.column_type, "value", c.column_type))) for c in schema]
+        if have != want:
+            raise ValueError(
+                f"Existing table {existing_id} ({name}) has columns that differ from the "
+                f"fixed {component} schema; refusing to publish.\n  existing: {have}\n  expected: {want}"
+            )
+        existing.delete_rows(query=f"SELECT ROW_ID, ROW_VERSION FROM {existing_id}", synapse_client=syn)
+        table = existing
+    else:
+        table = Table(name=name, parent_id=target, columns=schema).store(synapse_client=syn)
     # extra (non-template) columns are not in the fixed schema
     table.store_rows(values=union[model_contract.template_headers(component)], synapse_client=syn)
     return table.id

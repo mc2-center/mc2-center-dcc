@@ -1,6 +1,7 @@
 """Offline tests for merge_tables.py RecordSet mode (Synapse fully mocked)."""
 
 import logging
+from types import SimpleNamespace
 from unittest import mock
 
 import pandas as pd
@@ -67,3 +68,47 @@ def test_component_column_is_filled():
     # RecordSets have no Component column (a Grid import drops it).
     df, _ = _union({"syn1": _rs(["t1"], ["A"])}, ["syn1"])
     assert df["Component"].tolist() == ["ToolView"]
+
+
+def _publish(existing_columns=None):
+    """Run publish_union against a mocked Synapse table that already exists."""
+    schema = mt.union_schema("ToolView")
+    existing = mock.MagicMock(id="syn9")
+    existing.columns = {c.name: SimpleNamespace(name=c.name, column_type=c.column_type)
+                        for c in (existing_columns or schema)}
+    union = pd.DataFrame(columns=mt.model_contract.template_headers("ToolView"))
+    with mock.patch.object(mt.operations, "find_entity_id", return_value="syn9"), \
+         mock.patch.object(mt, "Table") as table_cls:
+        table_cls.return_value.get.return_value = existing
+        result = mt.publish_union(mock.MagicMock(), "ToolView", union, "syn1")
+    return existing, result
+
+
+def test_republish_clears_rows_before_store_rows():
+    existing, result = _publish()
+    names = [c[0] for c in existing.method_calls]
+    assert names.index("delete_rows") < names.index("store_rows")
+    assert "ROW_ID, ROW_VERSION" in existing.delete_rows.call_args.kwargs["query"]
+    assert result == "syn9"
+
+
+def test_republish_with_different_columns_stops():
+    import pytest
+
+    with pytest.raises(ValueError, match="differ from the fixed"):
+        _publish(mt.union_schema("ToolView")[:-1])
+
+
+def test_list_columns_are_largetext():
+    from synapseclient.models import ColumnType
+
+    cols = {c.name: c for c in mt.union_schema("ToolView")}
+    assert cols["Tool Operation"].column_type == ColumnType.LARGETEXT
+
+
+def test_comma_in_list_item_warns_with_column_and_key(caplog):
+    g = _rs(["t1"], ["A"], GrantViewKey=[["CA1", "Smith, J"]])
+    with caplog.at_level(logging.WARNING):
+        df, _ = _union({"syn1": g}, ["syn1"])
+    assert df["GrantView Key"].tolist() == ["CA1, Smith, J"]
+    assert any("GrantView Key" in r.message and "t1" in r.message for r in caplog.records)

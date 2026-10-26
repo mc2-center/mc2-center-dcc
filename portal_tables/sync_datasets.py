@@ -193,10 +193,9 @@ def add_missing_info(
         # release date for sorting; leave as None if no publication matched.
         datasets.at[_, "pubYear"] = max(pub_years) if pub_years else None
         if not row["DatasetDoi"]:  # If dataset does not have a pre-curated DOI, add a publication DOI
-            try:
-                datasets.at[_, "DatasetDoi"] = pub_doi[0]  # Use first DOI identified
-            except IndexError:
-                datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
+            usable = [d for d in pub_doi if isinstance(d, str) and d.strip()]
+            # First non-blank publication DOI (NaN/blank are skipped)
+            datasets.at[_, "DatasetDoi"] = usable[0].strip() if usable else utils.DOI_NOT_AVAILABLE
         if str(datasets.at[_, "DatasetDoi"]).strip() == utils.NO_DOI_LISTED:
             datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
         d = [translate_access(code, code_to_id) for code in row["DatasetDataUseCodes"].split(",")]
