@@ -1,5 +1,6 @@
 """annotations/migrate_grant_tables_14.py with every Synapse call mocked."""
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -43,6 +44,7 @@ class FakeSynapse:
         self.next_id = 100
         self.reference_source = None  # merged-manifest frame (13.1.0 headers) or None
         self.reference_reads = 0
+        self.reference_versions = []  # the version each read asked for
         self.portal_source = None     # live portal table frame or None
         self.pubmed_authors = {}      # PMID -> author list PubMed returns
         self.pubmed_calls = []
@@ -60,8 +62,9 @@ class FakeSynapse:
             raise RuntimeError("no portal table")
         return self.portal_source.copy()
 
-    def read_reference(self, syn, component):
+    def read_reference(self, syn, component, version=None):
         self.reference_reads += 1
+        self.reference_versions.append(version)
         if self.reference_source is None:
             raise RuntimeError("no merged manifest")
         return self.reference_source.copy()
@@ -1623,18 +1626,64 @@ def test_unused_row_overrides_and_duplicate_choices_are_reported(tmp_path):
     assert "duplicate choices that matched no row: 1" in text and "zzz" in text
 
 
-def test_the_manifest_version_is_part_of_the_resume_hash(tmp_path):
-    args = mig.get_args(["--component", "DatasetView"])
-    assert mig.options_hash(args, "etag1:3") != mig.options_hash(args, "etag2:3")
-    versions = ["v1"]
+def _pinned_run(tmp_path, fake, latest, *extra, run_id):
+    with mock.patch.object(mig, "latest_reference_version", lambda syn, component: latest[0]):
+        return run(tmp_path, fake, *extra, component="DatasetView", run_id=run_id)
+
+
+def _dataset_fake():
     fake = FakeSynapse({"synT1": ("CA1", "synP1", ms_table())})
-    with mock.patch.object(mig, "reference_version", lambda syn, component: versions[0]):
-        run(tmp_path, fake, component="DatasetView", run_id="r1")
-        code, rep = run(tmp_path, fake, component="DatasetView", run_id="r2")
-        assert "already dryrun in run r1" in (rep / "summary.csv").read_text()
-        versions[0] = "v2"
-        code, rep = run(tmp_path, fake, component="DatasetView", run_id="r3")
-        assert "already" not in (rep / "summary.csv").read_text()
+    fake.reference_source = ms_reference([["syn_new", "CA1", "N", "GSE1", "d"], ["syn_same", "CA1", "N", "GSE2", "d"]])
+    return fake
+
+
+def test_the_first_run_pins_the_manifest_version_and_later_runs_read_it(tmp_path):
+    latest, fake = [3], _dataset_fake()
+    _pinned_run(tmp_path, fake, latest, run_id="r1")
+    state = json.loads((tmp_path / "out" / "state.json").read_text())
+    assert state["reference"] == {"entity": mig.utils.CONFIG["dataset"]["manifest"], "version": 3}
+    assert fake.reference_versions == [3]
+    latest[0] = 7  # I6 --upload published a newer manifest
+    code, rep = _pinned_run(tmp_path, fake, latest, run_id="r2")
+    assert "already dryrun in run r1" in (rep / "summary.csv").read_text()  # same pin, same options: skipped
+    _pinned_run(tmp_path, fake, latest, "--redo", "CA1", run_id="r3")
+    assert fake.reference_versions == [3, 3]  # still version 3, not 7
+
+
+def test_an_explicit_reference_version_overrides_and_re_pins(tmp_path):
+    latest, fake = [3], _dataset_fake()
+    _pinned_run(tmp_path, fake, latest, run_id="r1")
+    code, rep = _pinned_run(tmp_path, fake, latest, "--reference-version", "2", run_id="r2")
+    assert fake.reference_versions == [3, 2]
+    assert "already" not in (rep / "summary.csv").read_text()  # a different version is a different comparison
+    assert json.loads((tmp_path / "out" / "state.json").read_text())["reference"]["version"] == 2
+    _pinned_run(tmp_path, fake, latest, "--redo", "CA1", run_id="r3")
+    assert fake.reference_versions[-1] == 2
+
+
+def test_latest_re_pins_the_current_version_with_a_warning(tmp_path, caplog):
+    latest, fake = [3], _dataset_fake()
+    _pinned_run(tmp_path, fake, latest, run_id="r1")
+    latest[0] = 7
+    with caplog.at_level("WARNING"):
+        _pinned_run(tmp_path, fake, latest, "--reference-version", "latest", run_id="r2")
+    assert fake.reference_versions == [3, 7]
+    assert "re-pinned from version 3 to 7" in caplog.text
+    assert json.loads((tmp_path / "out" / "state.json").read_text())["reference"]["version"] == 7
+
+
+def test_an_unreadable_latest_version_is_not_pinned(tmp_path):
+    fake = _dataset_fake()
+    _pinned_run(tmp_path, fake, [None], run_id="r1")
+    assert fake.reference_versions == [None]
+    assert "reference" not in json.loads((tmp_path / "out" / "state.json").read_text())
+
+
+def test_reference_version_argument_takes_a_number_or_latest():
+    assert mig.get_args(["--component", "DatasetView", "--reference-version", "4"]).reference_version == 4
+    assert mig.get_args(["--component", "DatasetView", "--reference-version", "latest"]).reference_version == "latest"
+    with pytest.raises(SystemExit):
+        mig.get_args(["--component", "DatasetView", "--reference-version", "0"])
 
 
 def test_a_key_override_resolves_a_worklist_row_and_beats_a_collision():

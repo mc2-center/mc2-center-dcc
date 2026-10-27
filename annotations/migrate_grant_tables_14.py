@@ -37,6 +37,12 @@ cell that differs from the manifest's row is listed, not changed, in ``manifest_
 (``grant, key, column, grant_value, manifest_value``); ``--write-override-template`` turns it into an
 ``--overrides`` CSV (``key`` = apply to that row only; ``accept`` = only the rows marked yes apply).
 
+The curated manifest is read at a pinned version: the first run records its version in
+``state.json`` (``reference``) and later runs read that version, so the I6 regeneration that publishes a
+manifest rebuilt from the RecordSets (E2) does not change what a rerun compares with.
+``--reference-version N`` reads and pins version N; ``latest`` re-pins the current version (with a warning
+when it differs from the pin).
+
 ``<out-dir>/state.json`` holds the status per grant; a rerun skips grants that
 finished in the same mode. ``--redo <grant>`` repeats one in a dry run.
 
@@ -119,6 +125,15 @@ PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older t
 
 
 
+def reference_version_arg(text: str):
+    """``--reference-version``: a positive integer, or ``latest``."""
+    if text == "latest":
+        return text
+    if text.isdigit() and int(text) > 0:
+        return int(text)
+    raise argparse.ArgumentTypeError(f"{text!r} is not a version number or 'latest'")
+
+
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
     parser.add_argument("--component", required=True, choices=COMPONENTS)
@@ -140,6 +155,11 @@ def get_args(argv=None):
         help="after the run, write an --overrides template from manifest_differences.csv: proposed_value is "
         "the manifest's value, accept is blank; only rows the curator marks accept=yes are applied, each to its "
         "own key's cell",
+    )
+    parser.add_argument(
+        "--reference-version", type=reference_version_arg, metavar="N|latest",
+        help="version of the curated merged manifest to read and pin in state.json (default: the pinned "
+        "version; the first run pins the latest). 'latest' re-pins the current version, with a warning",
     )
     parser.add_argument(
         "--duplicate-choices",
@@ -300,9 +320,9 @@ def _to_labels(source: pd.DataFrame, component: str, strict: bool = True) -> pd.
     return df
 
 
-def read_reference(syn, component: str) -> pd.DataFrame:
-    """The curated merged manifest of the component (read-only)."""
-    return model_contract.read_manifest(syn, utils.CONFIG[REFERENCE_RESOURCE[component]]["manifest"])
+def read_reference(syn, component: str, version: int | None = None) -> pd.DataFrame:
+    """The curated merged manifest of the component at ``version`` (default: the latest; read-only)."""
+    return model_contract.read_manifest(syn, utils.CONFIG[REFERENCE_RESOURCE[component]]["manifest"], version=version)
 
 
 def read_portal(syn, component: str) -> pd.DataFrame:
@@ -1304,14 +1324,36 @@ def validation_worklist(frames: dict[str, dict], key: str) -> pd.DataFrame:
     return out.sort_values(["field", "grant", "key"], kind="stable").reset_index(drop=True)
 
 
-def reference_version(syn, component: str) -> str:
-    """The etag and version of the curated manifest (blank when it cannot be read): part of the resume hash."""
+def latest_reference_version(syn, component: str) -> int | None:
+    """The current version number of the curated manifest (None when it cannot be read)."""
     try:
         entity = syn.restGET(f"/entity/{utils.CONFIG[REFERENCE_RESOURCE[component]]['manifest']}")
-        return f"{entity.get('etag', '')}:{entity.get('versionNumber', '')}"
+        return int(entity["versionNumber"])
     except Exception:
         logger.warning("Could not read the version of the merged manifest for %s", component)
-        return ""
+        return None
+
+
+def pin_reference_version(syn, component: str, state: dict, choice=None) -> int | None:
+    """The manifest version this run reads, recorded in ``state["reference"]`` (``{"entity", "version"}``).
+
+    ``choice`` is ``--reference-version``: None uses the pinned version (the first run pins the latest), an
+    integer reads and pins that version, ``latest`` re-pins the current one. A change of the pin is logged as a
+    warning. None (not pinned, the latest is read) when the latest version cannot be determined.
+    """
+    entity = utils.CONFIG[REFERENCE_RESOURCE[component]]["manifest"]
+    pinned = state.get("reference") or {}
+    pinned_version = pinned.get("version") if pinned.get("entity") == entity else None
+    if choice is None and pinned_version is not None:
+        return pinned_version
+    version = choice if isinstance(choice, int) else latest_reference_version(syn, component)
+    if version is None:
+        return None
+    if pinned_version is not None and version != pinned_version:
+        logger.warning("The reference manifest %s is re-pinned from version %s to %s: converted tables "
+                       "from earlier runs were compared with the old version", entity, pinned_version, version)
+    state["reference"] = {"entity": entity, "version": version}
+    return version
 
 
 def unused_inputs(summaries: list[dict], overrides, choices):
@@ -1378,7 +1420,12 @@ def main(argv=None, syn=None):
     state_path = out_dir / "state.json"
     state = load_state(state_path)
     mode = "execute" if args.execute else "dryrun"
-    options = options_hash(args, reference_version(syn, component))
+    pinned = pin_reference_version(syn, component, state, args.reference_version)
+    if pinned is not None:
+        save_state(state_path, state)
+    print(f"Reference manifest {utils.CONFIG[REFERENCE_RESOURCE[component]]['manifest']}: "
+          + (f"version {pinned} (pinned in {state_path})" if pinned is not None else "latest version (not pinned)"))
+    options = options_hash(args, "" if pinned is None else str(pinned))
 
     ref_cache = []
 
@@ -1386,7 +1433,7 @@ def main(argv=None, syn=None):
         """The converted merged manifest, read once per run (None when unusable)."""
         if not ref_cache:
             try:
-                ref_cache.append(reference_frame(read_reference(syn, component), component,
+                ref_cache.append(reference_frame(read_reference(syn, component, pinned), component,
                                                  normalizer.without_row_overrides()))
             except Exception:
                 logger.exception("Could not read the merged manifest for %s", component)

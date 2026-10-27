@@ -338,7 +338,12 @@ def recordset_to_manifest(df: pd.DataFrame, component: str) -> pd.DataFrame:
     return out
 
 
-def read_manifest(syn, entity_id: str, component: str | None = None) -> pd.DataFrame:
+def _at(version: int | None) -> dict:
+    """Constructor keyword for one entity version (none for the latest)."""
+    return {} if version is None else {"version_number": version}
+
+
+def read_manifest(syn, entity_id: str, component: str | None = None, version: int | None = None) -> pd.DataFrame:
     """Read a manifest from a Synapse Table, view, RecordSet or File.
 
     With ``component``, a RecordSet is returned as :func:`recordset_to_manifest`
@@ -349,7 +354,8 @@ def read_manifest(syn, entity_id: str, component: str | None = None) -> pd.DataF
     Tables and views are queried with ``SELECT *`` and no row ID/version
     columns. RecordSets and Files are downloaded and read as CSV with every
     column as a string (empty cells stay NaN, as ``pd.read_csv`` returns
-    them). Any other entity type raises ``ValueError``.
+    them). Any other entity type raises ``ValueError``. ``version`` reads that version of a RecordSet or File
+    (default: the latest); a Table or view has no such version and is read as it is.
     """
     concrete = syn.restGET(f"/entity/{entity_id}").get("concreteType")
     if concrete in _TABLE_TYPES:
@@ -359,11 +365,11 @@ def read_manifest(syn, entity_id: str, component: str | None = None) -> pd.DataF
             synapse_client=syn,
         )
     if concrete == concrete_types.RECORD_SET_ENTITY:
-        entity = RecordSet(id=entity_id).get(synapse_client=syn)
+        entity = RecordSet(id=entity_id, **_at(version)).get(synapse_client=syn)
         frame = pd.read_csv(entity.path, dtype=str)
         return recordset_to_manifest(frame, component) if component else frame
     elif concrete == concrete_types.FILE_ENTITY:
-        entity = File(id=entity_id).get(synapse_client=syn)
+        entity = File(id=entity_id, **_at(version)).get(synapse_client=syn)
     else:
         raise ValueError(
             f"Cannot read a manifest from {entity_id}: unsupported entity type {concrete!r}"
