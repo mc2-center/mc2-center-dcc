@@ -1232,3 +1232,19 @@ def test_recovery_checks_the_cut_off_item_as_a_prefix_of_pubmeds_name(cell, auth
     cells, rules, reason = recover_one(cell, authors)
     assert (reason == "") is ok
     assert (cells == authors) if ok else (cells == cell and rules == ["recovery_mismatch"])
+
+
+def test_an_empty_recordset_with_the_wrong_upsert_key_is_not_loaded_on_resume(tmp_path):
+    fake = FakeSynapse()
+    real_write = fake.write
+
+    def boom(syn, rs_id, csv_path, on_version=None, **kw):
+        raise RuntimeError("grid down")
+
+    fake.write = boom
+    run(tmp_path, fake, execute=True, run_id="r1")
+    fake.write = real_write
+    fake.info = lambda syn, rs_id: (len(fake.rs[rs_id]), ["Wrong"])
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2")
+    assert status_of(rep) == "failed" and code == 1 and fake.writes == []
+    assert "upsert key ['Wrong'], expected ['PublicationViewId']" in (rep / "CA1" / "summary.txt").read_text()

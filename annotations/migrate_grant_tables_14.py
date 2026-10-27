@@ -751,7 +751,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
             summary.update(status="locked", message=(
                 f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old); skipped"))
             return
-        latest, _ = recordsets.recordset_info(syn, rs_id)
+        latest, upsert = recordsets.recordset_info(syn, rs_id)
         # A run that died after exporting leaves a pending row; claim its versions.
         recovered = recordsets.recover_pending(
             syn, rs_id, write_log, latest, record=True, skip_younger_than=recordsets.LOCK_HOURS
@@ -777,6 +777,9 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
                 summary.update(status="failed", message=(
                     f"{rs_id} exists but not migrated; investigate (created at v{created_at}, now v{latest}: "
                     "a version nobody logged was written)"))
+                return
+            if upsert != [key]:  # data must not load into a RecordSet with the wrong key
+                summary.update(status="failed", message=f"{rs_id} has upsert key {upsert}, expected {[key]}")
                 return
             version = None  # the load never started: load now, from the creation version
             base = latest
