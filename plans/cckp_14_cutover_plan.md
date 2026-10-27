@@ -39,16 +39,11 @@ The portal app reads **only the tables in "Cancer Complexity Knowledge Portal - 
 
 ### 2.1 Portal tables in syn21498902: what the CCKP reads
 
-Decision 1 still holds: **no portal column is renamed, removed or reordered.**
+Decision 1 still holds: **no portal column is renamed, removed or reordered.** And per D-Q51 (2026-10-27), **the only portal schema change is the Datasets `accessInformation` item size**: `license` (Tools, Education) and `investigator` (Grants, Projects) stay `STRING`, holding comma-joined text as today, and Projects gets no `projectShortName` column. The sync code follows the live types (`crosswalk.to_portal`), so nothing else is needed.
 
 | Table | Column | Kind | From → to | Why | When |
 |---|---|---|---|---|---|
-| Tools `syn26127427` | `license` | **SCHEMA** | `STRING` → `STRING_LIST` | 14.0.0 `License` is multi-valued; 4 rows hold comma-joined values today | D-2 (I4) |
-| Education `syn51497305` | `license` | **SCHEMA** | `STRING` → `STRING_LIST` | Same shared `License` attribute | D-2 (I4) |
-| Grants `syn21918972` | `investigator` | **SCHEMA** | `STRING` → `STRING_LIST` | 14.0.0 `Investigator` is multi-valued | D-2 (I4) |
-| Projects `syn21868602` | `investigator` | **SCHEMA** | `STRING` → `STRING_LIST` | Same | D-2 (I4) |
-| Projects `syn21868602` | `projectShortName` | **SCHEMA** | new trailing `STRING` column | New 14.0.0 `Project Short Name` | D-2 (I4) |
-| Datasets `syn21897968` | `accessInformation` | **SCHEMA** | `STRING_LIST` item `maximumSize` 100 → **300** (list length stays 10) | The governanceDUO texts (D-Q17) are up to 232 characters; at 100, the first dataset sync would be rejected (D-Q27) | D-2 (I4), before E4 |
+| Datasets `syn21897968` | `accessInformation` | **SCHEMA** | `STRING_LIST` item `maximumSize` 100 → **300** (list length stays 10) | The governanceDUO texts (D-Q17) are up to 232 characters; at 100, the first dataset sync would be rejected (D-Q27) | D-2, before E4 |
 | Tools, Education | `license` | **VALUE** | Free-text names (`MIT License`) → SPDX IDs (`MIT`, `Apache-2.0`, `CC-BY-NC-4.0`); values not in the 14.0.0 set are left blank | O6 / I8.3 | E1 + first sync |
 | Datasets `syn21897968` | `accessInformation` | **VALUE: every row's text changes** | The text now comes from governanceDUO (D-Q17): the DUO label plus its definition, e.g. `Return to Database or Resource - This data use modifier indicates that the requestor must return derived/enriched data to the database/resource.` That replaces the old paraphrase on all 1,141 rows. **About 1,131 `Pending Annotation` rows** change from `Access information was not provided for this dataset` to `The data use modifier for this record has not yet been annotated.` The 5 `NPUNCU` rows map to the single ID `DUO:0000018` (D-Q21), so they still show one entry. Every text is in Appendix A. | O10 / I8.4 / D-Q17 | first sync after I8.4 |
 | Publications, Datasets | `assay`, `tissue`, `tumorType` | **VALUE** | 60 + 5 + 1 publication values and 3 dataset values corrected or kept, per the I8.1 worklist. No live `Not-Applicable` or `immunoassay` values (checked 2026-10-26), so DM-16 needs no remap. | I8.1 | first sync |
@@ -63,22 +58,18 @@ Decision 1 still holds: **no portal column is renamed, removed or reordered.**
 
 **What a reader of these tables has to handle:**
 0. **Datasets `accessInformation` accepts items up to 300 characters** (was 100). Anything that copies this column into a fixed-size field elsewhere needs the same limit.
-1. **Four columns become `STRING_LIST`.** Queries and facets on `license` or `investigator` need list semantics: in SQL, `HAS ('MIT')` instead of `= 'MIT'`; in a portal facet, a multi-value facet. Other readers need the same check: the Croissant export, and the **kg-pipeline**, which reads these tables through its own schema, `data-models/kg-pipeline/schema/cckp_portal.linkml.yaml` (D-Q48). There `Tool.license`, `EducationalResource.license` and `Grant.investigator` become `multivalued`, with splitting that accepts both the pipe-joined list form and today's comma text, so the kg change can merge before or after D-2. `projectShortName` has no kg effect (the kg doesn't model Projects). `tally_themes.py` reads neither column.
-2. **Projects gains one trailing column.** Readers that go by position are affected; readers that go by name are not.
+1. **No column changes type, and no column is added** (D-Q51). `license` and `investigator` keep comma-joined text, so SQL, portal facets, the Croissant export and other readers need no change. The **kg-pipeline** reads these tables through its own schema, `data-models/kg-pipeline/schema/cckp_portal.linkml.yaml` (D-Q48); data-models #278 splits that comma text into items there (licenses on commas, investigators with the "Last, First"-aware name heuristic). It no longer gates anything.
+2. (Dropped by D-Q51: Projects gets no new column.)
 3. **License values become SPDX IDs.** The portal shows `Apache-2.0`, not `Apache License 2.0`.
 4. **Every dataset's `accessInformation` text changes** to governanceDUO's wording (Appendix A). The text is longer and starts with the DUO label. The number of entries per dataset doesn't change.
 
-**How D-2 runs (per your note: verify each change immediately, then roll back or fix the portal).** Live portal with a rehearsed rollback (D-Q16). One table at a time:
-1. **Rehearse once first**, before touching any live table. In `syn78387305`, copy Tools, change `license` to `STRING_LIST`, then roll it back: restore `STRING` and re-store the rows from the CSV export. Confirm the copy matches the export.
-2. Snapshot the live table (`Table.snapshot(label="pre-14.0.0-I4")`) and export it to `output/pre14/<table>.csv`.
-3. Change the column type, or add `projectShortName`.
-4. **Verify right away, before the next table:**
-   - `check_crosswalk` passes on that table.
-   - A sync `--dryrun` for that table writes lists, not strings, to that column.
-   - For Tools, Education and Grants: the kg-pipeline extract and harmonize of that table split the column into items (data-models #278, W12, must be merged).
-   - On the live CCKP, that table's explore page loads, the facet for that column filters, a detail page shows the values, and search returns rows.
-5. **If anything fails:** decide on the spot between rolling back and fixing the portal config. Record which in the infrastructure report. A list type **can't be changed back** in Synapse, so the rollback (rehearsed in C7) is: delete the column, add a `STRING` column with the same name and size, move it back to its original position, then `delete_rows` and re-store the step 2 export. For the `accessInformation` size change and the `projectShortName` addition, the rollback is simpler: set the size back to 100, or delete the new column.
-6. Move to the next table only after step 4 passes. Order: Tools → Education → Grants → Projects → Datasets (`accessInformation` size). For Datasets, step 4's dry run must produce the governanceDUO texts with one entry per code, and the new pre-write size guard must pass.
+**How D-2 runs (one change, Datasets only; D-Q51).** Live portal, verified right away (D-Q16):
+1. Snapshot the live Datasets table (`Table.snapshot(label="pre-14.0.0-I4")`) and export it to `output/pre14/datasets.csv`.
+2. Change `accessInformation`'s item `maximumSize` from 100 to 300 (list length stays 10).
+3. **Verify right away:** `check_crosswalk` passes; a dataset sync `--dryrun` produces the governanceDUO texts with one entry per code and the pre-write size guard passes; on the live CCKP the Datasets explore page loads, the access facet filters, and a detail page shows the text.
+4. **If anything fails:** set the size back to 100 (a size change is reversible, unlike a type change) and record it in the infrastructure report.
+
+The type-change rehearsal (C7, done 2026-10-26) is no longer needed for D-2; its result stays in the infrastructure report.
 
 ### 2.2 CCKP - MC2 Admin (syn28742843): what feeds the CCKP
 
@@ -193,6 +184,7 @@ All of these come from your review notes and answers on 2026-10-26.
 | D-Q48 | **The kg-pipeline schema follows the portal tables.** `data-models/kg-pipeline/schema/cckp_portal.linkml.yaml` describes Dataset, Publication, Tool, Grant and EducationalResource for the kg-pipeline. In data-models **#278** (stacked on #277): `Tool.license`, `EducationalResource.license` and `Grant.investigator` become `multivalued`, splitting on `\|` (the list form) or, for those three only, on `,` (today's text; for `Grant.investigator` with the "Last, First"-aware name heuristic); the derived `cckp_portal.ttl`/`.shacl.ttl` are regenerated, and `mc2_model.linkml.yaml` is regenerated from 14.1.0. | Section 2.1 item 1; D-2 step 4; W12 |
 | D-Q49 | **Row removal (D-Q34) is the one write outside a Grid session.** Spike (infrastructure report, 2026-10-27): a Grid import is an upsert and can't remove a row; a direct store of a new version without the row removes it and keeps the binding, upsert key and CurationTask, and a fresh Grid export then re-validates. Removals are requested in an admin table `MC2Center_RecordSet_Removals` (test copy in `syn78387305` first); `annotations/remove_recordset_rows.py` takes the write-log lock, refuses while any Grid session is open, stores the version without the rows, runs a validating Grid export and logs both (`removed`, `written`). Replay drops removed keys; pipeline uploads skip them; a removed key that a Grid session brings back is kept as a contributor row and reported (`readded_removed_key`), not undone. | DCC row-removal step; owner approval 2026-10-27 |
 | D-Q50 | **Admin manifests become RecordSets** (Grant `syn53259587`, Project `syn59074382`, PersonView `syn38301033`): one `MC2Center_<Component>_RecordSet` per type in a folder in CCKP - MC2 Admin, written and logged like the grant RecordSets; `utils.CONFIG` reads them behind a switch until the migration runs. | Admin manifests step; owner decision 2026-10-27 |
+| D-Q51 | **The only portal schema change is the Datasets `accessInformation` size** (owner, 2026-10-27). `license` (Tools, Education) and `investigator` (Grants, Projects) stay `STRING` with comma-joined text, and Projects gets no `projectShortName` column. The sync code already follows the live column types, and list cells bound for a `STRING` column are joined with `", "`. The size change is still needed: the governanceDUO texts are up to 232 characters (D-Q27). | Supersedes the type-change rows of section 2.1 and most of D-2; C7's rollback rehearsal is no longer needed; data-models #278 no longer gates D-2; the crosswalk keeps `projectShortName` as an optional column, skipped while absent |
 | D-Q21 | **`NPUNCU` → the single ID `DUO:0000018`**, not NPU + NCU. `DUO:0000018` is a current DUO term, and governanceDUO and data-models both list it. | Reverses master plan S4.5's split. I8.4 maps `RTN` → `DUO:0000029` and `NPUNCU` → `DUO:0000018`, one to one. |
 
 ---
@@ -210,10 +202,10 @@ All of these come from your review notes and answers on 2026-10-26.
 | W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approved, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
 | W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
 | W8 | **Go-ahead: Consortium table update** (`consortiumId` + 3 approved rows) 🔒 | D-1, then people sync |
-| W9 | **Go-ahead: portal table changes**, one table at a time with the rehearsed rollback 🔒, after W4 | D-2 |
+| W9 | **Go-ahead: the Datasets `accessInformation` size change** 🔒, after W4 | D-2 |
 | W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`) and the migration's value changes in section 2.3 (especially the lower-case terms), and **pick one row per key** in `output/worklists/duplicate_ties.csv` (2 keys; it feeds `--duplicate-choices`) | Cleaner E1 validation |
 | W11 | **Go-ahead: create the production write-log table** in CCKP - MC2 Admin and migrate a first small batch of grants 🔒, after W6/W7 | E1 |
-| W12 | **Merge data-models #278** (kg schema, D-Q48), after #277 | D-2 for Tools, Education and Grants (kg-pipeline reads the list columns) |
+| W12 | **Merge data-models #278** (kg schema, D-Q48), after #277 | kg-pipeline splits comma-joined licenses and investigators into items; no longer gates D-2 (D-Q51) |
 | W3 | Go-ahead for each other 🔒 step as it comes up. Deletions are confirmed against a printed list. | — |
 
 ---
@@ -244,7 +236,7 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | C5 D11 / D12 / D15 | ✅ | Plus the reconciliation rework (D-Q32–D-Q37) |
 | C8 clear the test project | ⏳ after I9 | |
 | D-1 Consortium table | ⏳ W8 | |
-| D-2 portal type changes (+ `accessInformation` 300) | ⏳ W4, W9, W12 | kg-pipeline schema in data-models #278 (D-Q48), open |
+| D-2 Datasets `accessInformation` size 100 → 300 | ⏳ W4, W9 | Type changes dropped (D-Q51) |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
 | E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
 | E2 regenerate merged manifests (I6) | 🔄 | Branch `i6-merged-manifests`: union_qc without schematic, 14.x headers, dry-run comparison |
@@ -293,8 +285,8 @@ Lay `syn78387305` out like one grant project, so D11's "find the RecordSet in th
 ### Phase D: Portal and admin prep (after A6)
 | Step | Task | Section 2 ref |
 |---|---|---|
-| D-1 | **I4b** Consortium table: add `consortiumId` and the 3 rows (Appendix B, once approved). 🔒 | 2.2 |
-| D-2 | **I4** portal type changes, one table at a time, **verified right after each change**, with rollback ready (section 2.1, "How D-2 runs"). 🔒 | 2.1 SCHEMA rows |
+| D-1 | **I4b** Consortium table: add `consortiumId` and the 3 rows (Appendix B, approved). 🔒 | 2.2 |
+| D-2 | **I4** Datasets `accessInformation` item size 100 → 300, **verified right after the change** (section 2.1, "How D-2 runs"; D-Q51 dropped the other type changes). 🔒 | 2.1 SCHEMA row |
 | D-3 | **I8 worklists** (Haiku generates, a curator reviews): I8.1 enums plus the 7 DOI outliers; I8.2 assay-level values; I8.3 licenses; I8.4 DUO; I8.5 consortium. These are worklists only; they're applied in E1/E2. | 2.1 VALUE rows |
 
 ### Phase E: Migration and first sync

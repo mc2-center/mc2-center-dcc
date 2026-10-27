@@ -30,7 +30,7 @@ DERIVED = "derived:"
 # Portal columns the crosswalk lists that may not exist in the live table yet.
 # They are skipped while absent, and checked in position once present.
 OPTIONAL_COLUMNS: dict[str, set[str]] = {
-    "ProjectView": {"projectShortName"},  # added by infrastructure step I4
+    "ProjectView": {"projectShortName"},  # not added to the portal (cutover plan D-Q51); skipped while absent
 }
 
 # Component -> key into ``utils.CONFIG`` (for the portal table ID).
@@ -114,7 +114,7 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("ToolTopic", "topic", "list"),
         ("ToolOperatingSystem", "operatingSystem", "list"),
         ("ToolLanguage", "language", "list"),
-        ("License", "license", "list"),  # STRING live until I4, then STRING_LIST
+        ("License", "license", "list"),  # stays STRING live (D-Q51): items joined with ", "
         ("ToolCost", "cost", "string"),
         ("ToolAccessibility", "accessibility", "string"),
         ("ToolDownloadUrl", "downloadUrl", "string"),
@@ -171,7 +171,7 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("GrantThemeName", "theme", "list"),
         ("GrantInstitutionAlias", "institutionAlias", "list"),
         ("GrantInstitutionName", "grantInstitution", "list"),
-        ("Investigator", "investigator", "list"),  # STRING live until I4
+        ("Investigator", "investigator", "list"),  # stays STRING live (D-Q51)
         ("derived:consortium", "consortium", "list"),
         ("GrantStartDate", "grantStartDate", "string"),
         ("NIHRePORTERLink", "nihReporterLink", "string"),
@@ -196,7 +196,7 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("ResourceContributors", "contributors", "list"),
         ("GrantViewKey", "grantNumber", "list"),
         ("ResourceSecondaryTopic", "secondaryTopic", "list"),
-        ("License", "license", "list"),  # STRING live until I4
+        ("License", "license", "list"),  # stays STRING live (D-Q51)
         ("ResourceUseRequirements", "useRequirements", "string"),
         ("ResourceAlias", "alias", "string"),
         ("ResourceInternalIdentifier", "internalIdentifier", "string"),
@@ -213,7 +213,7 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("ProjectName", "projectName", "string"),
         ("ProjectType", "projectType", "string"),
         ("ProjectDescription", "description", "string"),
-        ("Investigator", "investigator", "list"),  # STRING live until I4
+        ("Investigator", "investigator", "list"),  # stays STRING live (D-Q51)
         ("derived:theme", "theme", "list"),
         ("derived:consortium", "consortium", "list"),
         ("GrantViewKey", "grant", "list"),
