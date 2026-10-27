@@ -351,3 +351,67 @@ def test_keyword_unknown_comma_phrase_still_splits_and_other_columns_are_unaffec
 def test_keyword_json_array_is_not_regrouped():
     row, changes, _ = run(normalizer(), PublicationKeywords='["Aged", "80 and over"]')
     assert row["PublicationKeywords"] == ["Aged", "80 and over"] and changes.empty
+
+
+# --- per-row overrides and the template ---------------------------------------
+
+
+def _write_overrides(path, rows, columns=("column", "key", "current_value", "proposed_value")):
+    pd.DataFrame(rows, columns=list(columns)).to_csv(path, index=False)
+    return path
+
+
+def test_row_override_applies_only_to_its_key_and_wins_over_a_value_override(tmp_path):
+    path = _write_overrides(tmp_path / "o.csv", [
+        ["PublicationAccessibility", "", "open", "Restricted Access"],
+        ["PublicationAccessibility", "p2", "open", "Open Access"],
+    ])
+    overrides = vm.load_overrides(path)
+    assert overrides == {("PublicationAccessibility", "open"): "Restricted Access",
+                         ("PublicationAccessibility", "p2", vm.ROW): "Open Access"}
+    norm = normalizer(overrides)
+    df = pd.DataFrame({"PublicationViewId": ["p1", "p2"], "PublicationAccessibility": ["open", "open"]})
+    out, changes, _ = norm.normalize_frame(df, "PublicationViewId")
+    assert out["PublicationAccessibility"].tolist() == ["Restricted Access", "Open Access"]
+    assert changes["rule"].tolist() == ["override", "override"]
+
+
+def test_row_override_of_a_list_cell_and_a_blank_cell():
+    norm = normalizer({("Assay", "p1", vm.ROW): "RNA Sequencing, Mass Spectrometry",
+                       ("PublicationTitle", "p1", vm.ROW): "New title"})
+    row, changes, _ = run(norm, Assay="whatever", PublicationTitle="")
+    assert row["Assay"] == ["RNA Sequencing", "Mass Spectrometry"] and row["PublicationTitle"] == "New title"
+    other = pd.DataFrame({"PublicationViewId": ["p9"], "PublicationTitle": ["t"]})
+    assert norm.normalize_frame(other, "PublicationViewId")[0].iloc[0]["PublicationTitle"] == "t"
+
+
+def test_without_row_overrides_keeps_only_value_overrides():
+    norm = normalizer({("Assay", "x"): "y", ("Assay", "p1", vm.ROW): "z"})
+    assert norm.without_row_overrides().overrides == {("Assay", "x"): "y"}
+    assert len(norm.overrides) == 2
+
+
+def test_only_accepted_rows_of_an_accept_column_are_applied(tmp_path):
+    path = _write_overrides(tmp_path / "o.csv", [
+        ["PublicationTitle", "p1", "a", "A", "yes"],
+        ["PublicationTitle", "p2", "b", "B", ""],
+        ["PublicationTitle", "p3", "c", "C", "no"],
+        ["PublicationTitle", "p4", "d", "D", "X"],
+    ], columns=("column", "key", "current_value", "proposed_value", "accept"))
+    assert vm.load_overrides(path) == {("PublicationTitle", "p1", vm.ROW): "A", ("PublicationTitle", "p4", vm.ROW): "D"}
+
+
+def test_override_template_defaults_proposed_value_to_the_manifest_value(tmp_path):
+    diffs = tmp_path / "manifest_differences.csv"
+    pd.DataFrame([["CA1", "p1", "PublicationTitle", "old", "new"]],
+                 columns=["grant", "key", "column", "grant_value", "manifest_value"]).to_csv(diffs, index=False)
+    out = tmp_path / "template.csv"
+    assert vm.write_override_template(diffs, out) == 1
+    template = pd.read_csv(out, dtype=str, keep_default_na=False)
+    assert template.iloc[0].to_dict() == {"grant": "CA1", "key": "p1", "column": "PublicationTitle",
+                                          "current_value": "old", "manifest_value": "new",
+                                          "proposed_value": "new", "accept": ""}
+    assert vm.load_overrides(out) == {}  # nothing accepted yet
+    template.loc[0, "accept"] = "yes"
+    template.to_csv(out, index=False)
+    assert vm.load_overrides(out) == {("PublicationTitle", "p1", vm.ROW): "new"}
