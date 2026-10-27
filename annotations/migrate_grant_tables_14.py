@@ -110,6 +110,10 @@ def get_args(argv=None):
         "--overrides", help="CSV of curated corrections: column, current_value, proposed_value"
     )
     parser.add_argument(
+        "--duplicate-choices",
+        help="CSV (key, keep_legacy_id): the owner's pick among duplicate rows of a key; it decides before any rule",
+    )
+    parser.add_argument(
         "--include-unlisted", action=argparse.BooleanOptionalAction, default=True,
         help="also migrate projects that hold a grant-level table but are not in the Grants table, "
         "labelled by project name (default: on)",
@@ -347,14 +351,27 @@ def _id_value(value) -> tuple[int, int, str]:
         return 0, 0, text
 
 
-def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference, portal=lambda: None):
+def load_duplicate_choices(path) -> dict[str, str]:
+    """``{key: legacy Id to keep}`` from a CSV with columns ``key, keep_legacy_id``."""
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    missing = {"key", "keep_legacy_id"} - set(df.columns)
+    if missing:
+        raise ValueError(f"{path} lacks column(s) {sorted(missing)}")
+    return {k.strip(): i.strip() for k, i in zip(df["key"], df["keep_legacy_id"]) if k.strip()}
+
+
+def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference, portal=lambda: None,
+                       choices=None):
     """Keep one row of each duplicated key: ``(frame, resolutions)``.
 
     The kept row is the one equal to the merged manifest's row of that key on
     the columns both have (after the same conversion). Failing that, the row
     matching more cells of the live portal table's row (``portal`` returns that
     table or None; read once, only when a duplicate exists), then the row with
-    the fewest blank cells; on a final tie the higher legacy ``Id`` (arbitrary). ``reference`` is a callable
+    the fewest blank cells; on a final tie the higher legacy ``Id`` (arbitrary).
+    ``choices`` (``{key: legacy Id}``) decides a key before all of that, reason
+    ``owner choice``; the Id must be one of the key's rows (an exact match, or a
+    prefix naming one row), else :class:`ConversionError`. ``reference`` is a callable
     returning the converted merged manifest (or None), called once if needed.
     ``resolutions`` has ``key, kept_row, dropped_row, reason`` (source row numbers).
     """
@@ -387,6 +404,22 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
     drop, resolutions = set(), []
     for k in dict.fromkeys(keys[dup]):
         rows = [i for i in range(len(df)) if keys.iloc[i] == k]
+        if choices and k in choices:
+            want = choices[k]
+            exact = [i for i in rows if str(ids[i]).strip() == want]
+            picked = exact or [i for i in rows if want and str(ids[i]).strip().startswith(want)]
+            if not picked:
+                raise ConversionError(
+                    f"duplicate choice for key {k}: legacy Id {want!r} is not among the duplicate rows "
+                    f"{[str(ids[i]).strip() for i in rows]}")
+            if len(picked) > 1 and not exact:
+                raise ConversionError(f"duplicate choice for key {k}: legacy Id prefix {want!r} names several rows")
+            kept = picked[0]
+            for i in rows:
+                if i != kept:
+                    drop.add(i)
+                    resolutions.append({"key": k, "kept_row": label(kept), "dropped_row": label(i), "reason": "owner choice"})
+            continue
         hits = [i for i in rows if matches(i, ref_rows.get(k, []))]
         if len(hits) == 1:
             kept, reason = hits[0], "matches the merged manifest"
@@ -474,7 +507,7 @@ def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, re
 
 
 def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", reference=lambda: None,
-                  portal=lambda: None):
+                  portal=lambda: None, choices=None):
     """``(converted, changes, unmapped, dropped, resolutions)`` for one grant table.
 
     A key that occurs twice is resolved to one row (:func:`resolve_duplicates`,
@@ -486,7 +519,7 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
     legacy_id = df["Id"] if "Id" in df.columns else None
     schema = recordsets.schema_columns(component)
     dropped = [c for c in df.columns if c not in schema]
-    df, resolutions = resolve_duplicates(df[[c for c in df.columns if c in schema]], legacy_id, component, normalizer, reference, portal)
+    df, resolutions = resolve_duplicates(df[[c for c in df.columns if c in schema]], legacy_id, component, normalizer, reference, portal, choices)
     df, changes, unmapped = normalizer.normalize_frame(df, key)
     try:
         df = recordsets.check_upload_keys(df, key)
@@ -681,7 +714,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
 
 
 def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None,
-                  recover=None):
+                  recover=None, choices=None):
     """Convert (and with ``--execute`` migrate) one grant table.
 
     Returns ``(summary, converted, source_keys)``; ``converted`` is None when the
@@ -695,7 +728,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     source_key = f"{component}_id"
     source_keys = [str(v).strip() for v in source[source_key]] if source_key in source.columns else []
     try:
-        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference, portal)
+        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference, portal, choices)
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
@@ -940,6 +973,7 @@ def main(argv=None, syn=None):
                 ref_cache.append(None)
         return ref_cache[0]
 
+    choices = load_duplicate_choices(args.duplicate_choices) if args.duplicate_choices else None
     recover = None
     if args.recover_truncated:
         def recover(pmids):
@@ -990,7 +1024,7 @@ def main(argv=None, syn=None):
                 raise ConversionError(f"project {entry['project']} has more than one {component} table; one RecordSet per grant")
             seen_projects.add(entry["project"])
             summary, converted, s_keys = process_grant(
-                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference, portal, recover
+                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference, portal, recover, choices
             )
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)

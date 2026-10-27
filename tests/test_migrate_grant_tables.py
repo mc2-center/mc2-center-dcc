@@ -865,3 +865,58 @@ def test_nothing_is_fetched_when_no_author_is_truncated(tmp_path):
     fake = FakeSynapse()
     run(tmp_path, fake)
     assert fake.pubmed_calls == []
+
+
+# --- owner choices among duplicate rows ---------------------------------------------
+
+
+def choice_convert(choices, **kw):
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    rows = [
+        ds_row("syn1", "Desc A", "Design", "FASTQ", "10.1000/a", "https://x", "e2fa65c2-22e7"),
+        ds_row("syn1", "Desc B", "Design", "FASTQ", "10.1000/a", "https://x", "e9e03dd9-a181"),
+    ]
+    portal = pd.DataFrame([["syn1", "Name", "alias", "Desc A", "Design", "FASTQ", "https://doi.org/10.1000/a", "", ""]],
+                          columns=PORTAL_COLUMNS)
+    return mig.convert_table(pd.DataFrame(rows, columns=DS_HEADERS), "DatasetView", norm, lambda: None,
+                             lambda: portal, choices)
+
+
+def test_owner_choice_decides_before_the_portal_and_every_other_rule():
+    converted, _, _, _, res = choice_convert({"syn1": "e9e03dd9-a181"})  # the portal would keep the other row
+    assert converted["DatasetDescription"].tolist() == ["Desc B"]
+    assert res.to_dict("records") == [{"key": "syn1", "kept_row": "row 2 (Id e9e03dd9-a181)",
+                                       "dropped_row": "row 1 (Id e2fa65c2-22e7)", "reason": "owner choice"}]
+
+
+def test_owner_choice_accepts_an_unambiguous_id_prefix():
+    converted, _, _, _, res = choice_convert({"syn1": "e9e03dd9"})
+    assert converted["DatasetDescription"].tolist() == ["Desc B"] and res.iloc[0]["reason"] == "owner choice"
+
+
+def test_owner_choice_naming_an_id_that_is_not_a_duplicate_row_fails_clearly():
+    with pytest.raises(mig.ConversionError, match=r"duplicate choice for key syn1: legacy Id 'nope' is not among the duplicate rows"):
+        choice_convert({"syn1": "nope"})
+
+
+def test_choices_for_other_keys_are_ignored():
+    converted, _, _, _, res = choice_convert({"other": "zzz"})
+    assert converted["DatasetDescription"].tolist() == ["Desc A"] and "owner choice" not in res.iloc[0]["reason"]
+
+
+def test_duplicate_choices_csv_fails_only_that_grant(tmp_path):
+    choices = tmp_path / "c.csv"
+    pd.DataFrame({"key": ["p1"], "keep_legacy_id": ["10"]}).to_csv(choices, index=False)
+    tables = {"synT1": ("CA1", "synP1", dup_table(first_id="10", second_id="11")),
+              "synT2": ("CA2", "synP2", dup_table(first_id="20", second_id="21"))}
+    code, rep = run(tmp_path, FakeSynapse(tables), "--duplicate-choices", str(choices))
+    assert status_of(rep, "CA1") == "dryrun" and status_of(rep, "CA2") == "failed" and code == 1
+    assert pd.read_csv(rep / "CA1" / "duplicates_resolved.csv")["reason"].tolist() == ["owner choice"]
+    assert "legacy Id '10' is not among the duplicate rows" in (rep / "CA2" / "summary.txt").read_text()
+
+
+def test_duplicate_choices_csv_needs_its_columns(tmp_path):
+    path = tmp_path / "c.csv"
+    pd.DataFrame({"key": ["p1"]}).to_csv(path, index=False)
+    with pytest.raises(ValueError, match="lacks"):
+        mig.load_duplicate_choices(path)
