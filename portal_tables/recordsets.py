@@ -561,6 +561,155 @@ def create_write_log_table(syn, parent_id: str, name: str = "MC2Center_RecordSet
     return table.id
 
 
+# --- removals (D-Q49) --------------------------------------------------------
+
+REMOVALS_COLUMNS = [
+    "recordSetId", "key", "reason", "requestedBy", "status", "removedInVersion", "runId", "principalId",
+    "changedOn",
+]
+REMOVAL_STATUSES = ("requested", "removed", "not_found", "restored")
+
+
+class Removals:
+    """Append-only removals table: which rows the DCC asked to remove, and what became of them.
+
+    Columns: ``recordSetId``, ``key`` (the key string, :data:`KEY_SEP`-joined
+    for a composite key), ``reason``, ``requestedBy``, ``status``
+    (``requested``; ``removed``; ``not_found``; ``restored``, which lifts a
+    removal so the pipeline uploads the key again), ``removedInVersion`` (the
+    direct-store version, on ``removed`` rows), ``runId``, ``principalId``,
+    ``changedOn``. The latest row per (recordSetId, key) is its current status.
+    Subclasses implement ``_read`` and ``_append``.
+    """
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        raise NotImplementedError
+
+    def _append(self, row: dict) -> None:
+        raise NotImplementedError
+
+    def append(self, rs_id, key, status, reason="", requested_by="", removed_in_version=None,
+               run_id="", principal="") -> None:
+        if status not in REMOVAL_STATUSES:
+            raise ValueError(f"unknown removal status {status!r}")
+        self._append({
+            "recordSetId": rs_id, "key": key, "reason": reason, "requestedBy": requested_by,
+            "status": status, "removedInVersion": removed_in_version, "runId": run_id,
+            "principalId": str(principal), "changedOn": datetime.now(timezone.utc),
+        })
+
+    def _latest(self, rs_id: str) -> pd.DataFrame:
+        df = self._read(rs_id)
+        if df.empty:
+            return df
+        df = df.assign(_on=df["changedOn"].map(_to_dt)).sort_values("_on", kind="stable")
+        return df.drop_duplicates("key", keep="last")
+
+    def requested(self, rs_id: str) -> dict[str, dict]:
+        """``{key: {reason, requestedBy}}`` of keys whose current status is ``requested``."""
+        df = self._latest(rs_id)
+        df = df[df["status"] == "requested"] if len(df) else df
+        return {r["key"]: {"reason": r["reason"], "requestedBy": r["requestedBy"]} for _, r in df.iterrows()}
+
+    def removed(self, rs_id: str) -> dict[str, int]:
+        """``{key: removedInVersion}`` of keys whose current status is ``removed``."""
+        df = self._latest(rs_id)
+        df = df[(df["status"] == "removed") & df["removedInVersion"].notna()] if len(df) else df
+        return {r["key"]: int(r["removedInVersion"]) for _, r in df.iterrows()}
+
+    def removal_events(self, rs_id: str) -> dict[int, set[str]]:
+        """``{removedInVersion: keys}`` of every ``removed`` row, restored or not (for :func:`replay`)."""
+        df = self._read(rs_id)
+        df = df[(df["status"] == "removed") & df["removedInVersion"].notna()] if len(df) else df
+        out: dict[int, set[str]] = {}
+        for _, r in df.iterrows():
+            out.setdefault(int(r["removedInVersion"]), set()).add(r["key"])
+        return out
+
+
+class SynapseTableRemovals(Removals):
+    """Removals kept in a Synapse table (see :func:`create_removals_table`)."""
+
+    def __init__(self, syn, table_id: str):
+        self.syn = syn
+        self.table_id = table_id
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        return Table(id=self.table_id).query(
+            query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
+            include_row_id_and_row_version=False,
+            synapse_client=self.syn,
+        )
+
+    def _append(self, row: dict) -> None:
+        values = dict(row)
+        values["changedOn"] = int(values["changedOn"].timestamp() * 1000)
+        frame = pd.DataFrame([values], columns=REMOVALS_COLUMNS)
+        frame["removedInVersion"] = frame["removedInVersion"].astype("Int64")
+        Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
+
+
+class CsvRemovals(Removals):
+    """The same table as a local CSV, for tests and dry runs."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        if not self.path.exists():
+            return pd.DataFrame(columns=REMOVALS_COLUMNS)
+        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
+        df = df[df["recordSetId"] == rs_id].copy()
+        df["removedInVersion"] = pd.to_numeric(df["removedInVersion"].replace("", pd.NA))
+        return df
+
+    def _append(self, row: dict) -> None:
+        new = not self.path.exists()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.path, "a", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            if new:
+                writer.writerow(REMOVALS_COLUMNS)
+            writer.writerow(
+                ["" if row[c] is None else (row[c].isoformat() if c == "changedOn" else row[c])
+                 for c in REMOVALS_COLUMNS]
+            )
+
+
+def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_Removals") -> str:
+    """Create the removals table under ``parent_id`` and return its ID.
+
+    A Synapse write. Not called by any script; a migration step runs it once.
+    """
+    columns = [
+        Column(name="recordSetId", column_type=ColumnType.ENTITYID),
+        Column(name="key", column_type=ColumnType.STRING, maximum_size=500),
+        Column(name="reason", column_type=ColumnType.STRING, maximum_size=500),
+        Column(name="requestedBy", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="status", column_type=ColumnType.STRING, maximum_size=20),
+        Column(name="removedInVersion", column_type=ColumnType.INTEGER),
+        Column(name="runId", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="principalId", column_type=ColumnType.STRING, maximum_size=20),
+        Column(name="changedOn", column_type=ColumnType.DATE),
+    ]
+    table = Table(name=name, parent_id=parent_id, columns=columns).store(synapse_client=syn)
+    return table.id
+
+
+def drop_removed(upload: pd.DataFrame, key, removed: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split an upload into ``(kept, skipped)``; ``skipped`` rows have a key currently ``removed``.
+
+    ``removed`` is :meth:`Removals.removed`'s ``{key: removedInVersion}``;
+    ``skipped`` gets a ``removedInVersion`` column.
+    """
+    key_cols = key_columns(key)
+    keys = [_key_of(row, key_cols) for _, row in upload.iterrows()]
+    hit = pd.Series([k in removed for k in keys], index=upload.index, dtype=bool)
+    skipped = upload[hit].copy()
+    skipped["removedInVersion"] = [removed[k] for k, h in zip(keys, hit) if h]
+    return upload[~hit].copy(), skipped
+
+
 def recordset_version_meta(syn, rs_id: str, version: int) -> tuple[str, pd.Timestamp]:
     """``(modifiedBy, modifiedOn)`` of one RecordSet version, without downloading it."""
     entity = RecordSet(id=rs_id, version_number=version, download_file=False).get(synapse_client=syn)
@@ -914,20 +1063,46 @@ def differences(expected: pd.DataFrame, actual: pd.DataFrame, key, set_like=()) 
 # --- writing -----------------------------------------------------------------
 
 
-def write_via_grid(
+def write_via_grid(syn, rs_id: str, csv_path, **kwargs) -> list[int]:
+    """Upsert ``csv_path`` into the RecordSet through a Grid session; return every version created.
+
+    See :func:`_grid_session` for the keyword arguments and the wait/retry rules.
+    """
+    return _grid_session(syn, rs_id, csv_path, **kwargs)
+
+
+def export_via_grid(syn, rs_id: str, **kwargs) -> list[int]:
+    """Re-validate the RecordSet: a fresh Grid session with no import and one export (D-Q49).
+
+    Same waits, retries and cleanup as :func:`write_via_grid`.
+    """
+    return _grid_session(syn, rs_id, None, **kwargs)
+
+
+def store_new_version(syn, rs_id: str, csv_path) -> int:
+    """Store ``csv_path`` as a new RecordSet version directly (no Grid session); return its number.
+
+    The only write that can drop rows (D-Q49). The entity is fetched without
+    its file and its ``path`` replaced, so the binding, upsert key and
+    CurationTask are kept.
+    """
+    entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)
+    entity.path = str(csv_path)
+    return entity.store(synapse_client=syn).version_number
+
+
+def _grid_session(
     syn,
     rs_id: str,
-    csv_path,
+    csv_path=None,
     timeout: int = 120,
     validation_wait: int = 60,
     retry_wait: int = 30,
     max_exports: int = 4,
     on_version=None,
 ) -> list[int]:
-    """Upsert ``csv_path`` into the RecordSet through a Grid session; return every version created.
-
-    Fresh session, import, wait for validation, export (a new RecordSet
-    version), delete the session. The grid session exposes no validation
+    """Fresh Grid session, import ``csv_path`` (none: skip), wait for validation, export
+    (a new RecordSet version), delete the session. The grid session exposes no validation
     statistics before an export (only the export response carries a summary),
     so the wait is a fixed ``validation_wait`` seconds after the import; the
     export summary's unknown-row count is then checked, and while rows are
@@ -941,7 +1116,8 @@ def write_via_grid(
         attach_to_previous_session=False, timeout=timeout, synapse_client=syn
     )
     try:
-        grid.import_csv(path=str(csv_path), timeout=timeout, synapse_client=syn)
+        if csv_path is not None:
+            grid.import_csv(path=str(csv_path), timeout=timeout, synapse_client=syn)
         wait, versions = validation_wait, []
         for attempt in range(1, max_exports + 1):
             time.sleep(wait)
