@@ -1,0 +1,415 @@
+"""annotations/migrate_admin_manifests_14.py with every Synapse call mocked."""
+import importlib.util
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+import pandas as pd
+import pytest
+
+import recordsets as rs
+import utils
+
+ROOT = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location("migrate_admin_manifests_14", ROOT / "annotations" / "migrate_admin_manifests_14.py")
+adm = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(adm)
+grants = adm.grants
+
+GRANT_HEADERS = ["Component", "GrantView_id", "Grant Name", "Grant Number", "Grant Abstract", "Grant Type",
+                 "Grant Theme Name", "Grant Institution Name", "Grant Institution Alias", "Grant Investigator",
+                 "Grant Consortium Name", "Grant Start Date", "Grant End Date", "NIH RePORTER Link",
+                 "Duration of Funding", "Id", "entityId"]
+
+
+def grant_table(rows=None):
+    rows = rows if rows is not None else [
+        ["GrantView", "CA111111", "One", "CA111111", "abs", "U54", "Heterogeneity, Evolution", "Columbia University",
+         "Columbia", "Ada Lovelace, Alan Turing", "CSBC", "6/1/14", "5/31/20", "https://reporter.nih.gov/a", 5, "i1", "syn53259587"],
+        ["GrantView", "CA222222", "Two", "CA222222", "abs", "U01", "Heterogeneity", "Columbia University",
+         "Columbia", "Grace Hopper", "Sage Bionetworks", "2015-07-01", "2020-06-30", "https://reporter.nih.gov/b", 5, "i2", "syn53259587"],
+    ]
+    return pd.DataFrame(rows, columns=GRANT_HEADERS)
+
+
+PROJECT_HEADERS = ["Component", "ProjectView_id", "Project Name", "Project Type", "Project Description",
+                   "Project Investigator", "Project Consortium Name", "Project Grant Number", "Id", "entityId"]
+
+
+def project_table():
+    return pd.DataFrame([
+        ["ProjectView", "CA1-1", "Core", "Core", "d", "Ada Lovelace", "CSBC", "CA111111", "i1", "syn59074382"],
+        ["ProjectView", "CA1-2", "Proj", "Project", "d", "Alan Turing, Grace Hopper", "PS-ON", "CA111111", "i2", "syn59074382"],
+    ], columns=PROJECT_HEADERS)
+
+
+PERSON_HEADERS = ["component", "personGrantNumber", "personConsortiumName", "name", "alternativeNames", "email",
+                  "url", "orcidId", "synapseProfileId", "lastKnownInstitution", "workingGroupParticipation",
+                  "chairRoles", "consentForPortalDisplay", "portalDisplay", "personPublications", "personDatasets",
+                  "personTools"]
+
+
+def person_table():
+    return pd.DataFrame([
+        ["PersonView", ["CA111111", "CA222222"], ["CSBC", "HTAN"], "Ada", [""], "a@x.org", None, "0000-0001-5727-8992",
+         None, "Columbia University ", ["Image Analysis"], "Working Group, Annual Meeting", "Yes", True, ["1", "2"], [], [""]],
+        ["PersonView", ["Affiliated/Non-Grant Associated"], ["PS-ON"], "Bob", ["Robert"], None, "https://b.org", None,
+         "123", "MIT", ["None"], None, "Yes", False, [], [], []],
+    ], columns=PERSON_HEADERS)
+
+
+class FakeSynapse:
+    """The admin source tables, folders and RecordSets (versions as DataFrames)."""
+
+    def __init__(self, component="GrantView", source=None, existing=None):
+        self.component = component
+        self.key = f"{component}Id"
+        self.source = source if source is not None else grant_table()
+        self.folders = {}
+        self.rs = dict(existing or {})
+        self.rs_folder = {}
+        self.created = []
+        self.created_folders = []
+        self.writes = []
+        self.reads = []
+        self.next_id = 100
+
+    def read_source(self, syn, table_id):
+        self.reads.append(table_id)
+        return self.source.copy()
+
+    def find_entity_id(self, name, parent, synapse_client=None):
+        return self.folders.get((parent, name))
+
+    def Folder(self, name, parent_id):
+        outer = self
+
+        class _F:
+            def store(self, synapse_client=None):
+                outer.next_id += 1
+                fid = f"synF{outer.next_id}"
+                outer.folders[(parent_id, name)] = fid
+                outer.created_folders.append((parent_id, name))
+                return SimpleNamespace(id=fid)
+
+        return _F()
+
+    def find_recordset(self, syn, folder, component):
+        return self.rs_folder.get(folder)
+
+    def create_task(self, **kw):
+        self.created.append(kw)
+        self.next_id += 1
+        rs_id = f"synRS{self.next_id}"
+        self.rs[rs_id] = [pd.DataFrame(columns=[self.key])]
+        self.rs_folder[kw["folder_id"]] = rs_id
+        return SimpleNamespace(id=rs_id), SimpleNamespace(task_id=1)
+
+    def info(self, syn, rs_id):
+        return len(self.rs[rs_id]), [self.key]
+
+    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
+        return self.rs[rs_id][(version or len(self.rs[rs_id])) - 1].copy()
+
+    def write(self, syn, rs_id, csv_path, on_version=None, **kw):
+        written = rs._load_csv(csv_path, rs.list_columns(self.component))
+        self.writes.append(written)
+        self.rs[rs_id].append(written)
+        if on_version:
+            on_version(len(self.rs[rs_id]))
+        return [len(self.rs[rs_id])]
+
+    def validation(self, syn, rs_id, version, loc, keys):
+        return pd.DataFrame({"key": keys, "row_index": range(len(keys)), "is_valid": [True] * len(keys),
+                             "validation_error_message": [""] * len(keys), "all_validation_messages": [""] * len(keys)})
+
+
+def run(tmp_path, fake, *extra, execute=False, run_id="r1", component=None, out="out"):
+    component = component or fake.component
+    argv = ["--component", component, "--out-dir", str(tmp_path / out), "--run-id", run_id,
+            "--cache-dir", str(tmp_path / "cache"), *extra]
+    if execute:
+        argv += ["--execute", "--write-log-table", "synLOG"]
+    with mock.patch.object(adm, "read_source", fake.read_source), \
+         mock.patch.object(grants.operations, "find_entity_id", fake.find_entity_id), \
+         mock.patch.object(grants, "Folder", fake.Folder), \
+         mock.patch.object(grants, "create_record_based_metadata_task", fake.create_task), \
+         mock.patch.object(grants.recordsets, "find_recordset", fake.find_recordset), \
+         mock.patch.object(grants.recordsets, "recordset_info", fake.info), \
+         mock.patch.object(grants.recordsets, "read_recordset", fake.read), \
+         mock.patch.object(grants.recordsets, "write_via_grid", fake.write), \
+         mock.patch.object(grants.recordsets, "get_validation", fake.validation), \
+         mock.patch.object(adm.recordsets, "SynapseTableWriteLog", lambda syn, tid: rs.CsvWriteLog(tmp_path / "log.csv")), \
+         mock.patch.object(grants.recordsets, "principal_id", lambda syn: "42"):
+        code = adm.main(argv, syn=object())
+    return code, tmp_path / out / run_id / component
+
+
+def status_of(rep):
+    return (rep / "summary.txt").read_text().split()[1]
+
+
+def csv_of(rep, name):
+    return pd.read_csv(rep / name, dtype=str, keep_default_na=False)
+
+
+# --- location and names -----------------------------------------------------------
+
+
+def test_target_location_and_name_constants():
+    assert utils.ADMIN_PROJECT == "syn28742843"
+    assert utils.ADMIN_RECORDSET_FOLDER == "admin_recordsets"
+    assert [utils.admin_recordset_name(c) for c in adm.COMPONENTS] == [
+        "MC2Center_GrantView_RecordSet", "MC2Center_ProjectView_RecordSet", "MC2Center_PersonView_RecordSet"]
+    assert adm.KEYS == {"GrantView": "GrantViewId", "ProjectView": "ProjectViewId", "PersonView": "PersonViewId"}
+
+
+@pytest.mark.parametrize("component,source", [("GrantView", "syn53259587"), ("ProjectView", "syn59074382"),
+                                              ("PersonView", "syn38301033")])
+def test_default_source_is_the_component_manifest(component, source):
+    assert adm.get_args(["--component", component]).source == source
+
+
+def test_unknown_component_is_refused():
+    with pytest.raises(SystemExit):
+        adm.get_args(["--component", "PublicationView"])
+
+
+# --- conversion -------------------------------------------------------------------
+
+
+def convert(source, component):
+    return adm.convert_admin_table(source, component, adm.build_normalizer(component))
+
+
+def test_grant_conversion_renames_headers_splits_lists_and_drops_non_schema_columns():
+    converted, changes, unmapped, dropped, duplicates, key_missing = convert(grant_table(), "GrantView")
+    assert not key_missing and duplicates.empty
+    assert converted["GrantViewId"].tolist() == ["CA111111", "CA222222"]
+    assert "Investigator" in converted.columns and "Grant Investigator" not in converted.columns
+    assert converted["Investigator"].tolist()[0] == ["Ada Lovelace", "Alan Turing"]
+    assert converted["GrantThemeName"].tolist()[0] == ["Heterogeneity", "Evolution"]
+    assert sorted(dropped) == ["Component", "Id", "entityId"]
+    assert changes.empty
+
+
+def test_consortium_names_are_reported_unmapped_and_kept_not_guessed():
+    converted, _, unmapped, *_ = convert(grant_table(), "GrantView")
+    assert converted["ConsortiumKey"].tolist() == ["CSBC", "Sage Bionetworks"]
+    rows = unmapped[unmapped["column"] == "ConsortiumKey"]
+    assert rows["value"].tolist() == ["CSBC", "Sage Bionetworks"] and rows["key"].tolist() == ["CA111111", "CA222222"]
+
+
+def test_a_program_id_is_not_reported_and_an_override_maps_a_name(tmp_path):
+    source = grant_table()
+    source.loc[0, "Grant Consortium Name"] = "program.csbc"
+    _, _, unmapped, *_ = convert(source, "GrantView")
+    assert unmapped[unmapped["column"] == "ConsortiumKey"]["value"].tolist() == ["Sage Bionetworks"]
+    path = tmp_path / "o.csv"
+    path.write_text("column,current_value,proposed_value\nConsortiumKey,Sage Bionetworks,program.sage-bionetworks\n")
+    norm = adm.build_normalizer("GrantView", adm.value_maps.load_overrides(path))
+    converted, changes, unmapped, *_ = adm.convert_admin_table(source, "GrantView", norm)
+    assert converted["ConsortiumKey"].tolist() == ["program.csbc", "program.sage-bionetworks"]
+    assert changes[changes["rule"] == "override"]["to"].tolist() == ["program.sage-bionetworks"]
+    assert unmapped[unmapped["column"] == "ConsortiumKey"].empty
+
+
+def test_dates_that_are_not_iso_are_reported_unmapped():
+    _, _, unmapped, *_ = convert(grant_table(), "GrantView")
+    dates = unmapped[unmapped["column"].isin(["GrantStartDate", "GrantEndDate"])]
+    assert dates["key"].tolist() == ["CA111111", "CA111111"]  # the ISO dates of the second row are fine
+    assert sorted(dates["value"]) == ["5/31/20", "6/1/14"]
+
+
+def test_project_conversion_uses_the_admin_header_map():
+    converted, _, unmapped, dropped, _, _ = convert(project_table(), "ProjectView")
+    assert list(converted.columns) == ["ProjectViewId", "ProjectName", "ProjectType", "ProjectDescription",
+                                       "Investigator", "ConsortiumKey", "GrantViewKey"]
+    assert converted["Investigator"].tolist()[1] == ["Alan Turing", "Grace Hopper"]
+    assert converted["GrantViewKey"].tolist() == ["CA111111", "CA111111"]
+    assert sorted(unmapped["column"].unique()) == ["ConsortiumKey"]
+
+
+def test_person_conversion_joins_list_cells_of_string_columns_and_fixes_enum_case():
+    converted, changes, unmapped, dropped, duplicates, key_missing = convert(person_table(), "PersonView")
+    assert key_missing and duplicates.empty
+    assert converted["PersonViewId"].tolist() == ["row 1", "row 2"] and list(converted.columns)[0] == "PersonViewId"
+    assert converted["GrantViewKey"].tolist() == ["CA111111, CA222222", "Affiliated/Non-Grant Associated"]
+    assert converted["ConsortiumKey"].tolist() == ["CSBC, HTAN", "PS-ON"]
+    assert converted["AlternativeNames"].tolist() == [[], ["Robert"]]
+    assert converted["ChairRoles"].tolist() == [["Working Group", "Annual Meeting"], []]
+    assert converted["PortalDisplay"].tolist() == ["TRUE", "FALSE"]
+    assert converted["LastKnownInstitution"].tolist()[0] == "Columbia University"
+    assert set(changes["rule"]) == {"list_to_string", "enum_case"}
+    assert sorted(unmapped["value"]) == ["CSBC", "HTAN", "PS-ON"]
+
+
+def test_duplicate_and_blank_keys_are_reported_not_resolved():
+    source = grant_table()
+    source.loc[1, "GrantView_id"] = "CA111111"
+    *_, duplicates, _ = convert(source, "GrantView")
+    assert duplicates.to_dict("records") == [{"key": "CA111111", "rows": "1, 2"}]
+    source.loc[1, "GrantView_id"] = " "
+    *_, duplicates, _ = convert(source, "GrantView")
+    assert duplicates.to_dict("records") == [{"key": "", "rows": "2"}]
+
+
+def test_unknown_header_fails_the_conversion():
+    with pytest.raises(grants.ConversionError, match="unknown headers"):
+        convert(grant_table().rename(columns={"Grant Name": "Mystery"}), "GrantView")
+
+
+# --- dry run ----------------------------------------------------------------------
+
+
+def test_dry_run_writes_nothing_to_synapse_and_writes_the_reports(tmp_path):
+    fake = FakeSynapse()
+    code, rep = run(tmp_path, fake)
+    assert code == 2  # unmapped consortium names and dates
+    assert status_of(rep) == "dryrun"
+    assert not fake.created and not fake.created_folders and not fake.writes
+    for name in ("converted.csv", "changes.csv", "unmapped.csv", "validation.csv", "validation_counts.csv", "summary.txt"):
+        assert (rep / name).exists()
+    text = (rep.parent / "comparison.txt").read_text()
+    assert "source table rows=2 unique keys=2; compared rows=2 unique keys=2" in text and "EQUAL" in text
+
+
+def test_duplicate_keys_fail_the_component_and_nothing_is_written(tmp_path):
+    source = grant_table()
+    source.loc[1, "GrantView_id"] = "CA111111"
+    fake = FakeSynapse(source=source)
+    code, rep = run(tmp_path, fake, execute=True)
+    assert code == 1 and status_of(rep) == "failed"
+    assert csv_of(rep, "duplicates.csv").to_dict("records") == [{"key": "CA111111", "rows": "1, 2"}]
+    assert not fake.created and not fake.writes
+
+
+def test_a_source_without_a_key_column_fails_and_writes_nothing_even_with_execute(tmp_path):
+    fake = FakeSynapse("PersonView", person_table())
+    code, rep = run(tmp_path, fake, execute=True)
+    assert code == 1 and status_of(rep) == "failed"
+    assert "PersonViewId cannot be filled" in (rep / "summary.txt").read_text()
+    assert not fake.created and not fake.created_folders and not fake.writes
+    assert csv_of(rep, "converted.csv")["PersonViewId"].tolist() == ["", ""]
+    assert "only the row count is compared" in (rep.parent / "comparison.txt").read_text()
+    worklist = csv_of(rep.parent, "validation_worklist.csv")
+    assert {"row 1", "row 2"} <= set(worklist["key"])
+    assert "PersonViewId" in set(csv_of(rep, "validation.csv")["field"])
+
+
+# --- execute ----------------------------------------------------------------------
+
+
+def test_execute_creates_the_admin_folder_and_recordset_loads_through_grid_and_logs(tmp_path):
+    fake = FakeSynapse()
+    code, rep = run(tmp_path, fake, execute=True)
+    assert fake.created_folders == [("syn28742843", "admin_recordsets")]
+    kw = fake.created[0]
+    assert kw["create_grid"] is False and kw["bind_schema_to_record_set"] is True
+    assert kw["record_set_name"] == "MC2Center_GrantView_RecordSet"
+    assert kw["project_id"] == "syn28742843" and kw["folder_id"] == fake.folders[("syn28742843", "admin_recordsets")]
+    assert kw["upsert_keys"] == ["GrantViewId"] and kw["schema_uri"] == "MC2Center-GrantView-14.0.0"
+    assert "admin manifest" in kw["record_set_description"] and "syn53259587" in kw["record_set_description"]
+    rs_id = next(iter(fake.rs))
+    assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
+    log = rs.CsvWriteLog(tmp_path / "log.csv")._read(rs_id)
+    assert log["status"].tolist() == ["created", "pending", "written", "done", "verified"]
+    assert status_of(rep) == "migrated"
+    assert (rep / "synapse_validation.csv").exists()
+
+
+@pytest.mark.parametrize("component,source", [("ProjectView", project_table), ("GrantView", grant_table)])
+def test_each_component_gets_its_own_named_recordset(tmp_path, component, source):
+    fake = FakeSynapse(component, source())
+    run(tmp_path, fake, execute=True)
+    assert fake.created[0]["record_set_name"] == f"MC2Center_{component}_RecordSet"
+    assert fake.created[0]["upsert_keys"] == [f"{component}Id"]
+
+
+def test_execute_uses_the_schema_version_argument(tmp_path):
+    fake = FakeSynapse()
+    run(tmp_path, fake, "--schema-version", "14.0.1", execute=True)
+    assert fake.created[0]["schema_uri"] == "MC2Center-GrantView-14.0.1"
+
+
+def test_execute_needs_a_write_log_table(tmp_path):
+    with pytest.raises(SystemExit):
+        adm.get_args(["--component", "GrantView", "--execute"])
+
+
+def test_redo_is_refused_with_execute():
+    with pytest.raises(SystemExit):
+        adm.get_args(["--component", "GrantView", "--execute", "--write-log-table", "synL", "--redo"])
+
+
+def test_execute_verifies_the_read_back_and_reports_a_mismatch(tmp_path):
+    fake = FakeSynapse()
+    real = fake.write
+
+    def corrupt(syn, rs_id, csv_path, on_version=None, **kw):
+        out = real(syn, rs_id, csv_path, on_version, **kw)
+        fake.rs[rs_id][-1].loc[0, "GrantName"] = "Changed"
+        return out
+
+    fake.write = corrupt
+    code, rep = run(tmp_path, fake, execute=True)
+    assert code == 1 and status_of(rep) == "verification_mismatch"
+
+
+# --- resume -----------------------------------------------------------------------
+
+
+def test_resume_skips_a_done_dry_run_and_redo_repeats_it(tmp_path):
+    fake = FakeSynapse()
+    run(tmp_path, fake, run_id="r1")
+    fake.reads.clear()
+    code, rep = run(tmp_path, fake, run_id="r2")
+    assert fake.reads == [] and "already dryrun in run r1; skipped" in (rep / "summary.txt").read_text()
+    assert "EQUAL" in (rep.parent / "comparison.txt").read_text()
+    run(tmp_path, fake, "--redo", run_id="r3")
+    assert fake.reads == ["syn53259587"]
+
+
+def test_resume_does_not_skip_when_the_options_change(tmp_path):
+    fake = FakeSynapse()
+    run(tmp_path, fake, run_id="r1")
+    fake.reads.clear()
+    path = tmp_path / "o.csv"
+    path.write_text("column,current_value,proposed_value\nConsortiumKey,CSBC,program.csbc\n")
+    run(tmp_path, fake, "--overrides", str(path), run_id="r2")
+    assert fake.reads == ["syn53259587"]
+
+
+def test_resume_does_not_skip_a_failed_component(tmp_path):
+    bad = grant_table().rename(columns={"Grant Name": "Mystery"})
+    fake = FakeSynapse(source=bad)
+    run(tmp_path, fake, run_id="r1")
+    fake.source = grant_table()
+    code, rep = run(tmp_path, fake, run_id="r2")
+    assert status_of(rep) == "dryrun"
+
+
+def test_a_dry_run_does_not_make_the_execute_skip(tmp_path):
+    fake = FakeSynapse()
+    run(tmp_path, fake, run_id="r1")
+    code, rep = run(tmp_path, fake, run_id="r2", execute=True)
+    assert status_of(rep) == "migrated"
+
+
+def test_a_migrated_recordset_is_not_written_again(tmp_path):
+    fake = FakeSynapse()
+    run(tmp_path, fake, run_id="r1", execute=True)
+    code, rep = run(tmp_path, fake, run_id="r2", execute=True)
+    assert len(fake.writes) == 1 and len(fake.created) == 1
+    assert "already" in (rep / "summary.txt").read_text()
+
+
+def test_an_existing_recordset_without_a_logged_write_is_never_overwritten(tmp_path):
+    fake = FakeSynapse()
+    fake.folders[("syn28742843", "admin_recordsets")] = "synFx"
+    fake.rs["synRSx"] = [pd.DataFrame({"GrantViewId": ["CA1"]})]
+    fake.rs_folder["synFx"] = "synRSx"
+    code, rep = run(tmp_path, fake, execute=True)
+    assert code == 1 and status_of(rep) == "failed"
+    assert "exists but not migrated" in (rep / "summary.txt").read_text()
+    assert not fake.writes and not fake.created
