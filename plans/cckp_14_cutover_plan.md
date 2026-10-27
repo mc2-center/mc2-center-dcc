@@ -154,6 +154,8 @@ All of these come from your review notes and answers on 2026-10-26.
 | D-Q40 | **Include `syn52963211`** ("MC2 Center Affiliate Resources Project", not in the Grants table) in the migration, labelled `Affiliated/Non-Grant Associated` | I5a `--include-unlisted` |
 | D-Q41 | **Duplicate tie-break extended:** the merged manifest holds both rows in all 7 cases, so the next deciding step is the **live portal row**, then completeness, then legacy Id (reported as arbitrary). A manual check found that the portal decides 6 of 7. | I5a (in progress) |
 | D-Q42 | **Truncated `PublicationAuthors` (109 cells, from the old 400-character cap) are recovered from PubMed** by PMID (read-only NCBI E-utilities) during migration. The same fixes go to the portal manifest at E2. | I5a (in progress); E2 |
+| D-Q43 | **Recovered authors use full names** (`ForeName LastName`, PubMed efetch), matching the curation pipeline's output | I5a `--recover-truncated` |
+| D-Q44 | **The 2 duplicate pairs that tie on every compared field (`syn77038794`, `syn77038892`) are settled by hand**; the other 5 are decided by the live portal row | `output/worklists/duplicate_ties.csv` → I5a `--duplicate-choices` |
 | D-Q21 | **`NPUNCU` → the single ID `DUO:0000018`**, not NPU + NCU. `DUO:0000018` is a current DUO term, and governanceDUO and data-models both list it. | Reverses master plan S4.5's split. I8.4 maps `RTN` → `DUO:0000029` and `NPUNCU` → `DUO:0000018`, one to one. |
 
 ---
@@ -172,7 +174,7 @@ All of these come from your review notes and answers on 2026-10-26.
 | W7 | **Go-ahead: register 14.0.1** in `MC2Center` 🔒 | B2, E1 binding version |
 | W8 | **Go-ahead: Consortium table update** (`consortiumId` + 3 approved rows) 🔒 | D-1, then people sync |
 | W9 | **Go-ahead: portal table changes**, one table at a time with the rehearsed rollback 🔒, after W4 | D-2 |
-| W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv`. They feed I5a `--overrides`. | Cleaner E1 validation |
+| W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`), and **pick one row per key** in `output/worklists/duplicate_ties.csv` (2 keys; it feeds `--duplicate-choices`) | Cleaner E1 validation |
 | W11 | **Go-ahead: create the production write-log table** in CCKP - MC2 Admin and migrate a first small batch of grants 🔒, after W6/W7 | E1 |
 | W3 | Go-ahead for each other 🔒 step as it comes up. Deletions are confirmed against a printed list. | — |
 
