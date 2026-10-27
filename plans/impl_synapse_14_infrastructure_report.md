@@ -151,3 +151,15 @@ Owner go-ahead 2026-10-27. Question: can a RecordSet row be removed, and by whic
 | Fresh Grid session, no import, export | v5: 2 rows; validation re-ran (summary: 2 children, 0 unknown) |
 
 No Grid session left open. The throwaway folder, RecordSet and task remain in the test project, to be cleared with it (C8).
+
+## D-Q49 removal command, live test (2026-10-27, `syn78387305`)
+Branch `dq34-row-removal` at `bec78f0`. Created the test removals table `MC2Center_RecordSet_Removals (test)` (`syn78403174`); used the spike RecordSet `syn78401702` (v5: rows A, B) and the test write log v2 `syn78392519`.
+
+| Step | Result |
+|---|---|
+| `request --key B --execute` | `requested` row appended |
+| Dry run | `would remove ['B']`, base v5, nothing written |
+| `--execute` (run `dcc-removal-20261027T150617`) | v6 stored without B, v7 re-validated (Grid export, 1 row, 0 unknown). Binding, upsert key and CurationTask 8038 kept; no Grid session left open. Write log: `pending` → `removed` v6 (base 5) → `written` v7 (base 6) → `done`. Removals table: B `removed` in v6. |
+| Replay of v1–v7 | state `['A']`, no decisions |
+
+**Defect found:** after the run, reading v5 on this machine through `RecordSet(..., version_number=5, download_file=True)` returned the run's `removal.csv` (A only), although v5's file in S3 (handle 178852294) holds A and B. `store_new_version` stores the fetched base entity with a replaced `path`, which makes the client cache link the base version's file handle to the new local file. Replay and `removed_keys` then misread the base on that machine (`removed_keys` returned `{}`). Synapse itself is correct. Being fixed on the branch (store without the old file handle; `read_recordset` checks the file's md5), then the live test is re-run.
