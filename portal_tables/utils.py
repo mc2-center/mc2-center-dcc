@@ -96,6 +96,16 @@ def syn_login() -> Synapse:
     return syn
 
 
+def read_sync_manifest(syn: Synapse, args: argparse.Namespace) -> pd.DataFrame:
+    """The manifest a sync reads: ``--manifest-csv`` (strings, empty cells NaN) or ``--manifest_id``."""
+    import model_contract
+
+    path = getattr(args, "manifest_csv", None)
+    if path:
+        return pd.read_csv(path, dtype=str)
+    return model_contract.read_manifest(syn, args.manifest_id)
+
+
 def get_args(resource: str) -> argparse.Namespace:
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser(description=f"Sync {resource} to the CCKP")
@@ -105,6 +115,15 @@ def get_args(resource: str) -> argparse.Namespace:
         type=str,
         default=CONFIG.get(resource).get("manifest"),
         help="Synapse ID of the manifest CSV file.",
+    )
+    parser.add_argument(
+        "--manifest-csv",
+        type=str,
+        default=None,
+        help=(
+            "Read the manifest from this local CSV instead of --manifest_id "
+            "(for dry runs against a regenerated manifest; not for grant syncs)."
+        ),
     )
     parser.add_argument(
         "-t",
