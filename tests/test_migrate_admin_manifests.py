@@ -486,6 +486,34 @@ def test_resume_does_not_skip_when_the_options_change(tmp_path):
     assert fake.reads == ["syn53259587"]
 
 
+def test_resume_does_not_skip_when_the_source_etag_or_the_rules_version_changes(tmp_path, monkeypatch):
+    fake = FakeSynapse()
+    etag = ["e1"]
+    monkeypatch.setattr(adm, "source_etag", lambda syn, table_id: etag[0])
+    run(tmp_path, fake, run_id="r1")
+    fake.reads.clear()
+    run(tmp_path, fake, run_id="r2")
+    assert fake.reads == []
+    etag[0] = "e2"
+    run(tmp_path, fake, run_id="r3")
+    assert fake.reads == ["syn53259587"]
+    run(tmp_path, fake, run_id="r4")
+    assert fake.reads == ["syn53259587"]
+    monkeypatch.setattr(adm, "CONVERSION_RULES", adm.CONVERSION_RULES + 1)
+    run(tmp_path, fake, run_id="r5")
+    assert fake.reads == ["syn53259587"] * 2
+
+
+def test_source_etag_is_read_from_the_entity_metadata():
+    class Syn:
+        def restGET(self, uri):
+            assert uri == "/entity/syn1"
+            return {"etag": "abc"}
+
+    assert adm.source_etag(Syn(), "syn1") == "abc"
+    assert adm.source_etag(object(), "syn1") == ""
+
+
 def test_resume_does_not_skip_a_failed_component(tmp_path):
     bad = grant_table().rename(columns={"Grant Name": "Mystery"})
     fake = FakeSynapse(source=bad)

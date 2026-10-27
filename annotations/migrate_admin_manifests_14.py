@@ -28,14 +28,17 @@ Conversion, per component:
 * list cells (PersonView is a table of list columns) of columns that the schema
   types as a string are joined with ``", "`` (``list_to_string``); ``ConsortiumKey``
   and ``GrantViewKey`` hold one or more keys, split and rejoined per item;
-* ``ConsortiumKey`` should hold ``program.*`` IDs. No rule maps a display name
-  (``CSBC``) to its ID (the Consortium table has no ``consortiumId`` yet, plan D-1), so
-  every other value is kept and reported as unmapped; ``--overrides`` (column,
-  current_value, proposed_value) supplies a curated mapping per item;
-* a date column whose value is not ``YYYY-MM-DD`` is kept and reported as unmapped;
-* a source without a key column (PersonView has no ``PersonView_id``) or with duplicate
-  or blank keys is reported (``duplicates.csv``) and fails: converted.csv is written, nothing
-  is loaded into Synapse.
+* ``ConsortiumKey`` names map to ``program.*`` IDs through ``portal_tables/consortium_keys.csv``
+  (``consortium_key``; matched case-insensitively, per item; it mirrors the Consortium table's
+  ``consortiumId``, plan D-1). A name outside the map and a ``program.*`` ID outside it are kept
+  and reported as unmapped; ``--overrides`` (column, current_value, proposed_value) is applied first;
+* dates of ``format: date`` columns become ``YYYY-MM-DD`` (``date_iso``, ``value_maps``); an
+  unparseable one is kept and reported as unmapped;
+* PersonView has no key column: ``PersonViewId`` is minted from ``Name`` as ``person.<slug>``
+  (``minted_key``; trailing credentials dropped; an override row with column ``PersonViewId`` and
+  the source ``Name`` as current_value sets the key). The minted key is stored in the RecordSet and
+  never re-derived. A slug collision or blank name fails the component, as do duplicate or blank
+  keys of any component (``duplicates.csv``): converted.csv is written, nothing is loaded into Synapse.
 
 Dry run is the default and writes only reports to ``<out-dir>/<run-id>/<component>/``
 (converted.csv, changes.csv, unmapped.csv, validation.csv, validation_counts.csv,
@@ -351,6 +354,15 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     return summary, converted, source_keys
 
 
+def source_etag(syn, table_id: str) -> str:
+    """The source table's etag (a metadata-only read; blank when it cannot be read)."""
+    try:
+        return str(syn.restGET(f"/entity/{table_id}").get("etag", ""))
+    except Exception:
+        logger.warning("Could not read the etag of %s; the resume hash will not notice a change to it", table_id)
+        return ""
+
+
 def options_hash(args) -> str:
     """What changes the conversion: a done component is skipped on rerun only if this matches."""
     effective = {
@@ -359,6 +371,7 @@ def options_hash(args) -> str:
         "model_ref": getattr(args, "model_ref", None) or model_contract.MODEL_REF,
         "consortium_keys": utils.load_consortium_keys(),
         "rules": CONVERSION_RULES,
+        "source_etag": getattr(args, "source_etag", ""),  # the source table changed: convert again
     }
     return hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()
 
@@ -395,6 +408,7 @@ def main(argv=None, syn=None):
     set_like = recordsets.set_like_columns(component)
     overrides = value_maps.load_overrides(args.overrides) if args.overrides else None
     args.model_ref = grants.resolve_model_ref(args)
+    args.source_etag = source_etag(syn, args.source)
     normalizer = build_normalizer(component, overrides, args.model_ref)
     out_dir = Path(args.out_dir)
     run_dir = out_dir / args.run_id
