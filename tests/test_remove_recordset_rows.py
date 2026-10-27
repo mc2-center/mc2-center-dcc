@@ -67,7 +67,7 @@ def setup(tmp_path, versions, requested=("b",), **kw):
     return fake, log, removals
 
 
-def process(tmp_path, fake, log, removals, execute=True, run_id="r1"):
+def process(tmp_path, fake, log, removals, execute=True, run_id="dcc-removal-1"):
     args = argparse.Namespace(execute=execute, run_id=run_id, cache_dir=str(tmp_path / "cache"))
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
          mock.patch.object(cmd.recordsets, "read_recordset", fake.read), \
@@ -105,7 +105,7 @@ def test_main_dry_run_exit_code_and_output(tmp_path, capsys):
          mock.patch.object(cmd.recordsets, "open_grid_sessions", fake.open_sessions), \
          mock.patch.object(cmd.recordsets, "recordset_version_meta", fake.meta):
         code = cmd.main(["--removals-csv", str(tmp_path / "removals.csv"), "--write-log-csv", str(tmp_path / "log.csv"),
-                         "--report-dir", str(tmp_path / "rep"), "--run-id", "r1"], syn=object())
+                         "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-removal-1"], syn=object())
     out = capsys.readouterr().out
     assert code == 0 and "dry run" in out and "would remove ['b']" in out
     assert len(fake.versions) == 1
@@ -191,8 +191,13 @@ def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path):
     fake, log, removals = setup(tmp_path, [V1])
 
     class Dying(rs.CsvWriteLog):
+        calls = 0
+
         def removed(self, *a, **k):
-            raise RuntimeError("died after the store")
+            Dying.calls += 1
+            if Dying.calls == 1:  # the run's own log call dies; recovery's goes through
+                raise RuntimeError("died after the store")
+            super().removed(*a, **k)
 
     dying = Dying(tmp_path / "log.csv")
     with pytest.raises(RuntimeError):
@@ -200,8 +205,8 @@ def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path):
     assert [e[0] for e in fake.events] == ["store"] and len(fake.versions) == 2
     # the failure handler already recovered v2 through the pending row (same principal, after writtenOn)
     statuses = log._read("synRS")
-    assert statuses["status"].tolist() == ["pending", "recovered"]
-    assert log.pipeline_map("synRS") == {2: 1}
+    assert statuses["status"].tolist() == ["pending", "removed", "done"]  # the prefix marks it a removal store
+    assert log.pipeline_map("synRS") == {2: 1} and log.removal_versions("synRS") == {2}
     assert removals.removed("synRS") == {"b": 2}
     assert removals.requested("synRS") == {}
     assert log.unresolved_pending("synRS") == []
@@ -214,13 +219,13 @@ def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path):
 def test_crash_recovery_by_the_next_run_when_the_handler_could_not_run(tmp_path):
     # the process died outright: a pending row and a stored version, nothing else
     fake, log, removals = setup(tmp_path, [V1])
-    log.start("synRS", 1, "dead", "42")
+    log.start("synRS", 1, "dcc-removal-dead", "42")
     fake.versions.append(frame(["a", "T", '["x","y"]'], ["c", "T", ""]))
     old = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
     text = (tmp_path / "log.csv").read_text().splitlines()
     text[1] = text[1].replace(text[1].split(",")[-2], old.isoformat())
     (tmp_path / "log.csv").write_text("\n".join(text) + "\n")
-    s = process(tmp_path, fake, log, removals, run_id="r2")
+    s = process(tmp_path, fake, log, removals, run_id="dcc-removal-2")
     assert s["status"] == "nothing_to_remove" and s["claimed"] == {"b": 2}
     assert log.pipeline_map("synRS") == {2: 1}
     assert removals.removed("synRS") == {"b": 2}
@@ -230,7 +235,7 @@ def test_crash_recovery_by_the_next_run_when_the_handler_could_not_run(tmp_path)
 def test_removed_version_without_removals_rows_is_claimed(tmp_path):
     fake, log, removals = setup(tmp_path, [V1])
     fake.versions.append(frame(["a", "T", '["x","y"]'], ["c", "T", ""]))
-    log.removed("synRS", 2, 1, "dead", "42", 2)  # logged, but the removals rows were never written
+    log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)  # logged, but the removals rows were never written
     s = process(tmp_path, fake, log, removals)
     assert s["claimed"] == {"b": 2} and removals.removed("synRS") == {"b": 2}
 
@@ -246,3 +251,28 @@ def test_main_skips_recordsets_without_requested_keys(tmp_path, capsys):
                   "--report-dir", str(tmp_path / "rep"), "--recordset", "synRS"], syn=object())
     out = capsys.readouterr().out
     assert "synRS: dryrun" in out and "synDONE" not in out
+
+
+def test_run_id_without_the_removal_prefix_is_rejected(tmp_path):
+    with pytest.raises(SystemExit):
+        cmd.get_args(["--removals-csv", "r.csv", "--write-log-csv", "l.csv", "--report-dir", "x", "--run-id", "mine"])
+    assert cmd.get_args(["--removals-csv", "r.csv", "--write-log-csv", "l.csv",
+                         "--report-dir", "x"]).run_id.startswith("dcc-removal-")
+
+
+def test_recover_pending_logs_a_removal_runs_store_as_removed_and_its_export_as_recovered(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("synRS", 1, "dcc-removal-x", "42")
+    log.start("synRS2", 1, "pipeline-run", "42")
+    meta = lambda v: ("42", pd.Timestamp.now(tz="UTC"))
+    found = rs.recover_pending("syn", "synRS", log, 3, meta=meta, skip_younger_than=None)
+    assert dict(found) == {2: 1, 3: 1} and found.removal == {2}
+    assert log._read("synRS")["status"].tolist() == ["pending", "removed", "recovered", "done"]
+    found = rs.recover_pending("syn", "synRS2", log, 3, meta=meta)
+    assert found.removal == set() and log._read("synRS2")["status"].tolist() == ["pending", "recovered", "recovered"]
+    # a run that already logged its removed version: what is left is its export
+    log.start("synRS3", 1, "dcc-removal-y", "42")
+    log.removed("synRS3", 2, 1, "dcc-removal-y", "42", 5)
+    found = rs.recover_pending("syn", "synRS3", log, 3, meta=meta)
+    assert dict(found) == {3: 1} and found.removal == set()
+    assert log.removal_versions("synRS3") == {2}

@@ -113,6 +113,7 @@ WRITE_LOG_COLUMNS = [
     "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
 ]
 LOCK_HOURS = 2
+REMOVAL_RUN_PREFIX = "dcc-removal-"  # runId of a DCC removal run (D-Q49); recover_pending keys on it
 # Recovery compares Synapse's server-side modifiedOn with the runner's local
 # writtenOn, so the two clocks may disagree; accept a version modified up to
 # this long before the pending row was written.
@@ -434,10 +435,12 @@ class WriteLog:
         df = df[df["status"].isin(["written", "removed", "recovered"]) & df["version"].notna()]
         return {int(v): int(b) if pd.notna(b) else int(v) - 1 for v, b in zip(df["version"], df["baseVersion"])}
 
-    def removal_versions(self, rs_id: str) -> set[int]:
-        """Versions logged ``removed`` (a DCC removal's direct store)."""
+    def removal_versions(self, rs_id: str, run_id: str | None = None) -> set[int]:
+        """Versions logged ``removed`` (a DCC removal's direct store), of one run if ``run_id`` is given."""
         df = self._read(rs_id)
         df = df[(df["status"] == "removed") & df["version"].notna()]
+        if run_id is not None:
+            df = df[df["runId"] == run_id]
         return {int(v) for v in df["version"]}
 
     def pipeline_versions(self, rs_id: str) -> list[int]:
@@ -741,8 +744,18 @@ def recordset_version_meta(syn, rs_id: str, version: int) -> tuple[str, pd.Times
     return str(entity.modified_by), _to_dt(entity.modified_on)
 
 
+class Recovered(dict):
+    """``{version: base}`` from :func:`recover_pending`; ``removal`` holds the versions of it that are removal stores."""
+
+    removal: set
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.removal = set()
+
+
 def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
-                    run_id=None, skip_younger_than=None, now=None) -> dict[int, int]:
+                    run_id=None, skip_younger_than=None, now=None) -> Recovered:
     """Recover versions created by runs that died after exporting.
 
     For each unresolved ``pending`` row, a version above its ``baseVersion``
@@ -755,10 +768,14 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
     ``skip_younger_than=LOCK_HOURS``: a younger row belongs to a live run
     (``locked_by`` already let us through), and must not be aborted under it.
     After a failed write, pass ``run_id`` to resolve only this run's own row.
+    A DCC removal run (runId with :data:`REMOVAL_RUN_PREFIX`) stores its version
+    directly: the first recovered version of such a row, when the run has not
+    logged its ``removed`` version yet, is the store and is logged ``removed``
+    (replay drops its keys); later ones are Grid exports, ``recovered``.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
     logged = write_log.pipeline_map(rs_id)
-    found: dict[int, int] = {}
+    found = Recovered()
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
     for row in write_log.unresolved_pending(rs_id):
         if row["baseVersion"] is None:
@@ -774,11 +791,20 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
             by, on = meta(v)
             if by == row["principalId"] and pd.notna(on) and on >= row["writtenOn"] - CLOCK_TOLERANCE:
                 mine.append(v)
+        store = None
+        if (mine and str(row["runId"]).startswith(REMOVAL_RUN_PREFIX)
+                and not write_log.removal_versions(rs_id, row["runId"])):
+            store = mine[0]
+            found.removal.add(store)
         for v in mine:
             found[v] = row["baseVersion"]
-            if record:
+            if record and v == store:
+                write_log.removed(rs_id, v, row["baseVersion"], row["runId"], row["principalId"], None)
+            elif record:
                 write_log.record(rs_id, v, row["runId"], None, base=row["baseVersion"],
                                  principal=row["principalId"], status="recovered")
+        if store is not None and record:  # ``removed`` doesn't close the row; the owed export is a later run's
+            write_log.finish(rs_id, row["baseVersion"], row["runId"], row["principalId"])
         if not mine and record:
             write_log.abort(rs_id, row["baseVersion"], row["runId"], row["principalId"])
         if mine:

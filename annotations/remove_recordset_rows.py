@@ -19,13 +19,16 @@ removals table (``removedInVersion`` = that version); export, log it
 pipeline then skips uploading those keys and replay drops them
 (``portal_tables/recordsets.py``).
 
-A run that dies between the store and the log is recovered by the next run
-(or, on a failure, at once) through ``recover_pending``: the stored version is
-a version above the pending row's base, made by the same principal after it
-was written, so it is logged ``recovered`` (a pipeline version), and the keys
-that left the RecordSet in it are then appended to the removals table as
-``removed`` rows. A ``removed`` version logged without its removals rows
-(a crash between the two appends) is claimed the same way.
+The run id starts with ``dcc-removal-`` (generated; a ``--run-id`` without it is
+rejected). A run that dies between the store and the log is recovered by the
+next run of either script (or, on a failure, at once) through
+``recover_pending``: the stored version is a version above the pending row's
+base, made by the same principal after it was written, and because the row's
+runId has that prefix the first such version is logged ``removed`` (later ones
+``recovered``). Replay needs nothing more (it reads the dropped keys off the
+history); the removals table is then completed here: the keys that left the
+RecordSet in a ``removed`` version with no removals rows are appended as
+``removed`` rows (audit, and the upload's skip of ``restored`` keys).
 
 Dry run is the default: it prints, per RecordSet, the keys that would be
 removed, the keys not found and any blocking session or lock; nothing is
@@ -74,8 +77,13 @@ def get_args(argv=None):
         default=str(recordsets.DEFAULT_CACHE_DIR),
         help="on-disk cache of downloaded RecordSet versions (immutable); default: %(default)s",
     )
-    parser.add_argument("--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp")
+    parser.add_argument(
+        "--run-id", default=recordsets.REMOVAL_RUN_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S"),
+        help=f"must start with {recordsets.REMOVAL_RUN_PREFIX!r}, which recover_pending recognises; default: that plus a timestamp",
+    )
     args = parser.parse_args(argv)
+    if not args.run_id.startswith(recordsets.REMOVAL_RUN_PREFIX):
+        parser.error(f"--run-id must start with {recordsets.REMOVAL_RUN_PREFIX!r}")
     if args.execute and not (args.write_log_table and args.removals_table):
         parser.error("--execute needs --write-log-table and --removals-table; CSVs are for dry runs and tests only")
     return args
@@ -107,8 +115,9 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
 
 
 def claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_cols, cache_dir, run_id, principal):
-    """:func:`claim_removed` over recovered versions and ``removed`` versions that have no removals rows."""
-    unclaimed = set(recovered) | (write_log.removal_versions(rs_id) - set(removals.removal_events(rs_id)))
+    """:func:`claim_removed` over ``removed`` versions (logged, or just recovered) that have no removals rows."""
+    unclaimed = set(getattr(recovered, "removal", ())) | (
+        write_log.removal_versions(rs_id) - set(removals.removal_events(rs_id)))
     if not unclaimed:
         return {}
     return claim_removed(syn, rs_id, removals, unclaimed, requested, key_cols, cache_dir, run_id, principal)
