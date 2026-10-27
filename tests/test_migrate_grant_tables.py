@@ -1337,7 +1337,7 @@ def test_the_entity_id_is_taken_from_the_manifest_by_alias():
     assert manifest.to_dict("records") == [{"key": "syn_new", "column": MS_KEY, "from": "syn_old", "to": "syn_new",
                                             "rule": "manifest_id"}]
     assert info["remapped"] == {"syn_new": "syn_old"}
-    assert info["manifest_ids"] == {"remapped": 1, "ambiguous": 0, "unmatched": 0}
+    assert info["manifest_ids"] == {"remapped": 1, "ambiguous": 0, "unmatched": 0, "collision": 0, "other_grant": 0}
 
 
 def test_a_comma_repeated_manifest_id_counts_as_one_id():
@@ -1355,7 +1355,7 @@ def test_several_manifest_ids_keep_the_grant_value_and_are_reported():
     assert converted[MS_KEY].tolist() == ["syn_old"]
     assert changes["rule"].tolist() == ["manifest_id_ambiguous"]
     assert changes.iloc[0]["to"] == "syn_a, syn_b"
-    assert info["manifest_ids"] == {"remapped": 0, "ambiguous": 1, "unmatched": 0} and info["remapped"] == {}
+    assert info["manifest_ids"]["ambiguous"] == 1 and info["manifest_ids"]["remapped"] == 0 and info["remapped"] == {}
 
 
 def test_an_alias_missing_from_the_manifest_keeps_the_grant_value_and_is_counted():
@@ -1376,7 +1376,7 @@ def test_the_grant_picks_among_manifest_rows_of_one_alias():
     assert info["manifest_ids"]["unmatched"] == 1 and info["remapped"] == {}
 
 
-def test_a_remap_that_makes_two_rows_share_a_key_goes_through_duplicate_handling():
+def test_a_remap_that_makes_two_rows_of_one_alias_share_a_key_goes_through_duplicate_handling():
     info = {}
     source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"], ["syn_b", "CA1", "N", "GSE1", "d2", "2"]])
     ref = ms_reference([["syn_new", "CA1", "N", "GSE1", "d2"]])
@@ -1407,7 +1407,7 @@ def test_the_run_compares_with_the_grant_tables_keys_and_reports_the_remaps(tmp_
     assert "EQUAL" in comparison and "DIFFERENT" not in comparison  # source keys (syn_old) vs the old keys
     converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str)
     assert converted[MS_KEY].tolist() == ["syn_new", "syn_same"]
-    assert "manifest ids: remapped=1, ambiguous=0, no manifest row=0" in (rep / "run_summary.txt").read_text()
+    assert "manifest ids: remapped=1 (of which other grant 0), collisions kept=0, ambiguous=0, no manifest row=0" in (rep / "run_summary.txt").read_text()
 
 
 def test_the_rules_version_is_part_of_the_resume_hash(tmp_path):
@@ -1525,7 +1525,93 @@ def test_ambiguous_and_unmatched_aliases_go_to_a_worklist_file(tmp_path):
     work = pd.read_csv(rep / "manifest_id_worklist.csv", dtype=str, keep_default_na=False)
     assert work.to_dict("records") == [
         {"kind": "ambiguous", "alias": "GSE2", "grant": "CA1", "grant_table": "synT1", "grant_table_id": "syn_b",
-         "manifest_ids": "syn_y, syn_z"},
+         "manifest_ids": "syn_y, syn_z", "note": ""},
         {"kind": "no_manifest_row", "alias": "GSE3", "grant": "CA1", "grant_table": "synT1", "grant_table_id": "syn_c",
-         "manifest_ids": ""}]
+         "manifest_ids": "", "note": ""}]
     assert "known differences: authors recovered 0, mangled PMID keys 0" in (rep / "run_summary.txt").read_text()
+
+
+# --- review fixes: collisions, other grants, one equality rule, overrides, resume --------
+
+
+def test_an_id_the_manifest_gives_to_two_aliases_is_not_a_remap():
+    info = {}
+    source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"], ["syn_b", "CA1", "N", "GSE2", "d", "2"]])
+    ref = ms_reference([["syn_shared", "CA1", "N", "GSE1", "d"], ["syn_shared", "CA1", "N", "GSE2", "d"]])
+    converted, changes, _, _, resolutions = ms_convert(source, ref, info=info)
+    assert converted[MS_KEY].tolist() == ["syn_a", "syn_b"] and resolutions.empty  # nothing merged or dropped
+    assert changes["rule"].tolist() == ["manifest_id_collision"] * 2
+    assert info["manifest_ids"]["collision"] == 2 and info["manifest_ids"]["remapped"] == 0 and info["remapped"] == {}
+    assert [(w["kind"], w["alias"]) for w in info["id_worklist"]] == [("collision", "GSE1"), ("collision", "GSE2")]
+    assert "GSE2" in info["id_worklist"][0]["note"] and "GSE1" in info["id_worklist"][1]["note"]
+
+
+def test_a_shared_manifest_id_is_a_collision_even_when_the_other_alias_is_in_another_grant():
+    info = {}
+    source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"]])  # this grant table has only GSE1
+    ref = ms_reference([["syn_shared", "CA1", "N", "GSE1", "d"], ["syn_shared", "CA2", "N", "PRJ9", "d"]])
+    converted, *_ = ms_convert(source, ref, info=info)
+    assert converted[MS_KEY].tolist() == ["syn_a"] and info["manifest_ids"]["collision"] == 1
+
+
+def test_a_remap_to_a_manifest_row_of_another_grant_has_its_own_rule_and_a_worklist_entry():
+    info = {}
+    source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"]])
+    ref = ms_reference([["syn_new", "CA9", "N", "GSE1", "d"]])
+    converted, changes, *_ = ms_convert(source, ref, grant="CA1", info=info)
+    assert converted[MS_KEY].tolist() == ["syn_new"]  # still applied
+    assert changes["rule"].tolist() == ["manifest_id_other_grant"]
+    assert info["manifest_ids"]["other_grant"] == 1 and info["manifest_ids"]["remapped"] == 1
+    assert info["id_worklist"][0]["kind"] == "other_grant" and "CA9" in info["id_worklist"][0]["note"]
+
+
+def test_duplicate_matching_uses_the_manifest_equality_rule():
+    # blank equals a manifest placeholder, and the row's grant is among the manifest row's grants
+    source = ms_source([["s1", "CA1", "N", "GSE1", "x", "1"], ["s1", "CA1", "N", "GSE1", "", "2"]])
+    ref = ms_reference([["s1", "CA1,CA2", "N", "GSE1", "Pending Annotation"]])
+    converted, _, _, _, resolutions = ms_convert(source, ref)
+    assert converted["DatasetDescription"].tolist() == [""]
+    assert resolutions.iloc[0]["reason"] == "matches the merged manifest"
+
+
+def test_a_row_override_does_not_change_the_reference_manifest(tmp_path):
+    overrides = tmp_path / "o.csv"
+    pd.DataFrame([["DatasetDescription", "syn_new", "d", "X", "CA1", "yes"]],
+                 columns=["column", "key", "current_value", "proposed_value", "grant", "accept"]).to_csv(overrides, index=False)
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", ms_table("syn_new"))})
+    fake.reference_source = ms_reference([["syn_new", "CA1", "N", "GSE1", "manifest text"],
+                                          ["syn_same", "CA1", "N", "GSE2", "d"]])
+    code, rep = run(tmp_path, fake, "--overrides", str(overrides), component="DatasetView")
+    converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str)
+    assert converted["DatasetDescription"].tolist() == ["X", "d"]
+    diffs = pd.read_csv(rep / "manifest_differences.csv", dtype=str, keep_default_na=False)
+    assert diffs[["key", "grant_value", "manifest_value"]].values.tolist() == [["syn_new", "X", "manifest text"]]
+    assert "row overrides that matched no row: 0" in (rep / "run_summary.txt").read_text()
+
+
+def test_unused_row_overrides_and_duplicate_choices_are_reported(tmp_path):
+    overrides, choices = tmp_path / "o.csv", tmp_path / "c.csv"
+    pd.DataFrame([["DatasetDescription", "syn_new", "X", "CA1", "yes"], ["DatasetDescription", "nope", "Y", "", "yes"],
+                  ["DatasetDescription", "syn_same", "Z", "CA7", "yes"]],
+                 columns=["column", "key", "proposed_value", "grant", "accept"]).assign(current_value="").to_csv(overrides, index=False)
+    pd.DataFrame([["zzz", "abc"]], columns=["key", "keep_legacy_id"]).to_csv(choices, index=False)
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", ms_table("syn_new"))})
+    code, rep = run(tmp_path, fake, "--overrides", str(overrides), "--duplicate-choices", str(choices), component="DatasetView")
+    text = (rep / "run_summary.txt").read_text()
+    assert "row overrides that matched no row: 2" in text and "DatasetDescription / nope" in text
+    assert "DatasetDescription / syn_same / CA7" in text  # the grant scopes the override
+    assert "duplicate choices that matched no row: 1" in text and "zzz" in text
+
+
+def test_the_manifest_version_is_part_of_the_resume_hash(tmp_path):
+    args = mig.get_args(["--component", "DatasetView"])
+    assert mig.options_hash(args, "etag1:3") != mig.options_hash(args, "etag2:3")
+    versions = ["v1"]
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", ms_table())})
+    with mock.patch.object(mig, "reference_version", lambda syn, component: versions[0]):
+        run(tmp_path, fake, component="DatasetView", run_id="r1")
+        code, rep = run(tmp_path, fake, component="DatasetView", run_id="r2")
+        assert "already dryrun in run r1" in (rep / "summary.csv").read_text()
+        versions[0] = "v2"
+        code, rep = run(tmp_path, fake, component="DatasetView", run_id="r3")
+        assert "already" not in (rep / "summary.csv").read_text()

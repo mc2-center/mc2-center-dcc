@@ -103,7 +103,8 @@ MANIFEST_ID_ALIAS = {"DatasetView": "DatasetAlias"}
 # Link columns of a merged manifest row hold the links of every grant (comma-joined, repeats included):
 # the grant table's own links agree when they are among the manifest's.
 SUBSET_COLUMNS = frozenset({"GrantViewKey", "PublicationViewKey", "StudyKey", "DatasetViewKey", "ToolViewKey"})
-ID_WORKLIST_COLUMNS = ["kind", "alias", "grant", "grant_table", "grant_table_id", "manifest_ids"]
+ID_WORKLIST_COLUMNS = ["kind", "alias", "grant", "grant_table", "grant_table_id", "manifest_ids", "note"]
+REMAP_COUNTS = {"remapped": 0, "ambiguous": 0, "unmatched": 0, "collision": 0, "other_grant": 0}
 DIFFERENCE_COLUMNS = ["grant", "key", "column", "grant_value", "manifest_value"]
 
 # Statuses that make the exit code 1.
@@ -400,16 +401,21 @@ def _single_id(value) -> str:
     return items[0] if len(items) == 1 else text
 
 
-def manifest_id_candidates(reference: pd.DataFrame, component: str) -> dict[str, list[tuple[list[str], list[str]]]]:
-    """``{alias: [(entity ids, grant numbers), ...]}`` of the curated manifest rows (a cell of several ids is split)."""
+def manifest_id_candidates(reference: pd.DataFrame, component: str):
+    """``({alias: [(entity ids, grant numbers), ...]}, {entity id: aliases})`` of the curated manifest rows
+    (a cell of several ids is split)."""
     key, alias = KEYS[component], MANIFEST_ID_ALIAS[component]
     out: dict[str, list] = {}
+    aliases_of: dict[str, set] = {}
     for row in reference.to_dict("records"):
         ids = list(dict.fromkeys(i.strip() for i in str(row[key]).split(",") if i.strip()))
         grants = row.get("GrantViewKey", [])
         grants = grants if isinstance(grants, list) else value_maps.split_items(str(grants))
-        out.setdefault(str(row.get(alias, "")).strip(), []).append((ids, [str(g).strip() for g in grants]))
-    return out
+        name = str(row.get(alias, "")).strip()
+        out.setdefault(name, []).append((ids, [str(g).strip() for g in grants]))
+        for i in ids:
+            aliases_of.setdefault(i, set()).add(name)
+    return out, aliases_of
 
 
 def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, worklist: list | None = None):
@@ -419,38 +425,55 @@ def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, 
     manifest rows, those whose ``GrantViewKey`` contains ``grant`` are used. One distinct id that differs
     from the grant table's replaces it (rule ``manifest_id``, change key = the new id). Several distinct ids
     keep the grant's value and are reported (``manifest_id_ambiguous``); no manifest row (or no id) keeps it
-    and is counted as ``unmatched``. ``reference`` returns the converted manifest or None. A list passed as
-    ``worklist`` receives a ``{kind, alias, grant_table_id, manifest_ids}`` dict per ambiguous or unmatched row.
+    and is counted as ``unmatched``. An id that the manifest gives to two or more distinct aliases is not a
+    safe key for either dataset: the grant's value is kept (``manifest_id_collision``, not a remap). A remap
+    to a manifest row whose ``GrantViewKey`` lacks the grant is applied as ``manifest_id_other_grant``. ``reference`` returns the converted manifest or None. A list passed as
+    ``worklist`` receives a ``{kind, alias, grant_table_id, manifest_ids, note}`` dict per ambiguous, unmatched, colliding
+    or other-grant row.
     """
     key, alias = KEYS[component], MANIFEST_ID_ALIAS[component]
-    counts = {"remapped": 0, "ambiguous": 0, "unmatched": 0}
+    counts = dict(REMAP_COUNTS)
     ref = reference()
     if ref is None or alias not in df.columns or alias not in ref.columns:
         return df, [], counts
-    candidates = manifest_id_candidates(ref, component)
+    candidates, aliases_of = manifest_id_candidates(ref, component)
     df = df.copy()
+
+    def note(kind, name, old, ids, text=""):
+        if worklist is not None:
+            worklist.append({"kind": kind, "alias": name, "grant_table_id": old, "manifest_ids": ids, "note": text})
+
     changes = []
     for i in range(len(df)):
         old = str(df[key].iloc[i]).strip()
-        rows = candidates.get(str(df[alias].iloc[i]).strip(), [])
+        name = str(df[alias].iloc[i]).strip()
+        rows = candidates.get(name, [])
         if len(rows) > 1:
             rows = [r for r in rows if grant in r[1]]
         ids = list(dict.fromkeys(i_ for ids_, _ in rows for i_ in ids_))
         if not ids:
             counts["unmatched"] += 1
-            if worklist is not None:
-                worklist.append({"kind": "no_manifest_row", "alias": str(df[alias].iloc[i]).strip(),
-                                 "grant_table_id": old, "manifest_ids": ""})
+            note("no_manifest_row", name, old, "")
         elif len(ids) > 1:
             counts["ambiguous"] += 1
-            if worklist is not None:
-                worklist.append({"kind": "ambiguous", "alias": str(df[alias].iloc[i]).strip(),
-                                 "grant_table_id": old, "manifest_ids": ", ".join(ids)})
+            note("ambiguous", name, old, ", ".join(ids))
             changes.append({"key": old, "column": key, "from": old, "to": ", ".join(ids), "rule": "manifest_id_ambiguous"})
         elif ids[0] != old:
+            others = sorted(aliases_of.get(ids[0], set()) - {name})
+            if others:
+                counts["collision"] += 1
+                note("collision", name, old, ids[0], "the manifest also gives this id to alias " + ", ".join(others))
+                changes.append({"key": old, "column": key, "from": old, "to": ids[0], "rule": "manifest_id_collision"})
+                continue
             counts["remapped"] += 1
+            rule = "manifest_id"
+            if not any(grant in grants for ids_, grants in rows if ids[0] in ids_):
+                counts["other_grant"] += 1
+                rule = "manifest_id_other_grant"
+                note("other_grant", name, old, ids[0], "the manifest row names grant(s) " + ", ".join(
+                    sorted({g for ids_, grants in rows if ids[0] in ids_ for g in grants})))
             df.iloc[i, df.columns.get_loc(key)] = ids[0]
-            changes.append({"key": ids[0], "column": key, "from": old, "to": ids[0], "rule": "manifest_id"})
+            changes.append({"key": ids[0], "column": key, "from": old, "to": ids[0], "rule": rule})
     return df, changes, counts
 
 
@@ -465,6 +488,17 @@ MANIFEST_PLACEHOLDERS = frozenset({"Pending Annotation", "Not Applicable"})
 # A PMID key the spreadsheet turned into a number (D-Q35, repeats joined, then thousands separators): digits in
 # groups of three after a leading group of 1-3.
 _MANGLED_KEY = re.compile(r"^\d{1,3}(,\d{3})+$")
+
+
+def manifest_cell_same(column: str, ours, theirs, set_like) -> bool:
+    """The one rule for "this cell agrees with the curated manifest's" (duplicate matching and the worklist):
+    a blank cell equals a manifest placeholder, link columns agree when ours are among theirs, other cells
+    compare list-aware and whitespace-insensitively (:func:`recordsets._cells_equal`)."""
+    if _flat(ours) == "" and _flat(theirs) in MANIFEST_PLACEHOLDERS:
+        return True
+    if column in SUBSET_COLUMNS:
+        return _link_items(ours) <= _link_items(theirs)
+    return recordsets._cells_equal(ours, theirs, column in set_like)
 
 
 def manifest_differences(converted: pd.DataFrame, reference: pd.DataFrame | None, component: str, grant: str,
@@ -493,11 +527,7 @@ def manifest_differences(converted: pd.DataFrame, reference: pd.DataFrame | None
         by_key.setdefault(row[key], []).append(row)
 
     def same(column, ours, theirs):
-        if _flat(ours) == "" and _flat(theirs) in MANIFEST_PLACEHOLDERS:
-            return True
-        if column in SUBSET_COLUMNS:
-            return _link_items(ours) <= _link_items(theirs)
-        return recordsets._cells_equal(ours, theirs, column in set_like)
+        return manifest_cell_same(column, ours, theirs, set_like)
 
     rows, missing = [], []
     for record in converted.to_dict("records"):
@@ -600,7 +630,7 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
     def matches(i, candidates):
         row = norm.iloc[i]
         return any(
-            all(recordsets._cells_equal(row[c], cand[c], c in set_like) for c in norm.columns if c in cand and c != key)
+            all(manifest_cell_same(c, row[c], cand[c], set_like) for c in norm.columns if c in cand and c != key)
             for cand in candidates
         )
 
@@ -769,12 +799,12 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
     dropped = [c for c in df.columns if c not in schema]
     df = df[[c for c in df.columns if c in schema]]
     old_keys = [str(v).strip() for v in df[key]]
-    remap_changes, counts, id_worklist = [], {"remapped": 0, "ambiguous": 0, "unmatched": 0}, []
+    remap_changes, counts, id_worklist = [], dict(REMAP_COUNTS), []
     if component in MANIFEST_ID_ALIAS:
         df, remap_changes, counts = remap_manifest_ids(df, component, grant, reference, id_worklist)
     kept: list[int] = []
     df, resolutions = resolve_duplicates(df, legacy_id, component, normalizer, reference, portal, choices, kept)
-    df, changes, unmapped = normalizer.normalize_frame(df, key)
+    df, changes, unmapped = normalizer.normalize_frame(df, key, grant)
     if remap_changes:
         changes = pd.concat([pd.DataFrame(remap_changes, columns=value_maps.CHANGE_COLUMNS), changes], ignore_index=True)
     try:
@@ -786,6 +816,7 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
         info["remapped"] = {n: old_keys[i] for n, i in zip(new_keys, kept) if n != old_keys[i]}
         info["dropped_keys"] = [old_keys[i] for i in range(len(old_keys)) if i not in set(kept)]
         info["manifest_ids"] = counts
+        info["choices_used"] = sorted(set(resolutions.loc[resolutions["reason"] == "owner choice", "key"]))
         info["id_worklist"] = id_worklist
     return df.reset_index(drop=True), changes, unmapped, dropped, resolutions
 
@@ -1044,6 +1075,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     source_key = f"{component}_id"
     source_keys = [str(v).strip() for v in _as_text(source[source_key])] if source_key in source.columns else []
     info: dict = {}
+    normalizer.used_row_overrides.clear()
     try:
         converted, changes, unmapped, dropped, resolutions = convert_table(
             source, component, normalizer, reference, portal, choices_for(choices, entry["grant"]), entry["grant"], info)
@@ -1081,7 +1113,8 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
         dropped=dropped, duplicates_resolved=len(resolutions), authors_recovered=authors_recovered, _resolved_keys=info.get("dropped_keys", []),
-        _remapped=info.get("remapped", {}), manifest_differences=len(differences),
+        _remapped=info.get("remapped", {}), _choices_used=info.get("choices_used", []),
+        _row_overrides_used=[[t[0], t[1], entry["grant"]] for t in sorted(normalizer.used_row_overrides)], manifest_differences=len(differences),
         known_authors_recovered=known.get("authors_recovered", 0), known_mangled_keys=known.get("mangled_keys", 0), not_in_manifest=len(not_in_manifest),
         **{f"manifest_id_{k}": v for k, v in info.get("manifest_ids", {}).items()},
         truncated=int(changes["rule"].isin(["truncated", "recovery_mismatch"]).sum()),
@@ -1100,7 +1133,7 @@ def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
     for field in ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
                   "validation_failures", "duplicates_resolved", "manifest_id_remapped", "manifest_id_ambiguous",
-                  "manifest_id_unmatched", "manifest_differences", "not_in_manifest", "authors_recovered", "truncated", "invalid_rows", "recovered"):
+                  "manifest_id_unmatched", "manifest_id_collision", "manifest_id_other_grant", "manifest_differences", "not_in_manifest", "authors_recovered", "truncated", "invalid_rows", "recovered"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s.get("message"):
@@ -1240,8 +1273,9 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
     lines.append("empty source tables (no RecordSet): " + (", ".join(map(str, empty)) or "none"))
     lines.append(f"duplicate keys resolved: {sum(int(s.get('duplicates_resolved', 0)) for s in summaries)}")
     total = lambda field: sum(int(s.get(field, 0)) for s in summaries)  # noqa: E731
-    lines.append(f"manifest ids: remapped={total('manifest_id_remapped')}, ambiguous={total('manifest_id_ambiguous')}, "
-                 f"no manifest row={total('manifest_id_unmatched')}; rows whose key is not in the manifest: {total('not_in_manifest')}")
+    lines.append(f"manifest ids: remapped={total('manifest_id_remapped')} (of which other grant "
+                 f"{total('manifest_id_other_grant')}), collisions kept={total('manifest_id_collision')}, "
+                 f"ambiguous={total('manifest_id_ambiguous')}, no manifest row={total('manifest_id_unmatched')}; rows whose key is not in the manifest: {total('not_in_manifest')}")
     lines.append(f"known differences: authors recovered {total('known_authors_recovered')}, "
                  f"mangled PMID keys {total('known_mangled_keys')}")
     differences = manifest_differences_all(frames)
@@ -1320,7 +1354,31 @@ def validation_worklist(frames: dict[str, dict], key: str) -> pd.DataFrame:
     return out.sort_values(["field", "grant", "key"], kind="stable").reset_index(drop=True)
 
 
-def options_hash(args) -> str:
+def reference_version(syn, component: str) -> str:
+    """The etag and version of the curated manifest (blank when it cannot be read): part of the resume hash."""
+    try:
+        entity = syn.restGET(f"/entity/{utils.CONFIG[REFERENCE_RESOURCE[component]]['manifest']}")
+        return f"{entity.get('etag', '')}:{entity.get('versionNumber', '')}"
+    except Exception:
+        logger.warning("Could not read the version of the merged manifest for %s", component)
+        return ""
+
+
+def unused_inputs(summaries: list[dict], overrides, choices):
+    """``(row overrides, duplicate choices)`` that no grant of the run applied (resumed grants count by their
+    stored summary): ``[(column, key, grant)]`` and ``[(grant, key)]``."""
+    used = {tuple(u) for s_ in summaries for u in s_.get("_row_overrides_used", [])}
+    used_keys = {k for s_ in summaries for k in s_.get("_choices_used", [])}
+    rows = []
+    for target in (overrides or {}):
+        if len(target) > 2 and target[2] == value_maps.ROW:
+            grant = target[3] if len(target) > 3 else ""
+            if not any(c == target[0] and k == target[1] and (not grant or g == grant) for c, k, g in used):
+                rows.append((target[0], target[1], grant))
+    return sorted(rows), sorted((g, k) for (g, k) in (choices or {}) if k not in used_keys)
+
+
+def options_hash(args, manifest_version: str = "") -> str:
     """A hash of the options that change what a grant converts to (a done grant is skipped only if it matches)."""
     def content(path):
         return Path(path).read_bytes().hex() if path else ""
@@ -1329,7 +1387,7 @@ def options_hash(args) -> str:
         "component": args.component, "overrides": content(args.overrides),
         "duplicate_choices": content(args.duplicate_choices), "schema_version": args.schema_version,
         "include_unlisted": bool(args.include_unlisted), "recover_truncated": bool(args.recover_truncated),
-        "rules": CONVERSION_RULES,
+        "rules": CONVERSION_RULES, "manifest_version": manifest_version,
         "model_ref": getattr(args, "model_ref", None) or model_contract.MODEL_REF,  # the tag the enum maps and validation read
     }
     return hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()
@@ -1370,7 +1428,7 @@ def main(argv=None, syn=None):
     state_path = out_dir / "state.json"
     state = load_state(state_path)
     mode = "execute" if args.execute else "dryrun"
-    options = options_hash(args)
+    options = options_hash(args, reference_version(syn, component))
 
     ref_cache = []
 
@@ -1378,7 +1436,8 @@ def main(argv=None, syn=None):
         """The converted merged manifest, read once per run (None when unusable)."""
         if not ref_cache:
             try:
-                ref_cache.append(reference_frame(read_reference(syn, component), component, normalizer))
+                ref_cache.append(reference_frame(read_reference(syn, component), component,
+                                                 normalizer.without_row_overrides()))
             except Exception:
                 logger.exception("Could not read the merged manifest for %s", component)
                 ref_cache.append(None)
@@ -1494,6 +1553,13 @@ def main(argv=None, syn=None):
         run_dir / "summary.csv", index=False
     )
     report = run_report(summaries, frames)
+    unused_overrides, unused_choices = unused_inputs(summaries, overrides, choices)
+    report += (f"\nrow overrides that matched no row: {len(unused_overrides)}"
+               + "".join(f"\n  {c} / {k}" + (f" / {g}" if g else "") for c, k, g in unused_overrides)
+               + f"\nduplicate choices that matched no row: {len(unused_choices)}"
+               + "".join(f"\n  {g or '(any grant)'} / {k}" for g, k in unused_choices))
+    pd.DataFrame(unused_overrides, columns=["column", "key", "grant"]).to_csv(run_dir / "unused_row_overrides.csv", index=False)
+    pd.DataFrame(unused_choices, columns=["grant", "key"]).to_csv(run_dir / "unused_duplicate_choices.csv", index=False)
     (run_dir / "run_summary.txt").write_text(report + "\n")
     validation_worklist(frames, KEYS[component]).to_csv(run_dir / "validation_worklist.csv", index=False)
     differences = manifest_differences_all(frames)
