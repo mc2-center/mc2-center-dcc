@@ -12,8 +12,8 @@ Per RecordSet: take the write-log lock as ``write_logged`` does (a ``pending``
 row, settled with ``earlier_pending``); refuse, writing nothing, while a Grid
 session is open on it that the runner can see (``Grid.list`` may list only the
 runner's own sessions: best effort, so a contributor's stale session can still
-re-add a removed row, which replay reports as ``readded_removed_key``); read the latest version; a requested key that is not in it is logged
-``not_found``; store the rest-of-the-rows CSV as a new version, log it
+re-add a removed row, which replay reports as ``readded_removed_key``); read
+the latest version; a requested key that is not in it is logged ``not_found``; store the rest-of-the-rows CSV as a new version, log it
 ``removed`` (base = the version read) and append ``removed`` rows to the
 removals table (``removedInVersion`` = that version); export, log it
 ``written`` (base = the removal version); ``finish`` the pending row. The
@@ -36,6 +36,10 @@ A removal version owes a Grid export until a pipeline version is based on it
 under the lock, any owed export (a crash after the removals rows, before the
 export) is made and logged ``written`` (base = the removal version), even when
 nothing new is requested.
+
+``remove_recordset_rows.py request --recordset syn... --key VALUE [VALUE...]
+--reason TEXT`` appends ``requested`` rows (one ``--key`` per row, one value per
+upsert key column, joined with the key separator); dry run unless ``--execute``.
 
 Dry run is the default: it prints, per RecordSet, the keys that would be
 removed, the keys not found and any blocking session or lock; nothing is
@@ -318,7 +322,62 @@ def summary_line(s: dict) -> str:
     return " ".join(parts)
 
 
+def get_request_args(argv):
+    parser = argparse.ArgumentParser(
+        prog="remove_recordset_rows.py request", description="Request row removals: append `requested` rows")
+    removals = parser.add_mutually_exclusive_group(required=True)
+    removals.add_argument("--removals-table", help="Synapse ID of the removals table")
+    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
+    parser.add_argument("--recordset", required=True, help="RecordSet ID")
+    parser.add_argument(
+        "--key", nargs="+", action="append", required=True, metavar="VALUE",
+        help="one row to remove: its value for each upsert key column, in key order (repeat --key per row)")
+    parser.add_argument("--reason", required=True)
+    parser.add_argument("--requested-by", default="", help="default: the runner's Synapse user ID (--execute)")
+    parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
+    args = parser.parse_args(argv)
+    if args.execute and not args.removals_table:
+        parser.error("--execute needs --removals-table; a CSV is for dry runs and tests only")
+    return args
+
+
+def request_main(argv, syn=None):
+    """``request``: append ``requested`` rows (one write) for the given keys; dry run by default."""
+    args = get_request_args(argv)
+    syn = syn or utils.syn_login()
+    removals = (
+        recordsets.SynapseTableRemovals(syn, args.removals_table)
+        if args.removals_table
+        else recordsets.CsvRemovals(args.removals_csv)
+    )
+    _, key_cols = recordsets.recordset_info(syn, args.recordset)
+    if not key_cols:
+        print(f"{args.recordset} has no upsert key")
+        return 1
+    keys = []
+    for parts in args.key:
+        if len(parts) != len(key_cols):
+            print(f"--key needs {len(key_cols)} value(s), one per key column {key_cols}; got {parts}")
+            return 1
+        keys.append(recordsets.KEY_SEP.join(p.strip() for p in parts))
+    pending = set(removals.requested(args.recordset))
+    new = [k for k in dict.fromkeys(keys) if k not in pending]
+    for k in keys:
+        if k in pending:
+            print(f"already requested, skipped: {k!r}")
+    print(f"{'EXECUTE' if args.execute else 'dry run'}: {args.recordset} request {len(new)} key(s) {new}")
+    if args.execute and new:
+        principal = recordsets.principal_id(syn)
+        removals.append_many(args.recordset, [
+            {"key": k, "status": "requested", "reason": args.reason, "requested_by": args.requested_by or principal}
+            for k in new], principal=principal)
+    return 0
+
+
 def main(argv=None, syn=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "request":
+        return request_main(argv[1:], syn)
     args = get_args(argv)
     syn = syn or utils.syn_login()
     write_log = (

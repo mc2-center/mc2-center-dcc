@@ -322,3 +322,41 @@ def test_open_session_blocks_the_owed_export_too(tmp_path):
     log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
     s = process(tmp_path, fake, log, removals)
     assert s["status"] == "blocked" and "best effort" in s["message"] and fake.events == []
+
+
+def request(tmp_path, *argv, key_cols=(K,), execute=False):
+    base = ["request", "--removals-csv", str(tmp_path / "removals.csv"), "--recordset", "synRS", "--reason", "dup"]
+    with mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, list(key_cols))), \
+         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
+        return cmd.main(base + list(argv), syn=object())
+
+
+def test_request_dry_run_writes_nothing_and_execute_appends_requested_rows(tmp_path, capsys):
+    assert request(tmp_path, "--key", "a", "--key", "b") == 0
+    assert "dry run" in capsys.readouterr().out and not (tmp_path / "removals.csv").exists()
+    # --execute needs the table; the CSV is test-only, so write through the backend directly
+    removals = rs.CsvRemovals(tmp_path / "removals.csv")
+    with mock.patch.object(cmd.recordsets, "SynapseTableRemovals", lambda syn, tid: removals), \
+         mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
+         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
+        code = cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "a", "--key", " b ",
+                         "--key", "a", "--reason", "dup", "--execute"], syn=object())
+        again = cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "a",
+                          "--reason", "dup", "--execute"], syn=object())
+    assert code == 0 and again == 0
+    assert removals.requested("synRS") == {"a": {"reason": "dup", "requestedBy": "42"},
+                                           "b": {"reason": "dup", "requestedBy": "42"}}
+    assert len(pd.read_csv(tmp_path / "removals.csv")) == 2  # the repeat of a was skipped both times
+
+
+def test_request_composite_key_values_are_joined_per_key_column(tmp_path):
+    removals = rs.CsvRemovals(tmp_path / "removals.csv")
+    with mock.patch.object(cmd.recordsets, "SynapseTableRemovals", lambda syn, tid: removals), \
+         mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, ["g", "t"])), \
+         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
+        assert cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "G1", "T1",
+                         "--reason", "dup", "--requested-by", "me", "--execute"], syn=object()) == 0
+        assert cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "G1",
+                         "--reason", "dup", "--execute"], syn=object()) == 1  # one value for two key columns
+    assert list(removals.requested("synRS")) == [rs.KEY_SEP.join(["G1", "T1"])]
+    assert removals.requested("synRS")[rs.KEY_SEP.join(["G1", "T1"])]["requestedBy"] == "me"
