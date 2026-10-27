@@ -276,3 +276,12 @@ def test_recover_pending_logs_a_removal_runs_store_as_removed_and_its_export_as_
     found = rs.recover_pending("syn", "synRS3", log, 3, meta=meta)
     assert dict(found) == {3: 1} and found.removal == set()
     assert log.removal_versions("synRS3") == {2}
+
+
+def test_removals_rows_are_appended_in_one_write_each(tmp_path):
+    fake, log, removals = setup(tmp_path, [V1], requested=("a", "b", "zzz"))
+    writes = []
+    orig = rs.CsvRemovals._append_rows
+    with mock.patch.object(rs.CsvRemovals, "_append_rows", lambda self, rows: (writes.append(len(rows)), orig(self, rows))):
+        process(tmp_path, fake, log, removals)
+    assert writes == [1, 2]  # not_found (zzz), then both removed keys together

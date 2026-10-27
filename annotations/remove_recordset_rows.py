@@ -101,6 +101,7 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
     removed in ``v``. Returns ``{key: version}``.
     """
     claimed: dict[str, int] = {}
+    entries = []
     for v in sorted(versions):
         if v < 2:
             continue
@@ -109,8 +110,9 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
         for k in sorted(set(requested) & before - after - set(claimed)):
             claimed[k] = v
             info = requested[k]
-            removals.append(rs_id, k, "removed", reason=info["reason"], requested_by=info["requestedBy"],
-                            removed_in_version=v, run_id=run_id, principal=principal)
+            entries.append({"key": k, "status": "removed", "reason": info["reason"],
+                            "requested_by": info["requestedBy"], "removed_in_version": v})
+    removals.append_many(rs_id, entries, run_id, principal)  # one write: all or none
     return claimed
 
 
@@ -196,10 +198,9 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
             summary.update(status="retry", message=(
                 f"{rs_id} moved from v{latest} to v{now_latest} before the write; nothing written, the next run retries"))
             return summary
-        for k in not_found:
-            info = requested[k]
-            removals.append(rs_id, k, "not_found", reason=info["reason"], requested_by=info["requestedBy"],
-                            run_id=run_id, principal=principal)
+        removals.append_many(rs_id, [
+            {"key": k, "status": "not_found", "reason": requested[k]["reason"],
+             "requested_by": requested[k]["requestedBy"]} for k in not_found], run_id, principal)
         if not to_remove:
             write_log.abort(rs_id, latest, run_id, principal)
             summary.update(status="nothing_to_remove", message=f"none of the requested keys is in v{latest}")
@@ -212,10 +213,10 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         version = recordsets.store_new_version(syn, rs_id, path)
         created.append(version)
         write_log.removed(rs_id, version, latest, run_id, principal, len(remaining))
-        for k in to_remove:
-            info = requested[k]
-            removals.append(rs_id, k, "removed", reason=info["reason"], requested_by=info["requestedBy"],
-                            removed_in_version=version, run_id=run_id, principal=principal)
+        removals.append_many(rs_id, [
+            {"key": k, "status": "removed", "reason": requested[k]["reason"],
+             "requested_by": requested[k]["requestedBy"], "removed_in_version": version}
+            for k in to_remove], run_id, principal)  # one write: all keys or none
         summary["version"] = version
 
         def on_version(v):
@@ -247,7 +248,7 @@ class _ReadOnly:
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
-    def append(self, *args, **kwargs):
+    def append_many(self, *args, **kwargs):
         pass
 
 

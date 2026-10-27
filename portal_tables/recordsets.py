@@ -590,24 +590,37 @@ class Removals:
     removal so the pipeline uploads the key again), ``removedInVersion`` (the
     direct-store version, on ``removed`` rows), ``runId``, ``principalId``,
     ``changedOn``. The latest row per (recordSetId, key) is its current status.
-    Subclasses implement ``_read`` and ``_append``.
+    Subclasses implement ``_read`` and ``_append_rows``.
     """
 
     def _read(self, rs_id: str) -> pd.DataFrame:
         raise NotImplementedError
 
-    def _append(self, row: dict) -> None:
+    def _append_rows(self, rows: list[dict]) -> None:
+        """Append every row in one write (one transaction in Synapse)."""
         raise NotImplementedError
+
+    def append_many(self, rs_id, entries, run_id="", principal="") -> None:
+        """Append rows in one write; ``entries`` are dicts with ``key``, ``status`` and optional
+        ``reason``, ``requested_by``, ``removed_in_version``. All or none."""
+        now = datetime.now(timezone.utc)
+        rows = []
+        for e in entries:
+            if e["status"] not in REMOVAL_STATUSES:
+                raise ValueError(f"unknown removal status {e['status']!r}")
+            rows.append({
+                "recordSetId": rs_id, "key": e["key"], "reason": e.get("reason", ""),
+                "requestedBy": e.get("requested_by", ""), "status": e["status"],
+                "removedInVersion": e.get("removed_in_version"), "runId": run_id,
+                "principalId": str(principal), "changedOn": now,
+            })
+        if rows:
+            self._append_rows(rows)
 
     def append(self, rs_id, key, status, reason="", requested_by="", removed_in_version=None,
                run_id="", principal="") -> None:
-        if status not in REMOVAL_STATUSES:
-            raise ValueError(f"unknown removal status {status!r}")
-        self._append({
-            "recordSetId": rs_id, "key": key, "reason": reason, "requestedBy": requested_by,
-            "status": status, "removedInVersion": removed_in_version, "runId": run_id,
-            "principalId": str(principal), "changedOn": datetime.now(timezone.utc),
-        })
+        self.append_many(rs_id, [{"key": key, "status": status, "reason": reason, "requested_by": requested_by,
+                                  "removed_in_version": removed_in_version}], run_id, principal)
 
     def recordset_ids(self) -> list[str]:
         """RecordSets that have any row."""
@@ -664,10 +677,9 @@ class SynapseTableRemovals(Removals):
         )
         return sorted(df["recordSetId"])
 
-    def _append(self, row: dict) -> None:
-        values = dict(row)
-        values["changedOn"] = int(values["changedOn"].timestamp() * 1000)
-        frame = pd.DataFrame([values], columns=REMOVALS_COLUMNS)
+    def _append_rows(self, rows: list[dict]) -> None:
+        frame = pd.DataFrame(rows, columns=REMOVALS_COLUMNS)
+        frame["changedOn"] = frame["changedOn"].map(lambda t: int(t.timestamp() * 1000))
         frame["removedInVersion"] = frame["removedInVersion"].astype("Int64")
         Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
 
@@ -691,17 +703,18 @@ class CsvRemovals(Removals):
             return []
         return sorted(set(pd.read_csv(self.path, dtype=str, keep_default_na=False)["recordSetId"]))
 
-    def _append(self, row: dict) -> None:
+    def _append_rows(self, rows: list[dict]) -> None:
         new = not self.path.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path, "a", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             if new:
                 writer.writerow(REMOVALS_COLUMNS)
-            writer.writerow(
-                ["" if row[c] is None else (row[c].isoformat() if c == "changedOn" else row[c])
-                 for c in REMOVALS_COLUMNS]
-            )
+            for row in rows:
+                writer.writerow(
+                    ["" if row[c] is None else (row[c].isoformat() if c == "changedOn" else row[c])
+                     for c in REMOVALS_COLUMNS]
+                )
 
 
 def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_Removals") -> str:

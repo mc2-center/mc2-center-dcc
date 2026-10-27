@@ -2,6 +2,7 @@
 from unittest import mock
 
 import pandas as pd
+import pytest
 
 import recordsets as rs
 
@@ -185,3 +186,21 @@ def test_export_via_grid_has_no_import():
         grid.delete.assert_called_once()
     assert seen == [9]
     sleep.assert_called_once_with(45)
+
+
+def test_append_many_is_one_write():
+    with mock.patch.object(rs, "Table") as table:
+        r = rs.SynapseTableRemovals("syn", "syn99")
+        r.append_many("syn1", [{"key": k, "status": "removed", "removed_in_version": 5} for k in "abc"], "run", "42")
+        assert table.return_value.store_rows.call_count == 1
+        frame = table.return_value.store_rows.call_args.kwargs["values"]
+        assert list(frame["key"]) == ["a", "b", "c"] and list(frame["removedInVersion"]) == [5, 5, 5]
+        r.append_many("syn1", [], "run", "42")
+        assert table.return_value.store_rows.call_count == 1
+
+
+def test_append_many_validates_before_writing(tmp_path):
+    r = rs.CsvRemovals(tmp_path / "r.csv")
+    with pytest.raises(ValueError):
+        r.append_many("syn1", [{"key": "a", "status": "removed"}, {"key": "b", "status": "bogus"}])
+    assert not (tmp_path / "r.csv").exists()
