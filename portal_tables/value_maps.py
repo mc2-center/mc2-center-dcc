@@ -214,21 +214,58 @@ def normalize_doi(value: str):
     return value, "unmapped"
 
 
-def load_overrides(path) -> dict[tuple[str, str], str]:
-    """``{(column key, current_value): proposed_value}`` from a curated CSV.
+ROW = "\x00row"  # third element of the key of a per-row override: ``(column, row key, ROW)``
+ACCEPTED = frozenset({"y", "yes", "true", "1", "x", "accept", "accepted"})
 
-    The ``column`` may be a class label or a display name.
+
+def load_overrides(path) -> dict[tuple, str]:
+    """``{(column key, current_value): proposed_value}`` from a curated CSV, plus per-row entries.
+
+    The ``column`` may be a class label or a display name. A row with a
+    non-blank ``key`` applies only to the cell of that row (``(column, key, ROW)``
+    -> proposed value; its ``current_value`` is informational) and wins over a
+    value-only override of the same cell; a row without ``key`` applies to every
+    cell holding ``current_value``. If the file has an ``accept`` column
+    (``write_override_template``), only rows with ``accept`` yes/y/true/1/x are applied.
     """
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
     missing = {"column", "current_value", "proposed_value"} - set(df.columns)
     if missing:
         raise ValueError(f"{path} lacks column(s) {sorted(missing)}")
     labels = model_contract.label_map()
-    return {
-        (labels.get(row["column"].strip(), row["column"].strip()), row["current_value"].strip()):
-        row["proposed_value"].strip()
-        for _, row in df.iterrows()
-    }
+    out = {}
+    for _, row in df.iterrows():
+        if "accept" in df.columns and row["accept"].strip().lower() not in ACCEPTED:
+            continue
+        column = labels.get(row["column"].strip(), row["column"].strip())
+        row_key = row["key"].strip() if "key" in df.columns else ""
+        if row_key:
+            out[(column, row_key, ROW)] = row["proposed_value"].strip()
+        else:
+            out[(column, row["current_value"].strip())] = row["proposed_value"].strip()
+    return out
+
+
+TEMPLATE_COLUMNS = ["grant", "key", "column", "current_value", "manifest_value", "proposed_value", "accept"]
+
+
+def override_template(differences: pd.DataFrame) -> pd.DataFrame:
+    """An overrides CSV template from ``manifest_differences.csv`` rows (``grant, key, column, grant_value,
+    manifest_value``): ``proposed_value`` starts as the manifest value, ``accept`` is blank. The curator
+    fills ``accept`` (yes) on the rows to apply and may edit ``proposed_value``; ``load_overrides`` applies
+    only accepted rows, each to its own ``key`` cell."""
+    return pd.DataFrame({
+        "grant": differences["grant"], "key": differences["key"], "column": differences["column"],
+        "current_value": differences["grant_value"], "manifest_value": differences["manifest_value"],
+        "proposed_value": differences["manifest_value"], "accept": "",
+    }, columns=TEMPLATE_COLUMNS)
+
+
+def write_override_template(differences_csv, path) -> int:
+    """Write the template for a ``manifest_differences.csv``; returns the row count."""
+    template = override_template(pd.read_csv(differences_csv, dtype=str, keep_default_na=False))
+    template.to_csv(path, index=False)
+    return len(template)
 
 
 class Normalizer:
@@ -257,6 +294,14 @@ class Normalizer:
         norm.rejected = pd.DataFrame(rejected, columns=REJECTED_COLUMNS).drop_duplicates()
         return norm
 
+    def without_row_overrides(self):
+        """A copy without the per-row overrides (for the curated manifest, which they must not change)."""
+        import copy
+
+        other = copy.copy(self)
+        other.overrides = {k: v for k, v in self.overrides.items() if len(k) == 2}
+        return other
+
     # -- one value ---------------------------------------------------------
 
     def _value(self, column: str, value: str):
@@ -284,6 +329,12 @@ class Normalizer:
     def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list):
         """The normalized cell: a list for list columns, else a string."""
         text = "" if cell is None or (not isinstance(cell, (str, list)) and pd.isna(cell)) else cell
+        row_override = self.overrides.get((column, str(key), ROW))
+        if row_override is not None:  # a per-row override wins over everything, even a blank cell
+            old = ", ".join(map(str, text)) if isinstance(text, list) else str(text).strip()
+            if old != row_override:
+                changes.append({"key": key, "column": column, "from": old, "to": row_override, "rule": "override"})
+            return split_items(row_override, comma_terms.is_keyword_column(column)) if column in self.list_cols else row_override
         if column in self.list_cols:
             if isinstance(text, str) and (column, text.strip()) in self.overrides:
                 # the whole cell is overridden before its items are looked at
