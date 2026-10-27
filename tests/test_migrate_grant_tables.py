@@ -1090,3 +1090,26 @@ def test_rejected_synonyms_report_is_written_once_per_run(tmp_path):
     rejected = pd.read_csv(rep / "rejected_synonyms.csv", dtype=str)
     assert rejected.columns.tolist() == ["column", "valid_value", "fragment", "cell", "reason"]
     assert not rejected.duplicated().any()
+
+
+def test_portal_comparison_uses_raw_cells_and_set_like_lists():
+    # raw 13.1.0 cells: the Assay list differs only in order from the portal's (an enum list compares as a set)
+    headers = ["DatasetView_id", "GrantView Key", "Dataset Name", "Dataset Assay", "Id"]
+    rows = [["k", "CA123456", "Name", "Mass Spectrometry", "1"],
+            ["k", "CA123456", "Name", "rna-seq, Mass Spectrometry", "2"]]
+    portal = pd.DataFrame([["k", "Name", ["Mass Spectrometry", "rna-seq"]]], columns=["datasetId", "datasetName", "assay"])
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    converted, _, _, _, res = mig.convert_table(pd.DataFrame(rows, columns=headers), "DatasetView", norm,
+                                                lambda: None, lambda: portal)
+    assert converted["Assay"].tolist() == [["RNA Sequencing", "Mass Spectrometry"]]  # row 2: portal's raw set equal
+    assert "matches more portal cells (2 vs 1 of 2)" in res.iloc[0]["reason"]
+
+
+def test_portal_comparison_is_on_raw_values_not_normalized_ones():
+    # the portal holds the raw term; the candidate whose raw cell equals it wins although both normalize alike
+    headers = ["DatasetView_id", "GrantView Key", "Dataset Name", "Dataset Doi", "Id"]
+    rows = [["k", "CA123456", "Name", "https://doi.org/10.1000/a", "1"], ["k", "CA123456", "Name", "10.1000/a", "2"]]
+    portal = pd.DataFrame([["k", "Name", "10.1000/a"]], columns=["datasetId", "datasetName", "doi"])
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    _, _, _, _, res = mig.convert_table(pd.DataFrame(rows, columns=headers), "DatasetView", norm, lambda: None, lambda: portal)
+    assert res.iloc[0]["kept_row"] == "row 2 (Id 2)"

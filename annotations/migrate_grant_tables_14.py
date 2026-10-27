@@ -311,13 +311,21 @@ def portal_scorer(portal_df, component: str, columns):
     for row in portal_df.to_dict("records"):
         by_key.setdefault(_flat(row[mapping[key_source]]), row)
     compared = [c for c in columns if c in mapping and c != key and mapping[c] in portal_df.columns]
+    list_cols = recordsets.list_columns(component)
+    set_like = recordsets.set_like_columns(component)
+
+    def same(column: str, ours, theirs) -> bool:
+        if column in list_cols:  # list cells: items, order-insensitive where the items are an enum
+            return recordsets._cells_equal(value_maps.split_items(_flat(ours)), value_maps.split_items(_flat(theirs)),
+                                           column in set_like)
+        return recordsets._canon(_flat(ours)) == recordsets._canon(_flat(theirs))
 
     def score(key_value: str, row: dict) -> tuple[int, int] | None:
+        """``row`` is the raw (pre-normalization) candidate, compared with the raw portal cells."""
         portal_row = by_key.get(key_value if key_source == key else (_flat(row.get(key_source, "")) or key_value))
         if portal_row is None:
             return None
-        hits = sum(recordsets._canon(_flat(row[c])) == recordsets._canon(_flat(portal_row[mapping[c]])) for c in compared)
-        return hits, len(compared)
+        return sum(same(c, row[c], portal_row[mapping[c]]) for c in compared), len(compared)
 
     return score
 
@@ -389,7 +397,7 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
             ref_rows.setdefault(row[key], []).append(row)
     ids = list(legacy_id) if legacy_id is not None else [""] * len(df)
     portal_df = portal()
-    score = portal_scorer(portal_df, component, list(norm.columns)) if portal_df is not None else None
+    score = portal_scorer(portal_df, component, list(df.columns)) if portal_df is not None else None
 
     def label(i):
         return f"row {i + 1}" + (f" (Id {ids[i]})" if str(ids[i]).strip() else "")
@@ -432,7 +440,7 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
             else:
                 why = "key is not in the merged manifest" if ref is not None else "no merged manifest to compare"
             kept = None
-            scores = {i: score(keys.iloc[i], norm.iloc[i].to_dict()) for i in pool} if score else {}
+            scores = {i: score(keys.iloc[i], df.iloc[i].to_dict()) for i in pool} if score else {}
             if scores and all(v is not None for v in scores.values()):
                 top_score = max(v[0] for v in scores.values())
                 top = [i for i in pool if scores[i][0] == top_score]
