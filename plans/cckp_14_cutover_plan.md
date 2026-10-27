@@ -17,7 +17,7 @@ Those files stay as the record of what was specified and done. Their task IDs (P
 | Stream | State | Where |
 |---|---|---|
 | data-models | `v14.0.0` tagged (2026-10-23). The DM-14 + DM-16 fixes are pushed to PR **#277**, now released as **14.1.0** rather than 14.0.1 because the PR also adds `File Data Use Codes` (a breaking header change for file manifests; D-Q45):<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>DataCatalog `immunoassay` stays lowercase. Not merged or tagged. | `review-fixes`, PR #277 |
-| ai-curation-pipeline | P0–P3 plus P5 (DOI form) and the report-noise fix, reviewed. P4 deferred. | PRs **#12 → #13 → #14** (stacked), open |
+| ai-curation-pipeline | P0–P3 plus P5 (DOI form) and the report-noise fix, reviewed. List columns written as JSON arrays, with the keyword merge fix (D-Q47; #14 at `0071443`, independently reviewed, 162 tests pass). P4 deferred. | PRs **#12 → #13 → #14** (stacked), open |
 | mc2-center-dcc code | All D-tasks done except D17a (deletions, separate PR after #167):<br>• D11 RecordSet upload with replay/ownership reconciliation and write log v2<br>• D12 RecordSet union<br>• D15 upload driver<br>• **I5a migration script** (`annotations/migrate_grant_tables_14.py`)<br>• migration value maps (section 2.3), PubMed author recovery, duplicate tie-break<br>540 tests pass, 1 skipped. Four independent reviews addressed. | `model-alignment`; PR **#167** (stacked on **#166**), I5a commits pushed 2026-10-27 |
 | Synapse registry | 14.0.0 verified for all 38 schemas (B2). Cleanup: I1 deleted 30, B4 deleted 29; 16 refused because bound, and they stay. | `MC2Center` |
 | Portal tables (syn21498902) | **Unchanged.** No type changes and no non-dryrun syncs. | Section 2 |
@@ -201,7 +201,7 @@ All of these come from your review notes and answers on 2026-10-26.
 | # | What | Unblocks |
 |---|---|---|
 | W4 | **Merge #166, then #167** (mc2-center-dcc) | Phase D, D17a PR, B3 |
-| W5 | **Merge pipeline #12 → #13 → #14** | Pipeline output in 14.0.0 form |
+| W5 | **Merge pipeline #12 → #13 → #14** (merge #167 before #14's JSON-array output is uploaded) | Pipeline output in 14.0.0 form |
 | W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approved, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
 | W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
 | W8 | **Go-ahead: Consortium table update** (`consortiumId` + 3 approved rows) 🔒 | D-1, then people sync |
