@@ -63,7 +63,7 @@ Decision 1 still holds: **no portal column is renamed, removed or reordered.**
 
 **What a reader of these tables has to handle:**
 0. **Datasets `accessInformation` accepts items up to 300 characters** (was 100). Anything that copies this column into a fixed-size field elsewhere needs the same limit.
-1. **Four columns become `STRING_LIST`.** Queries and facets on `license` or `investigator` need list semantics: in SQL, `HAS ('MIT')` instead of `= 'MIT'`; in a portal facet, a multi-value facet. Other readers (kg-pipeline, the Croissant export) need the same check. `tally_themes.py` reads neither column.
+1. **Four columns become `STRING_LIST`.** Queries and facets on `license` or `investigator` need list semantics: in SQL, `HAS ('MIT')` instead of `= 'MIT'`; in a portal facet, a multi-value facet. Other readers need the same check: the Croissant export, and the **kg-pipeline**, which reads these tables through its own schema, `data-models/kg-pipeline/schema/cckp_portal.linkml.yaml` (D-Q48). There `Tool.license`, `EducationalResource.license` and `Grant.investigator` become `multivalued`, with splitting that accepts both the pipe-joined list form and today's comma text, so the kg change can merge before or after D-2. `projectShortName` has no kg effect (the kg doesn't model Projects). `tally_themes.py` reads neither column.
 2. **Projects gains one trailing column.** Readers that go by position are affected; readers that go by name are not.
 3. **License values become SPDX IDs.** The portal shows `Apache-2.0`, not `Apache License 2.0`.
 4. **Every dataset's `accessInformation` text changes** to governanceDUO's wording (Appendix A). The text is longer and starts with the DUO label. The number of entries per dataset doesn't change.
@@ -75,6 +75,7 @@ Decision 1 still holds: **no portal column is renamed, removed or reordered.**
 4. **Verify right away, before the next table:**
    - `check_crosswalk` passes on that table.
    - A sync `--dryrun` for that table writes lists, not strings, to that column.
+   - For Tools, Education and Grants: the kg-pipeline extract and harmonize of that table split the column into items (data-models #278, W12, must be merged).
    - On the live CCKP, that table's explore page loads, the facet for that column filters, a detail page shows the values, and search returns rows.
 5. **If anything fails:** decide on the spot between rolling back and fixing the portal config. Record which in the infrastructure report. A list type **can't be changed back** in Synapse, so the rollback (rehearsed in C7) is: delete the column, add a `STRING` column with the same name and size, move it back to its original position, then `delete_rows` and re-store the step 2 export. For the `accessInformation` size change and the `projectShortName` addition, the rollback is simpler: set the size back to 100, or delete the new column.
 6. Move to the next table only after step 4 passes. Order: Tools → Education → Grants → Projects → Datasets (`accessInformation` size). For Datasets, step 4's dry run must produce the governanceDUO texts with one entry per code, and the new pre-write size guard must pass.
@@ -129,6 +130,7 @@ The portal sees none of this until E2 regenerates the merged manifests and the n
 - **The `MC2Center` schema registry** and its table `syn69735275` (project "Curator"). Deletions are listed in Appendix C.
 - **The 532 grant-level tables** while they're still in the grant projects, and the bindings on them.
 - **The test project `syn78387305`**.
+- **The kg-pipeline schema** in data-models (`kg-pipeline/schema/`), which follows the portal tables' columns (D-Q48).
 
 ---
 
@@ -188,6 +190,7 @@ All of these come from your review notes and answers on 2026-10-26.
 | D-Q45 | **The DM-14/DM-16 release is 14.1.0, not 14.0.1** (data-models #277, `release_14.1.0_notes.md`): the PR adds `File Data Use Codes` for file-level templates, a new attribute and a changed column header | Steps below that named 14.0.1 now name 14.1.0. **Confirmed by the owner 2026-10-27: `v14.1.0` is the tag, including `File Data Use Codes`.** |
 | D-Q46 | **Migrated values: rewrite only when a rule maps a value to exactly one 14.x term**; keep and report everything else. Nonpreferred fragments of comma-split synonym cells are refused unless multi-word, identifier-like or a spelling variant of their own term. | Section 2.3; `portal_tables/value_maps.py` |
 | D-Q47 | **List cells keep comma-containing items whole.** The curation pipeline writes list columns as JSON arrays; DCC parses JSON arrays everywhere it splits a list cell. Where only comma text exists (legacy tables, hand-made manifests), keyword cells keep known comma terms whole using `portal_tables/comma_terms.csv` (4,214 MeSH 2025 descriptors, from `utils/sync_comma_terms.py`). RecordSet uploads add new comma-containing keywords from JSON arrays to the list; the run says to commit the file. | Migration rule `comma_term` (section 2.3); pipeline #14; portal text unchanged |
+| D-Q48 | **The kg-pipeline schema follows the portal tables.** `data-models/kg-pipeline/schema/cckp_portal.linkml.yaml` describes Dataset, Publication, Tool, Grant and EducationalResource for the kg-pipeline. In data-models **#278** (stacked on #277): `Tool.license`, `EducationalResource.license` and `Grant.investigator` become `multivalued`, splitting on `\|` (the list form) or, for those three only, on `,` (today's text; for `Grant.investigator` with the "Last, First"-aware name heuristic); the derived `cckp_portal.ttl`/`.shacl.ttl` are regenerated, and `mc2_model.linkml.yaml` is regenerated from 14.1.0. | Section 2.1 item 1; D-2 step 4; W12 |
 | D-Q21 | **`NPUNCU` → the single ID `DUO:0000018`**, not NPU + NCU. `DUO:0000018` is a current DUO term, and governanceDUO and data-models both list it. | Reverses master plan S4.5's split. I8.4 maps `RTN` → `DUO:0000029` and `NPUNCU` → `DUO:0000018`, one to one. |
 
 ---
@@ -208,6 +211,7 @@ All of these come from your review notes and answers on 2026-10-26.
 | W9 | **Go-ahead: portal table changes**, one table at a time with the rehearsed rollback 🔒, after W4 | D-2 |
 | W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`) and the migration's value changes in section 2.3 (especially the lower-case terms), and **pick one row per key** in `output/worklists/duplicate_ties.csv` (2 keys; it feeds `--duplicate-choices`) | Cleaner E1 validation |
 | W11 | **Go-ahead: create the production write-log table** in CCKP - MC2 Admin and migrate a first small batch of grants 🔒, after W6/W7 | E1 |
+| W12 | **Merge data-models #278** (kg schema, D-Q48), after #277 | D-2 for Tools, Education and Grants (kg-pipeline reads the list columns) |
 | W3 | Go-ahead for each other 🔒 step as it comes up. Deletions are confirmed against a printed list. | — |
 
 ---
@@ -238,7 +242,7 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | C5 D11 / D12 / D15 | ✅ | Plus the reconciliation rework (D-Q32–D-Q37) |
 | C8 clear the test project | ⏳ after I9 | |
 | D-1 Consortium table | ⏳ W8 | |
-| D-2 portal type changes (+ `accessInformation` 300) | ⏳ W4, W9 | |
+| D-2 portal type changes (+ `accessInformation` 300) | ⏳ W4, W9, W12 | kg-pipeline schema in data-models #278 (D-Q48), open |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
 | E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
 | E2 regenerate merged manifests (I6) | ⬜ | Apply the PMID, DOI and author fixes |
