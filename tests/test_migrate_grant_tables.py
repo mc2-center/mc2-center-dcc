@@ -43,6 +43,13 @@ class FakeSynapse:
         self.next_id = 100
         self.reference_source = None  # merged-manifest frame (13.1.0 headers) or None
         self.reference_reads = 0
+        self.portal_source = None     # live portal table frame or None
+
+    def read_portal(self, syn, component):
+        self.portal_reads = getattr(self, "portal_reads", 0) + 1
+        if self.portal_source is None:
+            raise RuntimeError("no portal table")
+        return self.portal_source.copy()
 
     def read_reference(self, syn, component):
         self.reference_reads += 1
@@ -122,6 +129,7 @@ def run(tmp_path, fake, *extra, execute=False, log=None, run_id="r1", component=
          mock.patch.object(mig, "project_of", fake.project_of), \
          mock.patch.object(mig, "read_source", fake.read_source), \
          mock.patch.object(mig, "read_reference", fake.read_reference), \
+         mock.patch.object(mig, "read_portal", fake.read_portal), \
          mock.patch.object(mig.operations, "find_entity_id", fake.find_entity_id), \
          mock.patch.object(mig, "Folder", fake.Folder), \
          mock.patch.object(mig, "create_record_based_metadata_task", fake.create_task), \
@@ -684,3 +692,102 @@ def test_view_comparison_covers_only_the_tables_in_the_views_scope(tmp_path):
         code, rep = run(tmp_path, fake, "--union-id", "synMV")
     text = (rep / "comparison.txt").read_text()
     assert "not in the view's scope" in text and "'CA2'" in text and "EQUAL" in text
+
+
+# --- duplicate tie-break against the live portal row -------------------------------
+
+DS_HEADERS = ["DatasetView_id", "GrantView Key", "Dataset Name", "Dataset Alias", "Dataset Description",
+              "Dataset Design", "Dataset File Formats", "Dataset Doi", "Dataset Url", "Id"]
+PORTAL_COLUMNS = ["datasetId", "datasetName", "datasetAlias", "description", "overallDesign", "fileFormats",
+                  "doi", "externalLink", "theme"]
+
+
+def ds_row(key, desc, design, formats, doi, url, legacy_id, alias="alias"):
+    return [key, "CA123456", "Name", alias, desc, design, formats, doi, url, legacy_id]
+
+
+def ds_convert(rows, portal_rows=None, reference=None):
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    table = pd.DataFrame(rows, columns=DS_HEADERS)
+    portal = None if portal_rows is None else pd.DataFrame(portal_rows, columns=PORTAL_COLUMNS)
+    return mig.convert_table(table, "DatasetView", norm, lambda: reference, lambda: portal)
+
+
+def test_portal_row_decides_where_the_manifest_holds_both(tmp_path):
+    # syn77037247: the two rows differ in description, design, DOI and file formats;
+    # the portal row is the e2fa65c2 one (the text tie-break alone would keep e9e03dd9)
+    rows = [
+        ds_row("syn77037247", "Desc A", "Design A", "FASTQ", "10.1000/a", "https://x/1", "e2fa65c2-22e7"),
+        ds_row("syn77037247", "Desc B", "Design B", "SRA", "10.1000/b", "https://x/1", "e9e03dd9-a181"),
+    ]
+    portal = [["syn77037247", "Name", "alias", "Desc A", "Design A", "FASTQ", "https://doi.org/10.1000/a", "", ""]]
+    converted, _, _, _, res = ds_convert(rows, portal)
+    assert converted["DatasetDescription"].tolist() == ["Desc A"]
+    assert res.iloc[0]["kept_row"] == "row 1 (Id e2fa65c2-22e7)"
+    assert "matches more portal cells" in res.iloc[0]["reason"]
+    assert "arbitrary" not in res.iloc[0]["reason"]
+
+
+def test_portal_tie_on_the_main_fields_is_decided_on_the_remaining_mapped_columns():
+    # syn77038892: description, design, DOI and file formats tie; the alias column differs
+    rows = [
+        ds_row("syn77038892", "Desc", "Design", "FASTQ", "10.1000/a", "https://x", "6ad2b0e3-89d0", alias="old alias"),
+        ds_row("syn77038892", "Desc", "Design", "FASTQ", "10.1000/a", "https://x", "5620faa3-a924", alias="new alias"),
+    ]
+    portal_rows = [["syn77038892", "Name", "new alias", "Desc", "Design", "FASTQ", "https://doi.org/10.1000/a", "", ""]]
+    converted, _, _, _, res = ds_convert(rows, portal_rows)
+    assert converted["DatasetAlias"].tolist() == ["new alias"]
+    assert res.iloc[0]["kept_row"] == "row 2 (Id 5620faa3-a924)"
+    assert "matches more portal cells" in res.iloc[0]["reason"]
+
+
+def test_portal_full_tie_falls_through_to_completeness_then_an_arbitrary_id_choice():
+    rows = [
+        ds_row("k", "Desc", "Design", "FASTQ", "10.1000/a", "https://x", "aaa"),
+        ds_row("k", "Desc", "Design", "FASTQ", "10.1000/a", "https://x", "bbb"),
+    ]
+    portal_rows = [["k", "Name", "alias", "Desc", "Design", "FASTQ", "https://doi.org/10.1000/a", "https://x", ""]]
+    converted, _, _, _, res = ds_convert(rows, portal_rows)
+    reason = res.iloc[0]["reason"]
+    assert "tie on portal cells" in reason and "tie on completeness" in reason and "arbitrary" in reason
+    assert res.iloc[0]["kept_row"] == "row 2 (Id bbb)"
+
+
+def test_portal_decides_before_completeness():
+    rows = [
+        ds_row("k", "Desc", "", "FASTQ", "10.1000/a", "https://x", "1"),   # less complete, matches the portal
+        ds_row("k", "Other", "Design", "FASTQ", "10.1000/a", "https://x", "2"),
+    ]
+    portal_rows = [["k", "Name", "alias", "Desc", "", "FASTQ", "https://doi.org/10.1000/a", "https://x", ""]]
+    converted, _, _, _, res = ds_convert(rows, portal_rows)
+    assert converted["DatasetDescription"].tolist() == ["Desc"]
+
+
+def test_manifest_still_decides_first_when_exactly_one_row_matches():
+    rows = [
+        ds_row("k", "Desc A", "Design", "FASTQ", "10.1000/a", "https://x", "1"),
+        ds_row("k", "Desc B", "Design", "FASTQ", "10.1000/a", "https://x", "2"),
+    ]
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    ref = mig.reference_frame(pd.DataFrame([rows[1][:-1]], columns=DS_HEADERS[:-1]), "DatasetView", norm)
+    portal_rows = [["k", "Name", "alias", "Desc A", "Design", "FASTQ", "https://doi.org/10.1000/a", "https://x", ""]]
+    converted, _, _, _, res = ds_convert(rows, portal_rows, ref)
+    assert converted["DatasetDescription"].tolist() == ["Desc B"] and res.iloc[0]["reason"] == "matches the merged manifest"
+
+
+def test_portal_is_read_once_per_run_and_only_with_a_duplicate(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", dup_table()), "synT2": ("CA2", "synP2", dup_table())})
+    fake.portal_source = pd.DataFrame({"pubMedId": ["p1"], "publicationTitle": ["Second copy"]})
+    run(tmp_path, fake)
+    assert fake.portal_reads == 1
+    fake = FakeSynapse({"synT3": ("CA3", "synP3", source_table())})
+    run(tmp_path, fake, out="out2")
+    assert getattr(fake, "portal_reads", 0) == 0
+
+
+def test_publication_duplicates_are_matched_to_the_portal_by_pubmed_id():
+    norm = mig.value_maps.Normalizer.for_component("PublicationView")
+    portal = pd.DataFrame({"pubMedId": ["p1"], "publicationTitle": ["Second copy"]})
+    converted, _, _, _, res = mig.convert_table(
+        dup_table(first_id="9", second_id="10"), "PublicationView", norm, lambda: None, lambda: portal)
+    assert converted["PublicationTitle"].tolist() == ["Second copy"] and "matches more portal cells" in res.iloc[0]["reason"]

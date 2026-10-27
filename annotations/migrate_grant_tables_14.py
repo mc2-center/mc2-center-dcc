@@ -63,6 +63,7 @@ from synapseclient.models import Folder, MaterializedView, Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import crosswalk
 import merge_tables
 import model_contract
 import recordsets
@@ -259,6 +260,56 @@ def read_reference(syn, component: str) -> pd.DataFrame:
     return model_contract.read_manifest(syn, utils.CONFIG[REFERENCE_RESOURCE[component]]["manifest"])
 
 
+def read_portal(syn, component: str) -> pd.DataFrame:
+    """The live portal table of the component (read-only)."""
+    table_id = utils.CONFIG[REFERENCE_RESOURCE[component]]["portal_table"]
+    return Table(id=table_id).query(
+        query=f"SELECT * FROM {table_id}", include_row_id_and_row_version=False, synapse_client=syn
+    )
+
+
+def _flat(value) -> str:
+    """A cell as comparable text: lists ", "-joined, blank for missing."""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v).strip() for v in value)
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return ""
+    text = str(value).strip()
+    if text.startswith("[") and text.endswith("]"):
+        parsed = recordsets.parse_cell(text)
+        if isinstance(parsed, list):
+            return ", ".join(str(v).strip() for v in parsed)
+    return text
+
+
+def portal_scorer(portal_df, component: str, columns):
+    """``(score(key, row), compared)``: how many mapped portal cells a candidate row matches.
+
+    Columns come from ``crosswalk.CROSSWALK[component]`` (derived columns are
+    skipped); the portal row is the one whose key column equals the row's key
+    (``DatasetViewId`` -> ``datasetId``; publications use ``PubmedId`` ->
+    ``pubMedId``). Returns None when the portal table has no usable key.
+    """
+    key = KEYS[component]
+    mapping = {src: col for src, col, _ in crosswalk.CROSSWALK[component] if not src.startswith(crosswalk.DERIVED)}
+    key_source = key if key in mapping else ("PubmedId" if "PubmedId" in mapping else None)
+    if key_source is None or mapping[key_source] not in portal_df.columns:
+        return None
+    by_key: dict[str, dict] = {}
+    for row in portal_df.to_dict("records"):
+        by_key.setdefault(_flat(row[mapping[key_source]]), row)
+    compared = [c for c in columns if c in mapping and c != key and mapping[c] in portal_df.columns]
+
+    def score(key_value: str, row: dict) -> tuple[int, int] | None:
+        portal_row = by_key.get(key_value if key_source == key else (_flat(row.get(key_source, "")) or key_value))
+        if portal_row is None:
+            return None
+        hits = sum(recordsets._canon(_flat(row[c])) == recordsets._canon(_flat(portal_row[mapping[c]])) for c in compared)
+        return hits, len(compared)
+
+    return score
+
+
 def reference_frame(source: pd.DataFrame, component: str, normalizer) -> pd.DataFrame | None:
     """The merged manifest converted like a grant table (schema columns, normalized values), or None."""
     key = KEYS[component]
@@ -288,13 +339,14 @@ def _id_value(value) -> tuple[int, int, str]:
         return 0, 0, text
 
 
-def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference):
+def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference, portal=lambda: None):
     """Keep one row of each duplicated key: ``(frame, resolutions)``.
 
     The kept row is the one equal to the merged manifest's row of that key on
-    the columns both have (after the same conversion); if neither row or both
-    match, or the key is not in the manifest, the row with the fewest blank
-    cells; on a tie the higher legacy ``Id``. ``reference`` is a callable
+    the columns both have (after the same conversion). Failing that, the row
+    matching more cells of the live portal table's row (``portal`` returns that
+    table or None; read once, only when a duplicate exists), then the row with
+    the fewest blank cells; on a final tie the higher legacy ``Id`` (arbitrary). ``reference`` is a callable
     returning the converted merged manifest (or None), called once if needed.
     ``resolutions`` has ``key, kept_row, dropped_row, reason`` (source row numbers).
     """
@@ -311,6 +363,8 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
         for row in ref.to_dict("records"):
             ref_rows.setdefault(row[key], []).append(row)
     ids = list(legacy_id) if legacy_id is not None else [""] * len(df)
+    portal_df = portal()
+    score = portal_scorer(portal_df, component, list(norm.columns)) if portal_df is not None else None
 
     def label(i):
         return f"row {i + 1}" + (f" (Id {ids[i]})" if str(ids[i]).strip() else "")
@@ -336,6 +390,23 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
                 why = "no row matches the merged manifest"
             else:
                 why = "key is not in the merged manifest" if ref is not None else "no merged manifest to compare"
+            kept = None
+            scores = {i: score(keys.iloc[i], norm.iloc[i].to_dict()) for i in pool} if score else {}
+            if scores and all(v is not None for v in scores.values()):
+                top_score = max(v[0] for v in scores.values())
+                top = [i for i in pool if scores[i][0] == top_score]
+                if len(top) == 1:
+                    kept = top[0]
+                    others = ", ".join(str(scores[i][0]) for i in pool if i != kept)
+                    reason = f"{why}; matches more portal cells ({scores[kept][0]} vs {others} of {scores[kept][1]})"
+                else:
+                    pool, why = top, f"{why}; tie on portal cells ({top_score} of {scores[top[0]][1]})"
+            if kept is not None:
+                for i in rows:
+                    if i != kept:
+                        drop.add(i)
+                        resolutions.append({"key": k, "kept_row": label(kept), "dropped_row": label(i), "reason": reason})
+                continue
             blanks = {i: sum(_blank(norm.iloc[i][c]) for c in norm.columns) for i in pool}
             best = min(blanks.values())
             top = [i for i in pool if blanks[i] == best]
@@ -343,7 +414,7 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
                 kept, reason = top[0], f"{why}; most complete row ({best} blank cells)"
             else:
                 kept = max(top, key=lambda i: _id_value(ids[i]))
-                reason = f"{why}; tie on completeness ({best} blank cells), higher legacy Id"
+                reason = f"{why}; tie on completeness ({best} blank cells); arbitrary tie-break: higher legacy Id"
         for i in rows:
             if i != kept:
                 drop.add(i)
@@ -352,7 +423,8 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
     return df.iloc[keep].reset_index(drop=True), pd.DataFrame(resolutions, columns=RESOLUTION_COLUMNS)
 
 
-def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", reference=lambda: None):
+def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", reference=lambda: None,
+                  portal=lambda: None):
     """``(converted, changes, unmapped, dropped, resolutions)`` for one grant table.
 
     A key that occurs twice is resolved to one row (:func:`resolve_duplicates`,
@@ -364,7 +436,7 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
     legacy_id = df["Id"] if "Id" in df.columns else None
     schema = recordsets.schema_columns(component)
     dropped = [c for c in df.columns if c not in schema]
-    df, resolutions = resolve_duplicates(df[[c for c in df.columns if c in schema]], legacy_id, component, normalizer, reference)
+    df, resolutions = resolve_duplicates(df[[c for c in df.columns if c in schema]], legacy_id, component, normalizer, reference, portal)
     df, changes, unmapped = normalizer.normalize_frame(df, key)
     try:
         df = recordsets.check_upload_keys(df, key)
@@ -558,7 +630,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     summary.update(status="migrated", message="; ".join(notes))
 
 
-def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None):
+def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None):
     """Convert (and with ``--execute`` migrate) one grant table.
 
     Returns ``(summary, converted, source_keys)``; ``converted`` is None when the
@@ -572,7 +644,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     source_key = f"{component}_id"
     source_keys = [str(v).strip() for v in source[source_key]] if source_key in source.columns else []
     try:
-        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference)
+        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference, portal)
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
@@ -801,6 +873,18 @@ def main(argv=None, syn=None):
                 ref_cache.append(None)
         return ref_cache[0]
 
+    portal_cache = []
+
+    def portal():
+        """The live portal table, read once per run (None when unreadable)."""
+        if not portal_cache:
+            try:
+                portal_cache.append(read_portal(syn, component))
+            except Exception:
+                logger.exception("Could not read the portal table for %s", component)
+                portal_cache.append(None)
+        return portal_cache[0]
+
     tables, skipped = select_grant_tables(syn, args)
     print(f"Run {args.run_id}: {'EXECUTE' if args.execute else 'dry run'}, {component}, {len(tables)} grant tables")
     for note in skipped:
@@ -834,7 +918,7 @@ def main(argv=None, syn=None):
                 raise ConversionError(f"project {entry['project']} has more than one {component} table; one RecordSet per grant")
             seen_projects.add(entry["project"])
             summary, converted, s_keys = process_grant(
-                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference
+                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference, portal
             )
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)
