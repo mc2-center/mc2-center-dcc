@@ -66,6 +66,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import crosswalk
 import merge_tables
 import model_contract
+import pubmed
 import recordsets
 import utils
 import value_maps
@@ -113,6 +114,11 @@ def get_args(argv=None):
         help="also migrate projects that hold a grant-level table but are not in the Grants table, "
         "labelled by project name (default: on)",
     )
+    parser.add_argument(
+        "--recover-truncated", action=argparse.BooleanOptionalAction, default=None,
+        help="recover PublicationAuthors cells cut off with '(Read more on Pubmed)' from PubMed by PubmedId "
+        "(read-only NCBI calls; default: on for PublicationView)",
+    )
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     parser.add_argument("--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp")
     parser.add_argument("--redo", nargs="+", default=[], help="grant numbers to repeat although done (dry run only)")
@@ -130,6 +136,8 @@ def get_args(argv=None):
         parser.error("--execute needs --write-log-table")
     if args.execute and args.redo:
         parser.error("--redo is for dry runs; an --execute never overwrites a migrated RecordSet")
+    if args.recover_truncated is None:
+        args.recover_truncated = args.component == "PublicationView"
     args.out_dir = args.out_dir or f"output/migration_14/{args.component}"
     return args
 
@@ -423,6 +431,48 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
     return df.iloc[keep].reset_index(drop=True), pd.DataFrame(resolutions, columns=RESOLUTION_COLUMNS)
 
 
+def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, recover, key: str):
+    """Replace truncated ``PublicationAuthors`` lists with PubMed's: ``(converted, changes, recovered)``.
+
+    ``recover(pmids)`` returns ``{pmid: [author, ...]}`` for the PMIDs PubMed
+    knows (``pubmed.fetch_authors``). The PMID is the row's ``PubmedId`` (the key
+    when blank). A recovered cell is a ``recovered_pubmed`` change instead of
+    ``truncated``; a PMID PubMed does not return stays truncated.
+    ``recovered`` has ``key, old, new, pubmed_id``.
+    """
+    column = "PublicationAuthors"
+    empty = pd.DataFrame(columns=["key", "old", "new", "pubmed_id"])
+    if recover is None or column not in converted.columns:
+        return converted, changes, empty
+    suffix = value_maps.TRUNCATED_SUFFIX
+    rows = [i for i, cell in enumerate(converted[column])
+            if isinstance(cell, list) and any(suffix in str(item) for item in cell)]
+    if not rows:
+        return converted, changes, empty
+    pmid_of = {i: (str(converted["PubmedId"].iloc[i]).strip() if "PubmedId" in converted.columns else "")
+               or str(converted[key].iloc[i]).strip() for i in rows}
+    found = recover(sorted(set(pmid_of.values())))
+    cells, recovered, done = list(converted[column]), [], set()
+    for i in rows:
+        authors = found.get(pmid_of[i])
+        if not authors:
+            continue
+        recovered.append({"key": converted[key].iloc[i], "old": ", ".join(cells[i]), "new": ", ".join(authors),
+                          "pubmed_id": pmid_of[i]})
+        cells[i] = list(authors)
+        done.add(converted[key].iloc[i])
+    if not recovered:
+        return converted, changes, empty
+    converted = converted.copy()
+    converted[column] = cells
+    gone = changes["key"].isin(done) & (changes["column"] == column) & (changes["rule"] == "truncated")
+    new = pd.DataFrame(
+        [{"key": r["key"], "column": column, "from": r["old"], "to": r["new"], "rule": "recovered_pubmed"} for r in recovered],
+        columns=value_maps.CHANGE_COLUMNS,
+    )
+    return converted, pd.concat([changes[~gone], new], ignore_index=True), pd.DataFrame(recovered, columns=empty.columns)
+
+
 def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", reference=lambda: None,
                   portal=lambda: None):
     """``(converted, changes, unmapped, dropped, resolutions)`` for one grant table.
@@ -630,7 +680,8 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     summary.update(status="migrated", message="; ".join(notes))
 
 
-def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None):
+def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None,
+                  recover=None):
     """Convert (and with ``--execute`` migrate) one grant table.
 
     Returns ``(summary, converted, source_keys)``; ``converted`` is None when the
@@ -648,6 +699,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
+    converted, changes, recovered = recover_truncated_authors(converted, changes, recover, key)
     for k in resolutions["key"]:  # the source side of the comparison loses one row per resolved duplicate
         source_keys.remove(k)
     if dropped:
@@ -661,9 +713,11 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     _write(validation_counts(validation), report_dir / "validation_counts.csv")
     if len(resolutions):
         _write(resolutions, report_dir / "duplicates_resolved.csv")
+    if len(recovered):
+        _write(recovered, report_dir / "recovered.csv")
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
-        dropped=dropped, duplicates_resolved=len(resolutions), _resolved_keys=resolutions["key"].tolist(),
+        dropped=dropped, duplicates_resolved=len(resolutions), authors_recovered=len(recovered), _resolved_keys=resolutions["key"].tolist(),
         truncated=int((changes["rule"] == "truncated").sum()),
     )
     if not args.execute:
@@ -676,7 +730,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
     for field in ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
-                  "validation_failures", "duplicates_resolved", "truncated", "invalid_rows", "recovered"):
+                  "validation_failures", "duplicates_resolved", "authors_recovered", "truncated", "invalid_rows", "recovered"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s.get("message"):
@@ -794,6 +848,8 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
     all_changes = pd.concat(changes) if changes else pd.DataFrame(columns=value_maps.CHANGE_COLUMNS)
     by_rule = all_changes[all_changes["rule"] != "truncated"].groupby("rule").size().sort_values(ascending=False)
     lines.append("changes by rule: " + (", ".join(f"{r}={n}" for r, n in by_rule.items()) or "none"))
+    recovered = [f["recovered"] for f in frames.values() if f.get("recovered") is not None and len(f["recovered"])]
+    lines.append(f"authors recovered from PubMed: {sum(len(r) for r in recovered)}")
     lines.append(f"duplicate keys resolved: {sum(int(s.get('duplicates_resolved', 0)) for s in summaries)}")
     unmapped = [f["unmapped"] for f in frames.values() if f.get("unmapped") is not None and len(f["unmapped"])]
     if unmapped:
@@ -825,6 +881,17 @@ def truncated_values(frames: dict[str, dict]) -> pd.DataFrame:
         for r in changes[changes["rule"] == "truncated"].to_dict("records"):
             rows.append({"grant": grant, "key": r["key"], "column": r["column"], "value": r["from"]})
     return pd.DataFrame(rows, columns=["grant", "key", "column", "value"])
+
+
+def portal_author_fixes(frames: dict[str, dict]) -> pd.DataFrame:
+    """``pubMedId, authors`` of every recovered author list (one row per PMID), for the portal table and
+    the merged manifest, which probably hold the same truncation."""
+    parts = [f["recovered"][["pubmed_id", "new"]] for f in frames.values()
+             if f.get("recovered") is not None and len(f["recovered"])]
+    if not parts:
+        return pd.DataFrame(columns=["pubMedId", "authors"])
+    out = pd.concat(parts).drop_duplicates("pubmed_id").sort_values("pubmed_id")
+    return out.rename(columns={"pubmed_id": "pubMedId", "new": "authors"}).reset_index(drop=True)
 
 
 WORKLIST_COLUMNS = ["grant", "key", "field", "validator", "message", "current_value"]
@@ -873,6 +940,11 @@ def main(argv=None, syn=None):
                 ref_cache.append(None)
         return ref_cache[0]
 
+    recover = None
+    if args.recover_truncated:
+        def recover(pmids):
+            return pubmed.fetch_authors(pmids, cache_dir=args.cache_dir)
+
     portal_cache = []
 
     def portal():
@@ -918,7 +990,7 @@ def main(argv=None, syn=None):
                 raise ConversionError(f"project {entry['project']} has more than one {component} table; one RecordSet per grant")
             seen_projects.add(entry["project"])
             summary, converted, s_keys = process_grant(
-                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference, portal
+                syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference, portal, recover
             )
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)
@@ -965,6 +1037,7 @@ def main(argv=None, syn=None):
     (run_dir / "run_summary.txt").write_text(report + "\n")
     validation_worklist(frames, KEYS[component]).to_csv(run_dir / "validation_worklist.csv", index=False)
     truncated_values(frames).to_csv(run_dir / "truncated.csv", index=False)
+    portal_author_fixes(frames).to_csv(run_dir / "portal_author_fixes.csv", index=False)
 
     unmapped_total = sum(int(s.get("unmapped", 0)) for s in summaries)
     invalid_total = sum(int(s.get("validation_failures", 0)) + int(s.get("invalid_rows", 0)) for s in summaries)
@@ -983,7 +1056,7 @@ def main(argv=None, syn=None):
 def _frames_from(report_dir: Path) -> dict:
     """The changes, unmapped and validation reports a grant wrote (for the run report)."""
     out = {}
-    for name in ("changes", "unmapped", "validation", "converted"):
+    for name in ("changes", "unmapped", "validation", "converted", "recovered"):
         path = report_dir / f"{name}.csv"
         out[name] = pd.read_csv(path, dtype=str, keep_default_na=False) if path.exists() else None
     return out
