@@ -139,3 +139,15 @@ After the second review, `1a2fd19` replaced ownership inference with a replay th
 Write log after the test: pending/written pairs for v18, v22 and v24; v23 `recovered`; the other run's row `aborted`.
 | Third-review fixes (`2ad3401`, `0e7ccc6`, `3484769`), complete-reversion snapshot rule | **Stale session with an edit:** opened at v26; the pipeline wrote p2 "newer" (v27); the stale session saved a p3 abstract edit (v28), reverting p2's title. Next run (v29): p2 `restored_revert`, the p3 abstract `kept_edit`, conflict reported. **Partial undo:** not exercised live (the test row's title was already contributor-owned); covered by unit tests, including a randomized comparison with a brute-force version of the rule. |
 | Confirming review fix (pending rows closed only by a later `done`/`recovered`/`aborted` row of the same run and base) | The 6 earlier test writes were closed with `done` rows. Final write `d1-final`: `pending` → `written` v30 → `done`, nothing left unresolved; the contributor values were kept with conflicts reported. |
+
+## D-Q34 row-removal spike (2026-10-27, `syn78387305`)
+Owner go-ahead 2026-10-27. Question: can a RecordSet row be removed, and by which write? Created folder `dq34_spike` (`syn78401699`) with a throwaway `DQ34_spike_RecordSet` (`syn78401702`, bound to `MC2Center-PublicationView-14.0.0`, upsert key `PublicationViewId`, CurationTask 8038). Script: scratchpad `dq34_spike.py`.
+
+| Step | Result |
+|---|---|
+| Grid write of rows A, B, C | v2: 3 rows |
+| Fresh Grid session, import a CSV with only A, B, export | v3: **still 3 rows**. Import is an upsert; a Grid session can't remove a row, and the client has no row-delete call for a RecordSet session (`synchronize` is for file-view sessions). |
+| Direct store of a new version holding A, B (entity fetched, `path` replaced, `store`) | v4: **2 rows**. Binding, upsert key and CurationTask 8038 kept. |
+| Fresh Grid session, no import, export | v5: 2 rows; validation re-ran (summary: 2 children, 0 unknown) |
+
+No Grid session left open. The throwaway folder, RecordSet and task remain in the test project, to be cleared with it (C8).
