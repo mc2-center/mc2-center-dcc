@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "portal_tables"))
 
@@ -26,3 +28,18 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _temp_comma_terms(tmp_path, monkeypatch):
+    """Tests read a copy of comma_terms.csv, so learning new terms never edits the real file."""
+    import shutil
+
+    import comma_terms
+
+    copy = tmp_path / "comma_terms.csv"
+    shutil.copyfile(comma_terms.CSV_PATH, copy)
+    monkeypatch.setattr(comma_terms, "CSV_PATH", copy)
+    comma_terms._folds.cache_clear()
+    yield
+    comma_terms._folds.cache_clear()

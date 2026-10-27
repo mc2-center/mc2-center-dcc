@@ -108,6 +108,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         logger.info("%s: not stored in the RecordSet, dropped: %s", report_dir.name, extra)
         upload = upload.drop(columns=extra)
     upload = recordsets.parse_upload(upload, list_cols)
+    summary["new_comma_terms"] = len(recordsets.learn_comma_terms(upload, component))
 
     folder_id = row[folder_column_name(row)]
     if folder_id in ("", "None", "nan"):
@@ -291,6 +292,9 @@ def main(argv=None, syn=None):
         summaries.append(summary)
 
     pd.DataFrame(summaries).to_csv(run_dir / "summary.csv", index=False)
+    new_terms = sum(s.get("new_comma_terms", 0) for s in summaries)
+    if new_terms:
+        print(f"{new_terms} new comma-containing term(s) added to portal_tables/comma_terms.csv; commit the file")
     print(f"{len(summaries) - failed} of {len(summaries)} grants ok; {failed} need attention")
     return 1 if failed else 0
 

@@ -210,6 +210,12 @@ def parse_upload(df: pd.DataFrame, list_cols) -> pd.DataFrame:
     return out
 
 
+def learn_comma_terms(parsed: pd.DataFrame, component: str, path=None) -> list[str]:
+    """Add comma-containing items of ``parsed`` keyword columns to comma_terms.csv; the terms added."""
+    items = [i for c in parsed.columns if comma_terms.is_keyword_column(c) for v in parsed[c] if isinstance(v, list) for i in v]
+    return comma_terms.learn(items, f"upload {component}", path)
+
+
 def _split_list_cell(value: str, column: str = "") -> list[str]:
     parsed = parse_cell(value)
     if isinstance(parsed, list):

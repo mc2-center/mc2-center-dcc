@@ -6,6 +6,7 @@ comma-joined text; JSON-array cells carry their items intact.
 """
 
 import csv
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -65,3 +66,29 @@ def split_keyword_cell(value, rejoined: list | None = None, path=None) -> list[s
             rejoined.append(group)
         out.append(", ".join(group))
     return out
+
+
+def learn(items, source: str, path=None) -> list[str]:
+    """Append the items holding ", " that the CSV does not know (case-folded); return those added.
+
+    Existing rows are neither reordered nor rewritten, so running twice adds nothing.
+    """
+    path = Path(path or CSV_PATH)
+    known = set(_folds(str(path))[0])
+    new = []
+    for item in items:
+        fold = " ".join(item.split()).casefold()
+        if ", " in item and fold not in known:
+            known.add(fold)
+            new.append(item)
+    if new:
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        with open(path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            if not text:
+                writer.writerow(COLUMNS)
+            elif not text.endswith("\n"):
+                f.write("\n")
+            writer.writerows([t, source, date.today().isoformat()] for t in new)
+        _folds.cache_clear()
+    return new
