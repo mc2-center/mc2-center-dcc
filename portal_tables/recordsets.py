@@ -48,9 +48,12 @@ C contributor) and ``set_at`` (version):
   fresh Grid session so the data is re-validated (logged ``written``). The
   keys go in the removals table (:class:`Removals`) with ``removedInVersion``.
   At a removal version, which is a pipeline version, the keys it dropped (in
-  ``v - 1``, not in ``v``: exact, because the write is checked to be on the
-  latest version) are first dropped from the state (``removed``), then the
-  version is processed as any pipeline version. Replay reads this off the
+  its logged base, the version the removal read, and not in ``v``) are first
+  dropped from the state (``removed``), then the version is processed as any
+  pipeline version. If a foreign version landed between the removal's version
+  check and its store, rows and edits in it that the store overwrote are not
+  dropped: the pipeline-version rule keeps them (``kept_unseen_row``,
+  ``kept_unseen_edit``) and the next upload writes them back. Replay reads this off the
   version history and the write log's ``removed`` rows alone, never the
   removals table, so a crash between the store and the table can't bring a row
   back. A removed key that reappears is remembered: in a pipeline
@@ -444,10 +447,11 @@ class WriteLog:
         return {int(v) for v in df["version"]}
 
     def unexported_removals(self, rs_id: str) -> list[int]:
-        """Removal versions with no later pipeline version based on them: each still owes its Grid export."""
+        """Removal versions with no later pipeline version based on them (or on their base): each owes its Grid export."""
         pipeline = self.pipeline_map(rs_id)
+        # a raced removal's export is logged with the removal's own base (see remove_recordset_rows.py)
         return sorted(v for v in self.removal_versions(rs_id)
-                      if not any(b == v for w, b in pipeline.items() if w != v))
+                      if not any(w > v and b in (v, pipeline[v]) for w, b in pipeline.items()))
 
     def pipeline_versions(self, rs_id: str) -> list[int]:
         return sorted(self.pipeline_map(rs_id))
@@ -748,8 +752,10 @@ def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_
     return table.id
 
 
-def removed_keys(versions, removal_versions, key) -> dict[str, int]:
-    """``{key: removal version}`` for the keys each removal version dropped (in ``v - 1``, not in ``v``).
+def removed_keys(versions, removal_bases, key) -> dict[str, int]:
+    """``{key: removal version}`` for the keys each removal version dropped (in its base, not in it).
+
+    ``removal_bases`` is ``{removal version: baseVersion}``, the version the removal read.
 
     Read off the version history like :func:`replay` does, so it also covers a
     removal the removals table doesn't list (yet). ``versions`` is
@@ -759,9 +765,9 @@ def removed_keys(versions, removal_versions, key) -> dict[str, int]:
     keys = {v: {_key_of(r, key_cols) for _, r in df.iterrows()} if all(c in df.columns for c in key_cols) else set()
             for v, df in versions}
     out: dict[str, int] = {}
-    for v in sorted(set(removal_versions)):
-        if v - 1 in keys and v in keys:
-            out.update({k: v for k in keys[v - 1] - keys[v]})
+    for v, base in sorted(removal_bases.items()):
+        if base in keys and v in keys:
+            out.update({k: v for k in keys[base] - keys[v]})
     return out
 
 
@@ -934,7 +940,7 @@ def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()
     ``log_map`` is ``{pipeline version: baseVersion}`` from the write log;
     ``removal_versions`` are the versions logged ``removed``
     (:meth:`WriteLog.removal_versions`, D-Q49); the keys a removal dropped are
-    read off the history itself (in ``v - 1``, not in ``v``), so replay never
+    read off the history itself (in its ``log_map`` base, not in ``v``), so replay never
     depends on the removals table. ``restored`` are keys whose removal was
     lifted: their re-adding by the pipeline is not reported.
     The rules are in the module docstring. Returns ``(state, owned, decisions)``:
@@ -1009,8 +1015,8 @@ def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()
         frame, crows = frames[v], cf[v]
         if v in log_map:
             base = log_map[v]
-            if v in removal_versions and v - 1 in frames:
-                for k in [k for k in frames[v - 1] if k not in frame]:
+            if v in removal_versions and base in frames:
+                for k in [k for k in frames[base] if k not in frame]:
                     if k in state:
                         del state[k]
                         gone.add(k)

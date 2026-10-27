@@ -272,6 +272,12 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         recordsets.to_csv(remaining, path)
         version = recordsets.store_new_version(syn, rs_id, path)
         created.append(version)
+        raced = version != latest + 1
+        if raced:
+            logger.warning(
+                "%s: v%s landed between the version check and the store, so the removal is v%s: a concurrent export "
+                "raced it and the next upload will restore its changes", rs_id, latest + 1, version)
+            summary["raced"] = True
         write_log.removed(rs_id, version, latest, run_id, principal, len(remaining))
         removals.append_many(rs_id, [
             {"key": k, "status": "removed", "reason": requested[k]["reason"],
@@ -280,7 +286,9 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         summary["version"] = version
 
         def on_version(v):
-            write_log.record(rs_id, v, run_id, len(remaining), base=version, principal=principal)
+            # base = the removal version; if a foreign version raced the store, the removal's own base,
+            # so replay keeps that version's edits (kept_unseen_edit) instead of treating them as seen
+            write_log.record(rs_id, v, run_id, len(remaining), base=latest if raced else version, principal=principal)
             created.append(v)
 
         recordsets.export_via_grid(syn, rs_id, on_version=on_version)
