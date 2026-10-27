@@ -39,7 +39,10 @@ ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "P
 # Where the grant, project and people syncs read their manifest: "table" (the
 # legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above).
 # Keep "table" until annotations/migrate_admin_manifests_14.py --execute has
-# run; then change the default here (or pass --manifest-source recordset).
+# run AND plan D-1 has landed (the Consortium table syn36345930 gets
+# `consortiumId` and the NCI, HTAN and Sage Bionetworks rows). Until then
+# resolve_consortium_keys raises for people and grants in those consortia with
+# either source. Then change the default here (or pass --manifest-source recordset).
 MANIFEST_SOURCE = "table"
 MANIFEST_SOURCES = ("table", "recordset")
 
@@ -198,7 +201,9 @@ def get_args(resource: str) -> argparse.Namespace:
             default=MANIFEST_SOURCE,
             help=(
                 "Read the legacy manifest table or the admin RecordSet "
-                f"(default: {MANIFEST_SOURCE}). -m overrides both."
+                f"(default: {MANIFEST_SOURCE}). Use recordset only after the admin migration has run "
+                "and plan D-1 (Consortium consortiumId + NCI, HTAN, Sage Bionetworks rows) has landed. "
+                "-m overrides both."
             ),
         )
     parser.add_argument(

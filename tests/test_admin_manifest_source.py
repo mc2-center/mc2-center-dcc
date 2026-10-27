@@ -32,6 +32,16 @@ def test_the_source_defaults_to_the_legacy_tables():
     assert utils.MANIFEST_SOURCE == "table"
 
 
+def test_the_flip_is_documented_as_waiting_for_d1(monkeypatch, capsys):
+    source = inspect.getsource(utils).split("MANIFEST_SOURCE = ")[0].rsplit("# Where the grant", 1)[1]
+    assert "D-1" in source and "consortiumId" in source and "Sage Bionetworks" in source
+    monkeypatch.setattr("sys.argv", ["prog", "--help"])
+    with pytest.raises(SystemExit):
+        utils.get_args("project")
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "D-1" in help_text and "only after the admin migration" in help_text
+
+
 @pytest.mark.parametrize("resource", ["grant", "project", "people"])
 def test_get_args_defaults_to_table_and_accepts_recordset(resource, monkeypatch):
     monkeypatch.setattr("sys.argv", ["prog"])
