@@ -96,15 +96,10 @@ def _recordset(monkeypatch, tmp_path, text):
     path = tmp_path / "rs.csv"
     path.write_text(text)
 
-    class FakeRecordSet:
-        def __init__(self, id):
-            pass
+    import recordsets
 
-        def get(self, **kw):
-            self.path = str(path)
-            return self
-
-    monkeypatch.setattr(mc, "RecordSet", FakeRecordSet)
+    # model_contract.read_manifest reads a RecordSet through recordsets.read_recordset (md5-checked)
+    monkeypatch.setattr(recordsets, "read_recordset", lambda syn, rs_id, version=None, **kw: recordsets._load_csv(path))
     return FakeSyn(concrete_types.RECORD_SET_ENTITY)
 
 

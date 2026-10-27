@@ -29,15 +29,10 @@ def recordset_reader(monkeypatch, tmp_path, frame):
         out[c] = out[c].map(lambda v: json.dumps(v) if isinstance(v, list) else v)
     out.to_csv(path, index=False)
 
-    class FakeRecordSet:
-        def __init__(self, id):
-            pass
+    import recordsets
 
-        def get(self, **kw):
-            self.path = str(path)
-            return self
-
-    monkeypatch.setattr(mc, "RecordSet", FakeRecordSet)
+    # model_contract.read_manifest reads a RecordSet through recordsets.read_recordset (md5-checked)
+    monkeypatch.setattr(recordsets, "read_recordset", lambda syn, rs_id, version=None, **kw: recordsets._load_csv(path))
 
 
 def test_crosswalk_joins_list_cells_for_string_columns_only():

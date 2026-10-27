@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pandas as pd
 from synapseclient.core.constants import concrete_types
-from synapseclient.models import File, RecordSet, Table
+from synapseclient.models import File, Table
 
 logger = logging.getLogger(__name__)
 
@@ -352,9 +352,9 @@ def read_manifest(syn, entity_id: str, component: str | None = None, version: in
 
     The entity type comes from a metadata-only REST get (no download).
     Tables and views are queried with ``SELECT *`` and no row ID/version
-    columns. RecordSets and Files are downloaded and read as CSV with every
-    column as a string (empty cells stay NaN, as ``pd.read_csv`` returns
-    them). Any other entity type raises ``ValueError``. ``version`` reads that version of a RecordSet or File
+    columns. A RecordSet is read through ``recordsets.read_recordset`` (md5-checked download);
+    RecordSets and Files are read as CSV with every column as a string (empty cells stay NaN, as
+    ``pd.read_csv`` returns them). Any other entity type raises ``ValueError``. ``version`` reads that version of a RecordSet or File
     (default: the latest); a Table or view has no such version and is read as it is.
     """
     concrete = syn.restGET(f"/entity/{entity_id}").get("concreteType")
@@ -365,8 +365,10 @@ def read_manifest(syn, entity_id: str, component: str | None = None, version: in
             synapse_client=syn,
         )
     if concrete == concrete_types.RECORD_SET_ENTITY:
-        entity = RecordSet(id=entity_id, **_at(version)).get(synapse_client=syn)
-        frame = pd.read_csv(entity.path, dtype=str)
+        import recordsets  # here, not at the top: recordsets imports this module
+
+        # md5-checked download; empty cells are NaN here, as pd.read_csv returned them (the syncs fill them)
+        frame = recordsets.read_recordset(syn, entity_id, version=version).replace("", float("nan"))
         return recordset_to_manifest(frame, component) if component else frame
     elif concrete == concrete_types.FILE_ENTITY:
         entity = File(id=entity_id, **_at(version)).get(synapse_client=syn)
