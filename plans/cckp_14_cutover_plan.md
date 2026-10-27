@@ -100,7 +100,7 @@ The portal doesn't read any of these (D-Q9).
 
 The migration copies each grant's 13.1.0 table into a 14.x RecordSet: new headers, list columns as lists, the same rows under the same keys. Because 14.x validates many columns against a controlled vocabulary, it also rewrites a value when, and only when, a rule maps it to exactly one 14.x term (`portal_tables/value_maps.py`). Anything else is kept as written and reported. **The dry-run "EQUAL" check compares row counts and keys with the legacy union views, not cell values**; every value change is listed per grant in `changes.csv`.
 
-Counts from the latest full dry runs (publications and datasets 2026-10-27, tools and education 2026-10-26). Education has no value changes.
+Counts from the full dry runs of all 4 types on 2026-10-27, after the pre-merge review fixes (the counts did not change). Education has no value changes.
 
 | Rule | Example | Pubs | Datasets | Tools |
 |---|---|---|---|---|
@@ -116,6 +116,7 @@ The 625 publication DOIs are bare in the grant tables; the portal already shows 
 - **Some terms become lower case**, because the 14.x term is: `Histology` → `histology`, `TUNEL Assay` → `TUNEL assay`, `Proximity Extension Assay` → `proximity extension assay`, `Spatial Transcriptomics` → `spatial transcriptomics`. If unwanted, fix the term in data-models or add an override.
 - **Synonyms change the term:** `Western Blot` → `Western Blotting` (18), `Prostate` → `Prostate Gland` (6), `Murine Models` → `Murine Model` (3), `Micro-CT` → `X-Ray Micro-Computed Tomography` (2), and 1 each of `Comet Assay` → `Single Cell Gel Electrophoresis`, `RNA-Seq` → `RNA Sequencing`, `Exome Sequencing` → `Whole Exome Sequencing`, `SNP Array` → `Single Nucleotide Polymorphism Array`.
 - **No license values change in the migration**; the SPDX change (section 2.1) is in the portal tables.
+- **List items are kept as written, repeats included.** An earlier version dropped repeated items in every list column; now only set-like columns (enums, data use codes) drop them. 47 publication cells in 37 grants keep a repeat (mostly keywords; a few author lists and 2 dataset aliases). The portal sync still drops repeats on display (D5).
 
 What the mapping refuses to do: touch an exact valid value; match part of a cell or fuzzily; use a synonym that names two preferred terms; case-match two 14.x terms that differ only by case. `all_valid_values.csv` joins a term's synonyms with `, `, so a synonym containing a comma falls apart; a piece is kept only if it has two or more words, looks like an identifier or acronym (`RNA-seq`, `HCC`), or is a spelling variant of its own term (`Ligaments`). The 153 refused pieces (`Hepatic`, `Blotting`, `Electron`, …) are in `rejected_synonyms.csv`. A curator override (`--overrides`, W10) wins over every rule.
 
@@ -183,7 +184,7 @@ All of these come from your review notes and answers on 2026-10-26.
 | D-Q42 | **Truncated `PublicationAuthors` (109 cells, from the old 400-character cap) are recovered from PubMed** by PMID (read-only NCBI E-utilities) during migration. The same fixes go to the portal manifest at E2. | I5a (in progress); E2 |
 | D-Q43 | **Recovered authors use full names** (`ForeName LastName`, PubMed efetch), matching the curation pipeline's output | I5a `--recover-truncated` |
 | D-Q44 | **The 2 duplicate pairs that tie on every compared field (`syn77038794`, `syn77038892`) are settled by hand**; the other 5 are decided by the live portal row | `output/worklists/duplicate_ties.csv` → I5a `--duplicate-choices` |
-| D-Q45 | **The DM-14/DM-16 release is 14.1.0, not 14.0.1** (data-models #277, `release_14.1.0_notes.md`): the PR adds `File Data Use Codes` for file-level templates, a new attribute and a changed column header | Steps below that named 14.0.1 now name 14.1.0. **The W6 tag approval was given for `v14.0.1`; confirm it for `v14.1.0`.** |
+| D-Q45 | **The DM-14/DM-16 release is 14.1.0, not 14.0.1** (data-models #277, `release_14.1.0_notes.md`): the PR adds `File Data Use Codes` for file-level templates, a new attribute and a changed column header | Steps below that named 14.0.1 now name 14.1.0. **Confirmed by the owner 2026-10-27: `v14.1.0` is the tag, including `File Data Use Codes`.** |
 | D-Q46 | **Migrated values: rewrite only when a rule maps a value to exactly one 14.x term**; keep and report everything else. Nonpreferred fragments of comma-split synonym cells are refused unless multi-word, identifier-like or a spelling variant of their own term. | Section 2.3; `portal_tables/value_maps.py` |
 | D-Q21 | **`NPUNCU` → the single ID `DUO:0000018`**, not NPU + NCU. `DUO:0000018` is a current DUO term, and governanceDUO and data-models both list it. | Reverses master plan S4.5's split. I8.4 maps `RTN` → `DUO:0000029` and `NPUNCU` → `DUO:0000018`, one to one. |
 
@@ -191,7 +192,7 @@ All of these come from your review notes and answers on 2026-10-26.
 
 ## 4. Open decisions and actions waiting on you
 
-**Decisions open now:** one confirmation: tag `v14.1.0` instead of the approved `v14.0.1` (D-Q45). Before that, the last two were the duplicate-row tie-break (extended to "match the live portal row", D-Q41) and PubMed recovery of truncated authors (D-Q42); both are being implemented as extensions of your earlier answers. Object if either should differ.
+**Decisions open now:** none. `v14.1.0` (D-Q45) was confirmed 2026-10-27. Before that, the last two were the duplicate-row tie-break (extended to "match the live portal row", D-Q41) and PubMed recovery of truncated authors (D-Q42); both are being implemented as extensions of your earlier answers. Object if either should differ.
 
 **Actions waiting on you:**
 
@@ -199,7 +200,7 @@ All of these come from your review notes and answers on 2026-10-26.
 |---|---|---|
 | W4 | **Merge #166, then #167** (mc2-center-dcc) | Phase D, D17a PR, B3 |
 | W5 | **Merge pipeline #12 → #13 → #14** | Pipeline output in 14.0.0 form |
-| W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approval given for `v14.0.1`; reconfirm, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
+| W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approved, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
 | W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
 | W8 | **Go-ahead: Consortium table update** (`consortiumId` + 3 approved rows) 🔒 | D-1, then people sync |
 | W9 | **Go-ahead: portal table changes**, one table at a time with the rehearsed rollback 🔒, after W4 | D-2 |
