@@ -686,12 +686,14 @@ def _session_base(cf, diffs, fingerprints, v) -> int:
     return v - 1
 
 
-def replay(versions, log_map, key, set_like=()):
+def replay(versions, log_map, key, set_like=(), removals=None):
     """Rebuild the current state from every version, tracking cell ownership.
 
     ``versions`` is ``[(version, DataFrame)]`` for every version ``1..latest``;
-    ``log_map`` is ``{pipeline version: baseVersion}`` from the write log. The
-    rules are in the module docstring. Returns ``(state, owned, decisions)``:
+    ``log_map`` is ``{pipeline version: baseVersion}`` from the write log;
+    ``removals`` is ``{removal version: set of keys}`` (D-Q49, from
+    :meth:`Removals.removal_events`; a version not in ``log_map`` is ignored).
+    The rules are in the module docstring. Returns ``(state, owned, decisions)``:
     the state DataFrame, the set of ``(key, column)`` cells owned by a
     contributor, and the decisions (``key, column, decision, current_value,
     pipeline_value, version``) for versions newer than the newest logged one,
@@ -750,6 +752,8 @@ def replay(versions, log_map, key, set_like=()):
             decisions.append({"key": k, "column": column, "decision": decision,
                               "current_value": cur, "pipeline_value": pipe, "version": v})
 
+    removals = {v: set(ks) for v, ks in (removals or {}).items()}
+    gone: set[str] = set()  # keys removed by the DCC and not yet seen again
     diffs = fingerprints = None
     if log_map and any(v not in log_map and v >= first for v in frames):
         diffs = _version_diffs(cf, latest)
@@ -761,9 +765,17 @@ def replay(versions, log_map, key, set_like=()):
         frame, crows = frames[v], cf[v]
         if v in log_map:
             base = log_map[v]
+            for k in sorted(removals.get(v, ())):
+                if k in state:
+                    del state[k]
+                    gone.add(k)
+                    decide(v, k, "", "removed")
             for k, row in frame.items():
                 if k not in state:
                     state[k] = fresh(k, v, lambda _: P)
+                    if k in gone:
+                        gone.discard(k)
+                        decide(v, k, "", "readded_by_pipeline")
                     continue
                 crow = crows[k]
                 for i, c in enumerate(non_key):
@@ -787,7 +799,11 @@ def replay(versions, log_map, key, set_like=()):
             for k, row in frame.items():
                 if k not in state:
                     state[k] = fresh(k, v, lambda x: P if _is_blank(x) else C)
-                    decide(v, k, "", "kept_contributor_row")
+                    if k in gone:
+                        gone.discard(k)
+                        decide(v, k, "", "readded_removed_key")
+                    else:
+                        decide(v, k, "", "kept_contributor_row")
                     continue
                 crow, srow = crows[k], snapshot.get(k)
                 for i, c in enumerate(non_key):
