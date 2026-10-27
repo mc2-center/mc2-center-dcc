@@ -20,7 +20,7 @@ def normalizer(overrides=None):
     }
     return vm.Normalizer(
         "PublicationView", maps, CODES, overrides,
-        list_cols={"Assay", "License", "DatasetDataUseCodes"},
+        list_cols={"Assay", "License", "DatasetDataUseCodes", "PublicationKeywords", "PublicationAuthors"},
     )
 
 
@@ -326,3 +326,28 @@ def test_other_urls_are_left_unchanged_and_reported_as_nonstandard(url):
     assert row["PublicationDoi"] == url and unmapped.empty
     assert changes.to_dict("records") == [{"key": "p1", "column": "PublicationDoi", "from": url, "to": url,
                                            "rule": "doi_nonstandard"}]
+
+
+def test_keyword_comma_text_keeps_known_terms_whole_and_records_the_rejoin():
+    norm = normalizer()
+    row, changes, _ = run(norm, PublicationKeywords="Aged, 80 and over, Humans")
+    assert row["PublicationKeywords"] == ["Aged, 80 and over", "Humans"]
+    assert changes.to_dict("records") == [
+        {"key": "p1", "column": "PublicationKeywords", "from": "Aged | 80 and over",
+         "to": "Aged, 80 and over", "rule": "comma_term"}
+    ]
+    row, _, _ = run(norm, PublicationKeywords="Mice, Inbred C57BL, Mice")
+    assert row["PublicationKeywords"] == ["Mice, Inbred C57BL", "Mice"]
+
+
+def test_keyword_unknown_comma_phrase_still_splits_and_other_columns_are_unaffected():
+    norm = normalizer()
+    row, changes, _ = run(norm, PublicationKeywords="Foo, bar baz", PublicationAuthors="Aged, 80 and over")
+    assert row["PublicationKeywords"] == ["Foo", "bar baz"]
+    assert row["PublicationAuthors"] == ["Aged", "80 and over"]
+    assert changes.empty
+
+
+def test_keyword_json_array_is_not_regrouped():
+    row, changes, _ = run(normalizer(), PublicationKeywords='["Aged", "80 and over"]')
+    assert row["PublicationKeywords"] == ["Aged", "80 and over"] and changes.empty

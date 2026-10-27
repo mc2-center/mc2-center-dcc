@@ -74,6 +74,7 @@ import pandas as pd
 from synapseclient import operations
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
+import comma_terms
 import model_contract
 import utils
 
@@ -205,13 +206,17 @@ def parse_upload(df: pd.DataFrame, list_cols) -> pd.DataFrame:
     out = df.fillna("").astype(str)
     for column in out.columns:
         if column in list_cols:
-            out[column] = out[column].map(_split_list_cell)
+            out[column] = out[column].map(lambda v: _split_list_cell(v, column))
     return out
 
 
-def _split_list_cell(value: str) -> list[str]:
+def _split_list_cell(value: str, column: str = "") -> list[str]:
     parsed = parse_cell(value)
-    return parsed if isinstance(parsed, list) else utils.split_cell(value)
+    if isinstance(parsed, list):
+        return parsed
+    if comma_terms.is_keyword_column(column):
+        return comma_terms.split_keyword_cell(value)
+    return utils.split_cell(value)
 
 
 # --- reading ----------------------------------------------------------------

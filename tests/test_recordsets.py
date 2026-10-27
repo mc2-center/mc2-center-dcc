@@ -79,6 +79,14 @@ def test_parse_upload_keeps_commas_inside_json_array_items():
     assert out.loc[1, "Assay"] == ["A", "B"]
 
 
+def test_parse_upload_rejoins_known_terms_in_keyword_comma_text_only():
+    up = pd.DataFrame({K: ["a"], "PublicationKeywords": ["Aged, 80 and over, Humans, Foo, bar"],
+                       "Assay": ["Aged, 80 and over"]})
+    out = rs.parse_upload(up, {"PublicationKeywords", "Assay"})
+    assert out.loc[0, "PublicationKeywords"] == ["Aged, 80 and over", "Humans", "Foo", "bar"]
+    assert out.loc[0, "Assay"] == ["Aged", "80 and over"]
+
+
 def test_set_like_columns_from_schema():
     assert {"Assay", "Tissue", "TumorType"} <= rs.set_like_columns("PublicationView")
     assert "PublicationAuthors" not in rs.set_like_columns("PublicationView")

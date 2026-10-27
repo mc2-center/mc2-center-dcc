@@ -38,6 +38,7 @@ import re
 
 import pandas as pd
 
+import comma_terms
 import model_contract
 import recordsets
 import utils
@@ -58,9 +59,13 @@ def fold(value: str) -> str:
     return " ".join(str(value).split()).casefold()
 
 
-def split_items(text: str) -> list[str]:
-    """Split a list cell on commas (valid values contain none); a JSON-array cell is parsed instead."""
-    return utils.split_cell("" if text is None else text)
+def split_items(text: str, keyword: bool = False, rejoined: list | None = None) -> list[str]:
+    """Split a list cell on commas (valid values contain none); a JSON-array cell is parsed instead.
+
+    With ``keyword``, comma text keeps known comma terms whole (pieces appended to ``rejoined``).
+    """
+    text = "" if text is None else text
+    return comma_terms.split_keyword_cell(text, rejoined) if keyword else utils.split_cell(text)
 
 
 def _squash(text: str) -> str:
@@ -284,8 +289,11 @@ class Normalizer:
                 # the whole cell is overridden before its items are looked at
                 proposed = self.overrides[(column, text.strip())]
                 changes.append({"key": key, "column": column, "from": text.strip(), "to": proposed, "rule": "override"})
-                return split_items(proposed)
-            items = text if isinstance(text, list) else split_items(text)
+                return split_items(proposed, comma_terms.is_keyword_column(column))
+            rejoined = []
+            items = text if isinstance(text, list) else split_items(text, comma_terms.is_keyword_column(column), rejoined)
+            for pieces in rejoined:
+                changes.append({"key": key, "column": column, "from": " | ".join(pieces), "to": ", ".join(pieces), "rule": "comma_term"})
             out, set_like = [], column in self.enum_maps or column == "DatasetDataUseCodes"
             for item in items:
                 new = self._item(key, column, str(item).strip(), changes, unmapped)
