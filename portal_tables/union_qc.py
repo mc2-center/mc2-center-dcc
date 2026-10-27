@@ -13,7 +13,10 @@ Regenerate mode (``--regenerate``, a dry run unless ``--upload``), per component
      ``first`` keeps the first row's value, the join rows collect the distinct
      items from every row, comma-joined; this is the "merged" in merged manifest);
   3. applies the curated PublicationView Key corrections (D-Q35,
-     ``output/worklists/i8_1_pmid_keys.csv``);
+     ``output/worklists/i8_1_pmid_keys.csv``), then fills empty cells with
+     "Pending Annotation"/"Not Applicable" and trims whitespace
+     (``manifest_cleanup``, shared with ``utils/merge_and_correct_manifests.py``;
+     ``--no-fill`` skips the fill);
   4. carries reference-only columns (``iconTags``) over from the current
      manifest by alias key;
   5. validates with jsonschema against the 14.x JSON Schemas
@@ -41,6 +44,7 @@ import os
 import pandas as pd
 from pathlib import Path
 import re
+import manifest_cleanup
 import merge_tables
 import model_contract
 import recordsets
@@ -124,6 +128,12 @@ def get_args(argv=None):
         choices=COMPONENTS,
         default=list(DEFAULT_MERGE),
         help="Regenerate mode: components whose rows are merged by alias key (default: publications and datasets).",
+    )
+    parser.add_argument(
+        "--no-fill",
+        action="store_true",
+        help="Regenerate mode: do not fill empty Assay/Tumor Type/Tissue/... cells with "
+        "'Pending Annotation' or 'Not Applicable' (the merge_and_correct_manifests step the portal text depends on).",
     )
     parser.add_argument(
         "--upload",
@@ -450,7 +460,7 @@ def carry_columns(manifest: pd.DataFrame, reference: pd.DataFrame, alias: str, c
 
 
 def regenerate_component(component, union, mapping, out_root, ref=None, pmid_keys=None, reference=None,
-                         carry=DEFAULT_CARRY, union_stats=None, merge=True):
+                         carry=DEFAULT_CARRY, union_stats=None, merge=True, fill=True):
     """Merge, correct, carry, validate and write one component's manifest. Returns a result dict."""
     out_dir = Path(out_root) / component
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -460,6 +470,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
         manifest, merge_stats = union, {"rows_in": len(union), "rows_out": len(union), "alias": alias_column(mapping, component),
                                         "merged_groups": 0, "blank_alias": 0}
     manifest, corrections = apply_key_corrections(manifest, component, pmid_keys)
+    if fill:  # as utils/merge_and_correct_manifests.py does: fill empty cells, then trim whitespace
+        manifest = manifest_cleanup.trim_whitespace(manifest_cleanup.fill_empty_cells(manifest.copy(), component))
     carried = {}
     if reference is not None and carry and merge_stats["alias"]:
         manifest, carried = carry_columns(manifest, reference, merge_stats["alias"], carry)
@@ -517,7 +529,7 @@ def regenerate_main(args, syn=None) -> int:
                 reference = utils.fill_blank(model_contract.read_manifest(syn, utils.CONFIG[RESOURCE[component]]["manifest"]))
         result = regenerate_component(component, union, mapping, args.output_dir, args.schema_version,
                                       pmid_keys, reference, tuple(args.carry_columns), stats,
-                                      merge=component in args.merge_components)
+                                      merge=component in args.merge_components, fill=not args.no_fill)
         print("\n".join(result["lines"]))
         failures += len(result["validation"])
         if args.upload:

@@ -190,3 +190,14 @@ def test_upload_stores_a_new_version_of_the_manifest_file():
     assert file_cls.call_args.kwargs["id"] == "syn53478774"
     assert entity.path == "/tmp/x.csv" and entity.version_comment == "why"
     assert out == "syn53478774 version 9"
+
+
+def test_empty_curated_cells_are_filled_like_merge_and_correct(tmp_path, mapping_csv):
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="", PublicationViewKey="")]})
+    assert manifest["Tissue"].iat[0] == "Pending Annotation"
+    assert manifest["PublicationView Key"].iat[0] == "Pending Annotation"
+
+
+def test_no_fill_keeps_empty_cells(tmp_path, mapping_csv):
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="")]}, extra=["--no-fill"])
+    assert manifest["Tissue"].iat[0] == ""
