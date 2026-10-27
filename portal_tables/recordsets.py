@@ -633,6 +633,11 @@ class Removals:
         df = df.assign(_on=df["changedOn"].map(_to_dt)).sort_values("_on", kind="stable")
         return df.drop_duplicates("key", keep="last")
 
+    def restored(self, rs_id: str) -> set[str]:
+        """Keys whose current status is ``restored`` (their removal is lifted)."""
+        df = self._latest(rs_id)
+        return {r["key"] for _, r in df[df["status"] == "restored"].iterrows()} if len(df) else set()
+
     def requested(self, rs_id: str) -> dict[str, dict]:
         """``{key: {reason, requestedBy}}`` of keys whose current status is ``requested``."""
         df = self._latest(rs_id)
@@ -735,6 +740,23 @@ def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_
     ]
     table = Table(name=name, parent_id=parent_id, columns=columns).store(synapse_client=syn)
     return table.id
+
+
+def removed_keys(versions, removal_versions, key) -> dict[str, int]:
+    """``{key: removal version}`` for the keys each removal version dropped (in ``v - 1``, not in ``v``).
+
+    Read off the version history like :func:`replay` does, so it also covers a
+    removal the removals table doesn't list (yet). ``versions`` is
+    ``[(version, DataFrame)]``; a later removal of the same key wins.
+    """
+    key_cols = key_columns(key)
+    keys = {v: {_key_of(r, key_cols) for _, r in df.iterrows()} if all(c in df.columns for c in key_cols) else set()
+            for v, df in versions}
+    out: dict[str, int] = {}
+    for v in sorted(set(removal_versions)):
+        if v - 1 in keys and v in keys:
+            out.update({k: v for k in keys[v - 1] - keys[v]})
+    return out
 
 
 def drop_removed(upload: pd.DataFrame, key, removed: dict) -> tuple[pd.DataFrame, pd.DataFrame]:

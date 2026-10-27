@@ -19,11 +19,14 @@ RecordSet has another run's unfinished write (a pending write-log row under
 Reports go to ``<report-dir>/<run-id>/<grant>/``: decisions.csv, conflicts.csv,
 validation.csv (``--execute`` only), merged.csv and summary.txt.
 
-With ``--removals-table`` (or ``--removals-csv``), upload rows whose key is
-currently ``removed`` in the removals table (a DCC row removal, D-Q49) are
-dropped right after the key check, before the replay and merge, and listed in
-removal_skipped.csv (a ``restored`` key is uploaded normally). The replay also
-gets the removal versions, so a removed row is not restored.
+Upload rows whose key a DCC row removal (D-Q49) removed are dropped after the
+replay and before the merge, and listed in removal_skipped.csv. The removed keys
+come from the write log's ``removed`` versions and the history (so a removal
+the removals table doesn't list yet counts) and from the removals table's
+``removed`` rows; a key whose latest status is ``restored`` is uploaded
+normally. ``--execute`` needs a removals source (``--removals-table``, or
+``--removals-csv`` in tests); a dry run may omit it, and then ``restored`` keys
+are unknown.
 
 The exit status is 1 if any grant needs attention (failed, missing_recordset,
 locked, retry or verification_mismatch), so a workflow does not treat the
@@ -89,6 +92,8 @@ def get_args(argv=None):
     args = parser.parse_args(argv)
     if args.execute and not args.write_log_table:
         parser.error("--execute needs --write-log-table; a CSV log is for dry runs and tests only")
+    if args.execute and not (args.removals_table or args.removals_csv):
+        parser.error("--execute needs --removals-table (or --removals-csv) so removed rows are not uploaded again")
     return args
 
 
@@ -146,18 +151,6 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="failed", message=f"bad upload keys: {err}")
         return summary
 
-    removal_events = {}
-    if removals is not None:
-        # D-Q49: a removed row is not uploaded again until its key is ``restored``.
-        upload, skipped = recordsets.drop_removed(upload, key, removals.removed(rs_id))
-        removal_events = removals.removal_events(rs_id)
-        report_dir.mkdir(parents=True, exist_ok=True)
-        _write_report(report_dir / "removal_skipped.csv", skipped)
-        if len(skipped):
-            summary["removal_skipped"] = len(skipped)
-            logger.info("%s: %d upload row(s) skipped, key removed by the DCC (removal_skipped.csv)",
-                        report_dir.name, len(skipped))
-
     locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
     if locker:
         summary.update(status="locked", message=(
@@ -186,7 +179,22 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
-    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like, removal_events)
+    removal_versions = write_log.removal_versions(rs_id) | set(recovered.removal)
+    restored = removals.restored(rs_id) if removals is not None else set()
+    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like, removal_versions, restored)
+    # D-Q49: a removed row is not uploaded again until its key is ``restored``. The removed keys
+    # come from the history (so a removal the table doesn't list yet counts) and the table.
+    removed = recordsets.removed_keys(versions, removal_versions, key)
+    if removals is not None:
+        removed.update(removals.removed(rs_id))
+    removed = {k: v for k, v in removed.items() if k not in restored}
+    upload, skipped = recordsets.drop_removed(upload, key, removed)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    _write_report(report_dir / "removal_skipped.csv", skipped)
+    if len(skipped):
+        summary["removal_skipped"] = len(skipped)
+        logger.info("%s: %d upload row(s) skipped, key removed by the DCC (removal_skipped.csv)",
+                    report_dir.name, len(skipped))
     mode = "first write (no replay)" if not log_map else f"replayed v1..v{latest}"
     merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
     # Columns that are no longer schema properties are dropped by a Grid import; compare without them.
