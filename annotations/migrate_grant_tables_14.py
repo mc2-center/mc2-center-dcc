@@ -803,6 +803,9 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
         except recordsets.WriteRefused as refused:
             summary.update(status=refused.status, message=refused.message)
             return
+        if not created:
+            summary.update(status="failed", message=f"{rs_id}: the write exported no version; nothing to verify")
+            return
         version = created[-1]
         summary["version"] = version
         note = (note + "; " if note else "") + f"wrote v{version}"
@@ -862,6 +865,9 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         dropped=dropped, duplicates_resolved=len(resolutions), authors_recovered=authors_recovered, _resolved_keys=resolutions["key"].tolist(),
         truncated=int(changes["rule"].isin(["truncated", "recovery_mismatch"]).sum()),
     )
+    if converted.empty:  # nothing to load: no RecordSet is created and nothing is written
+        summary.update(status="empty_source", message="no rows after conversion; no RecordSet created, nothing written")
+        return summary, converted, source_keys
     if not args.execute:
         summary.update(status="dryrun", message="dry run: nothing written")
         return summary, converted, source_keys
@@ -997,6 +1003,8 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
     lines.append(f"authors recovered from PubMed: {int((attempts['reason'] == '').sum())}")
     reasons = attempts[attempts["reason"] != ""]["reason"].map(lambda r: r.split(":")[0]).value_counts()
     lines.append("authors not recovered: " + (", ".join(f"{r}={n}" for r, n in reasons.items()) or "none"))
+    empty = [s["grant"] for s in summaries if s["status"] == "empty_source"]
+    lines.append("empty source tables (no RecordSet): " + (", ".join(map(str, empty)) or "none"))
     lines.append(f"duplicate keys resolved: {sum(int(s.get('duplicates_resolved', 0)) for s in summaries)}")
     unmapped = [f["unmapped"] for f in frames.values() if f.get("unmapped") is not None and len(f["unmapped"])]
     if unmapped:

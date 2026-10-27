@@ -1248,3 +1248,20 @@ def test_an_empty_recordset_with_the_wrong_upsert_key_is_not_loaded_on_resume(tm
     code, rep = run(tmp_path, fake, execute=True, run_id="r2")
     assert status_of(rep) == "failed" and code == 1 and fake.writes == []
     assert "upsert key ['Wrong'], expected ['PublicationViewId']" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def test_an_empty_grant_table_creates_nothing_and_is_not_a_failure(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", source_table(rows=[])), "synT2": ("CA2", "synP2", source_table())})
+    code, rep = run(tmp_path, fake, execute=True)
+    assert status_of(rep, "CA1") == "empty_source" and status_of(rep, "CA2") == "migrated" and code != 1
+    assert [kw["project_id"] for kw in fake.created] == ["synP2"] and len(fake.writes) == 1
+    assert "empty source tables (no RecordSet): CA1" in (rep / "run_summary.txt").read_text()
+    assert "no rows after conversion" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def test_a_write_that_exports_no_version_fails_the_grant_instead_of_raising(tmp_path):
+    fake = FakeSynapse()
+    fake.write = lambda syn, rs_id, csv_path, on_version=None, **kw: []
+    code, rep = run(tmp_path, fake, execute=True)
+    assert status_of(rep) == "failed" and code == 1
+    assert "exported no version" in (rep / "CA1" / "summary.txt").read_text()
