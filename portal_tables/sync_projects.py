@@ -63,7 +63,11 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = utils.fill_blank(model_contract.read_manifest(syn, args.manifest_id))
+    manifest = utils.fill_blank(
+        model_contract.read_manifest(
+            syn, utils.resolve_manifest_id(syn, args, "project"), component=COMPONENT
+        )
+    )
     manifest = prepare_manifest(manifest)
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)

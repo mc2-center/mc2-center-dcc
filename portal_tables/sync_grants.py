@@ -76,8 +76,9 @@ def main():
     # (also on a dry run).
     check_portal_grant_ids(syn, args.portal_table_id)
 
+    manifest_id = utils.resolve_manifest_id(syn, args, "grant")
     manifest = process_new_grants(
-        args.manifest_id, args.portal_table_id, args.dryrun, synapse_client=syn,
+        manifest_id, args.portal_table_id, args.dryrun, synapse_client=syn,
         live_types=live_types,
     )
     failed = manifest.attrs.get("failed_grants", [])

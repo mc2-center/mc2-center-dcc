@@ -298,8 +298,52 @@ _TABLE_TYPES = frozenset(
 )
 
 
-def read_manifest(syn, entity_id: str) -> pd.DataFrame:
+def array_columns(component: str) -> set[str]:
+    """Class labels of the component's array (list) properties in ``json_schemas/<component>.json``."""
+    with open(fetch(f"json_schemas/{component}.json"), encoding="utf-8") as fh:
+        properties = json.load(fh)["properties"]
+    return {k for k, v in properties.items() if v.get("type") == "array"}
+
+
+def _parse_json_list(value):
+    """A JSON-array cell as a list of strings; any other cell unchanged."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                return value
+            if isinstance(parsed, list):
+                return [str(v) for v in parsed]
+    return value
+
+
+def recordset_to_manifest(df: pd.DataFrame, component: str) -> pd.DataFrame:
+    """A RecordSet export in the shape of a manifest table.
+
+    RecordSets carry class-label headers (``GrantViewKey``) and JSON-array list
+    cells; manifest tables carry display names (``GrantView Key``) and list
+    cells as lists (or comma text). Known labels are renamed to display names
+    (other columns are kept) and the component's array columns are parsed to
+    lists, so the result goes through the same ``prepare_manifest`` steps as a
+    table.
+    """
+    display = {label: name for name, label in label_map().items()}
+    out = df.rename(columns={c: display[c] for c in df.columns if c in display})
+    for label in array_columns(component):
+        column = display.get(label, label)
+        if column in out.columns:
+            out[column] = out[column].map(_parse_json_list).astype(object)
+    return out
+
+
+def read_manifest(syn, entity_id: str, component: str | None = None) -> pd.DataFrame:
     """Read a manifest from a Synapse Table, view, RecordSet or File.
+
+    With ``component``, a RecordSet is returned as :func:`recordset_to_manifest`
+    (display-name headers, list cells as lists), the shape a table of that
+    component has; ``component`` is ignored for the other entity types.
 
     The entity type comes from a metadata-only REST get (no download).
     Tables and views are queried with ``SELECT *`` and no row ID/version
@@ -316,6 +360,8 @@ def read_manifest(syn, entity_id: str) -> pd.DataFrame:
         )
     if concrete == concrete_types.RECORD_SET_ENTITY:
         entity = RecordSet(id=entity_id).get(synapse_client=syn)
+        frame = pd.read_csv(entity.path, dtype=str)
+        return recordset_to_manifest(frame, component) if component else frame
     elif concrete == concrete_types.FILE_ENTITY:
         entity = File(id=entity_id).get(synapse_client=syn)
     else:
