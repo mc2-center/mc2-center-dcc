@@ -19,6 +19,7 @@ from openpyxl.styles import Font
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import model_contract
+import utils
 
 logger = logging.getLogger(__name__)
 
@@ -126,15 +127,13 @@ def split_manifest(df, manifest_type, database):
         idColumn = "EducationalResource_id"
 
     if database:
-        sep = ","
         cols = [colname, idColumn]
-        df[idColumn] = df[idColumn].str.split(sep)
-    
+        df[idColumn] = df[idColumn].map(utils.split_cell)
+
     else:
-        sep = ", "
         cols = [colname]
 
-    df[colname] = df[colname].str.split(sep)
+    df[colname] = df[colname].map(utils.split_cell)
 
     df = df.drop(["entityId", "Id"], axis=1, errors="ignore")
 

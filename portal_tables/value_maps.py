@@ -40,6 +40,7 @@ import pandas as pd
 
 import model_contract
 import recordsets
+import utils
 
 logger = logging.getLogger(__name__)
 CHANGE_COLUMNS = ["key", "column", "from", "to", "rule"]
@@ -59,16 +60,7 @@ def fold(value: str) -> str:
 
 def split_items(text: str) -> list[str]:
     """Split a list cell on commas (valid values contain none); a JSON-array cell is parsed instead."""
-    text = "" if text is None else str(text)
-    stripped = text.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        try:
-            parsed = json.loads(stripped)
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, list):
-            return [str(v).strip() for v in parsed if str(v).strip()]
-    return [p.strip() for p in re.split(r",\s*", text) if p.strip()]
+    return utils.split_cell("" if text is None else text)
 
 
 def _squash(text: str) -> str:

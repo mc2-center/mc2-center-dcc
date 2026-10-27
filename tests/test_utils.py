@@ -121,3 +121,9 @@ def test_strip_newlines_only_touches_text_columns():
     assert out["mixed"].iloc[0] == ["x\ny"] and out["mixed"].iloc[1] == "p q"
     assert out["name"].iloc[0] == "m n" and pd.isna(out["name"].iloc[1])
     assert df["text"].iloc[0] == "a\r\nb"  # input untouched
+
+
+def test_split_cell_parses_json_array_keeping_commas_inside_items():
+    assert utils.split_cell('["Aged, 80 and over", "Humans"]') == ["Aged, 80 and over", "Humans"]
+    assert utils.split_cell("A, B,C") == ["A", "B", "C"]
+    assert utils.split_cell("[not json, x]") == ["[not json", "x]"]

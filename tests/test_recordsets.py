@@ -72,6 +72,13 @@ def test_parse_upload_splits_list_columns():
     assert out.loc[0, "Title"] == "x, y"
 
 
+def test_parse_upload_keeps_commas_inside_json_array_items():
+    up = pd.DataFrame({K: ["a", "b"], "Assay": ['["Mice, Inbred C57BL", "Humans"]', "A, B"]})
+    out = rs.parse_upload(up, {"Assay"})
+    assert out.loc[0, "Assay"] == ["Mice, Inbred C57BL", "Humans"]
+    assert out.loc[1, "Assay"] == ["A", "B"]
+
+
 def test_set_like_columns_from_schema():
     assert {"Assay", "Tissue", "TumorType"} <= rs.set_like_columns("PublicationView")
     assert "PublicationAuthors" not in rs.set_like_columns("PublicationView")

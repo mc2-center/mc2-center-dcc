@@ -1,6 +1,7 @@
 """Shared functions used by syncing scripts"""
 
 import csv
+import json
 import os
 import argparse
 from getpass import getpass
@@ -222,14 +223,28 @@ def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
     return [lookup[i] for i in wanted]
 
 
+def parse_json_list(text: str) -> list | None:
+    """The list a JSON-array cell holds, or ``None`` if ``text`` is not one."""
+    stripped = text.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            return None
+        if isinstance(parsed, list):
+            return parsed
+    return None
+
+
 def split_cell(value) -> list[str]:
-    """A manifest cell (comma-separated string or list) as a list of strings."""
+    """A manifest cell (JSON array, comma-separated string or list) as a list of strings."""
     if isinstance(value, (list, tuple)):
         items = [str(v) for v in value]
     elif value is None or (not isinstance(value, str) and pd.isna(value)):
         items = []
     else:
-        items = str(value).split(",")
+        parsed = parse_json_list(str(value))
+        items = [str(v) for v in parsed] if parsed is not None else str(value).split(",")
     return [i.strip() for i in items if i and i.strip()]
 
 
