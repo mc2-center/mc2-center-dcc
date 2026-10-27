@@ -19,6 +19,12 @@ RecordSet has another run's unfinished write (a pending write-log row under
 Reports go to ``<report-dir>/<run-id>/<grant>/``: decisions.csv, conflicts.csv,
 validation.csv (``--execute`` only), merged.csv and summary.txt.
 
+With ``--removals-table`` (or ``--removals-csv``), upload rows whose key is
+currently ``removed`` in the removals table (a DCC row removal, D-Q49) are
+dropped right after the key check, before the replay and merge, and listed in
+removal_skipped.csv (a ``restored`` key is uploaded normally). The replay also
+gets the removal versions, so a removed row is not restored.
+
 The exit status is 1 if any grant needs attention (failed, missing_recordset,
 locked, retry or verification_mismatch), so a workflow does not treat the
 upload as done; the other grants still run. If foreign versions landed during a
@@ -65,6 +71,9 @@ def get_args(argv=None):
     log = parser.add_mutually_exclusive_group(required=True)
     log.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
     log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
+    removals = parser.add_mutually_exclusive_group()
+    removals.add_argument("--removals-table", help="Synapse ID of the removals table (D-Q49)")
+    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
     parser.add_argument("--report-dir", required=True, help="directory for the per-grant reports")
     parser.add_argument(
         "--execute", action="store_true", help="write to Synapse; the default is a dry run"
@@ -95,7 +104,8 @@ def stored_keys(df: pd.DataFrame, key_cols: list[str]) -> list[str]:
     return [recordsets._key_of(row, key_cols) for _, row in df.iterrows()]
 
 
-def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_like, _rerun=False) -> dict:
+def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_like, _rerun=False,
+                  removals=None) -> dict:
     """Upload one grant's manifest. Returns a summary dict with a ``status``."""
     component = args.component
     summary = {"grant": report_dir.name, "file": row["File Paths"], "status": "", "message": ""}
@@ -136,6 +146,18 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="failed", message=f"bad upload keys: {err}")
         return summary
 
+    removal_events = {}
+    if removals is not None:
+        # D-Q49: a removed row is not uploaded again until its key is ``restored``.
+        upload, skipped = recordsets.drop_removed(upload, key, removals.removed(rs_id))
+        removal_events = removals.removal_events(rs_id)
+        report_dir.mkdir(parents=True, exist_ok=True)
+        _write_report(report_dir / "removal_skipped.csv", skipped)
+        if len(skipped):
+            summary["removal_skipped"] = len(skipped)
+            logger.info("%s: %d upload row(s) skipped, key removed by the DCC (removal_skipped.csv)",
+                        report_dir.name, len(skipped))
+
     locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
     if locker:
         summary.update(status="locked", message=(
@@ -164,7 +186,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
-    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like)
+    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like, removal_events)
     mode = "first write (no replay)" if not log_map else f"replayed v1..v{latest}"
     merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
     # Columns that are no longer schema properties are dropped by a Grid import; compare without them.
@@ -222,7 +244,8 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     if midwrite and not _rerun and status not in ("verification_mismatch",):
         # Replay once more now: it restores the edits our write overwrote.
         first = dict(summary)
-        second = process_grant(syn, row, args, write_log, report_dir / "rerun", list_cols, set_like, _rerun=True)
+        second = process_grant(syn, row, args, write_log, report_dir / "rerun", list_cols, set_like, _rerun=True,
+                              removals=removals)
         second["grant"] = first["grant"]
         second["rerun"] = True
         second["message"] = (
@@ -251,7 +274,7 @@ def _write_report(path: Path, df: pd.DataFrame) -> None:
 
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite"):
+    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s["message"]:
@@ -267,6 +290,10 @@ def main(argv=None, syn=None):
         if args.write_log_table
         else recordsets.CsvWriteLog(args.write_log_csv)
     )
+    removals = (
+        recordsets.SynapseTableRemovals(syn, args.removals_table) if args.removals_table
+        else recordsets.CsvRemovals(args.removals_csv) if args.removals_csv else None
+    )
     list_cols = recordsets.list_columns(args.component)
     set_like = recordsets.set_like_columns(args.component)
     paths = pd.read_csv(args.paths_csv, dtype=str, keep_default_na=False)
@@ -279,7 +306,7 @@ def main(argv=None, syn=None):
         grant = row.get("grantId") or Path(row["File Paths"]).stem
         report_dir = run_dir / str(grant)
         try:
-            summary = process_grant(syn, row, args, write_log, report_dir, list_cols, set_like)
+            summary = process_grant(syn, row, args, write_log, report_dir, list_cols, set_like, removals=removals)
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)
             summary = {"grant": str(grant), "file": row["File Paths"], "status": "failed", "message": repr(err)}
