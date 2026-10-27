@@ -497,6 +497,17 @@ def _same_name(a: str, b: str) -> bool:
     return value_maps.fold(a) == value_maps.fold(b)
 
 
+def _cut_text(item: str) -> str:
+    """A truncated author item without the ``(Read more on Pubmed)`` suffix, trailing ``...`` / ``…`` and whitespace."""
+    return re.sub(r"(?:\s|\.\.\.|…)+$", "", str(item).replace(value_maps.TRUNCATED_SUFFIX, ""))
+
+
+def _cut_matches(item: str, author: str, cut: int) -> bool:
+    """Whether the cut-off item is a prefix of PubMed's author at its position (empty text: only ``cut > 0`` accepts)."""
+    text = value_maps.fold(_cut_text(item))
+    return value_maps.fold(author).startswith(text) if text else cut > 0
+
+
 def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, recover, key: str):
     """Replace truncated ``PublicationAuthors`` lists with PubMed's: ``(converted, changes, recovered)``.
 
@@ -505,7 +516,7 @@ def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, re
     (``pubmed.fetch_authors``). The PMID is the row's ``PubmedId`` (the key when
     blank). A list is replaced only if the cell's complete leading items (all but
     the cut-off one) equal the first PubMed names (case and whitespace
-    ignored); then the change is ``recovered_pubmed`` instead of ``truncated``.
+    ignored) and the cut-off item's text is a prefix of PubMed's name at that position; then the change is ``recovered_pubmed`` instead of ``truncated``.
     Otherwise the cell stays truncated: ``recovery_mismatch`` when PubMed's
     list disagrees with the leading items; ``truncated`` when PubMed was
     unavailable or did not return the PMID. ``recovered`` lists every attempt
@@ -534,9 +545,11 @@ def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, re
             continue
         cut = next(n for n, item in enumerate(old) if suffix in str(item))
         leading = old[:cut]
-        if len(authors) <= cut or not all(_same_name(a, b) for a, b in zip(leading, authors)):
+        if (len(authors) <= cut or not all(_same_name(a, b) for a, b in zip(leading, authors))
+                or not _cut_matches(old[cut], authors[cut], cut)):
             records.append({**base, "new": ", ".join(authors),
-                            "reason": f"recovery_mismatch: the {len(leading)} complete leading name(s) differ from PubMed's"})
+                            "reason": f"recovery_mismatch: the {len(leading)} complete leading name(s) and the cut-off item "
+                                      "do not match PubMed's"})
             mismatched.add(k)
             continue
         records.append({**base, "new": ", ".join(authors), "reason": ""})

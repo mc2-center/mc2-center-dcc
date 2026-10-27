@@ -1209,3 +1209,26 @@ def test_limit_counts_grants_after_the_full_scan(tmp_path):
     fake = FakeSynapse(two_table_project())
     code, rep = run(tmp_path, fake, "--limit", "1")
     assert status_of(rep, "CA1") == "failed" and not (rep / "CA2").exists()  # synT3 was not cut off by the limit
+
+
+def recover_one(cell, authors):
+    """Run recover_truncated_authors on one row whose author cell is ``cell`` (a list)."""
+    converted = pd.DataFrame({KEY: ["p1"], "PubmedId": ["111"], "PublicationAuthors": [cell]})
+    changes = pd.DataFrame([{"key": "p1", "column": "PublicationAuthors", "from": cell[-1], "to": cell[-1], "rule": "truncated"}])
+    out, changes, recovered = mig.recover_truncated_authors(converted, changes, lambda pmids: ({"111": authors}, set()), KEY)
+    return out["PublicationAuthors"].iloc[0], changes["rule"].tolist(), recovered["reason"].iloc[0]
+
+
+@pytest.mark.parametrize("cell,authors,ok", [
+    (["Jo(Read more on Pubmed)"], ["Mary Jones"], False),                           # cut == 0, prefix differs
+    (["Jo(Read more on Pubmed)"], ["John Smith"], True),                            # cut == 0, prefix matches
+    (["Jo...(Read more on Pubmed)"], ["john smith"], True),                         # trailing dots, case-folded
+    (["(Read more on Pubmed)"], ["John Smith"], False),                             # cut == 0, nothing to compare
+    (["Ann Lee", "Han(Read more on Pubmed)"], ["Ann Lee", "Bo Chan"], False),       # leading ok, cut prefix not
+    (["Ann Lee", "Han(Read more on Pubmed)"], ["Ann Lee", "Han Solo"], True),
+    (["Ann Lee", "(Read more on Pubmed)"], ["Ann Lee", "Han Solo"], True),          # empty text, leading names decide
+])
+def test_recovery_checks_the_cut_off_item_as_a_prefix_of_pubmeds_name(cell, authors, ok):
+    cells, rules, reason = recover_one(cell, authors)
+    assert (reason == "") is ok
+    assert (cells == authors) if ok else (cells == cell and rules == ["recovery_mismatch"])
