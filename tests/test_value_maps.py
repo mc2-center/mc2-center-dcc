@@ -1,4 +1,6 @@
 """portal_tables/value_maps.py: enum, DUO, license, DOI and override rules."""
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -10,7 +12,7 @@ CODES = {"RTN": "DUO:0000029", "NPUNCU": "DUO:0000018", "GRU": "DUO:0000042"}
 def normalizer(overrides=None):
     maps = {
         "Assay": vm.EnumMap(
-            ["RNA Sequencing", "Mass Spectrometry", "Hepatocellular Carcinoma, NOS"],
+            ["RNA Sequencing", "Mass Spectrometry"],
             {"rna-seq": "RNA Sequencing", "RNAseq": "RNA Sequencing"},
         ),
         "PublicationAccessibility": vm.EnumMap(["Open Access", "Restricted Access"], {"open": "Open Access"}),
@@ -54,10 +56,79 @@ def test_list_cells_are_handled_per_item_and_deduplicated():
     assert unmapped.to_dict("records") == [{"key": "p1", "column": "Assay", "value": "Western blot"}]
 
 
-def test_items_that_join_to_a_known_term_stay_together():
-    row, _, unmapped = run(normalizer(), Assay="Hepatocellular Carcinoma, NOS, RNAseq")
-    assert row["Assay"] == ["Hepatocellular Carcinoma, NOS", "RNA Sequencing"]
-    assert unmapped.empty
+@pytest.mark.parametrize("fragment,ok", [
+    ("Kidney", False), ("unclassified", False), ("conventional", False), ("Clear Cell", True),
+    ("RNA-seq", True), ("snATAC", True), ("HCC", True), ("3C", True), ("Hepatoma", False), ("", False),
+])
+def test_acceptable_fragment(fragment, ok):
+    assert vm.acceptable_fragment(fragment) is ok
+
+
+def write_model(tmp_path, monkeypatch, rows):
+    """A mini data-models directory: one schema with one enum property and an all_valid_values.csv."""
+    import json
+    import shutil
+    model = tmp_path / "model"
+    (model / "json_schemas").mkdir(parents=True)
+    shutil.copytree(Path(__file__).parent / "fixtures" / "modules", model / "modules")
+    (model / "json_schemas" / "ToolView.json").write_text(json.dumps(
+        {"properties": {"ToolType": {"type": "string", "enum": sorted({r[1] for r in rows})}}}))
+    pd.DataFrame(rows, columns=["category", "valid_value", "nonpreferred_values"]).to_csv(model / "all_valid_values.csv", index=False)
+    monkeypatch.setenv("MC2_MODEL_DIR", str(model))
+
+
+def test_comma_split_fragments_that_are_not_terms_do_not_map_and_are_reported(tmp_path, monkeypatch):
+    write_model(tmp_path, monkeypatch, [
+        ["tool_type", "Kidney Carcinoma", "Clear Cell Adenocarcinoma, Kidney, unclassified, conventional, RNA-seq-like"],
+        ["tool_type", "RNA Sequencing", "rna-seq"],
+        ["tool_type", "Liver", "liver tissue"],
+    ])
+    rejected = []
+    maps = vm.load_enum_maps("ToolView", rejected)
+    enum = maps["ToolType"]
+    for word in ("Kidney", "unclassified", "conventional"):
+        assert enum.lookup(word) == (word, "unmapped"), word
+    assert enum.lookup("Clear Cell Adenocarcinoma") == ("Kidney Carcinoma", "nonpreferred")
+    assert enum.lookup("RNA-seq-like") == ("Kidney Carcinoma", "nonpreferred")  # identifier-like token kept
+    assert enum.lookup("rna-seq") == ("RNA Sequencing", "nonpreferred")  # a single-term cell is not a fragment
+    assert enum.lookup("liver tissue") == ("Liver", "nonpreferred")
+    assert sorted(r["fragment"] for r in rejected) == ["Kidney", "conventional", "unclassified"]
+    assert {r["valid_value"] for r in rejected} == {"Kidney Carcinoma"}
+
+
+def test_for_component_exposes_the_rejected_synonyms_once_each(tmp_path, monkeypatch):
+    write_model(tmp_path, monkeypatch, [["tool_type", "A Type", "Long Name, Kidney, Long Name, Kidney"]])
+    norm = vm.Normalizer.for_component("ToolView")
+    assert norm.rejected["fragment"].tolist() == ["Kidney"]
+    assert norm.rejected.columns.tolist() == ["column", "valid_value", "fragment", "cell", "reason"]
+
+
+def test_case_fold_collision_maps_to_neither_value_and_is_reported(tmp_path, monkeypatch, caplog):
+    enum = vm.EnumMap(["Mouse", "mouse", "Rat"])
+    assert enum.lookup("MOUSE") == ("MOUSE", "unmapped")
+    assert enum.lookup("rat") == ("Rat", "enum_case")
+    assert enum.lookup("Mouse") == ("Mouse", None)  # exact values still pass
+    assert enum.collisions == [("Mouse", "mouse")]
+    assert vm.EnumMap(["mouse", "Mouse"]).collisions == enum.collisions  # order-independent
+    write_model(tmp_path, monkeypatch, [["tool_type", "Mouse", ""], ["tool_type", "mouse", ""]])
+    norm = vm.Normalizer.for_component("ToolView")
+    assert "case-fold collision" in norm.rejected["reason"].iloc[0] and "differ only by case" in caplog.text
+
+
+def test_split_items_splits_on_commas_without_rejoining():
+    assert vm.split_items("A, B,C") == ["A", "B", "C"]
+    assert vm.split_items('["A, B", "C"]') == ["A, B", "C"]
+
+
+def test_override_matches_the_whole_cell_before_its_items():
+    norm = normalizer({("Assay", "rna-seq, Western blot"): "Mass Spectrometry",
+                       ("Assay", "Western blot"): "RNA Sequencing"})
+    row, changes, _ = run(norm, Assay="rna-seq, Western blot")
+    assert row["Assay"] == ["Mass Spectrometry"]
+    assert changes.to_dict("records") == [{"key": "p1", "column": "Assay", "from": "rna-seq, Western blot",
+                                           "to": "Mass Spectrometry", "rule": "override"}]
+    row, _, _ = run(norm, Assay="rna-seq, Western blot, RNAseq")  # not the whole cell: items one by one
+    assert row["Assay"] == ["RNA Sequencing"]
 
 
 def test_json_array_cells_are_accepted():

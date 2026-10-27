@@ -1014,3 +1014,45 @@ def test_duplicate_choices_csv_needs_its_columns(tmp_path):
     pd.DataFrame({"key": ["p1"]}).to_csv(path, index=False)
     with pytest.raises(ValueError, match="lacks"):
         mig.load_duplicate_choices(path)
+
+
+# --- model ref ------------------------------------------------------------------------
+
+
+def unavailable_tag(monkeypatch):
+    real = mig.model_contract.fetch
+
+    def fetch(path, ref=None):
+        if ref == "v99.0.0":
+            raise mig.urllib.error.HTTPError("u", 404, "Not Found", None, None)
+        return real(path, ref=ref)
+
+    monkeypatch.setattr(mig.model_contract, "fetch", fetch)
+    mig.load_schema.cache_clear()
+
+
+def test_unavailable_schema_tag_fails_an_execute_but_only_warns_in_a_dry_run(tmp_path, monkeypatch, caplog):
+    unavailable_tag(monkeypatch)
+    with pytest.raises(SystemExit, match="v99.0.0 is not available"):
+        run(tmp_path, FakeSynapse(), "--schema-version", "99.0.0", execute=True)
+    code, rep = run(tmp_path, FakeSynapse(), "--schema-version", "99.0.0", out="out2")
+    assert status_of(rep) == "dryrun" and "v99.0.0 is not available" in caplog.text
+    mig.load_schema.cache_clear()
+
+
+def test_enum_maps_and_validation_read_the_model_at_the_schema_version_tag(tmp_path, monkeypatch):
+    seen = []
+    real = mig.model_contract.fetch
+    monkeypatch.setattr(mig.model_contract, "fetch", lambda path, ref=None: (seen.append((path, ref)), real(path, ref=ref))[1])
+    monkeypatch.setattr(mig.value_maps.model_contract, "fetch", mig.model_contract.fetch)
+    mig.load_schema.cache_clear()
+    run(tmp_path, FakeSynapse(), "--schema-version", "14.0.1")
+    assert ("all_valid_values.csv", "v14.0.1") in seen and ("json_schemas/PublicationView.json", "v14.0.1") in seen
+    mig.load_schema.cache_clear()
+
+
+def test_rejected_synonyms_report_is_written_once_per_run(tmp_path):
+    code, rep = run(tmp_path, FakeSynapse())
+    rejected = pd.read_csv(rep / "rejected_synonyms.csv", dtype=str)
+    assert rejected.columns.tolist() == ["column", "valid_value", "fragment", "cell", "reason"]
+    assert not rejected.duplicated().any()

@@ -777,7 +777,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         source_keys.remove(k)
     if dropped:
         logger.info("%s: not schema columns, dropped: %s", entry["grant"], dropped)
-    validation = validate_frame(converted, component, f"v{args.schema_version}")
+    validation = validate_frame(converted, component, args.model_ref)
     converted_path = report_dir / "converted.csv"
     _write(converted, converted_path)
     _write(changes, report_dir / "changes.csv")
@@ -986,6 +986,26 @@ def validation_worklist(frames: dict[str, dict], key: str) -> pd.DataFrame:
     return out.sort_values(["field", "grant", "key"], kind="stable").reset_index(drop=True)
 
 
+def resolve_model_ref(args) -> str | None:
+    """The data-models tag of ``--schema-version``, or None to use ``MODEL_REF``.
+
+    The enum maps and the local validation both read the model files at this
+    tag. A tag that is not available is an error with ``--execute`` (the RecordSet is
+    bound to that version) and a warning in a dry run.
+    """
+    ref = f"v{args.schema_version}"
+    try:
+        for path in (f"json_schemas/{args.component}.json", "all_valid_values.csv"):
+            model_contract.fetch(path, ref=ref)
+    except (urllib.error.URLError, FileNotFoundError) as err:
+        if args.execute:
+            raise SystemExit(f"data-models tag {ref} is not available ({err}); --execute binds the RecordSets "
+                             f"to {args.schema_version}, so it cannot run")
+        logger.warning("data-models tag %s is not available (%s); the dry run uses %s", ref, err, model_contract.MODEL_REF)
+        return None
+    return ref
+
+
 def main(argv=None, syn=None):
     args = get_args(argv)
     syn = syn or utils.syn_login()
@@ -994,7 +1014,8 @@ def main(argv=None, syn=None):
     list_cols = recordsets.list_columns(component)
     set_like = recordsets.set_like_columns(component)
     overrides = value_maps.load_overrides(args.overrides) if args.overrides else None
-    normalizer = value_maps.Normalizer.for_component(component, overrides)
+    args.model_ref = resolve_model_ref(args)
+    normalizer = value_maps.Normalizer.for_component(component, overrides, ref=args.model_ref)
     out_dir = Path(args.out_dir)
     run_dir = out_dir / args.run_id
     state_path = out_dir / "state.json"
@@ -1112,6 +1133,7 @@ def main(argv=None, syn=None):
     validation_worklist(frames, KEYS[component]).to_csv(run_dir / "validation_worklist.csv", index=False)
     truncated_values(frames).to_csv(run_dir / "truncated.csv", index=False)
     portal_author_fixes(frames).to_csv(run_dir / "portal_author_fixes.csv", index=False)
+    normalizer.rejected.to_csv(run_dir / "rejected_synonyms.csv", index=False)
 
     unmapped_total = sum(int(s.get("unmapped", 0)) for s in summaries)
     invalid_total = sum(int(s.get("validation_failures", 0)) + int(s.get("invalid_rows", 0)) for s in summaries)
