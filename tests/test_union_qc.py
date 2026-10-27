@@ -212,3 +212,31 @@ def test_license_list_is_comma_joined_text_in_the_manifest(tmp_path):
     pd.DataFrame([{"ToolViewId": "t1", "ToolName": "A", "License": '["MIT", "Apache-2.0"]'}]).to_csv(d / "converted.csv", index=False)
     union, _ = merge_tables.build_union_from_dir("ToolView", str(tmp_path))
     assert union["License"].iat[0] == "MIT, Apache-2.0"
+
+
+def test_same_alias_different_ids_is_a_conflict_worklist(tmp_path, mapping_csv):
+    grants = {
+        "CA100001": [_row("syn1", "A"), _row("syn5", "B")],
+        "CA100002": [_row("syn2", "A", GrantViewKey="CA100002"), _row("syn5", "B", GrantViewKey="CA100002")],
+    }
+    _, manifest, out = _regenerate(tmp_path, mapping_csv, grants)
+    conflicts = pd.read_csv(out / "id_conflicts.csv", dtype=str, keep_default_na=False)
+    assert conflicts.to_dict("records") == [
+        {"alias": "A", "ids": "syn1,syn2", "grants": "CA100001,CA100002", "rows": "2"}]  # B agrees: not listed
+    assert "id conflicts (same alias, different ids; --upload is refused while any): 1" in (out / "report.txt").read_text()
+
+
+def test_upload_is_refused_while_id_conflicts_exist(tmp_path, mapping_csv):
+    import merge_tables
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")],
+                                           "CA100002": [_row("syn2", "A", GrantViewKey="CA100002")]})
+    union, stats = merge_tables.build_union_from_dir("DatasetView", str(root))
+    args = uq.get_args(["--regenerate", "--components", "DatasetView", "--grant-projects", "syn1",
+                        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--upload"])
+    args.carry_columns = []
+    with mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
+            mock.patch.object(utils, "syn_login", return_value=mock.MagicMock()), \
+            mock.patch.object(uq, "upload_manifest") as upload:
+        with pytest.raises(SystemExit, match="id_conflicts"):
+            uq.regenerate_main(args)
+    upload.assert_not_called()

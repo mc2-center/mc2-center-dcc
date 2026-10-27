@@ -1341,8 +1341,8 @@ def ms_reference(rows):
                                        "DatasetDescription"])
 
 
-def ms_convert(source, ref, grant="CA1", info=None):
-    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+def ms_convert(source, ref, grant="CA1", info=None, overrides=None):
+    norm = mig.value_maps.Normalizer.for_component("DatasetView", overrides)
     frame = None if ref is None else mig.reference_frame(ref, "DatasetView", norm)
     return mig.convert_table(source, "DatasetView", norm, lambda: frame, lambda: None, None, grant, info)
 
@@ -1635,3 +1635,45 @@ def test_the_manifest_version_is_part_of_the_resume_hash(tmp_path):
         versions[0] = "v2"
         code, rep = run(tmp_path, fake, component="DatasetView", run_id="r3")
         assert "already" not in (rep / "summary.csv").read_text()
+
+
+def test_a_key_override_resolves_a_worklist_row_and_beats_a_collision():
+    ROW = mig.value_maps.ROW
+    info = {}
+    source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"], ["syn_b", "CA1", "N", "GSE2", "d", "2"]])
+    ref = ms_reference([["syn_shared", "CA1", "N", "GSE1", "d"], ["syn_shared", "CA1", "N", "GSE2", "d"]])
+    overrides = {(MS_KEY, "syn_a", ROW): "syn_chosen"}
+    norm = mig.value_maps.Normalizer.for_component("DatasetView", overrides)
+    frame = mig.reference_frame(ref, "DatasetView", norm.without_row_overrides())
+    converted, changes, *_ = mig.convert_table(source, "DatasetView", norm, lambda: frame, lambda: None, None, "CA1", info)
+    assert converted[MS_KEY].tolist() == ["syn_chosen", "syn_b"]  # GSE1 would have been a collision
+    assert changes.to_dict("records") == [
+        {"key": "syn_chosen", "column": MS_KEY, "from": "syn_a", "to": "syn_chosen", "rule": "override"},
+        {"key": "syn_b", "column": MS_KEY, "from": "syn_b", "to": "syn_shared", "rule": "manifest_id_collision"}]
+    assert info["manifest_ids"]["collision"] == 1  # only the row without an override
+    assert [w["alias"] for w in info["id_worklist"]] == ["GSE2"]
+    assert info["remapped"] == {"syn_chosen": "syn_a"}
+    assert norm.used_row_overrides == {(MS_KEY, "syn_a", ROW)}
+
+
+def test_a_key_override_can_name_the_grant_and_works_without_a_manifest():
+    ROW = mig.value_maps.ROW
+    source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"]])
+    other_grant = {(MS_KEY, "syn_a", ROW, "CA2"): "syn_x"}
+    converted, *_ = ms_convert(source, None, overrides=other_grant)
+    assert converted[MS_KEY].tolist() == ["syn_a"]
+    converted, *_ = ms_convert(source, None, overrides={(MS_KEY, "syn_a", ROW, "CA1"): "syn_x"})
+    assert converted[MS_KEY].tolist() == ["syn_x"]
+
+
+def test_an_unmatched_key_override_is_reported_with_the_unused_row_overrides(tmp_path):
+    overrides = tmp_path / "o.csv"
+    pd.DataFrame([[MS_KEY, "syn_old", "Bob", "syn_chosen", "yes"], [MS_KEY, "syn_typo", "", "syn_y", "yes"]],
+                 columns=["column", "key", "current_value", "proposed_value", "accept"]).to_csv(overrides, index=False)
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", ms_table())})
+    fake.reference_source = ms_reference([["syn_new", "CA1", "N", "GSE1", "d"], ["syn_same", "CA1", "N", "GSE2", "d"]])
+    code, rep = run(tmp_path, fake, "--overrides", str(overrides), component="DatasetView")
+    converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str)
+    assert converted[MS_KEY].tolist() == ["syn_chosen", "syn_same"]
+    text = (rep / "run_summary.txt").read_text()
+    assert "row overrides that matched no row: 1" in text and f"{MS_KEY} / syn_typo" in text

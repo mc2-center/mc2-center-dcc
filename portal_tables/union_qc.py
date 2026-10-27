@@ -67,6 +67,7 @@ DEFAULT_CARRY = ("iconTags",)
 DEFAULT_MERGE = ("PublicationView", "DatasetView")
 # Manifest columns that are not schema properties (not validated).
 NON_SCHEMA = ("Component", "entityId", "iconTags")
+ID_CONFLICT_COLUMNS = ["alias", "ids", "grants", "rows"]
 CORRECTION_COLUMNS = ["key", "column", "current_value", "proposed_value", "status"]
 
 
@@ -138,7 +139,8 @@ def get_args(argv=None):
     parser.add_argument(
         "--upload",
         action="store_true",
-        help="Regenerate mode: LIVE WRITE. Store each manifest as a new version of the current manifest file.",
+        help="Regenerate mode: LIVE WRITE. Store each manifest as a new version of the current manifest file. "
+        "Refused while any merged alias holds different ids in different grants (id_conflicts.csv).",
     )
     # legacy mode
     parser.add_argument("-l", nargs="+", help="Legacy mode: Synapse table IDs to query.")
@@ -371,13 +373,21 @@ def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
 
     The first row's value is kept ("first"); the join columns collect the distinct
     items of every row, comma-joined, in first-seen order. Rows are ordered by alias;
-    rows with a blank alias are never merged and follow at the end. Returns
+    rows with a blank alias are never merged and follow at the end. The id column
+    (``idColumn``) must agree: a group whose rows hold more than one distinct id is
+    still comma-joined in the output but is listed in ``stats["id_conflicts"]``
+    (``alias, ids, grants, rows``), and the caller must not publish it. Returns
     ``(merged, stats)``.
     """
     alias = alias_column(mapping, component)
     rows = mapping[mapping["component"] == component]
+    id_rows = rows[rows["tag"] == "idColumn"]["attribute"]
+    id_col = id_rows.iat[0] if len(id_rows) else None
+    grant_rows = rows[rows["tag"] == "grantColumn"]["attribute"]
+    grant_col = grant_rows.iat[0] if len(grant_rows) else None
     join_cols = [a for a, m in zip(rows["attribute"], rows["mapping"]) if m == '",".join' and a in union.columns]
-    stats = {"rows_in": len(union), "alias": alias, "merged_groups": 0, "blank_alias": 0}
+    stats = {"rows_in": len(union), "alias": alias, "merged_groups": 0, "blank_alias": 0,
+             "id_conflicts": []}
     if alias is None or alias not in union.columns or union.empty:
         stats["rows_out"] = len(union)
         return union, stats
@@ -388,6 +398,12 @@ def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
         for col in join_cols:
             row[col] = ",".join(dict.fromkeys(i for v in group[col] for i in utils.split_cell(v)))
         stats["merged_groups"] += int(len(group) > 1)
+        if id_col in union.columns and len(group) > 1:
+            ids = list(dict.fromkeys(i for v in group[id_col] for i in utils.split_cell(v)))
+            if len(ids) > 1:
+                grants = list(dict.fromkeys(i for v in group[grant_col] for i in utils.split_cell(v))) if grant_col in union.columns else []
+                stats["id_conflicts"].append({"alias": row[alias], "ids": ",".join(ids), "grants": ",".join(grants),
+                                              "rows": len(group)})
         merged.append(row)
     stats["blank_alias"] = int(blank.sum())
     out = pd.concat([pd.DataFrame(merged, columns=union.columns), union[blank]], ignore_index=True)
@@ -468,7 +484,7 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
         manifest, merge_stats = merge_by_alias(union, component, mapping)
     else:
         manifest, merge_stats = union, {"rows_in": len(union), "rows_out": len(union), "alias": alias_column(mapping, component),
-                                        "merged_groups": 0, "blank_alias": 0}
+                                        "merged_groups": 0, "blank_alias": 0, "id_conflicts": []}
     manifest, corrections = apply_key_corrections(manifest, component, pmid_keys)
     if fill:  # as utils/merge_and_correct_manifests.py does: fill empty cells, then trim whitespace
         manifest = manifest_cleanup.trim_whitespace(manifest_cleanup.fill_empty_cells(manifest.copy(), component))
@@ -480,18 +496,22 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     manifest.to_csv(path, index=False, lineterminator="\n")
     write_validation(validation, out_dir)
     corrections.to_csv(out_dir / "key_corrections.csv", index=False)
+    conflicts = pd.DataFrame(merge_stats["id_conflicts"], columns=ID_CONFLICT_COLUMNS)
+    conflicts.to_csv(out_dir / "id_conflicts.csv", index=False)
     lines = [
         f"{component}: union rows={merge_stats['rows_in']}, manifest rows={merge_stats['rows_out']} "
         f"(alias {merge_stats['alias']!r}, {'merged' if merge else 'not merged'}: {merge_stats['merged_groups']} merged groups, {merge_stats['blank_alias']} blank-alias rows kept)",
         f"validation (schema {ref or model_contract.MODEL_REF}): {len(validation)} failures in "
         f"{validation['key'].nunique()} rows; all rows kept (D-Q39)",
+        f"id conflicts (same alias, different ids; --upload is refused while any): {len(conflicts)}"
+        + (f", see {out_dir / 'id_conflicts.csv'}" if len(conflicts) else ""),
         f"key corrections: {corrections['status'].value_counts().to_dict() if len(corrections) else 'none'}",
         f"carried columns, rows left blank: {carried or 'none'}",
         f"manifest: {path}",
     ]
     (out_dir / "report.txt").write_text("\n".join(lines) + "\n")
     return {"component": component, "path": path, "manifest": manifest, "validation": validation,
-            "corrections": corrections, "lines": lines, "union_stats": union_stats}
+            "corrections": corrections, "id_conflicts": conflicts, "lines": lines, "union_stats": union_stats}
 
 
 def upload_manifest(syn, component: str, path, comment: str) -> str:
@@ -510,6 +530,7 @@ def regenerate_main(args, syn=None) -> int:
     pmid_keys = args.pmid_keys or (DEFAULT_PMID_KEYS if os.path.exists(DEFAULT_PMID_KEYS) else None)
     mapping = load_mapping(args.mapping, args.schema_version)
     failures = 0
+    results = []
     for component in args.components:
         if args.input_dir:
             union, stats = merge_tables.build_union_from_dir(component, args.input_dir)
@@ -532,9 +553,15 @@ def regenerate_main(args, syn=None) -> int:
                                       merge=component in args.merge_components, fill=not args.no_fill)
         print("\n".join(result["lines"]))
         failures += len(result["validation"])
+        results.append(result)
+    conflicted = [r["component"] for r in results if len(r["id_conflicts"])]
+    if args.upload and conflicted:
+        raise SystemExit(f"--upload refused: {', '.join(conflicted)} has rows with the same alias but different ids "
+                         f"(id_conflicts.csv under {args.output_dir}); resolve them in the grant tables and regenerate")
+    for result in results:
         if args.upload:
             syn = syn or utils.syn_login()
-            print("LIVE WRITE: uploaded", upload_manifest(syn, component, result["path"],
+            print("LIVE WRITE: uploaded", upload_manifest(syn, result["component"], result["path"],
                   f"I6 regenerated from the {args.schema_version or model_contract.MODEL_REF} union"))
         else:
             print("Dry run: nothing uploaded (use --upload).")

@@ -420,7 +420,8 @@ def manifest_id_candidates(reference: pd.DataFrame, component: str):
     return out, aliases_of
 
 
-def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, worklist: list | None = None):
+def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, worklist: list | None = None,
+                       normalizer=None):
     """Replace each row's entity id with the curated manifest's: ``(frame, changes, counts)``.
 
     The manifest row is found by the alias column (``MANIFEST_ID_ALIAS``); when an alias has several
@@ -432,21 +433,42 @@ def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, 
     to a manifest row whose ``GrantViewKey`` lacks the grant is applied as ``manifest_id_other_grant``. ``reference`` returns the converted manifest or None. A list passed as
     ``worklist`` receives a ``{kind, alias, grant_table_id, manifest_ids, note}`` dict per ambiguous, unmatched, colliding
     row.
+
+    A per-row override of the key column (``--overrides`` row: ``column`` = the component's key column,
+    ``key`` = the grant table's id, optional ``grant``, ``proposed_value`` = the id to use) is how a curator
+    resolves a worklist row: it sets that row's id before any of the above (rule ``override``) and is recorded
+    in ``normalizer.used_row_overrides``.
     """
     key, alias = KEYS[component], MANIFEST_ID_ALIAS[component]
     counts = dict(REMAP_COUNTS)
+    df = df.copy()
+    changes = []
+    chosen = set()  # rows whose id a curator override set
+    if normalizer is not None:
+        for i in range(len(df)):
+            old = str(df[key].iloc[i]).strip()
+            target = next((t for t in ((key, old, value_maps.ROW, grant), (key, old, value_maps.ROW))
+                           if t in normalizer.overrides), None)
+            if target is None:
+                continue
+            new = normalizer.overrides[target]
+            normalizer.used_row_overrides.add(target)
+            chosen.add(i)
+            df.iloc[i, df.columns.get_loc(key)] = new
+            if new != old:
+                changes.append({"key": new, "column": key, "from": old, "to": new, "rule": "override"})
     ref = reference()
     if ref is None or alias not in df.columns or alias not in ref.columns:
-        return df, [], counts
+        return df, changes, counts
     candidates, aliases_of = manifest_id_candidates(ref, component)
-    df = df.copy()
 
     def note(kind, name, old, ids, text=""):
         if worklist is not None:
             worklist.append({"kind": kind, "alias": name, "grant_table_id": old, "manifest_ids": ids, "note": text})
 
-    changes = []
     for i in range(len(df)):
+        if i in chosen:
+            continue
         old = str(df[key].iloc[i]).strip()
         name = str(df[alias].iloc[i]).strip()
         rows = candidates.get(name, [])
@@ -801,7 +823,7 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
     old_keys = [str(v).strip() for v in df[key]]
     remap_changes, counts, id_worklist = [], dict(REMAP_COUNTS), []
     if component in MANIFEST_ID_ALIAS:
-        df, remap_changes, counts = remap_manifest_ids(df, component, grant, reference, id_worklist)
+        df, remap_changes, counts = remap_manifest_ids(df, component, grant, reference, id_worklist, normalizer)
     kept: list[int] = []
     df, resolutions = resolve_duplicates(df, legacy_id, component, normalizer, reference, portal, choices, kept)
     df, changes, unmapped = normalizer.normalize_frame(df, key, grant)
