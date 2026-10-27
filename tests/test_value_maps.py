@@ -274,6 +274,20 @@ def test_load_enum_maps_from_the_model_files():
     assert pub["Assay"].lookup("RNA Sequencing") == ("RNA Sequencing", None)
 
 
+def test_a_nonpreferred_term_of_a_value_outside_the_enum_is_not_mapped(tmp_path, monkeypatch):
+    import json
+    write_model(tmp_path, monkeypatch, [
+        ["tool_type", "A Type", "a-type"], ["tool_type", "B Type", "b-type"],
+        ["tool_type", "Wider Type", "wide-term"],  # in the category, not in the schema enum
+    ])
+    schema = tmp_path / "model" / "json_schemas" / "ToolView.json"
+    schema.write_text(json.dumps({"properties": {"ToolType": {"type": "string", "enum": ["A Type", "B Type"]}}}))
+    enum = vm.load_enum_maps("ToolView")["ToolType"]
+    assert enum.lookup("a-type") == ("A Type", "nonpreferred")
+    assert enum.lookup("wide-term") == ("wide-term", "unmapped")
+    assert vm.EnumMap(["A"], [("x", "A"), ("y", "Z")]).lookup("y") == ("y", "unmapped")
+
+
 def test_for_component_wires_the_duo_codes():
     norm = vm.Normalizer.for_component("DatasetView")
     row, _, _ = run(norm, DatasetDataUseCodes="RTN, NPUNCU")

@@ -118,6 +118,8 @@ class EnumMap:
         seen: dict[str, set] = {}
         pairs = nonpreferred.items() if isinstance(nonpreferred, dict) else (nonpreferred or [])
         for term, preferred in pairs:
+            if preferred not in self.valid:  # a term of a wider category must not map outside this enum
+                continue
             seen.setdefault(fold(term), set()).add(preferred)
         self.ambiguous = {t for t, p in seen.items() if len(p) > 1}
         self.nonpreferred = {t: next(iter(p)) for t, p in seen.items() if len(p) == 1}
@@ -176,7 +178,7 @@ def load_enum_maps(component: str, rejected: list | None = None, ref: str | None
         # Terms that are valid values of the same enum are never nonpreferred: a
         # fragment of a comma-containing nonpreferred term (``NOS``) must not map.
         folded_valid = {fold(v) for v in valid}
-        nonpreferred = [(t, v) for t, v in nonpreferred if fold(t) not in folded_valid]
+        nonpreferred = [(t, v) for t, v in nonpreferred if fold(t) not in folded_valid and v in enum]
         maps[column] = EnumMap(enum, nonpreferred)
         for first, second in maps[column].collisions:
             logger.warning("%s: values %r and %r differ only by case; case-insensitive matching skips both", column, first, second)
