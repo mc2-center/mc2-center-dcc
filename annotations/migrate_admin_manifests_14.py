@@ -79,9 +79,8 @@ SOURCE_KEY_HEADER = {c: f"{c}_id" for c in COMPONENTS}  # the source table's key
 ADMIN_LABEL = "CCKP - MC2 Admin"
 # String columns that hold one or more keys; split and rejoined per item.
 KEY_LIST_COLUMNS = frozenset({"ConsortiumKey", "GrantViewKey"})
-CONSORTIUM_PREFIX = "program."
 # Bump when a conversion rule changes: a done run is skipped on rerun only if its options (including this) match.
-CONVERSION_RULES = 2  # 2: minted PersonViewId, consortium_key, date_iso
+CONVERSION_RULES = 3  # 2: minted PersonViewId, consortium_key, date_iso; 3: credentials, case-insensitive consortia
 DUPLICATE_COLUMNS = ["key", "rows"]
 
 
@@ -238,6 +237,8 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     unmapped += norm_unmapped.to_dict("records")
 
     consortia = utils.load_consortium_keys()
+    by_name = {name.strip().casefold(): cid for name, cid in consortia.items()}  # case and outer spaces ignored
+    known_ids = set(consortia.values())
     for column in keyed:  # one or more keys, rejoined; a ConsortiumKey name becomes its program.* ID
         cells = []
         for k, items in zip(out[key], out[column]):
@@ -245,10 +246,12 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
             if column == "ConsortiumKey":
                 mapped = []
                 for item in items:
-                    if item in consortia:
-                        changes.append({"key": k, "column": column, "from": item, "to": consortia[item], "rule": "consortium_key"})
-                        item = consortia[item]
-                    elif not item.startswith(CONSORTIUM_PREFIX):
+                    item = item.strip()
+                    if item.casefold() in by_name:
+                        changes.append({"key": k, "column": column, "from": item, "to": by_name[item.casefold()],
+                                        "rule": "consortium_key"})
+                        item = by_name[item.casefold()]
+                    elif item not in known_ids:  # not a name in the map and not one of its IDs (incl. an unknown program.*)
                         unmapped.append({"key": k, "column": column, "value": item})
                     mapped.append(item)
                 items = mapped

@@ -220,6 +220,23 @@ def test_an_unknown_consortium_stays_and_is_reported_and_a_program_id_is_left_al
     assert "consortium_key" not in set(changes["rule"])
 
 
+def test_consortium_names_match_case_insensitively_and_trimmed():
+    source = grant_table()
+    source.loc[0, "Grant Consortium Name"] = "  csbc "
+    source.loc[1, "Grant Consortium Name"] = "SAGE BIONETWORKS, metnet"
+    converted, changes, unmapped, *_ = convert(source, "GrantView")
+    assert converted["ConsortiumKey"].tolist() == ["program.csbc", "program.sage-bionetworks, program.metnet"]
+    assert unmapped.empty and (changes["rule"] == "consortium_key").sum() == 3
+
+
+def test_a_program_id_outside_the_map_is_reported_unmapped():
+    source = grant_table()
+    source.loc[0, "Grant Consortium Name"] = "program.nope, program.htan"
+    converted, _, unmapped, *_ = convert(source, "GrantView")
+    assert converted["ConsortiumKey"].tolist()[0] == "program.nope, program.htan"
+    assert unmapped[unmapped["column"] == "ConsortiumKey"]["value"].tolist() == ["program.nope"]
+
+
 def test_an_override_maps_a_name_before_the_consortium_map(tmp_path):
     path = tmp_path / "o.csv"
     path.write_text("column,current_value,proposed_value\nConsortiumKey,CSBC,program.other\n")
