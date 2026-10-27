@@ -95,7 +95,7 @@ REFERENCE_RESOURCE = {"PublicationView": "publication", "DatasetView": "dataset"
                       "EducationalResource": "education"}
 RESOLUTION_COLUMNS = ["key", "kept_row", "dropped_row", "reason"]
 # Bump when a conversion rule changes what a grant converts to: a done dry run is then redone (options_hash).
-CONVERSION_RULES = "3-manifest-reconcile"
+CONVERSION_RULES = "4-manifest-reconcile"
 # Components whose entity id (the upsert key) is taken from the curated manifest, matched by this column.
 # Columns that follow the entity (downloadSynId, version) are derived portal columns: not in the grant
 # tables, the manifest or the RecordSet schema, so only the key is replaced.
@@ -429,7 +429,7 @@ def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, 
     safe key for either dataset: the grant's value is kept (``manifest_id_collision``, not a remap). A remap
     to a manifest row whose ``GrantViewKey`` lacks the grant is applied as ``manifest_id_other_grant``. ``reference`` returns the converted manifest or None. A list passed as
     ``worklist`` receives a ``{kind, alias, grant_table_id, manifest_ids, note}`` dict per ambiguous, unmatched, colliding
-    or other-grant row.
+    row.
     """
     key, alias = KEYS[component], MANIFEST_ID_ALIAS[component]
     counts = dict(REMAP_COUNTS)
@@ -470,8 +470,6 @@ def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, 
             if not any(grant in grants for ids_, grants in rows if ids[0] in ids_):
                 counts["other_grant"] += 1
                 rule = "manifest_id_other_grant"
-                note("other_grant", name, old, ids[0], "the manifest row names grant(s) " + ", ".join(
-                    sorted({g for ids_, grants in rows if ids[0] in ids_ for g in grants})))
             df.iloc[i, df.columns.get_loc(key)] = ids[0]
             changes.append({"key": ids[0], "column": key, "from": old, "to": ids[0], "rule": rule})
     return df, changes, counts

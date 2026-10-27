@@ -1554,7 +1554,7 @@ def test_a_shared_manifest_id_is_a_collision_even_when_the_other_alias_is_in_ano
     assert converted[MS_KEY].tolist() == ["syn_a"] and info["manifest_ids"]["collision"] == 1
 
 
-def test_a_remap_to_a_manifest_row_of_another_grant_has_its_own_rule_and_a_worklist_entry():
+def test_a_remap_to_a_manifest_row_of_another_grant_has_its_own_rule_and_no_worklist_entry():
     info = {}
     source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"]])
     ref = ms_reference([["syn_new", "CA9", "N", "GSE1", "d"]])
@@ -1562,7 +1562,7 @@ def test_a_remap_to_a_manifest_row_of_another_grant_has_its_own_rule_and_a_workl
     assert converted[MS_KEY].tolist() == ["syn_new"]  # still applied
     assert changes["rule"].tolist() == ["manifest_id_other_grant"]
     assert info["manifest_ids"]["other_grant"] == 1 and info["manifest_ids"]["remapped"] == 1
-    assert info["id_worklist"][0]["kind"] == "other_grant" and "CA9" in info["id_worklist"][0]["note"]
+    assert info["id_worklist"] == []  # the same dataset in another grant is expected: tagged, not for the curator
 
 
 def test_duplicate_matching_uses_the_manifest_equality_rule():
