@@ -598,6 +598,10 @@ class Removals:
             "principalId": str(principal), "changedOn": datetime.now(timezone.utc),
         })
 
+    def recordset_ids(self) -> list[str]:
+        """RecordSets that have any row."""
+        raise NotImplementedError
+
     def _latest(self, rs_id: str) -> pd.DataFrame:
         df = self._read(rs_id)
         if df.empty:
@@ -641,6 +645,14 @@ class SynapseTableRemovals(Removals):
             synapse_client=self.syn,
         )
 
+    def recordset_ids(self) -> list[str]:
+        df = Table(id=self.table_id).query(
+            query=f"SELECT DISTINCT recordSetId FROM {self.table_id}",
+            include_row_id_and_row_version=False,
+            synapse_client=self.syn,
+        )
+        return sorted(df["recordSetId"])
+
     def _append(self, row: dict) -> None:
         values = dict(row)
         values["changedOn"] = int(values["changedOn"].timestamp() * 1000)
@@ -662,6 +674,11 @@ class CsvRemovals(Removals):
         df = df[df["recordSetId"] == rs_id].copy()
         df["removedInVersion"] = pd.to_numeric(df["removedInVersion"].replace("", pd.NA))
         return df
+
+    def recordset_ids(self) -> list[str]:
+        if not self.path.exists():
+            return []
+        return sorted(set(pd.read_csv(self.path, dtype=str, keep_default_na=False)["recordSetId"]))
 
     def _append(self, row: dict) -> None:
         new = not self.path.exists()
@@ -1077,6 +1094,11 @@ def export_via_grid(syn, rs_id: str, **kwargs) -> list[int]:
     Same waits, retries and cleanup as :func:`write_via_grid`.
     """
     return _grid_session(syn, rs_id, None, **kwargs)
+
+
+def open_grid_sessions(syn, rs_id: str) -> list:
+    """Grid sessions currently open on the RecordSet (``Grid.list(source_id=...)``)."""
+    return list(Grid.list(source_id=rs_id, synapse_client=syn))
 
 
 def store_new_version(syn, rs_id: str, csv_path) -> int:
