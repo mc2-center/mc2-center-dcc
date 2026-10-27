@@ -76,26 +76,34 @@ def entity_with(path, content):
     return SimpleNamespace(path=str(path), file_handle=SimpleNamespace(content_md5=md5(content)))
 
 
+class FakeSyn:
+    """restGET returns a pre-signed URL; the session returns ``content`` for it."""
+
+    def __init__(self, content):
+        self.urls = []
+        self._requests_session = SimpleNamespace(get=self._get)
+        self.content = content
+
+    def restGET(self, uri):
+        self.urls.append(uri)
+        return "https://s3.example/presigned"
+
+    def _get(self, url, timeout=None):
+        return SimpleNamespace(content=self.content, raise_for_status=lambda: None)
+
+
 def test_read_recordset_downloads_again_when_the_cached_file_has_the_wrong_md5(tmp_path):
     wrong = tmp_path / "wrong.csv"
-    wrong.write_text("k\nA\n")  # v6's contents served for v5
-    right_dir = tmp_path / "dl"
-    right_dir.mkdir()
-    right = right_dir / "right.csv"
-    right.write_text("k\nA\nB\n")
-    calls = []
-
-    def make(**kw):
-        calls.append(kw)
-        entity = entity_with(right if "download_location" in kw else wrong, b"k\nA\nB\n")
-        return SimpleNamespace(get=lambda synapse_client=None: entity)
-
-    with mock.patch.object(rs, "RecordSet", side_effect=make):
-        df = rs.read_recordset("syn", "syn1", version=5, cache_dir=tmp_path / "cache")
+    wrong.write_text("k\nA\n")  # v6's contents served for v5 by a poisoned client cache
+    entity = entity_with(wrong, b"k\nA\nB\n")
+    entity.version_number = 5
+    syn = FakeSyn(b"k\nA\nB\n")
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = entity
+        df = rs.read_recordset(syn, "syn1", version=5, cache_dir=tmp_path / "cache")
     assert list(df["k"]) == ["A", "B"]
-    assert len(calls) == 2 and "download_location" in calls[1] and calls[1]["version_number"] == 5
+    assert syn.urls == ["/entity/syn1/version/5/file?redirect=false"]  # S3 directly, not the client cache
     assert (tmp_path / "cache" / "syn1" / "v5.csv").read_text() == "k\nA\nB\n"  # the cache gets the right file
-    assert not (tmp_path / "wrong.csv.part").exists()
 
 
 def test_read_recordset_with_a_matching_md5_downloads_once(tmp_path):
@@ -115,8 +123,10 @@ def test_read_recordset_with_a_matching_md5_downloads_once(tmp_path):
 def test_read_recordset_raises_when_the_fresh_download_is_wrong_too(tmp_path):
     bad = tmp_path / "bad.csv"
     bad.write_text("k\nZ\n")
-    with mock.patch.object(rs, "RecordSet", side_effect=lambda **kw: SimpleNamespace(
-            get=lambda synapse_client=None: entity_with(bad, b"something else"))):
+    entity = entity_with(bad, b"something else")
+    entity.version_number = 5
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = entity
         with pytest.raises(ValueError, match="md5"):
-            rs.read_recordset("syn", "syn1", version=5, cache_dir=tmp_path / "cache")
+            rs.read_recordset(FakeSyn(b"k\nY\n"), "syn1", version=5, cache_dir=tmp_path / "cache")
     assert not (tmp_path / "cache" / "syn1" / "v5.csv").exists()

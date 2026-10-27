@@ -290,29 +290,35 @@ def read_recordset(
         if cached.exists():
             return _load_csv(cached, list_cols)
     entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
-    fresh_dir = None
+    path, fresh_dir = entity.path, None
     try:
         if _md5_mismatch(entity):
-            # The client's cache can map a file handle to the wrong local file (see store_new_version);
-            # fetch into a directory of its own, which no cache entry points at.
+            # The client's cache can map a file handle to the wrong local file (see store_new_version),
+            # and a second client download copies that same file; fetch the version's file from S3 directly.
             logger.warning("%s v%s: the cached download does not match its file handle's md5; downloading again",
                            rs_id, version)
             fresh_dir = tempfile.mkdtemp(prefix="recordset_")
-            entity = RecordSet(
-                id=rs_id, version_number=version, download_file=True, download_location=fresh_dir,
-                if_collision="overwrite.local",
-            ).get(synapse_client=syn)
-            if _md5_mismatch(entity):
+            path = _download_version_file(syn, rs_id, entity.version_number, Path(fresh_dir) / "recordset.csv")
+            if synapse_utils.md5_for_file_hex(filename=str(path)) != entity.file_handle.content_md5:
                 raise ValueError(f"{rs_id} v{version}: the downloaded file does not match its file handle's md5")
         if cached is not None:
             cached.parent.mkdir(parents=True, exist_ok=True)
             tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
-            shutil.copyfile(entity.path, tmp)
+            shutil.copyfile(path, tmp)
             tmp.replace(cached)
-        return _load_csv(entity.path, list_cols)
+        return _load_csv(path, list_cols)
     finally:
         if fresh_dir is not None:
             shutil.rmtree(fresh_dir, ignore_errors=True)
+
+
+def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
+    """Download one version's file through its pre-signed URL, bypassing the client's file cache."""
+    url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
+    response = syn._requests_session.get(url, timeout=120)
+    response.raise_for_status()
+    dest.write_bytes(response.content)
+    return dest
 
 
 def _md5_mismatch(entity) -> bool:
