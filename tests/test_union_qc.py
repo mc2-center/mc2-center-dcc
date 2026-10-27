@@ -201,3 +201,14 @@ def test_empty_curated_cells_are_filled_like_merge_and_correct(tmp_path, mapping
 def test_no_fill_keeps_empty_cells(tmp_path, mapping_csv):
     _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="")]}, extra=["--no-fill"])
     assert manifest["Tissue"].iat[0] == ""
+
+
+def test_license_list_is_comma_joined_text_in_the_manifest(tmp_path):
+    """D-Q51: portal license stays STRING, so the manifest cell is plain comma-joined text."""
+    import merge_tables
+
+    d = tmp_path / "ToolView" / "CA100001"
+    d.mkdir(parents=True)
+    pd.DataFrame([{"ToolViewId": "t1", "ToolName": "A", "License": '["MIT", "Apache-2.0"]'}]).to_csv(d / "converted.csv", index=False)
+    union, _ = merge_tables.build_union_from_dir("ToolView", str(tmp_path))
+    assert union["License"].iat[0] == "MIT, Apache-2.0"
