@@ -80,7 +80,8 @@ UNION_PARENT = "syn28742843"  # CCKP - MC2 Admin: holds the legacy <Component>_U
 # Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
 UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
 COMPONENTS = ["PublicationView", "DatasetView", "ToolView", "EducationalResource"]
-KEYS = {c: f"{c}Id" for c in COMPONENTS}  # class-label upsert key of each component
+# The admin components (migrate_admin_manifests_14.py reuses this module's functions) have keys too.
+KEYS = {c: f"{c}Id" for c in COMPONENTS + list(utils.ADMIN_COMPONENTS.values())}  # class-label upsert key of each component
 FOLDER_MAP = merge_tables.FOLDER_MAP
 # utils.CONFIG resource of the curated merged manifest of each component.
 REFERENCE_RESOURCE = {"PublicationView": "publication", "DatasetView": "dataset", "ToolView": "tool",
@@ -688,7 +689,7 @@ def find_or_create_folder(syn, project_id: str, name: str) -> str:
     return folder_id
 
 
-def create_recordset(syn, args, project_id: str, folder_id: str, grant: str, table_id: str) -> str:
+def create_recordset(syn, args, project_id: str, folder_id: str, grant: str, table_id: str, description=None) -> str:
     """Create the RecordSet and its curation task (no Grid session) and return the RecordSet ID."""
     component = args.component
     schema_uri = f"MC2Center-{component}-{args.schema_version}"
@@ -697,7 +698,7 @@ def create_recordset(syn, args, project_id: str, folder_id: str, grant: str, tab
         project_id=project_id,
         folder_id=folder_id,
         record_set_name=f"MC2Center_{component}_RecordSet",
-        record_set_description=f"{component} metadata of grant {grant}, migrated from table {table_id}.",
+        record_set_description=description or f"{component} metadata of grant {grant}, migrated from table {table_id}.",
         curation_task_name=f"MC2Center_{component}_CurationTask",
         upsert_keys=[KEYS[component]],
         instructions=f"Edit the {component} records in the grid. Rows are validated against {schema_uri}.",
@@ -739,7 +740,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     """
     component, key = args.component, KEYS[args.component]
     stored = recordsets.schema_columns(component) | {key}
-    folder_id = find_or_create_folder(syn, entry["project"], FOLDER_MAP[component])
+    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or FOLDER_MAP[component])
     rs_id = recordsets.find_recordset(syn, folder_id, component)
     principal = recordsets.principal_id(syn)
     recovered = {}
@@ -785,7 +786,8 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
             base = latest
             note = f"loaded the RecordSet left empty at v{created_at} by an earlier run"
     else:
-        rs_id = create_recordset(syn, args, entry["project"], folder_id, entry["grant"], entry["table"])
+        rs_id = create_recordset(syn, args, entry["project"], folder_id, entry["grant"], entry["table"],
+                                 entry.get("description"))
         summary["recordset"] = rs_id
         latest, upsert = recordsets.recordset_info(syn, rs_id)
         write_log.created(rs_id, latest, args.run_id, principal)
