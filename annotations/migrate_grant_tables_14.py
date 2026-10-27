@@ -29,6 +29,14 @@ and compares every key and cell with converted.csv, and collects Synapse's
 validation results (synapse_validation.csv). That logged write is the
 pipeline-owned baseline (D-Q33).
 
+The curated merged manifest of each component holds newer data than the grant tables. For DatasetView
+the entity id (``DatasetViewId``, the upsert key) is taken from it, matched by ``DatasetAlias`` (rule
+``manifest_id`` in changes.csv; several distinct ids: ``manifest_id_ambiguous``, the grant's value is kept;
+the portal-derived columns that follow the entity, downloadSynId and version, are not stored). Every other
+cell that differs from the manifest's row is listed, not changed, in ``manifest_differences.csv``
+(``grant, key, column, grant_value, manifest_value``); ``--write-override-template`` turns it into an
+``--overrides`` CSV (``key`` = apply to that row only; ``accept`` = only the rows marked yes apply).
+
 ``<out-dir>/state.json`` holds the status per grant; a rerun skips grants that
 finished in the same mode. ``--redo <grant>`` repeats one in a dry run.
 
