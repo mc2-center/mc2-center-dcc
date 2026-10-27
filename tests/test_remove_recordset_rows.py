@@ -226,10 +226,10 @@ def test_crash_recovery_by_the_next_run_when_the_handler_could_not_run(tmp_path)
     text[1] = text[1].replace(text[1].split(",")[-2], old.isoformat())
     (tmp_path / "log.csv").write_text("\n".join(text) + "\n")
     s = process(tmp_path, fake, log, removals, run_id="dcc-removal-2")
-    assert s["status"] == "nothing_to_remove" and s["claimed"] == {"b": 2}
-    assert log.pipeline_map("synRS") == {2: 1}
+    assert s["status"] == "revalidated" and s["claimed"] == {"b": 2} and s["owed_export"] == [2]
+    assert log.pipeline_map("synRS") == {2: 1, 3: 2}
     assert removals.removed("synRS") == {"b": 2}
-    assert fake.events == []  # nothing stored or exported again
+    assert [e[0] for e in fake.events] == ["export"]  # nothing stored again; the owed export is made
 
 
 def test_removed_version_without_removals_rows_is_claimed(tmp_path):
@@ -285,3 +285,40 @@ def test_removals_rows_are_appended_in_one_write_each(tmp_path):
     with mock.patch.object(rs.CsvRemovals, "_append_rows", lambda self, rows: (writes.append(len(rows)), orig(self, rows))):
         process(tmp_path, fake, log, removals)
     assert writes == [1, 2]  # not_found (zzz), then both removed keys together
+
+
+def test_crash_after_the_removals_rows_but_before_the_export_owes_a_revalidation(tmp_path):
+    fake, log, removals = setup(tmp_path, [V1])
+
+    def dying_export(syn, rs_id, on_version=None, **kw):
+        fake.events.append(("export-died", None))
+        raise RuntimeError("died before the export created a version")
+
+    fake.export = dying_export
+    with pytest.raises(RuntimeError):
+        process(tmp_path, fake, log, removals, run_id="dcc-removal-1")
+    assert log.removal_versions("synRS") == {2} and removals.removed("synRS") == {"b": 2}
+    assert log.unexported_removals("synRS") == [2]
+    # a later run with nothing requested makes the export and logs it written, base = the removal version
+    fake2 = FakeRS(fake.versions, log=log)
+    s = process(tmp_path, fake2, log, removals, run_id="dcc-removal-2")
+    assert s["status"] == "revalidated" and [e[0] for e in fake2.events] == ["export"]
+    assert log.unexported_removals("synRS") == [] and log.pipeline_map("synRS") == {2: 1, 3: 2}
+    assert log.unresolved_pending("synRS") == []
+    # and the next run finds nothing to do
+    assert process(tmp_path, FakeRS(fake2.versions, log=log), log, removals, run_id="dcc-removal-3")["message"] == "no requested keys"
+
+
+def test_dry_run_reports_an_owed_export_and_writes_nothing(tmp_path):
+    fake, log, removals = setup(tmp_path, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
+    log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
+    s = process(tmp_path, fake, log, removals, execute=False)
+    assert s["owed_export"] == [2] and "would re-validate" in s["message"] and fake.events == []
+    assert log.pipeline_map("synRS") == {2: 1}
+
+
+def test_open_session_blocks_the_owed_export_too(tmp_path):
+    fake, log, removals = setup(tmp_path, [V1, V1], requested=(), sessions=[SimpleNamespace(session_id="g1")])
+    log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "blocked" and "best effort" in s["message"] and fake.events == []

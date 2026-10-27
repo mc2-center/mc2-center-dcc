@@ -443,6 +443,12 @@ class WriteLog:
             df = df[df["runId"] == run_id]
         return {int(v) for v in df["version"]}
 
+    def unexported_removals(self, rs_id: str) -> list[int]:
+        """Removal versions with no later pipeline version based on them: each still owes its Grid export."""
+        pipeline = self.pipeline_map(rs_id)
+        return sorted(v for v in self.removal_versions(rs_id)
+                      if not any(b == v for w, b in pipeline.items() if w != v))
+
     def pipeline_versions(self, rs_id: str) -> list[int]:
         return sorted(self.pipeline_map(rs_id))
 

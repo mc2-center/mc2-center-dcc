@@ -30,6 +30,12 @@ history); the removals table is then completed here: the keys that left the
 RecordSet in a ``removed`` version with no removals rows are appended as
 ``removed`` rows (audit, and the upload's skip of ``restored`` keys).
 
+A removal version owes a Grid export until a pipeline version is based on it
+(``WriteLog.unexported_removals``). At the start of each run, per RecordSet and
+under the lock, any owed export (a crash after the removals rows, before the
+export) is made and logged ``written`` (base = the removal version), even when
+nothing new is requested.
+
 Dry run is the default: it prints, per RecordSet, the keys that would be
 removed, the keys not found and any blocking session or lock; nothing is
 written. Use ``--execute`` to write; it needs ``--write-log-table`` and
@@ -57,7 +63,7 @@ import utils
 
 logger = logging.getLogger(__name__)
 
-NEEDS_ATTENTION = frozenset({"failed", "locked", "blocked", "retry"})
+NEEDS_ATTENTION = frozenset({"failed", "locked", "blocked", "retry"})  # "revalidated" is ok
 PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older than this is not ours
 
 
@@ -125,11 +131,52 @@ def claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_c
     return claim_removed(syn, rs_id, removals, unclaimed, requested, key_cols, cache_dir, run_id, principal)
 
 
+def _under_lock_checks(syn, rs_id, write_log, run_id, principal, base):
+    """After ``start``: ``(status, message)`` of a refusal (pending row aborted), or None to go ahead."""
+    refusal = None
+    winner = write_log.earlier_pending(rs_id, run_id)
+    if winner:
+        refusal = ("locked", f"run {winner} started its write first; skipped")
+    elif recordsets.open_grid_sessions(syn, rs_id):  # one may have opened since the first check
+        refusal = ("blocked", "a Grid session was opened meanwhile (visible to the runner; best effort); nothing written")
+    else:
+        now_latest, _ = recordsets.recordset_info(syn, rs_id)
+        if now_latest != base:
+            refusal = ("retry", (f"{rs_id} moved from v{base} to v{now_latest} before the write; "
+                                 "nothing written, the next run retries"))
+    if refusal:
+        write_log.abort(rs_id, base, run_id, principal)
+    return refusal
+
+
+def _revalidate(syn, rs_id, write_log, run_id, principal, latest, owed):
+    """Export the Grid session a crashed removal never got to (logged ``written``, base = the removal version).
+
+    Returns a refusal ``(status, message)`` or None when done.
+    """
+    write_log.start(rs_id, latest, run_id, principal)
+    try:
+        refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
+        if refusal:
+            return refusal
+        recordsets.export_via_grid(
+            syn, rs_id, on_version=lambda v: write_log.record(rs_id, v, run_id, None, base=max(owed), principal=principal))
+        write_log.finish(rs_id, latest, run_id, principal)
+    except BaseException:
+        try:
+            newest, _ = recordsets.recordset_info(syn, rs_id)
+            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
+        except Exception:
+            logger.exception("%s: could not resolve the pending write-log row", rs_id)
+        raise
+    return None
+
+
 def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, principal) -> dict:
     """Remove one RecordSet's requested keys. Returns a summary dict with a ``status``."""
     summary = {"recordset": rs_id, "status": "", "message": ""}
     requested = removals.requested(rs_id)
-    if not requested:
+    if not requested and not write_log.unexported_removals(rs_id):
         summary.update(status="nothing_to_remove", message="no requested keys")
         return summary
 
@@ -153,17 +200,37 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         summary["claimed"] = claimed
         requested = {k: v for k, v in requested.items() if k not in claimed}
         logger.warning("%s: claimed keys removed by an earlier crashed run: %s", rs_id, claimed)
-        if not requested:
-            summary.update(status="nothing_to_remove", message="every requested key was removed by an earlier run")
-            return summary
+    # A removal version owes a Grid export (re-validation) until a pipeline version is based on it.
+    owed = sorted(set(write_log.unexported_removals(rs_id)) | set(recovered.removal))
+    if not requested and not owed:
+        summary.update(status="nothing_to_remove", message="every requested key was removed by an earlier run")
+        return summary
 
     sessions = recordsets.open_grid_sessions(syn, rs_id)
     if sessions:
         ids = [getattr(s, "session_id", "?") for s in sessions]
         summary.update(status="blocked", message=(
-            f"open Grid session(s) {ids}; close them first (an export from an older session brings the rows back); "
+            f"open Grid session(s) {ids} visible to the runner (best effort: others' sessions may not be listed); "
+            f"close them first, an export from an older session brings the rows back; "
             f"{len(requested)} key(s) wait"))
         return summary
+
+    if owed:
+        summary["owed_export"] = owed
+        if not args.execute:
+            summary["message"] = f"would re-validate removal version(s) {owed} (Grid export); "
+        else:
+            refusal = _revalidate(syn, rs_id, write_log, args.run_id, principal, latest, owed)
+            if refusal:
+                summary.update(status=refusal[0], message=refusal[1])
+                return summary
+            latest, _ = recordsets.recordset_info(syn, rs_id)
+            if not requested:
+                summary.update(status="revalidated", message=f"re-validated removal version(s) {owed} (Grid export)")
+                return summary
+        if not requested:
+            summary.update(status="dryrun", message=summary["message"] + "nothing written")
+            return summary
 
     current = recordsets.read_recordset(syn, rs_id, latest, args.cache_dir)  # JSON-array cells stay text, lossless
     if any(c not in current.columns for c in key_cols):
@@ -175,28 +242,16 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
     summary.update(remove=len(to_remove), not_found=len(not_found), base=latest)
     if not args.execute:
         summary.update(status="dryrun", message=(
-            f"dry run: would remove {to_remove}; not found {not_found}; nothing written"))
+            summary["message"] + f"dry run: would remove {to_remove}; not found {not_found}; nothing written"))
         return summary
 
     run_id = args.run_id
     write_log.start(rs_id, latest, run_id, principal)
     created: list[int] = []
     try:
-        winner = write_log.earlier_pending(rs_id, run_id)
-        if winner:
-            write_log.abort(rs_id, latest, run_id, principal)
-            summary.update(status="locked", message=f"run {winner} started its write first; skipped")
-            return summary
-        # An open session may have appeared since the check above; recheck under the lock.
-        if recordsets.open_grid_sessions(syn, rs_id):
-            write_log.abort(rs_id, latest, run_id, principal)
-            summary.update(status="blocked", message="a Grid session was opened meanwhile; nothing written")
-            return summary
-        now_latest, _ = recordsets.recordset_info(syn, rs_id)
-        if now_latest != latest:
-            write_log.abort(rs_id, latest, run_id, principal)
-            summary.update(status="retry", message=(
-                f"{rs_id} moved from v{latest} to v{now_latest} before the write; nothing written, the next run retries"))
+        refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
+        if refusal:
+            summary.update(status=refusal[0], message=refusal[1])
             return summary
         removals.append_many(rs_id, [
             {"key": k, "status": "not_found", "reason": requested[k]["reason"],
