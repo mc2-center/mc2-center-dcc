@@ -1,5 +1,6 @@
 """Offline tests for merge_tables.py RecordSet mode (Synapse fully mocked)."""
 
+import json
 import logging
 from types import SimpleNamespace
 from unittest import mock
@@ -160,3 +161,15 @@ def test_empty_union_is_not_published(tmp_path):
         mt.run_recordset_mode(mock.MagicMock(), "ToolView", str(tmp_path), ["syn1"], "synT",
                               publish=True, allow_empty=True)
         publish.assert_called_once()
+
+
+def test_json_keyword_array_round_trips_to_the_portal_string():
+    """JSON array -> RecordSet-style list -> union join -> exactly ", ".join(items)."""
+    import recordsets
+
+    items = ["Aged, 80 and over", "Mice, Inbred C57BL", "Humans"]
+    up = pd.DataFrame({"PublicationViewId": ["p1"], "PublicationKeywords": [json.dumps(items)]})
+    parsed = recordsets.parse_upload(up, {"PublicationKeywords"})
+    assert parsed.loc[0, "PublicationKeywords"] == items
+    joined = mt._join_lists(parsed, "PublicationViewId")
+    assert joined.loc[0, "PublicationKeywords"] == ", ".join(items)
