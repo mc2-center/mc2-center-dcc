@@ -91,6 +91,7 @@ import logging
 import re
 import shutil
 import os
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -99,6 +100,7 @@ from pathlib import Path
 
 import pandas as pd
 from synapseclient import operations
+from synapseclient.core import utils as synapse_utils
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
 import comma_terms
@@ -288,12 +290,38 @@ def read_recordset(
         if cached.exists():
             return _load_csv(cached, list_cols)
     entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
-    if cached is not None:
-        cached.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
-        shutil.copyfile(entity.path, tmp)
-        tmp.replace(cached)
-    return _load_csv(entity.path, list_cols)
+    fresh_dir = None
+    try:
+        if _md5_mismatch(entity):
+            # The client's cache can map a file handle to the wrong local file (see store_new_version);
+            # fetch into a directory of its own, which no cache entry points at.
+            logger.warning("%s v%s: the cached download does not match its file handle's md5; downloading again",
+                           rs_id, version)
+            fresh_dir = tempfile.mkdtemp(prefix="recordset_")
+            entity = RecordSet(
+                id=rs_id, version_number=version, download_file=True, download_location=fresh_dir,
+                if_collision="overwrite.local",
+            ).get(synapse_client=syn)
+            if _md5_mismatch(entity):
+                raise ValueError(f"{rs_id} v{version}: the downloaded file does not match its file handle's md5")
+        if cached is not None:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
+            shutil.copyfile(entity.path, tmp)
+            tmp.replace(cached)
+        return _load_csv(entity.path, list_cols)
+    finally:
+        if fresh_dir is not None:
+            shutil.rmtree(fresh_dir, ignore_errors=True)
+
+
+def _md5_mismatch(entity) -> bool:
+    """True when the downloaded file's md5 differs from its file handle's (unknown md5: no mismatch)."""
+    handle = getattr(entity, "file_handle", None)
+    want = getattr(handle, "content_md5", None)
+    if not isinstance(want, str) or not want or not entity.path or not os.path.isfile(entity.path):
+        return False
+    return synapse_utils.md5_for_file_hex(filename=str(entity.path)) != want
 
 
 def check_upload_keys(upload: pd.DataFrame, key) -> pd.DataFrame:
@@ -1201,9 +1229,16 @@ def store_new_version(syn, rs_id: str, csv_path) -> int:
 
     The only write that can drop rows (D-Q49). The entity is fetched without
     its file and its ``path`` replaced, so the binding, upsert key and
-    CurationTask are kept.
+    CurationTask are kept. The fetched entity's file-handle fields are cleared
+    first: otherwise synapseclient's ``_needs_upload`` sees the old handle, finds
+    no cache entry for (old handle, new path) and, when the md5 differs, still
+    runs ``cache.add(old handle id, new path)``, so the client's cache then
+    serves the *new* file for the *old* version. With no handle it uploads a
+    new one and only that handle is cached.
     """
     entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)
+    for field in ("file_handle", "data_file_handle_id", "content_md5", "content_size"):
+        setattr(entity, field, None)
     entity.path = str(csv_path)
     return entity.store(synapse_client=syn).version_number
 
