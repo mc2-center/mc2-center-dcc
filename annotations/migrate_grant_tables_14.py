@@ -95,7 +95,7 @@ REFERENCE_RESOURCE = {"PublicationView": "publication", "DatasetView": "dataset"
                       "EducationalResource": "education"}
 RESOLUTION_COLUMNS = ["key", "kept_row", "dropped_row", "reason"]
 # Bump when a conversion rule changes what a grant converts to: a done dry run is then redone (options_hash).
-CONVERSION_RULES = "2-manifest-reconcile"
+CONVERSION_RULES = "3-manifest-reconcile"
 # Components whose entity id (the upsert key) is taken from the curated manifest, matched by this column.
 # Columns that follow the entity (downloadSynId, version) are derived portal columns: not in the grant
 # tables, the manifest or the RecordSet schema, so only the key is replaced.
@@ -103,6 +103,7 @@ MANIFEST_ID_ALIAS = {"DatasetView": "DatasetAlias"}
 # Link columns of a merged manifest row hold the links of every grant (comma-joined, repeats included):
 # the grant table's own links agree when they are among the manifest's.
 SUBSET_COLUMNS = frozenset({"GrantViewKey", "PublicationViewKey", "StudyKey", "DatasetViewKey", "ToolViewKey"})
+ID_WORKLIST_COLUMNS = ["kind", "alias", "grant", "grant_table", "grant_table_id", "manifest_ids"]
 DIFFERENCE_COLUMNS = ["grant", "key", "column", "grant_value", "manifest_value"]
 
 # Statuses that make the exit code 1.
@@ -411,14 +412,15 @@ def manifest_id_candidates(reference: pd.DataFrame, component: str) -> dict[str,
     return out
 
 
-def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference):
+def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, worklist: list | None = None):
     """Replace each row's entity id with the curated manifest's: ``(frame, changes, counts)``.
 
     The manifest row is found by the alias column (``MANIFEST_ID_ALIAS``); when an alias has several
     manifest rows, those whose ``GrantViewKey`` contains ``grant`` are used. One distinct id that differs
     from the grant table's replaces it (rule ``manifest_id``, change key = the new id). Several distinct ids
     keep the grant's value and are reported (``manifest_id_ambiguous``); no manifest row (or no id) keeps it
-    and is counted as ``unmatched``. ``reference`` returns the converted manifest or None.
+    and is counted as ``unmatched``. ``reference`` returns the converted manifest or None. A list passed as
+    ``worklist`` receives a ``{kind, alias, grant_table_id, manifest_ids}`` dict per ambiguous or unmatched row.
     """
     key, alias = KEYS[component], MANIFEST_ID_ALIAS[component]
     counts = {"remapped": 0, "ambiguous": 0, "unmatched": 0}
@@ -436,8 +438,14 @@ def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference):
         ids = list(dict.fromkeys(i_ for ids_, _ in rows for i_ in ids_))
         if not ids:
             counts["unmatched"] += 1
+            if worklist is not None:
+                worklist.append({"kind": "no_manifest_row", "alias": str(df[alias].iloc[i]).strip(),
+                                 "grant_table_id": old, "manifest_ids": ""})
         elif len(ids) > 1:
             counts["ambiguous"] += 1
+            if worklist is not None:
+                worklist.append({"kind": "ambiguous", "alias": str(df[alias].iloc[i]).strip(),
+                                 "grant_table_id": old, "manifest_ids": ", ".join(ids)})
             changes.append({"key": old, "column": key, "from": old, "to": ", ".join(ids), "rule": "manifest_id_ambiguous"})
         elif ids[0] != old:
             counts["remapped"] += 1
@@ -452,8 +460,21 @@ def _link_items(cell) -> set[str]:
     return {part.strip() for item in items for part in str(item).split(",") if part.strip()}
 
 
-def manifest_differences(converted: pd.DataFrame, reference: pd.DataFrame | None, component: str, grant: str):
+# What the regenerated merged manifest writes into a blank cell: the portal shows the same text.
+MANIFEST_PLACEHOLDERS = frozenset({"Pending Annotation", "Not Applicable"})
+# A PMID key the spreadsheet turned into a number (D-Q35, repeats joined, then thousands separators): digits in
+# groups of three after a leading group of 1-3.
+_MANGLED_KEY = re.compile(r"^\d{1,3}(,\d{3})+$")
+
+
+def manifest_differences(converted: pd.DataFrame, reference: pd.DataFrame | None, component: str, grant: str,
+                         recovered_keys=(), known: dict | None = None):
     """``(differences, not_in_manifest)``: the cells of ``converted`` that differ from the curated manifest's row.
+
+    A blank grant cell equals a manifest ``MANIFEST_PLACEHOLDERS`` value. Two classes are handled already and
+    are not listed but counted in ``known`` (``authors_recovered``, ``mangled_keys``): a manifest
+    ``PublicationAuthors`` cell cut off with ``(Read more on Pubmed)`` whose key is in ``recovered_keys``, and a
+    ``PublicationViewKey`` cell in the spreadsheet-mangled form.
 
     Rows meet on the key (after any ``manifest_id`` remap); a key with several manifest rows is compared
     with the one that agrees on most columns. Columns the manifest lacks are skipped; both sides are
@@ -472,6 +493,8 @@ def manifest_differences(converted: pd.DataFrame, reference: pd.DataFrame | None
         by_key.setdefault(row[key], []).append(row)
 
     def same(column, ours, theirs):
+        if _flat(ours) == "" and _flat(theirs) in MANIFEST_PLACEHOLDERS:
+            return True
         if column in SUBSET_COLUMNS:
             return _link_items(ours) <= _link_items(theirs)
         return recordsets._cells_equal(ours, theirs, column in set_like)
@@ -486,6 +509,15 @@ def manifest_differences(converted: pd.DataFrame, reference: pd.DataFrame | None
         target = max(candidates, key=lambda cand: sum(same(c, record[c], cand[c]) for c in columns))
         for c in columns:
             if not same(c, record[c], target[c]):
+                shown = _flat(target[c])
+                if c == "PublicationAuthors" and value_maps.TRUNCATED_SUFFIX in shown and k in recovered_keys:
+                    if known is not None:
+                        known["authors_recovered"] = known.get("authors_recovered", 0) + 1
+                    continue
+                if c == "PublicationViewKey" and _MANGLED_KEY.match(shown):
+                    if known is not None:
+                        known["mangled_keys"] = known.get("mangled_keys", 0) + 1
+                    continue
                 rows.append({"grant": grant, "key": k, "column": c, "grant_value": _flat(record[c]),
                              "manifest_value": _flat(target[c])})
     return pd.DataFrame(rows, columns=DIFFERENCE_COLUMNS), missing
@@ -737,9 +769,9 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
     dropped = [c for c in df.columns if c not in schema]
     df = df[[c for c in df.columns if c in schema]]
     old_keys = [str(v).strip() for v in df[key]]
-    remap_changes, counts = [], {"remapped": 0, "ambiguous": 0, "unmatched": 0}
+    remap_changes, counts, id_worklist = [], {"remapped": 0, "ambiguous": 0, "unmatched": 0}, []
     if component in MANIFEST_ID_ALIAS:
-        df, remap_changes, counts = remap_manifest_ids(df, component, grant, reference)
+        df, remap_changes, counts = remap_manifest_ids(df, component, grant, reference, id_worklist)
     kept: list[int] = []
     df, resolutions = resolve_duplicates(df, legacy_id, component, normalizer, reference, portal, choices, kept)
     df, changes, unmapped = normalizer.normalize_frame(df, key)
@@ -754,6 +786,7 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
         info["remapped"] = {n: old_keys[i] for n, i in zip(new_keys, kept) if n != old_keys[i]}
         info["dropped_keys"] = [old_keys[i] for i in range(len(old_keys)) if i not in set(kept)]
         info["manifest_ids"] = counts
+        info["id_worklist"] = id_worklist
     return df.reset_index(drop=True), changes, unmapped, dropped, resolutions
 
 
@@ -1026,7 +1059,9 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
             absent.append(k)
     if dropped:
         logger.info("%s: not schema columns, dropped: %s", entry["grant"], dropped)
-    differences, not_in_manifest = manifest_differences(converted, reference(), component, entry["grant"])
+    known: dict = {}
+    recovered_keys = set(changes.loc[changes["rule"] == "recovered_pubmed", "key"])
+    differences, not_in_manifest = manifest_differences(converted, reference(), component, entry["grant"], recovered_keys, known)
     validation = validate_frame(converted, component, args.model_ref)
     converted_path = report_dir / "converted.csv"
     _write(converted, converted_path)
@@ -1039,11 +1074,15 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     if len(recovered):
         _write(recovered, report_dir / "recovered.csv")
     _write(differences, report_dir / "manifest_differences.csv")
+    if info.get("id_worklist"):
+        _write(pd.DataFrame(info["id_worklist"]).assign(grant=entry["grant"], grant_table=entry["table"])[ID_WORKLIST_COLUMNS],
+               report_dir / "manifest_id_worklist.csv")
     authors_recovered = int((recovered["reason"] == "").sum())
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
         dropped=dropped, duplicates_resolved=len(resolutions), authors_recovered=authors_recovered, _resolved_keys=info.get("dropped_keys", []),
-        _remapped=info.get("remapped", {}), manifest_differences=len(differences), not_in_manifest=len(not_in_manifest),
+        _remapped=info.get("remapped", {}), manifest_differences=len(differences),
+        known_authors_recovered=known.get("authors_recovered", 0), known_mangled_keys=known.get("mangled_keys", 0), not_in_manifest=len(not_in_manifest),
         **{f"manifest_id_{k}": v for k, v in info.get("manifest_ids", {}).items()},
         truncated=int(changes["rule"].isin(["truncated", "recovery_mismatch"]).sum()),
     )
@@ -1203,6 +1242,8 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
     total = lambda field: sum(int(s.get(field, 0)) for s in summaries)  # noqa: E731
     lines.append(f"manifest ids: remapped={total('manifest_id_remapped')}, ambiguous={total('manifest_id_ambiguous')}, "
                  f"no manifest row={total('manifest_id_unmatched')}; rows whose key is not in the manifest: {total('not_in_manifest')}")
+    lines.append(f"known differences: authors recovered {total('known_authors_recovered')}, "
+                 f"mangled PMID keys {total('known_mangled_keys')}")
     differences = manifest_differences_all(frames)
     lines.append(f"differences from the curated manifest: {len(differences)}"
                  + (" (" + ", ".join(f"{c}={n}" for c, n in differences["column"].value_counts().items()) + ")"
@@ -1457,6 +1498,9 @@ def main(argv=None, syn=None):
     validation_worklist(frames, KEYS[component]).to_csv(run_dir / "validation_worklist.csv", index=False)
     differences = manifest_differences_all(frames)
     differences.to_csv(run_dir / "manifest_differences.csv", index=False)
+    id_parts = [f["manifest_id_worklist"] for f in frames.values() if f.get("manifest_id_worklist") is not None]
+    if id_parts:
+        pd.concat(id_parts).sort_values(["kind", "grant", "alias"]).to_csv(run_dir / "manifest_id_worklist.csv", index=False)
     if args.write_override_template:
         value_maps.override_template(differences).to_csv(args.write_override_template, index=False)
         print(f"wrote {len(differences)} row(s) to the overrides template {args.write_override_template}")
@@ -1481,7 +1525,7 @@ def main(argv=None, syn=None):
 def _frames_from(report_dir: Path) -> dict:
     """The changes, unmapped and validation reports a grant wrote (for the run report)."""
     out = {}
-    for name in ("changes", "unmapped", "validation", "converted", "recovered", "manifest_differences"):
+    for name in ("changes", "unmapped", "validation", "converted", "recovered", "manifest_differences", "manifest_id_worklist"):
         path = report_dir / f"{name}.csv"
         out[name] = pd.read_csv(path, dtype=str, keep_default_na=False) if path.exists() else None
     return out

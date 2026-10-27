@@ -1472,3 +1472,60 @@ def test_reference_frame_reads_class_label_and_spaceless_headers():
     frame = mig.reference_frame(ref, "DatasetView", norm)
     assert frame.columns.tolist() == ["DatasetViewId", "DatasetAlias", "Assay", "Species"]
     assert frame.iloc[0]["Assay"] == ["RNA Sequencing"]
+
+
+# --- placeholders, known differences and the id worklist ----------------------------
+
+
+def test_a_blank_grant_cell_equals_a_manifest_placeholder():
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    source = ms_source([["s1", "CA1", "N", "GSE1", "", "1"]])
+    converted, *_ = mig.convert_table(source, "DatasetView", norm)
+    for placeholder in ("Pending Annotation", "Not Applicable"):
+        ref = mig.reference_frame(ms_reference([["s1", "CA1", "N", "GSE1", placeholder]]), "DatasetView", norm)
+        assert mig.manifest_differences(converted, ref, "DatasetView", "CA1")[0].empty
+    ref = mig.reference_frame(ms_reference([["s1", "CA1", "N", "GSE1", "real text"]]), "DatasetView", norm)
+    assert len(mig.manifest_differences(converted, ref, "DatasetView", "CA1")[0]) == 1
+
+
+def test_recovered_authors_and_mangled_pmid_keys_are_counted_not_listed():
+    norm = mig.value_maps.Normalizer.for_component("PublicationView")
+    source = pd.DataFrame([["p1", "CA1", "Full A, Full B", "1", "39191725"], ["p2", "CA1", "Full A", "2", "39191725"]],
+                          columns=["PublicationView_id", "GrantView Key", "Publication Authors", "Id", "Pubmed Id"])
+    converted, *_ = mig.convert_table(source, "PublicationView", norm)
+    ref = pd.DataFrame([["p1", "CA1", "Full A(Read more on Pubmed)", "39191725"],
+                        ["p2", "CA1", "Full B", "39191725"]],
+                       columns=["PublicationView_id", "GrantView Key", "Publication Authors", "Pubmed Id"])
+    frame = mig.reference_frame(ref, "PublicationView", norm)
+    known = {}
+    diffs, _ = mig.manifest_differences(converted, frame, "PublicationView", "CA1", {"p1"}, known)
+    assert known == {"authors_recovered": 1}
+    assert diffs["key"].tolist() == ["p2"] and diffs["column"].tolist() == ["PublicationAuthors"]
+    assert not mig._MANGLED_KEY.match("35121903, 33681822") and not mig._MANGLED_KEY.match("38191555,38191555")
+
+
+def test_a_mangled_pmid_link_cell_is_counted_not_listed():
+    norm = mig.value_maps.Normalizer.for_component("DatasetView")
+    source = pd.DataFrame([["s1", "CA1", "39191725", "1"], ["s2", "CA1", "39191725", "2"]],
+                          columns=["DatasetView_id", "GrantView Key", "PublicationView Key", "Id"])
+    converted, *_ = mig.convert_table(source, "DatasetView", norm)
+    ref = pd.DataFrame([["s1", "39,191,725,391,917,250"], ["s2", "11111111"]],
+                       columns=["DatasetView_id", "PublicationView Key"])
+    known = {}
+    diffs, _ = mig.manifest_differences(converted, mig.reference_frame(ref, "DatasetView", norm), "DatasetView", "CA1", (), known)
+    assert known == {"mangled_keys": 1} and diffs["key"].tolist() == ["s2"]
+
+
+def test_ambiguous_and_unmatched_aliases_go_to_a_worklist_file(tmp_path):
+    table = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"], ["syn_b", "CA1", "N", "GSE2", "d", "2"],
+                       ["syn_c", "CA1", "N", "GSE3", "d", "3"]])
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", table)})
+    fake.reference_source = ms_reference([["syn_x", "CA1", "N", "GSE1", "d"], ["syn_y,syn_z", "CA1", "N", "GSE2", "d"]])
+    code, rep = run(tmp_path, fake, component="DatasetView")
+    work = pd.read_csv(rep / "manifest_id_worklist.csv", dtype=str, keep_default_na=False)
+    assert work.to_dict("records") == [
+        {"kind": "ambiguous", "alias": "GSE2", "grant": "CA1", "grant_table": "synT1", "grant_table_id": "syn_b",
+         "manifest_ids": "syn_y, syn_z"},
+        {"kind": "no_manifest_row", "alias": "GSE3", "grant": "CA1", "grant_table": "synT1", "grant_table_id": "syn_c",
+         "manifest_ids": ""}]
+    assert "known differences: authors recovered 0, mangled PMID keys 0" in (rep / "run_summary.txt").read_text()
