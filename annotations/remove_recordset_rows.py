@@ -9,9 +9,10 @@ fresh Grid session with no import and one export, so Synapse re-validates it.
 The binding, upsert key and CurationTask are kept.
 
 Per RecordSet: take the write-log lock as ``write_logged`` does (a ``pending``
-row, settled with ``earlier_pending``); refuse, writing nothing, while any Grid
-session is open on it (an export from an older session would bring the rows
-back); read the latest version; a requested key that is not in it is logged
+row, settled with ``earlier_pending``); refuse, writing nothing, while a Grid
+session is open on it that the runner can see (``Grid.list`` may list only the
+runner's own sessions: best effort, so a contributor's stale session can still
+re-add a removed row, which replay reports as ``readded_removed_key``); read the latest version; a requested key that is not in it is logged
 ``not_found``; store the rest-of-the-rows CSV as a new version, log it
 ``removed`` (base = the version read) and append ``removed`` rows to the
 removals table (``removedInVersion`` = that version); export, log it

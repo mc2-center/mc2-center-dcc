@@ -1182,7 +1182,11 @@ def export_via_grid(syn, rs_id: str, **kwargs) -> list[int]:
 
 
 def open_grid_sessions(syn, rs_id: str) -> list:
-    """Grid sessions currently open on the RecordSet (``Grid.list(source_id=...)``)."""
+    """Grid sessions on the RecordSet that the runner can see (``Grid.list(source_id=...)``).
+
+    Best effort: the list may cover only the runner's own sessions, so another
+    user's open session is not guaranteed to show up here.
+    """
     return list(Grid.list(source_id=rs_id, synapse_client=syn))
 
 
