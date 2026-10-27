@@ -47,13 +47,21 @@ C contributor) and ``set_at`` (version):
   upsert key and CurationTask are kept), logs it ``removed``, then exports a
   fresh Grid session so the data is re-validated (logged ``written``). The
   keys go in the removals table (:class:`Removals`) with ``removedInVersion``.
-  At a removal version, which is a pipeline version, the listed keys are first
-  dropped from the state (``removed``), then the version is processed as any
-  pipeline version. A removed key that reappears is remembered: in a pipeline
-  version it is added as P (``readded_by_pipeline``, should not happen); in a
+  At a removal version, which is a pipeline version, the keys it dropped (in
+  ``v - 1``, not in ``v``: exact, because the write is checked to be on the
+  latest version) are first dropped from the state (``removed``), then the
+  version is processed as any pipeline version. Replay reads this off the
+  version history and the write log's ``removed`` rows alone, never the
+  removals table, so a crash between the store and the table can't bring a row
+  back. A removed key that reappears is remembered: in a pipeline
+  version it is added as P (``readded_by_pipeline``, should not happen, so reported on every replay
+  unless the key was ``restored``); in a
   foreign version it is added back as a contributor row
-  (``readded_removed_key``, as ``kept_contributor_row``) and reported, never
-  undone automatically (a Grid session opened before the removal can do this).
+  (``readded_removed_key``, as ``kept_contributor_row``, except that when the
+  session's snapshot had the row only the cells that differ from it are
+  contributor-owned) and reported, never undone automatically. A contributor's
+  Grid session opened before the removal can do this; the removal step's
+  session check sees only the runner's visible sessions (best effort).
   The pipeline skips uploading rows whose key is currently ``removed``.
 
 :func:`merge_upload` then applies an upload to the replayed state: a differing
@@ -852,13 +860,16 @@ def _session_base(cf, diffs, fingerprints, v) -> int:
     return v - 1
 
 
-def replay(versions, log_map, key, set_like=(), removals=None):
+def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()):
     """Rebuild the current state from every version, tracking cell ownership.
 
     ``versions`` is ``[(version, DataFrame)]`` for every version ``1..latest``;
     ``log_map`` is ``{pipeline version: baseVersion}`` from the write log;
-    ``removals`` is ``{removal version: set of keys}`` (D-Q49, from
-    :meth:`Removals.removal_events`; a version not in ``log_map`` is ignored).
+    ``removal_versions`` are the versions logged ``removed``
+    (:meth:`WriteLog.removal_versions`, D-Q49); the keys a removal dropped are
+    read off the history itself (in ``v - 1``, not in ``v``), so replay never
+    depends on the removals table. ``restored`` are keys whose removal was
+    lifted: their re-adding by the pipeline is not reported.
     The rules are in the module docstring. Returns ``(state, owned, decisions)``:
     the state DataFrame, the set of ``(key, column)`` cells owned by a
     contributor, and the decisions (``key, column, decision, current_value,
@@ -913,12 +924,12 @@ def replay(versions, log_map, key, set_like=(), removals=None):
         if first - 1 in frames:
             state = {k: fresh(k, first - 1, lambda _: P) for k in frames[first - 1]}
 
-    def decide(v, k, column, decision, cur="", pipe=""):
-        if v > report_after:
+    def decide(v, k, column, decision, cur="", pipe="", always=False):
+        if always or v > report_after:
             decisions.append({"key": k, "column": column, "decision": decision,
                               "current_value": cur, "pipeline_value": pipe, "version": v})
 
-    removals = {v: set(ks) for v, ks in (removals or {}).items()}
+    removal_versions, restored = set(removal_versions), set(restored)
     gone: set[str] = set()  # keys removed by the DCC and not yet seen again
     diffs = fingerprints = None
     if log_map and any(v not in log_map and v >= first for v in frames):
@@ -931,17 +942,19 @@ def replay(versions, log_map, key, set_like=(), removals=None):
         frame, crows = frames[v], cf[v]
         if v in log_map:
             base = log_map[v]
-            for k in sorted(removals.get(v, ())):
-                if k in state:
-                    del state[k]
-                    gone.add(k)
-                    decide(v, k, "", "removed")
+            if v in removal_versions and v - 1 in frames:
+                for k in [k for k in frames[v - 1] if k not in frame]:
+                    if k in state:
+                        del state[k]
+                        gone.add(k)
+                        decide(v, k, "", "removed")
             for k, row in frame.items():
                 if k not in state:
                     state[k] = fresh(k, v, lambda _: P)
                     if k in gone:
                         gone.discard(k)
-                        decide(v, k, "", "readded_by_pipeline")
+                        if k not in restored:
+                            decide(v, k, "", "readded_by_pipeline", always=True)
                     continue
                 crow = crows[k]
                 for i, c in enumerate(non_key):
@@ -967,6 +980,11 @@ def replay(versions, log_map, key, set_like=(), removals=None):
                     state[k] = fresh(k, v, lambda x: P if _is_blank(x) else C)
                     if k in gone:
                         gone.discard(k)
+                        srow = snapshot.get(k)
+                        if srow is not None:  # the session had the row: only its edits are contributor cells
+                            for i, c in enumerate(non_key):
+                                if crows[k][i] == srow[i]:
+                                    state[k][c][1] = P
                         decide(v, k, "", "readded_removed_key")
                     else:
                         decide(v, k, "", "kept_contributor_row")

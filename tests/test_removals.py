@@ -12,8 +12,9 @@ def df(*rows, cols=(K, "Title", "Assay")):
     return pd.DataFrame(list(rows), columns=list(cols))
 
 
-def rep(*versions, log, removals):
-    return rs.replay(list(enumerate(versions, start=1)), log, K, (), removals)
+def rep(*versions, log, removals=(), restored=()):
+    """replay() over frames v1..vN; ``removals`` are the versions logged ``removed``."""
+    return rs.replay(list(enumerate(versions, start=1)), log, K, (), removals, restored)
 
 
 def dec(d):
@@ -33,21 +34,47 @@ def test_removal_version_drops_the_key_and_a_later_foreign_version_lacking_it_do
     v3 = df(["a", "T", ""])  # the export after it
     v4 = df(["a", "Edited", ""])  # foreign
     log = {1: 0, 2: 1, 3: 2}
-    state, _, d = rep(v1, v2, v3, v4, log=log, removals={2: {"b"}})
+    state, _, d = rep(v1, v2, v3, v4, log=log, removals={2})
     assert set(state[K]) == {"a"} and cell(state, "a", "Title") == "Edited"
     assert not {x for x in dec(d) if x[1] == "b"}
-    # without the removal record the row is kept, as before
+    # not logged as a removal, the row is kept, as before
     state, _, _ = rs.replay(list(enumerate([v1, v2, v3, v4], start=1)), log, K)
     assert set(state[K]) == {"a", "b"}
 
 
-def test_removal_is_reported_when_newer_than_the_newest_logged_version():
+def test_removal_needs_no_removals_table_only_the_log_and_the_history():
+    v1 = df(["a", "T", ""], ["b", "T", ""], ["c", "T", ""])
+    v2 = df(["a", "T", ""])  # drops b and c: both go, however many removals rows exist
+    state, _, _ = rep(v1, v2, log={1: 0, 2: 1}, removals={2})
+    assert set(state[K]) == {"a"}
+    state, _, _ = rep(v1, v2, log={1: 0}, removals={2})  # v2 not logged: ignored
+    assert set(state[K]) == {"a", "b", "c"}
+
+
+def test_readding_by_the_pipeline_is_reported_unless_the_key_was_restored():
     v1 = df(["a", "T", ""], ["b", "T", ""])
     v2 = df(["a", "T", ""])
-    state, _, d = rep(v1, v2, log={1: 0}, removals={2: {"b"}})  # v2 not logged: ignored
-    assert set(state[K]) == {"a", "b"}
-    state, _, d = rep(v1, v2, v2, log={1: 0, 2: 1}, removals={2: {"b"}})
-    assert set(state[K]) == {"a"}
+    v3 = df(["a", "T", ""])
+    v4 = df(["a", "T", ""], ["b", "T", ""])
+    log = {1: 0, 2: 1, 3: 2, 4: 3}
+    state, _, d = rep(v1, v2, v3, v4, log=log, removals={2})
+    assert set(state[K]) == {"a", "b"} and (4, "b", "", "readded_by_pipeline") in dec(d)
+    _, _, d = rep(v1, v2, v3, v4, log=log, removals={2}, restored={"b"})
+    assert not dec(d)
+
+
+def test_stale_session_readding_a_removed_row_owns_only_its_edits():
+    v1 = df(["A", "T", ""], ["R", "T", ""])
+    v2 = df(["A", "T", ""])  # removal
+    v3 = df(["A", "T", ""])  # export after it
+    v4 = df(["A", "Edited", ""], ["R", "T", ""])  # session opened on v1: edits A.Title only
+    state, owned, d = rep(v1, v2, v3, v4, log={1: 0, 2: 1, 3: 2}, removals={2})
+    assert (4, "R", "", "readded_removed_key") in dec(d)
+    assert owned == {("A", "Title")}
+    # a session that did not have the row (fresh on v3) adds it as a contributor row
+    v4 = df(["A", "T", ""], ["R", "T", "X"])
+    state, owned, d = rep(v1, v2, v3, v4, log={1: 0, 2: 1, 3: 2}, removals={2})
+    assert ("R", "Title") in owned
 
 
 def test_foreign_version_readding_a_removed_key_is_kept_and_reported():
@@ -55,14 +82,14 @@ def test_foreign_version_readding_a_removed_key_is_kept_and_reported():
     v2 = df(["a", "T", ""])
     v3 = df(["a", "T", ""])
     v4 = df(["a", "T", ""], ["b", "T", "X"])  # a stale Grid session writes b back
-    state, owned, d = rep(v1, v2, v3, v4, log={1: 0, 2: 1, 3: 2}, removals={2: {"b"}})
+    state, owned, d = rep(v1, v2, v3, v4, log={1: 0, 2: 1, 3: 2}, removals={2})
     assert set(state[K]) == {"a", "b"} and cell(state, "b", "Assay") == "X"
     assert (4, "b", "", "readded_removed_key") in dec(d)
     assert (4, "b", "", "kept_contributor_row") not in dec(d)
     assert ("b", "Assay") in owned
     # reported once: a later version that still has it is an ordinary row
     v5 = df(["a", "T", ""], ["b", "T", "X"])
-    _, _, d = rep(v1, v2, v3, v4, v5, log={1: 0, 2: 1, 3: 2}, removals={2: {"b"}})
+    _, _, d = rep(v1, v2, v3, v4, v5, log={1: 0, 2: 1, 3: 2}, removals={2})
     assert [x for x in dec(d) if x[1] == "b"] == [(4, "b", "", "readded_removed_key")]
 
 
@@ -70,10 +97,10 @@ def test_pipeline_version_readding_a_removed_key_is_reported():
     v1 = df(["a", "T", ""], ["b", "T", ""])
     v2 = df(["a", "T", ""])
     v3 = df(["a", "T", ""], ["b", "New", ""])
-    state, _, d = rep(v1, v2, v3, v3, log={1: 0, 2: 1, 3: 2}, removals={2: {"b"}})
+    state, _, d = rep(v1, v2, v3, v3, log={1: 0, 2: 1, 3: 2}, removals={2})
     assert set(state[K]) == {"a", "b"} and cell(state, "b", "Title") == "New"
     # reported only past the newest logged version, so log up to v2
-    _, _, d = rep(v1, v2, v3, log={1: 0, 2: 1}, removals={2: {"b"}})
+    _, _, d = rep(v1, v2, v3, log={1: 0, 2: 1}, removals={2})
     assert (3, "b", "", "readded_removed_key") in dec(d)  # v3 is foreign there
 
 
