@@ -1113,3 +1113,69 @@ def test_portal_comparison_is_on_raw_values_not_normalized_ones():
     norm = mig.value_maps.Normalizer.for_component("DatasetView")
     _, _, _, _, res = mig.convert_table(pd.DataFrame(rows, columns=headers), "DatasetView", norm, lambda: None, lambda: portal)
     assert res.iloc[0]["kept_row"] == "row 2 (Id 2)"
+
+
+# --- review nits --------------------------------------------------------------------
+
+
+def test_resume_skips_a_done_grant_only_when_the_effective_options_match(tmp_path):
+    ov = tmp_path / "o.csv"
+    pd.DataFrame({"column": ["Publication Accessibility"], "current_value": ["open access"],
+                  "proposed_value": ["Restricted Access"]}).to_csv(ov, index=False)
+    fake = FakeSynapse()
+    run(tmp_path, fake, "--overrides", str(ov), run_id="r1")
+    reads = []
+    real = fake.read_source
+    fake.read_source = lambda syn, t: (reads.append(t), real(syn, t))[1]
+    run(tmp_path, fake, "--overrides", str(ov), run_id="r2")
+    assert reads == []  # same options: skipped
+    pd.DataFrame({"column": ["Publication Accessibility"], "current_value": ["open access"],
+                  "proposed_value": ["Open Access"]}).to_csv(ov, index=False)
+    code, rep = run(tmp_path, fake, "--overrides", str(ov), run_id="r3")
+    assert reads == ["synT1"]  # overrides content changed: redone
+    converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str, keep_default_na=False)
+    assert converted["PublicationAccessibility"].tolist() == ["Open Access", "Open Access"]
+    run(tmp_path, fake, "--overrides", str(ov), "--schema-version", "14.0.1", run_id="r4")
+    assert reads == ["synT1", "synT1"]  # schema version changed
+    run(tmp_path, fake, "--overrides", str(ov), "--schema-version", "14.0.1", "--no-recover-truncated", run_id="r5")
+    assert reads == ["synT1"] * 3
+    run(tmp_path, fake, "--overrides", str(ov), "--schema-version", "14.0.1", "--no-recover-truncated",
+        "--no-include-unlisted", run_id="r6")
+    assert reads == ["synT1"] * 4
+
+
+def test_options_hash_covers_the_duplicate_choices_content(tmp_path):
+    choices = tmp_path / "c.csv"
+    pd.DataFrame({"key": ["p1"], "keep_legacy_id": ["10"]}).to_csv(choices, index=False)
+    a = mig.options_hash(mig.get_args(["--component", "PublicationView", "--duplicate-choices", str(choices)]))
+    pd.DataFrame({"key": ["p1"], "keep_legacy_id": ["11"]}).to_csv(choices, index=False)
+    b = mig.options_hash(mig.get_args(["--component", "PublicationView", "--duplicate-choices", str(choices)]))
+    assert a != b
+
+
+def test_duplicate_choice_with_a_grant_column_applies_only_to_that_grant(tmp_path):
+    choices = tmp_path / "c.csv"
+    pd.DataFrame({"grant": ["CA2", ""], "key": ["p1", "zzz"], "keep_legacy_id": ["20", "none"]}).to_csv(choices, index=False)
+    tables = {"synT1": ("CA1", "synP1", dup_table(first_id="10", second_id="11")),
+              "synT2": ("CA2", "synP2", dup_table(first_id="20", second_id="21"))}
+    code, rep = run(tmp_path, FakeSynapse(tables), "--duplicate-choices", str(choices))
+    assert status_of(rep, "CA1") == "dryrun" and status_of(rep, "CA2") == "dryrun"  # CA1 ignores CA2's choice
+    assert "owner choice" not in (rep / "CA1" / "duplicates_resolved.csv").read_text()
+    assert pd.read_csv(rep / "CA2" / "duplicates_resolved.csv")["reason"].tolist() == ["owner choice"]
+    assert mig.choices_for({("", "k"): "1", ("CA2", "k"): "2"}, "CA2") == {"k": "2"}
+    assert mig.choices_for({("", "k"): "1", ("CA2", "k"): "2"}, "CA1") == {"k": "1"}
+
+
+def test_compare_keys_compares_multisets():
+    ok, lines = mig.compare_keys("x", ["a", "a", "b"], ["a", "b", "b"], "legacy")
+    assert not ok and any("'a'" in line and "missing" in line for line in lines) and any("'b'" in line and "extra" in line for line in lines)
+
+
+def test_a_project_skipped_from_state_still_counts_for_the_one_table_per_project_rule(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", source_table())})
+    run(tmp_path, fake, run_id="r1")
+    fake.tables["synT9"] = ("CA9", "synP1", source_table())  # a second table in the same project
+    fake.grants["synP1"] = "CA1"
+    code, rep = run(tmp_path, fake, run_id="r2")
+    summary = pd.read_csv(rep / "summary.csv")
+    assert summary["status"].tolist().count("failed") == 1 and code == 1

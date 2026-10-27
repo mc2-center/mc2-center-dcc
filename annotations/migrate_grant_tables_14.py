@@ -45,12 +45,14 @@ author: orion.banks
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
 import re
 import sys
 import urllib.error
+from collections import Counter
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -359,13 +361,28 @@ def _id_value(value) -> tuple[int, int, str]:
         return 0, 0, text
 
 
-def load_duplicate_choices(path) -> dict[str, str]:
-    """``{key: legacy Id to keep}`` from a CSV with columns ``key, keep_legacy_id``."""
+def load_duplicate_choices(path) -> dict[tuple[str, str], str]:
+    """``{(grant, key): legacy Id to keep}`` from a CSV with columns ``key, keep_legacy_id`` and an
+    optional ``grant`` (blank: any grant)."""
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
     missing = {"key", "keep_legacy_id"} - set(df.columns)
     if missing:
         raise ValueError(f"{path} lacks column(s) {sorted(missing)}")
-    return {k.strip(): i.strip() for k, i in zip(df["key"], df["keep_legacy_id"]) if k.strip()}
+    grants = df["grant"] if "grant" in df.columns else [""] * len(df)
+    return {(g.strip(), k.strip()): i.strip() for g, k, i in zip(grants, df["key"], df["keep_legacy_id"]) if k.strip()}
+
+
+def choices_for(choices: dict | None, grant: str) -> dict[str, str]:
+    """The choices that apply to ``grant``: ``{key: legacy Id}``; a choice naming another grant is ignored
+    and one naming this grant beats a general one."""
+    out: dict[str, str] = {}
+    for (g, key), legacy_id in (choices or {}).items():
+        if g == "":
+            out.setdefault(key, legacy_id)
+    for (g, key), legacy_id in (choices or {}).items():
+        if g == grant:
+            out[key] = legacy_id
+    return out
 
 
 def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, reference, portal=lambda: None,
@@ -802,7 +819,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     source_key = f"{component}_id"
     source_keys = [str(v).strip() for v in source[source_key]] if source_key in source.columns else []
     try:
-        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference, portal, choices)
+        converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference, portal, choices_for(choices, entry["grant"]))
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
@@ -867,13 +884,15 @@ def save_state(path: Path, state: dict) -> None:
 
 def compare_keys(label: str, expected_keys: list[str], actual_keys: list[str], expected_name: str) -> tuple[bool, list[str]]:
     """Row counts and primary-key sets must be equal; returns ``(ok, report lines)``."""
-    exp, act = set(expected_keys), set(actual_keys)
+    expected, actual = Counter(expected_keys), Counter(actual_keys)
+    exp, act = set(expected), set(actual)
     lines = [
         f"{label}: {expected_name} rows={len(expected_keys)} unique keys={len(exp)}; "
         f"compared rows={len(actual_keys)} unique keys={len(act)}"
     ]
-    ok = len(expected_keys) == len(actual_keys) and exp == act
-    for name, keys in (("missing from the compared side", sorted(exp - act)), ("extra in the compared side", sorted(act - exp))):
+    ok = expected == actual  # as multisets: same keys with the same multiplicity
+    for name, keys in (("missing from the compared side", sorted(expected - actual)),
+                       ("extra in the compared side", sorted(actual - expected))):
         if keys:
             lines.append(f"  {len(keys)} key(s) {name}: {keys[:20]}{' ...' if len(keys) > 20 else ''}")
     lines.append(f"  {'EQUAL' if ok else 'DIFFERENT'}")
@@ -1025,6 +1044,19 @@ def validation_worklist(frames: dict[str, dict], key: str) -> pd.DataFrame:
     return out.sort_values(["field", "grant", "key"], kind="stable").reset_index(drop=True)
 
 
+def options_hash(args) -> str:
+    """A hash of the options that change what a grant converts to (a done grant is skipped only if it matches)."""
+    def content(path):
+        return Path(path).read_bytes().hex() if path else ""
+
+    effective = {
+        "component": args.component, "overrides": content(args.overrides),
+        "duplicate_choices": content(args.duplicate_choices), "schema_version": args.schema_version,
+        "include_unlisted": bool(args.include_unlisted), "recover_truncated": bool(args.recover_truncated),
+    }
+    return hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()
+
+
 def resolve_model_ref(args) -> str | None:
     """The data-models tag of ``--schema-version``, or None to use ``MODEL_REF``.
 
@@ -1060,6 +1092,7 @@ def main(argv=None, syn=None):
     state_path = out_dir / "state.json"
     state = load_state(state_path)
     mode = "execute" if args.execute else "dryrun"
+    options = options_hash(args)
 
     ref_cache = []
 
@@ -1103,11 +1136,21 @@ def main(argv=None, syn=None):
         grant = entry["grant"]
         projects[grant] = entry["project"]
         report_dir = run_dir / safe_name(grant)
+        if entry["project"] in seen_projects:  # one RecordSet per grant: a second table is never migrated
+            summary = {"grant": grant, "table": entry["table"], "status": "failed", "message":
+                       f"project {entry['project']} has more than one {component} table; one RecordSet per grant"}
+            report_dir.mkdir(parents=True, exist_ok=True)
+            (report_dir / f"summary_{entry['table']}.txt").write_text(summary_line(summary) + "\n")
+            print(summary_line(summary))
+            summaries.append(summary)
+            continue
+        seen_projects.add(entry["project"])
         previous = state["grants"].get(grant, {})
         if (
             grant not in args.redo
             and previous.get("mode") == mode
             and previous.get("status") in DONE[mode]
+            and previous.get("options") == options
             and Path(previous.get("converted", "")).exists()
         ):
             summary = dict(previous["summary"])
@@ -1121,9 +1164,6 @@ def main(argv=None, syn=None):
             print(summary_line(summary))
             continue
         try:
-            if entry["project"] in seen_projects:
-                raise ConversionError(f"project {entry['project']} has more than one {component} table; one RecordSet per grant")
-            seen_projects.add(entry["project"])
             summary, converted, s_keys = process_grant(
                 syn, entry, args, normalizer, write_log, report_dir, list_cols, set_like, reference, portal, recover, choices
             )
@@ -1141,7 +1181,7 @@ def main(argv=None, syn=None):
             legacy_keys[grant] = [str(k).strip() for k in converted[KEYS[component]]]
             source_keys[grant] = s_keys
         state["grants"][grant] = {
-            "mode": mode, "status": summary["status"], "run_id": args.run_id, "summary": summary,
+            "mode": mode, "options": options, "status": summary["status"], "run_id": args.run_id, "summary": summary,
             "converted": str(report_dir / "converted.csv") if converted is not None else "",
             "source_keys": s_keys if converted is not None else [],
         }
