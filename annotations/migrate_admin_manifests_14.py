@@ -80,6 +80,8 @@ ADMIN_LABEL = "CCKP - MC2 Admin"
 # String columns that hold one or more keys; split and rejoined per item.
 KEY_LIST_COLUMNS = frozenset({"ConsortiumKey", "GrantViewKey"})
 CONSORTIUM_PREFIX = "program."
+# Bump when a conversion rule changes: a done run is skipped on rerun only if its options (including this) match.
+CONVERSION_RULES = 2  # 2: minted PersonViewId, consortium_key, date_iso
 DUPLICATE_COLUMNS = ["key", "rows"]
 
 
@@ -324,6 +326,8 @@ def options_hash(args) -> str:
         "component": args.component, "source": args.source, "schema_version": args.schema_version,
         "overrides": Path(args.overrides).read_bytes().hex() if args.overrides else "",
         "model_ref": getattr(args, "model_ref", None) or model_contract.MODEL_REF,
+        "consortium_keys": utils.load_consortium_keys(),
+        "rules": CONVERSION_RULES,
     }
     return hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()
 
