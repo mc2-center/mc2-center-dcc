@@ -658,3 +658,29 @@ def test_validation_failures_do_not_block_a_migration(tmp_path):
     assert status_of(rep) == "migrated" and len(fake.writes) == 1
     assert int((rep / "CA1" / "validation.csv").read_text().count("\n")) > 1
     assert code == 2
+
+
+def test_comparison_accounts_for_resolved_duplicates(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", dup_table())})
+    fake.reference_source = reference_for("Second copy")
+    code, rep = run(tmp_path, fake)
+    assert "EQUAL" in (rep / "comparison.txt").read_text()
+    table = mock.Mock()
+    table.query.return_value = pd.DataFrame({"PublicationView_id": ["p1", "p1"]})  # the view holds both rows
+    with mock.patch.object(mig, "Table", lambda id: table):
+        code, rep = run(tmp_path, fake, "--union-id", "synMV", out="out2")
+    assert "legacy view synMV" in (rep / "comparison.txt").read_text()
+    assert "EQUAL" in (rep / "comparison.txt").read_text()
+
+
+def test_view_comparison_covers_only_the_tables_in_the_views_scope(tmp_path):
+    tables = {"synT1": ("CA1", "synP1", source_table()), "synT2": ("CA2", "synP2", source_table(
+        [["PublicationView", "new1", "CA123456", "N", "", "", "", "", "", ""]]))}
+    fake = FakeSynapse(tables)
+    table = mock.Mock()
+    table.query.return_value = pd.DataFrame({"PublicationView_id": ["p1", "p2"]})  # built before synT2 existed
+    with mock.patch.object(mig, "Table", lambda id: table), \
+         mock.patch.object(mig, "view_scope", lambda syn, view: {"synT1"}):
+        code, rep = run(tmp_path, fake, "--union-id", "synMV")
+    text = (rep / "comparison.txt").read_text()
+    assert "not in the view's scope" in text and "'CA2'" in text and "EQUAL" in text

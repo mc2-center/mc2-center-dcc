@@ -59,7 +59,7 @@ import jsonschema
 import pandas as pd
 from synapseclient import operations
 from synapseclient.extensions.curator import create_record_based_metadata_task
-from synapseclient.models import Folder, Table
+from synapseclient.models import Folder, MaterializedView, Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
@@ -576,6 +576,8 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
+    for k in resolutions["key"]:  # the source side of the comparison loses one row per resolved duplicate
+        source_keys.remove(k)
     if dropped:
         logger.info("%s: not schema columns, dropped: %s", entry["grant"], dropped)
     validation = validate_frame(converted, component, f"v{args.schema_version}")
@@ -589,7 +591,7 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         _write(resolutions, report_dir / "duplicates_resolved.csv")
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
-        dropped=dropped, duplicates_resolved=len(resolutions),
+        dropped=dropped, duplicates_resolved=len(resolutions), _resolved_keys=resolutions["key"].tolist(),
         truncated=int((changes["rule"] == "truncated").sum()),
     )
     if not args.execute:
@@ -644,8 +646,18 @@ def compare_keys(label: str, expected_keys: list[str], actual_keys: list[str], e
     return ok, lines
 
 
+def view_scope(syn, view_id: str) -> set[str] | None:
+    """Table IDs a MaterializedView's defining SQL reads (None when it cannot be read)."""
+    try:
+        return set(re.findall(r"syn\d+", MaterializedView(id=view_id).get(synapse_client=syn).defining_sql))
+    except Exception:
+        logger.warning("Could not read the defining SQL of %s", view_id)
+        return None
+
+
 def comparison(syn, args, legacy_keys: dict[str, list[str]], source_keys: dict[str, list[str]], projects: dict[str, str],
-               migrated: list[str], full_run: bool) -> tuple[bool, str]:
+               migrated: list[str], full_run: bool, resolved: dict[str, list[str]] | None = None,
+               tables: dict[str, str] | None = None) -> tuple[bool, str]:
     """Compare the legacy union with the RecordSet union (``--execute``) or the legacy view / source tables."""
     component = args.component
     key_display = f"{component}_id"
@@ -670,11 +682,23 @@ def comparison(syn, args, legacy_keys: dict[str, list[str]], source_keys: dict[s
             name=f"{component}_UNION", parent=UNION_PARENT, synapse_client=syn
         )
         if union_id and full_run:
+            scope = view_scope(syn, union_id) if tables else None
+            if scope is not None:
+                # a view built before a table existed cannot hold its rows: compare what it scopes
+                outside = [g for g in grants if tables.get(g) not in scope]
+                if outside:
+                    lines.append(f"grants whose table is not in the view's scope (the view predates them): {outside}")
+                    grants = [g for g in grants if g not in outside]
+                    legacy = [k for g in grants for k in legacy_keys[g]]
             view = Table(id=union_id).query(
                 query=f"SELECT {key_display} FROM {union_id}",
                 include_row_id_and_row_version=False, synapse_client=syn,
             )
             actual = [str(k).strip() for k in view[key_display]]
+            for g in grants:  # the view still holds both rows of a resolved duplicate
+                for k in (resolved or {}).get(g, []):
+                    if k in actual:
+                        actual.remove(k)
             res, more = compare_keys(f"legacy view {union_id} vs converted frames", actual, legacy, "legacy view")
             ok &= res
             lines += more
@@ -843,12 +867,16 @@ def main(argv=None, syn=None):
             {g: legacy_keys[g] for g in compared},
             {g: source_keys[g] for g in compared},
             projects, compared, full_run,
+            {s_["grant"]: s_.get("_resolved_keys", []) for s_ in summaries},
+            {s_["grant"]: s_.get("table") for s_ in summaries},
         )
     else:
         compare_ok, text = True, "no grants to compare"
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "comparison.txt").write_text(text + "\n")
-    pd.DataFrame(summaries).to_csv(run_dir / "summary.csv", index=False)
+    pd.DataFrame([{k: v for k, v in s_.items() if not k.startswith("_")} for s_ in summaries]).to_csv(
+        run_dir / "summary.csv", index=False
+    )
     report = run_report(summaries, frames)
     (run_dir / "run_summary.txt").write_text(report + "\n")
     validation_worklist(frames, KEYS[component]).to_csv(run_dir / "validation_worklist.csv", index=False)
