@@ -24,7 +24,8 @@ unchanged and reported as unmapped (except licenses, which are blanked).
 List cells are handled per item; items are split on commas (no valid value
 contains a comma). The nonpreferred terms of ``all_valid_values.csv`` are joined
 with ", " too, so a term that itself holds a comma is split into fragments;
-only fragments that look like a term are kept (:func:`acceptable_fragment`) and
+only fragments that look like a term (:func:`acceptable_fragment`) or are a spelling
+variant of their own valid value (:func:`is_variant`) are kept and
 the rest are reported in ``rejected_synonyms.csv``.
 """
 
@@ -67,6 +68,20 @@ def split_items(text: str) -> list[str]:
         if isinstance(parsed, list):
             return [str(v).strip() for v in parsed if str(v).strip()]
     return [p.strip() for p in re.split(r",\s*", text) if p.strip()]
+
+
+def _squash(text: str) -> str:
+    return "".join(c for c in text.casefold() if c.isalnum())
+
+
+def is_variant(fragment: str, valid_value: str) -> bool:
+    """Whether ``fragment`` is a spelling variant of ``valid_value``: equal after case-folding and
+    removing spaces, hyphens and punctuation, or equal after that up to a plural ``s`` / ``es``
+    on either side (``Ligaments`` / Ligament, ``Casfish`` / CASFISH)."""
+    a, b = _squash(fragment), _squash(valid_value)
+    if not a or not b:
+        return False
+    return a == b or any(a == b + suf or b == a + suf for suf in ("s", "es"))
 
 
 def acceptable_fragment(fragment: str) -> bool:
@@ -137,7 +152,7 @@ def load_enum_maps(component: str, rejected: list | None = None, ref: str | None
                 continue
             pieces = terms.split(", ")  # a term that itself holds ", " is split too (unrecoverable)
             for term in pieces:
-                if len(pieces) > 1 and not acceptable_fragment(term):
+                if len(pieces) > 1 and not (acceptable_fragment(term) or is_variant(term, valid)):
                     rejected_here.append((valid, term, terms))
                     continue
                 nonpreferred.append((term, valid))

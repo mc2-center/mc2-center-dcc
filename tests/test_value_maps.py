@@ -64,6 +64,35 @@ def test_acceptable_fragment(fragment, ok):
     assert vm.acceptable_fragment(fragment) is ok
 
 
+@pytest.mark.parametrize("fragment,valid,ok", [
+    ("Casfish", "CASFISH", True), ("Ligaments", "Ligament", True), ("Intestines", "Intestine", True),
+    ("medulloblastoma", "Medulloblastoma", True), ("Cut&run", "CUT&RUN", True), ("cut run", "CUT&RUN", True),
+    ("X ray", "X-Ray", True), ("Boxes", "Box", True), ("Box", "Boxes", True), ("Kidneys", "Kidney", True),
+    ("Kidney", "Kidney Carcinoma", False), ("Method", "Epidemiological Method", False),
+    ("Mass", "Mass Spectrometry", False), ("computational", "Computational Tool", False),
+    ("Crystallography", "X-Ray Crystallography", False), ("unclassified", "Kidney Carcinoma", False),
+    ("conventional", "Kidney Carcinoma", False), ("", "Kidney", False),
+])
+def test_is_variant(fragment, valid, ok):
+    assert vm.is_variant(fragment, valid) is ok
+
+
+def test_variant_fragments_of_their_own_value_map_and_other_fragments_stay_rejected(tmp_path, monkeypatch):
+    write_model(tmp_path, monkeypatch, [
+        ["tool_type", "Ligament", "Ligaments, Soft Tissue Band"],
+        ["tool_type", "Medulloblastoma", "medulloblastoma, Brain Tumor, Cerebellar"],
+        ["tool_type", "Mass Spectrometry", "MS Assay, Mass"],
+    ])
+    rejected = []
+    enum = vm.load_enum_maps("ToolView", rejected)["ToolType"]
+    assert enum.lookup("Ligaments") == ("Ligament", "enum_case") or enum.lookup("Ligaments") == ("Ligament", "nonpreferred")
+    assert enum.lookup("ligaments")[0] == "Ligament"
+    assert enum.lookup("Soft Tissue Band") == ("Ligament", "nonpreferred")
+    assert enum.lookup("Cerebellar") == ("Cerebellar", "unmapped")
+    assert enum.lookup("Mass") == ("Mass", "unmapped")
+    assert sorted(r["fragment"] for r in rejected) == ["Cerebellar", "Mass"]
+
+
 def write_model(tmp_path, monkeypatch, rows):
     """A mini data-models directory: one schema with one enum property and an all_valid_values.csv."""
     import json
