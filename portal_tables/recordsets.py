@@ -3,7 +3,8 @@
 Gate G1: each grant has one RecordSet per type (``MC2Center_<Component>_RecordSet``
 in the grant's data-type folder) that the pipeline and contributors both edit.
 The pipeline writes only through a Grid session (:func:`write_via_grid`), which
-validates and versions the data. Every version it creates is recorded in a
+validates and versions the data; the one exception is a DCC row removal
+(D-Q49, below). Every version it creates is recorded in a
 :class:`WriteLog` (write log v2), together with ``baseVersion``, the latest
 version the run had read and reconciled against.
 
@@ -38,7 +39,33 @@ C contributor) and ``set_at`` (version):
   contributor edit (``kept_edit``: value, owner C, ``set_at = v``), even when
   it matches an older value (e.g. undoing a pipeline change). A state key
   missing from ``v`` is restored whatever its owner (``restored_missing``); a
-  real deletion is done by the DCC.
+  real deletion is a DCC removal (D-Q49).
+* Removal version (D-Q49) [owner decision]: a Grid import is an upsert and
+  cannot remove a row, so real deletions are the one write that is not a Grid
+  session. The DCC removal step (``annotations/remove_recordset_rows.py``)
+  stores a new version without the rows (:func:`store_new_version`; binding,
+  upsert key and CurationTask are kept), logs it ``removed``, then exports a
+  fresh Grid session so the data is re-validated (logged ``written``). The
+  keys go in the removals table (:class:`Removals`) with ``removedInVersion``.
+  At a removal version, which is a pipeline version, the keys it dropped (in
+  its logged base, the version the removal read, and not in ``v``) are first
+  dropped from the state (``removed``), then the version is processed as any
+  pipeline version. If a foreign version landed between the removal's version
+  check and its store, rows and edits in it that the store overwrote are not
+  dropped: the pipeline-version rule keeps them (``kept_unseen_row``,
+  ``kept_unseen_edit``) and the next upload writes them back. Replay reads this off the
+  version history and the write log's ``removed`` rows alone, never the
+  removals table, so a crash between the store and the table can't bring a row
+  back. A removed key that reappears is remembered: in a pipeline
+  version it is added as P (``readded_by_pipeline``, should not happen, so reported on every replay
+  unless the key was ``restored``); in a
+  foreign version it is added back as a contributor row
+  (``readded_removed_key``, as ``kept_contributor_row``, except that when the
+  session's snapshot had the row only the cells that differ from it are
+  contributor-owned) and reported, never undone automatically. A contributor's
+  Grid session opened before the removal can do this; the removal step's
+  session check sees only the runner's visible sessions (best effort).
+  The pipeline skips uploading rows whose key is currently ``removed``.
 
 :func:`merge_upload` then applies an upload to the replayed state: a differing
 cell owned by C is kept and reported as a conflict (contributor wins), any
@@ -64,6 +91,7 @@ import logging
 import re
 import shutil
 import os
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -72,6 +100,7 @@ from pathlib import Path
 
 import pandas as pd
 from synapseclient import operations
+from synapseclient.core import utils as synapse_utils
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
 import comma_terms
@@ -89,6 +118,7 @@ WRITE_LOG_COLUMNS = [
     "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
 ]
 LOCK_HOURS = 2
+REMOVAL_RUN_PREFIX = "dcc-removal-"  # runId of a DCC removal run (D-Q49); recover_pending keys on it
 # Recovery compares Synapse's server-side modifiedOn with the runner's local
 # writtenOn, so the two clocks may disagree; accept a version modified up to
 # this long before the pending row was written.
@@ -260,12 +290,44 @@ def read_recordset(
         if cached.exists():
             return _load_csv(cached, list_cols)
     entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
-    if cached is not None:
-        cached.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
-        shutil.copyfile(entity.path, tmp)
-        tmp.replace(cached)
-    return _load_csv(entity.path, list_cols)
+    path, fresh_dir = entity.path, None
+    try:
+        if _md5_mismatch(entity):
+            # The client's cache can map a file handle to the wrong local file (see store_new_version),
+            # and a second client download copies that same file; fetch the version's file from S3 directly.
+            logger.warning("%s v%s: the cached download does not match its file handle's md5; downloading again",
+                           rs_id, version)
+            fresh_dir = tempfile.mkdtemp(prefix="recordset_")
+            path = _download_version_file(syn, rs_id, entity.version_number, Path(fresh_dir) / "recordset.csv")
+            if synapse_utils.md5_for_file_hex(filename=str(path)) != entity.file_handle.content_md5:
+                raise ValueError(f"{rs_id} v{version}: the downloaded file does not match its file handle's md5")
+        if cached is not None:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
+            shutil.copyfile(path, tmp)
+            tmp.replace(cached)
+        return _load_csv(path, list_cols)
+    finally:
+        if fresh_dir is not None:
+            shutil.rmtree(fresh_dir, ignore_errors=True)
+
+
+def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
+    """Download one version's file through its pre-signed URL, bypassing the client's file cache."""
+    url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
+    response = syn._requests_session.get(url, timeout=120)
+    response.raise_for_status()
+    dest.write_bytes(response.content)
+    return dest
+
+
+def _md5_mismatch(entity) -> bool:
+    """True when the downloaded file's md5 differs from its file handle's (unknown md5: no mismatch)."""
+    handle = getattr(entity, "file_handle", None)
+    want = getattr(handle, "content_md5", None)
+    if not isinstance(want, str) or not want or not entity.path or not os.path.isfile(entity.path):
+        return False
+    return synapse_utils.md5_for_file_hex(filename=str(entity.path)) != want
 
 
 def check_upload_keys(upload: pd.DataFrame, key) -> pd.DataFrame:
@@ -335,7 +397,8 @@ class WriteLog:
     Columns: ``recordSetId, version`` (null while ``pending``), ``baseVersion``
     (the latest version the run read and reconciled against), ``runId``,
     ``principalId`` (the runner's Synapse user ID), ``status`` (``pending``;
-    ``written`` per export; ``done`` once every export of the write is logged;
+    ``written`` per export; ``removed`` for a DCC removal's direct-store
+    version (D-Q49); ``done`` once every export of the write is logged;
     ``recovered``; or ``aborted`` when a run created nothing), ``writtenOn``,
     ``rowsWritten``. A ``pending`` row is resolved only by a later ``done``,
     ``recovered`` or ``aborted`` row with the same ``runId`` and
@@ -364,12 +427,16 @@ class WriteLog:
         self._append(self._row(rs_id, None, base, run_id, principal, "pending", None))
 
     def record(self, rs_id, version, run_id, rows, base=None, principal="", status="written") -> None:
-        """Record a version the pipeline created (``written`` or ``recovered``).
+        """Record a version the pipeline created (``written``, ``removed`` or ``recovered``).
 
         ``base`` defaults to ``version - 1``.
         """
         base = version - 1 if base is None and version is not None else base
         self._append(self._row(rs_id, version, base, run_id, principal, status, rows))
+
+    def removed(self, rs_id, version, base, run_id, principal, rows) -> None:
+        """Record a DCC removal's direct-store version (``removed``: a pipeline version)."""
+        self._append(self._row(rs_id, version, base, run_id, principal, "removed", rows))
 
     def finish(self, rs_id: str, base: int, run_id: str, principal) -> None:
         """Resolve a ``pending`` row once every export of its write is logged."""
@@ -400,10 +467,25 @@ class WriteLog:
         return int(max(df["version"])) if len(df) else None
 
     def pipeline_map(self, rs_id: str) -> dict[int, int]:
-        """``{version: baseVersion}`` of every pipeline version (written or recovered)."""
+        """``{version: baseVersion}`` of every pipeline version (written, removed or recovered)."""
         df = self._read(rs_id)
-        df = df[df["status"].isin(["written", "recovered"]) & df["version"].notna()]
+        df = df[df["status"].isin(["written", "removed", "recovered"]) & df["version"].notna()]
         return {int(v): int(b) if pd.notna(b) else int(v) - 1 for v, b in zip(df["version"], df["baseVersion"])}
+
+    def removal_versions(self, rs_id: str, run_id: str | None = None) -> set[int]:
+        """Versions logged ``removed`` (a DCC removal's direct store), of one run if ``run_id`` is given."""
+        df = self._read(rs_id)
+        df = df[(df["status"] == "removed") & df["version"].notna()]
+        if run_id is not None:
+            df = df[df["runId"] == run_id]
+        return {int(v) for v in df["version"]}
+
+    def unexported_removals(self, rs_id: str) -> list[int]:
+        """Removal versions with no later pipeline version based on them (or on their base): each owes its Grid export."""
+        pipeline = self.pipeline_map(rs_id)
+        # a raced removal's export is logged with the removal's own base (see remove_recordset_rows.py)
+        return sorted(v for v in self.removal_versions(rs_id)
+                      if not any(w > v and b in (v, pipeline[v]) for w, b in pipeline.items()))
 
     def pipeline_versions(self, rs_id: str) -> list[int]:
         return sorted(self.pipeline_map(rs_id))
@@ -534,14 +616,227 @@ def create_write_log_table(syn, parent_id: str, name: str = "MC2Center_RecordSet
     return table.id
 
 
+# --- removals (D-Q49) --------------------------------------------------------
+
+REMOVALS_COLUMNS = [
+    "recordSetId", "key", "reason", "requestedBy", "status", "removedInVersion", "runId", "principalId",
+    "changedOn",
+]
+REMOVAL_STATUSES = ("requested", "removed", "not_found", "restored")
+
+
+class Removals:
+    """Append-only removals table: which rows the DCC asked to remove, and what became of them.
+
+    Columns: ``recordSetId``, ``key`` (the key string, :data:`KEY_SEP`-joined
+    for a composite key), ``reason``, ``requestedBy``, ``status``
+    (``requested``; ``removed``; ``not_found``; ``restored``, which lifts a
+    removal so the pipeline uploads the key again), ``removedInVersion`` (the
+    direct-store version, on ``removed`` rows), ``runId``, ``principalId``,
+    ``changedOn``. The latest row per (recordSetId, key) is its current status.
+    Subclasses implement ``_read`` and ``_append_rows``.
+    """
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        raise NotImplementedError
+
+    def _append_rows(self, rows: list[dict]) -> None:
+        """Append every row in one write (one transaction in Synapse)."""
+        raise NotImplementedError
+
+    def append_many(self, rs_id, entries, run_id="", principal="") -> None:
+        """Append rows in one write; ``entries`` are dicts with ``key``, ``status`` and optional
+        ``reason``, ``requested_by``, ``removed_in_version``. All or none."""
+        now = datetime.now(timezone.utc)
+        rows = []
+        for e in entries:
+            if e["status"] not in REMOVAL_STATUSES:
+                raise ValueError(f"unknown removal status {e['status']!r}")
+            rows.append({
+                "recordSetId": rs_id, "key": e["key"], "reason": e.get("reason", ""),
+                "requestedBy": e.get("requested_by", ""), "status": e["status"],
+                "removedInVersion": e.get("removed_in_version"), "runId": run_id,
+                "principalId": str(principal), "changedOn": now,
+            })
+        if rows:
+            self._append_rows(rows)
+
+    def append(self, rs_id, key, status, reason="", requested_by="", removed_in_version=None,
+               run_id="", principal="") -> None:
+        self.append_many(rs_id, [{"key": key, "status": status, "reason": reason, "requested_by": requested_by,
+                                  "removed_in_version": removed_in_version}], run_id, principal)
+
+    def recordset_ids(self) -> list[str]:
+        """RecordSets that have any row."""
+        raise NotImplementedError
+
+    def _latest(self, rs_id: str) -> pd.DataFrame:
+        df = self._read(rs_id)
+        if df.empty:
+            return df
+        df = df.assign(_on=df["changedOn"].map(_to_dt)).sort_values("_on", kind="stable")
+        return df.drop_duplicates("key", keep="last")
+
+    def restored(self, rs_id: str) -> set[str]:
+        """Keys whose current status is ``restored`` (their removal is lifted)."""
+        df = self._latest(rs_id)
+        return {r["key"] for _, r in df[df["status"] == "restored"].iterrows()} if len(df) else set()
+
+    def requested(self, rs_id: str) -> dict[str, dict]:
+        """``{key: {reason, requestedBy}}`` of keys whose current status is ``requested``."""
+        df = self._latest(rs_id)
+        df = df[df["status"] == "requested"] if len(df) else df
+        return {r["key"]: {"reason": r["reason"], "requestedBy": r["requestedBy"]} for _, r in df.iterrows()}
+
+    def removed(self, rs_id: str) -> dict[str, int]:
+        """``{key: removedInVersion}`` of keys whose current status is ``removed``."""
+        df = self._latest(rs_id)
+        df = df[(df["status"] == "removed") & df["removedInVersion"].notna()] if len(df) else df
+        return {r["key"]: int(r["removedInVersion"]) for _, r in df.iterrows()}
+
+    def removal_events(self, rs_id: str) -> dict[int, set[str]]:
+        """``{removedInVersion: keys}`` of every ``removed`` row, restored or not (for :func:`replay`)."""
+        df = self._read(rs_id)
+        df = df[(df["status"] == "removed") & df["removedInVersion"].notna()] if len(df) else df
+        out: dict[int, set[str]] = {}
+        for _, r in df.iterrows():
+            out.setdefault(int(r["removedInVersion"]), set()).add(r["key"])
+        return out
+
+
+class SynapseTableRemovals(Removals):
+    """Removals kept in a Synapse table (see :func:`create_removals_table`)."""
+
+    def __init__(self, syn, table_id: str):
+        self.syn = syn
+        self.table_id = table_id
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        return Table(id=self.table_id).query(
+            query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
+            include_row_id_and_row_version=False,
+            synapse_client=self.syn,
+        )
+
+    def recordset_ids(self) -> list[str]:
+        df = Table(id=self.table_id).query(
+            query=f"SELECT DISTINCT recordSetId FROM {self.table_id}",
+            include_row_id_and_row_version=False,
+            synapse_client=self.syn,
+        )
+        return sorted(df["recordSetId"])
+
+    def _append_rows(self, rows: list[dict]) -> None:
+        frame = pd.DataFrame(rows, columns=REMOVALS_COLUMNS)
+        frame["changedOn"] = frame["changedOn"].map(lambda t: int(t.timestamp() * 1000))
+        frame["removedInVersion"] = frame["removedInVersion"].astype("Int64")
+        Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
+
+
+class CsvRemovals(Removals):
+    """The same table as a local CSV, for tests and dry runs."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        if not self.path.exists():
+            return pd.DataFrame(columns=REMOVALS_COLUMNS)
+        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
+        df = df[df["recordSetId"] == rs_id].copy()
+        df["removedInVersion"] = pd.to_numeric(df["removedInVersion"].replace("", pd.NA))
+        return df
+
+    def recordset_ids(self) -> list[str]:
+        if not self.path.exists():
+            return []
+        return sorted(set(pd.read_csv(self.path, dtype=str, keep_default_na=False)["recordSetId"]))
+
+    def _append_rows(self, rows: list[dict]) -> None:
+        new = not self.path.exists()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.path, "a", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            if new:
+                writer.writerow(REMOVALS_COLUMNS)
+            for row in rows:
+                writer.writerow(
+                    ["" if row[c] is None else (row[c].isoformat() if c == "changedOn" else row[c])
+                     for c in REMOVALS_COLUMNS]
+                )
+
+
+def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_Removals") -> str:
+    """Create the removals table under ``parent_id`` and return its ID.
+
+    A Synapse write. Not called by any script; a migration step runs it once.
+    """
+    columns = [
+        Column(name="recordSetId", column_type=ColumnType.ENTITYID),
+        Column(name="key", column_type=ColumnType.STRING, maximum_size=500),
+        Column(name="reason", column_type=ColumnType.STRING, maximum_size=500),
+        Column(name="requestedBy", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="status", column_type=ColumnType.STRING, maximum_size=20),
+        Column(name="removedInVersion", column_type=ColumnType.INTEGER),
+        Column(name="runId", column_type=ColumnType.STRING, maximum_size=100),
+        Column(name="principalId", column_type=ColumnType.STRING, maximum_size=20),
+        Column(name="changedOn", column_type=ColumnType.DATE),
+    ]
+    table = Table(name=name, parent_id=parent_id, columns=columns).store(synapse_client=syn)
+    return table.id
+
+
+def removed_keys(versions, removal_bases, key) -> dict[str, int]:
+    """``{key: removal version}`` for the keys each removal version dropped (in its base, not in it).
+
+    ``removal_bases`` is ``{removal version: baseVersion}``, the version the removal read.
+
+    Read off the version history like :func:`replay` does, so it also covers a
+    removal the removals table doesn't list (yet). ``versions`` is
+    ``[(version, DataFrame)]``; a later removal of the same key wins.
+    """
+    key_cols = key_columns(key)
+    keys = {v: {_key_of(r, key_cols) for _, r in df.iterrows()} if all(c in df.columns for c in key_cols) else set()
+            for v, df in versions}
+    out: dict[str, int] = {}
+    for v, base in sorted(removal_bases.items()):
+        if base in keys and v in keys:
+            out.update({k: v for k in keys[base] - keys[v]})
+    return out
+
+
+def drop_removed(upload: pd.DataFrame, key, removed: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split an upload into ``(kept, skipped)``; ``skipped`` rows have a key currently ``removed``.
+
+    ``removed`` is :meth:`Removals.removed`'s ``{key: removedInVersion}``;
+    ``skipped`` gets a ``removedInVersion`` column.
+    """
+    key_cols = key_columns(key)
+    keys = [_key_of(row, key_cols) for _, row in upload.iterrows()]
+    hit = pd.Series([k in removed for k in keys], index=upload.index, dtype=bool)
+    skipped = upload[hit].copy()
+    skipped["removedInVersion"] = [removed[k] for k, h in zip(keys, hit) if h]
+    return upload[~hit].copy(), skipped
+
+
 def recordset_version_meta(syn, rs_id: str, version: int) -> tuple[str, pd.Timestamp]:
     """``(modifiedBy, modifiedOn)`` of one RecordSet version, without downloading it."""
     entity = RecordSet(id=rs_id, version_number=version, download_file=False).get(synapse_client=syn)
     return str(entity.modified_by), _to_dt(entity.modified_on)
 
 
+class Recovered(dict):
+    """``{version: base}`` from :func:`recover_pending`; ``removal`` holds the versions of it that are removal stores."""
+
+    removal: set
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.removal = set()
+
+
 def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
-                    run_id=None, skip_younger_than=None, now=None) -> dict[int, int]:
+                    run_id=None, skip_younger_than=None, now=None) -> Recovered:
     """Recover versions created by runs that died after exporting.
 
     For each unresolved ``pending`` row, a version above its ``baseVersion``
@@ -554,10 +849,14 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
     ``skip_younger_than=LOCK_HOURS``: a younger row belongs to a live run
     (``locked_by`` already let us through), and must not be aborted under it.
     After a failed write, pass ``run_id`` to resolve only this run's own row.
+    A DCC removal run (runId with :data:`REMOVAL_RUN_PREFIX`) stores its version
+    directly: the first recovered version of such a row, when the run has not
+    logged its ``removed`` version yet, is the store and is logged ``removed``
+    (replay drops its keys); later ones are Grid exports, ``recovered``.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
     logged = write_log.pipeline_map(rs_id)
-    found: dict[int, int] = {}
+    found = Recovered()
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
     for row in write_log.unresolved_pending(rs_id):
         if row["baseVersion"] is None:
@@ -573,11 +872,20 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
             by, on = meta(v)
             if by == row["principalId"] and pd.notna(on) and on >= row["writtenOn"] - CLOCK_TOLERANCE:
                 mine.append(v)
+        store = None
+        if (mine and str(row["runId"]).startswith(REMOVAL_RUN_PREFIX)
+                and not write_log.removal_versions(rs_id, row["runId"])):
+            store = mine[0]
+            found.removal.add(store)
         for v in mine:
             found[v] = row["baseVersion"]
-            if record:
+            if record and v == store:
+                write_log.removed(rs_id, v, row["baseVersion"], row["runId"], row["principalId"], None)
+            elif record:
                 write_log.record(rs_id, v, row["runId"], None, base=row["baseVersion"],
                                  principal=row["principalId"], status="recovered")
+        if store is not None and record:  # ``removed`` doesn't close the row; the owed export is a later run's
+            write_log.finish(rs_id, row["baseVersion"], row["runId"], row["principalId"])
         if not mine and record:
             write_log.abort(rs_id, row["baseVersion"], row["runId"], row["principalId"])
         if mine:
@@ -659,12 +967,17 @@ def _session_base(cf, diffs, fingerprints, v) -> int:
     return v - 1
 
 
-def replay(versions, log_map, key, set_like=()):
+def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()):
     """Rebuild the current state from every version, tracking cell ownership.
 
     ``versions`` is ``[(version, DataFrame)]`` for every version ``1..latest``;
-    ``log_map`` is ``{pipeline version: baseVersion}`` from the write log. The
-    rules are in the module docstring. Returns ``(state, owned, decisions)``:
+    ``log_map`` is ``{pipeline version: baseVersion}`` from the write log;
+    ``removal_versions`` are the versions logged ``removed``
+    (:meth:`WriteLog.removal_versions`, D-Q49); the keys a removal dropped are
+    read off the history itself (in its ``log_map`` base, not in ``v``), so replay never
+    depends on the removals table. ``restored`` are keys whose removal was
+    lifted: their re-adding by the pipeline is not reported.
+    The rules are in the module docstring. Returns ``(state, owned, decisions)``:
     the state DataFrame, the set of ``(key, column)`` cells owned by a
     contributor, and the decisions (``key, column, decision, current_value,
     pipeline_value, version``) for versions newer than the newest logged one,
@@ -718,11 +1031,13 @@ def replay(versions, log_map, key, set_like=()):
         if first - 1 in frames:
             state = {k: fresh(k, first - 1, lambda _: P) for k in frames[first - 1]}
 
-    def decide(v, k, column, decision, cur="", pipe=""):
-        if v > report_after:
+    def decide(v, k, column, decision, cur="", pipe="", always=False):
+        if always or v > report_after:
             decisions.append({"key": k, "column": column, "decision": decision,
                               "current_value": cur, "pipeline_value": pipe, "version": v})
 
+    removal_versions, restored = set(removal_versions), set(restored)
+    gone: set[str] = set()  # keys removed by the DCC and not yet seen again
     diffs = fingerprints = None
     if log_map and any(v not in log_map and v >= first for v in frames):
         diffs = _version_diffs(cf, latest)
@@ -734,9 +1049,19 @@ def replay(versions, log_map, key, set_like=()):
         frame, crows = frames[v], cf[v]
         if v in log_map:
             base = log_map[v]
+            if v in removal_versions and base in frames:
+                for k in [k for k in frames[base] if k not in frame]:
+                    if k in state:
+                        del state[k]
+                        gone.add(k)
+                        decide(v, k, "", "removed")
             for k, row in frame.items():
                 if k not in state:
                     state[k] = fresh(k, v, lambda _: P)
+                    if k in gone:
+                        gone.discard(k)
+                        if k not in restored:
+                            decide(v, k, "", "readded_by_pipeline", always=True)
                     continue
                 crow = crows[k]
                 for i, c in enumerate(non_key):
@@ -760,7 +1085,16 @@ def replay(versions, log_map, key, set_like=()):
             for k, row in frame.items():
                 if k not in state:
                     state[k] = fresh(k, v, lambda x: P if _is_blank(x) else C)
-                    decide(v, k, "", "kept_contributor_row")
+                    if k in gone:
+                        gone.discard(k)
+                        srow = snapshot.get(k)
+                        if srow is not None:  # the session had the row: only its edits are contributor cells
+                            for i, c in enumerate(non_key):
+                                if crows[k][i] == srow[i]:
+                                    state[k][c][1] = P
+                        decide(v, k, "", "readded_removed_key")
+                    else:
+                        decide(v, k, "", "kept_contributor_row")
                     continue
                 crow, srow = crows[k], snapshot.get(k)
                 for i, c in enumerate(non_key):
@@ -871,20 +1205,62 @@ def differences(expected: pd.DataFrame, actual: pd.DataFrame, key, set_like=()) 
 # --- writing -----------------------------------------------------------------
 
 
-def write_via_grid(
+def write_via_grid(syn, rs_id: str, csv_path, **kwargs) -> list[int]:
+    """Upsert ``csv_path`` into the RecordSet through a Grid session; return every version created.
+
+    See :func:`_grid_session` for the keyword arguments and the wait/retry rules.
+    """
+    return _grid_session(syn, rs_id, csv_path, **kwargs)
+
+
+def export_via_grid(syn, rs_id: str, **kwargs) -> list[int]:
+    """Re-validate the RecordSet: a fresh Grid session with no import and one export (D-Q49).
+
+    Same waits, retries and cleanup as :func:`write_via_grid`.
+    """
+    return _grid_session(syn, rs_id, None, **kwargs)
+
+
+def open_grid_sessions(syn, rs_id: str) -> list:
+    """Grid sessions on the RecordSet that the runner can see (``Grid.list(source_id=...)``).
+
+    Best effort: the list may cover only the runner's own sessions, so another
+    user's open session is not guaranteed to show up here.
+    """
+    return list(Grid.list(source_id=rs_id, synapse_client=syn))
+
+
+def store_new_version(syn, rs_id: str, csv_path) -> int:
+    """Store ``csv_path`` as a new RecordSet version directly (no Grid session); return its number.
+
+    The only write that can drop rows (D-Q49). The entity is fetched without
+    its file and its ``path`` replaced, so the binding, upsert key and
+    CurationTask are kept. The fetched entity's file-handle fields are cleared
+    first: otherwise synapseclient's ``_needs_upload`` sees the old handle, finds
+    no cache entry for (old handle, new path) and, when the md5 differs, still
+    runs ``cache.add(old handle id, new path)``, so the client's cache then
+    serves the *new* file for the *old* version. With no handle it uploads a
+    new one and only that handle is cached.
+    """
+    entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)
+    for field in ("file_handle", "data_file_handle_id", "content_md5", "content_size"):
+        setattr(entity, field, None)
+    entity.path = str(csv_path)
+    return entity.store(synapse_client=syn).version_number
+
+
+def _grid_session(
     syn,
     rs_id: str,
-    csv_path,
+    csv_path=None,
     timeout: int = 120,
     validation_wait: int = 60,
     retry_wait: int = 30,
     max_exports: int = 4,
     on_version=None,
 ) -> list[int]:
-    """Upsert ``csv_path`` into the RecordSet through a Grid session; return every version created.
-
-    Fresh session, import, wait for validation, export (a new RecordSet
-    version), delete the session. The grid session exposes no validation
+    """Fresh Grid session, import ``csv_path`` (none: skip), wait for validation, export
+    (a new RecordSet version), delete the session. The grid session exposes no validation
     statistics before an export (only the export response carries a summary),
     so the wait is a fixed ``validation_wait`` seconds after the import; the
     export summary's unknown-row count is then checked, and while rows are
@@ -898,7 +1274,8 @@ def write_via_grid(
         attach_to_previous_session=False, timeout=timeout, synapse_client=syn
     )
     try:
-        grid.import_csv(path=str(csv_path), timeout=timeout, synapse_client=syn)
+        if csv_path is not None:
+            grid.import_csv(path=str(csv_path), timeout=timeout, synapse_client=syn)
         wait, versions = validation_wait, []
         for attempt in range(1, max_exports + 1):
             time.sleep(wait)

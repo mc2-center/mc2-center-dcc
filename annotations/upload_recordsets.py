@@ -19,6 +19,15 @@ RecordSet has another run's unfinished write (a pending write-log row under
 Reports go to ``<report-dir>/<run-id>/<grant>/``: decisions.csv, conflicts.csv,
 validation.csv (``--execute`` only), merged.csv and summary.txt.
 
+Upload rows whose key a DCC row removal (D-Q49) removed are dropped after the
+replay and before the merge, and listed in removal_skipped.csv. The removed keys
+come from the write log's ``removed`` versions and the history (so a removal
+the removals table doesn't list yet counts) and from the removals table's
+``removed`` rows; a key whose latest status is ``restored`` is uploaded
+normally. ``--execute`` needs a removals source (``--removals-table``, or
+``--removals-csv`` in tests); a dry run may omit it, and then ``restored`` keys
+are unknown.
+
 The exit status is 1 if any grant needs attention (failed, missing_recordset,
 locked, retry or verification_mismatch), so a workflow does not treat the
 upload as done; the other grants still run. If foreign versions landed during a
@@ -65,6 +74,9 @@ def get_args(argv=None):
     log = parser.add_mutually_exclusive_group(required=True)
     log.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
     log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
+    removals = parser.add_mutually_exclusive_group()
+    removals.add_argument("--removals-table", help="Synapse ID of the removals table (D-Q49)")
+    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
     parser.add_argument("--report-dir", required=True, help="directory for the per-grant reports")
     parser.add_argument(
         "--execute", action="store_true", help="write to Synapse; the default is a dry run"
@@ -80,6 +92,8 @@ def get_args(argv=None):
     args = parser.parse_args(argv)
     if args.execute and not args.write_log_table:
         parser.error("--execute needs --write-log-table; a CSV log is for dry runs and tests only")
+    if args.execute and not (args.removals_table or args.removals_csv):
+        parser.error("--execute needs --removals-table (or --removals-csv) so removed rows are not uploaded again")
     return args
 
 
@@ -95,7 +109,8 @@ def stored_keys(df: pd.DataFrame, key_cols: list[str]) -> list[str]:
     return [recordsets._key_of(row, key_cols) for _, row in df.iterrows()]
 
 
-def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_like, _rerun=False) -> dict:
+def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_like, _rerun=False,
+                  removals=None) -> dict:
     """Upload one grant's manifest. Returns a summary dict with a ``status``."""
     component = args.component
     summary = {"grant": report_dir.name, "file": row["File Paths"], "status": "", "message": ""}
@@ -164,7 +179,22 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
-    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like)
+    removal_versions = write_log.removal_versions(rs_id) | set(recovered.removal)
+    restored = removals.restored(rs_id) if removals is not None else set()
+    base, owned, decisions = recordsets.replay(versions, log_map, key, set_like, removal_versions, restored)
+    # D-Q49: a removed row is not uploaded again until its key is ``restored``. The removed keys
+    # come from the history (so a removal the table doesn't list yet counts) and the table.
+    removed = recordsets.removed_keys(versions, {v: log_map[v] for v in removal_versions if v in log_map}, key)
+    if removals is not None:
+        removed.update(removals.removed(rs_id))
+    removed = {k: v for k, v in removed.items() if k not in restored}
+    upload, skipped = recordsets.drop_removed(upload, key, removed)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    _write_report(report_dir / "removal_skipped.csv", skipped)
+    if len(skipped):
+        summary["removal_skipped"] = len(skipped)
+        logger.info("%s: %d upload row(s) skipped, key removed by the DCC (removal_skipped.csv)",
+                    report_dir.name, len(skipped))
     mode = "first write (no replay)" if not log_map else f"replayed v1..v{latest}"
     merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
     # Columns that are no longer schema properties are dropped by a Grid import; compare without them.
@@ -222,7 +252,8 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     if midwrite and not _rerun and status not in ("verification_mismatch",):
         # Replay once more now: it restores the edits our write overwrote.
         first = dict(summary)
-        second = process_grant(syn, row, args, write_log, report_dir / "rerun", list_cols, set_like, _rerun=True)
+        second = process_grant(syn, row, args, write_log, report_dir / "rerun", list_cols, set_like, _rerun=True,
+                              removals=removals)
         second["grant"] = first["grant"]
         second["rerun"] = True
         second["message"] = (
@@ -251,7 +282,7 @@ def _write_report(path: Path, df: pd.DataFrame) -> None:
 
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite"):
+    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s["message"]:
@@ -267,6 +298,10 @@ def main(argv=None, syn=None):
         if args.write_log_table
         else recordsets.CsvWriteLog(args.write_log_csv)
     )
+    removals = (
+        recordsets.SynapseTableRemovals(syn, args.removals_table) if args.removals_table
+        else recordsets.CsvRemovals(args.removals_csv) if args.removals_csv else None
+    )
     list_cols = recordsets.list_columns(args.component)
     set_like = recordsets.set_like_columns(args.component)
     paths = pd.read_csv(args.paths_csv, dtype=str, keep_default_na=False)
@@ -279,7 +314,7 @@ def main(argv=None, syn=None):
         grant = row.get("grantId") or Path(row["File Paths"]).stem
         report_dir = run_dir / str(grant)
         try:
-            summary = process_grant(syn, row, args, write_log, report_dir, list_cols, set_like)
+            summary = process_grant(syn, row, args, write_log, report_dir, list_cols, set_like, removals=removals)
         except Exception as err:  # one grant's failure must not stop the others
             logger.exception("Grant %s failed", grant)
             summary = {"grant": str(grant), "file": row["File Paths"], "status": "failed", "message": repr(err)}
