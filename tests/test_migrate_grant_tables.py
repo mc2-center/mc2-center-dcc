@@ -1179,3 +1179,33 @@ def test_a_project_skipped_from_state_still_counts_for_the_one_table_per_project
     code, rep = run(tmp_path, fake, run_id="r2")
     summary = pd.read_csv(rep / "summary.csv")
     assert summary["status"].tolist().count("failed") == 1 and code == 1
+
+
+def two_table_project():
+    return {"synT1": ("CA1", "synP1", source_table()), "synT2": ("CA2", "synP2", source_table()),
+            "synT3": ("CA1", "synP1", source_table())}  # P1's second table is listed last
+
+
+def test_a_grant_with_two_tables_migrates_neither_and_fails_before_any_read(tmp_path):
+    fake = FakeSynapse(two_table_project())
+    reads = []
+    real = fake.read_source
+    fake.read_source = lambda syn, t: (reads.append(t), real(syn, t))[1]
+    code, rep = run(tmp_path, fake, "--grants", "CA1")
+    assert reads == [] and code == 1  # the scan reached synT3 although CA2 is not wanted
+    assert status_of(rep) == "failed"
+    message = (rep / "CA1" / "summary.txt").read_text()
+    assert "synT1" in message and "synT3" in message and not (rep / "CA1" / "converted.csv").exists()
+
+
+def test_a_two_table_grant_does_not_stop_the_other_grants(tmp_path):
+    fake = FakeSynapse(two_table_project())
+    code, rep = run(tmp_path, fake, execute=True)
+    assert code == 1 and status_of(rep, "CA1") == "failed" and status_of(rep, "CA2") == "migrated"
+    assert len(fake.created) == 1 and fake.created[0]["project_id"] == "synP2"
+
+
+def test_limit_counts_grants_after_the_full_scan(tmp_path):
+    fake = FakeSynapse(two_table_project())
+    code, rep = run(tmp_path, fake, "--limit", "1")
+    assert status_of(rep, "CA1") == "failed" and not (rep / "CA2").exists()  # synT3 was not cut off by the limit

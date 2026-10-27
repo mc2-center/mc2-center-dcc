@@ -193,6 +193,9 @@ def safe_name(label: str) -> str:
 def select_grant_tables(syn, args) -> tuple[list[dict], list[str]]:
     """``(tables, skipped)``: tables to migrate (``grant``, ``project``, ``table``) and a note per skipped one.
 
+    Every table of the component is scanned; ``--limit`` keeps the first N projects.
+    A project with several tables appears once per table (``main`` fails that grant).
+
     ``grant`` is the grant number; a project that is not in the Grants table is
     a grant labelled by its project name (``UNLISTED_LABELS``) unless
     ``--no-include-unlisted``.
@@ -206,14 +209,9 @@ def select_grant_tables(syn, args) -> tuple[list[dict], list[str]]:
         if unknown:
             raise SystemExit(f"Grant number(s) not in the Grants table: {unknown}")
         wanted = {by_label[g] for g in args.grants}
-    tables, skipped, seen = [], [], set()
-    for table_id in list_grant_tables(syn, args.component)["id"]:
-        if args.limit is not None and len(tables) >= args.limit:
-            break
-        if wanted is not None and wanted <= seen:
-            break
+    tables, skipped = [], []
+    for table_id in list_grant_tables(syn, args.component)["id"]:  # every table: a project may hold more than one
         project, name = project_of(syn, table_id)
-        seen.add(project)
         unlisted = project not in grants
         if unlisted and not args.include_unlisted:
             skipped.append(f"{table_id}: project {project} is not in the Grants table")
@@ -222,6 +220,9 @@ def select_grant_tables(syn, args) -> tuple[list[dict], list[str]]:
             continue
         label = UNLISTED_LABELS.get(project) or name or project if unlisted else str(grants[project])
         tables.append({"grant": label, "project": project, "table": table_id, "unlisted": unlisted})
+    if args.limit is not None:  # --limit counts grants (projects), after the full scan
+        keep = list(dict.fromkeys(t["project"] for t in tables))[:args.limit]
+        tables = [t for t in tables if t["project"] in keep]
     return tables, skipped
 
 
@@ -1131,20 +1132,26 @@ def main(argv=None, syn=None):
         print(f"skipped {note}")
 
     summaries, frames, legacy_keys, source_keys, projects = [], {}, {}, {}, {}
-    seen_projects: set[str] = set()
+    by_project: dict[str, list[dict]] = {}
+    for entry in tables:
+        by_project.setdefault(entry["project"], []).append(entry)
     for entry in tables:
         grant = entry["grant"]
         projects[grant] = entry["project"]
         report_dir = run_dir / safe_name(grant)
-        if entry["project"] in seen_projects:  # one RecordSet per grant: a second table is never migrated
-            summary = {"grant": grant, "table": entry["table"], "status": "failed", "message":
-                       f"project {entry['project']} has more than one {component} table; one RecordSet per grant"}
+        siblings = by_project[entry["project"]]
+        if len(siblings) > 1:  # one RecordSet per grant: none of its tables is read or migrated
+            if entry is not siblings[0]:
+                continue
+            ids = [t["table"] for t in siblings]
+            summary = {"grant": grant, "table": ", ".join(ids), "status": "failed", "message":
+                       f"project {entry['project']} has more than one {component} table ({', '.join(ids)}); "
+                       "one RecordSet per grant, none migrated"}
             report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / f"summary_{entry['table']}.txt").write_text(summary_line(summary) + "\n")
+            (report_dir / "summary.txt").write_text(summary_line(summary) + "\n")
             print(summary_line(summary))
             summaries.append(summary)
             continue
-        seen_projects.add(entry["project"])
         previous = state["grants"].get(grant, {})
         if (
             grant not in args.redo
