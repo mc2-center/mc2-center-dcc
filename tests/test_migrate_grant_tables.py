@@ -1153,6 +1153,26 @@ def test_options_hash_covers_the_duplicate_choices_content(tmp_path):
     assert a != b
 
 
+def test_options_hash_covers_the_conversion_rules_version(monkeypatch):
+    args = mig.get_args(["--component", "PublicationView"])
+    before = mig.options_hash(args)
+    monkeypatch.setattr(mig, "CONVERSION_RULES", mig.CONVERSION_RULES + 1)
+    assert mig.options_hash(args) != before
+
+
+def test_a_done_dry_run_is_redone_when_the_rules_version_changes(tmp_path, monkeypatch):
+    fake = FakeSynapse()
+    run(tmp_path, fake, run_id="r1")
+    reads = []
+    real = fake.read_source
+    fake.read_source = lambda syn, t: (reads.append(t), real(syn, t))[1]
+    run(tmp_path, fake, run_id="r2")
+    assert reads == []
+    monkeypatch.setattr(mig, "CONVERSION_RULES", mig.CONVERSION_RULES + 1)
+    run(tmp_path, fake, run_id="r3")
+    assert reads == ["synT1"]
+
+
 def test_duplicate_choice_with_a_grant_column_applies_only_to_that_grant(tmp_path):
     choices = tmp_path / "c.csv"
     pd.DataFrame({"grant": ["CA2", ""], "key": ["p1", "zzz"], "keep_legacy_id": ["20", "none"]}).to_csv(choices, index=False)

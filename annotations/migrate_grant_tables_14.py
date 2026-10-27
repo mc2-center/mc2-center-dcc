@@ -96,6 +96,9 @@ DONE = {"dryrun": {"dryrun"}, "execute": {"migrated", "already_migrated"}}
 PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older than this is not ours
 
 VALIDATION_COLUMNS = ["key", "field", "validator", "message"]
+# Bump when a conversion rule changes (value_maps rules, resolution order ...): a done grant is skipped on
+# rerun only if its options hash, which includes this, matches.
+CONVERSION_RULES = 2  # 2: date_iso
 
 
 def get_args(argv=None):
@@ -1093,6 +1096,7 @@ def options_hash(args) -> str:
         "duplicate_choices": content(args.duplicate_choices), "schema_version": args.schema_version,
         "include_unlisted": bool(args.include_unlisted), "recover_truncated": bool(args.recover_truncated),
         "model_ref": getattr(args, "model_ref", None) or model_contract.MODEL_REF,  # the tag the enum maps and validation read
+        "rules": CONVERSION_RULES,
     }
     return hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()
 
