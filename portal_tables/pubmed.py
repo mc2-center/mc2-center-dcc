@@ -4,8 +4,10 @@ Used by the grant-table migration to recover ``PublicationAuthors`` cells that a
 old export cut off (``...(Read more on Pubmed)``). Names are built like the
 curation pipeline's (``"<first name> <last name>"``, e.g. ``"Nathan A Charles"``):
 ``ForeName LastName`` from the efetch XML, a ``CollectiveName`` as is, in author
-order. If ``efetch`` fails for a batch, ``esummary`` is the logged fallback; its
-names are PubMed's short form (``"Charles NA"``).
+order. ``efetch`` is retried up to 3 times (1 s, 4 s, 16 s) on HTTP 429/5xx,
+a network error or an XML parse error; if it still fails, the PMIDs of the batch
+are reported in ``failed`` and nothing is substituted (``esummary`` only has
+short names such as ``"Charles NA"``, which would not match the pipeline).
 
 Requests go out in batches of up to 200 PMIDs with ``tool=mc2-center-dcc`` and
 the ``NCBI_API_KEY`` environment variable when set; without a key no more than
@@ -29,7 +31,8 @@ import requests
 logger = logging.getLogger(__name__)
 
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-ESUMMARY_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+SOURCE = "pubmed_efetch"
+BACKOFF = (1, 4, 16)  # seconds before each retry
 BATCH_SIZE = 200
 TOOL = "mc2-center-dcc"
 
@@ -40,15 +43,39 @@ def _get(url: str, params: dict):
     return requests.get(url, params=params, timeout=60)
 
 
+class Retryable(Exception):
+    """A failure worth another attempt (HTTP 429/5xx, network or XML parse error)."""
+
+
 def _request(get, url, params, parse, interval, sleep, clock):
-    """One rate-limited E-utilities call, parsed to ``{pmid: [author, ...]}``."""
-    wait = interval - (clock() - _last_request[0])
-    if wait > 0:
-        sleep(wait)
-    _last_request[0] = clock()
-    response = get(url, params)
-    response.raise_for_status()
-    return parse(response)
+    """One rate-limited E-utilities call with retries, parsed to ``{pmid: [author, ...]}``.
+
+    Raises the last error once the retries are used up (or at once for a
+    non-retryable status such as 400).
+    """
+    last = None
+    for attempt in range(len(BACKOFF) + 1):
+        if attempt:
+            sleep(BACKOFF[attempt - 1])
+        wait = interval - (clock() - _last_request[0])
+        if wait > 0:
+            sleep(wait)
+        _last_request[0] = clock()
+        try:
+            response = get(url, params)
+        except requests.RequestException as err:
+            last = err
+            continue
+        status = getattr(response, "status_code", 200)
+        if status == 429 or status >= 500:
+            last = Retryable(f"HTTP {status}")
+            continue
+        response.raise_for_status()
+        try:
+            return parse(response)
+        except ET.ParseError as err:
+            last = err
+    raise last
 
 
 def author_name(author: ET.Element) -> str:
@@ -71,18 +98,13 @@ def parse_efetch(response) -> dict[str, list[str]]:
     return out
 
 
-def parse_esummary(response) -> dict[str, list[str]]:
-    result = response.json()["result"]
-    return {pmid: [a["name"] for a in record.get("authors", []) if a.get("name")]
-            for pmid, record in result.items() if isinstance(record, dict) and pmid != "uids"}
-
-
 def fetch_authors(pmids, cache_dir=None, api_key: str | None = None, get=None, sleep=time.sleep,
-                  clock=time.monotonic) -> dict[str, list[str]]:
+                  clock=time.monotonic, failed: set | None = None) -> dict[str, list[str]]:
     """``{pmid: [author, ...]}`` for the PMIDs PubMed returns an author list for.
 
-    A batch that fails is logged and its PMIDs are left out (the caller keeps
-    the original value). ``get``, ``sleep`` and ``clock`` are injectable for tests.
+    A batch that still fails after the retries is logged and its PMIDs are added
+    to ``failed`` (a PMID PubMed simply does not return is in neither). ``get``,
+    ``sleep`` and ``clock`` are injectable for tests.
     """
     get = get or _get
     api_key = api_key if api_key is not None else os.environ.get("NCBI_API_KEY")
@@ -102,25 +124,20 @@ def fetch_authors(pmids, cache_dir=None, api_key: str | None = None, get=None, s
         params = {"db": "pubmed", "id": ",".join(batch), "retmode": "xml", "tool": TOOL}
         if api_key:
             params["api_key"] = api_key
-        fallback = False
         try:
             records = _request(get, EFETCH_URL, params, parse_efetch, interval, sleep, clock)
         except Exception:
-            logger.exception("PubMed efetch failed for %d PMIDs starting %s; falling back to esummary (short names)",
+            logger.exception("PubMed efetch failed for %d PMIDs starting %s; their authors stay truncated",
                              len(batch), batch[0])
-            params = {**params, "retmode": "json"}
-            fallback = True
-            try:
-                records = _request(get, ESUMMARY_URL, params, parse_esummary, interval, sleep, clock)
-            except Exception:
-                logger.exception("PubMed esummary failed for %d PMIDs starting %s", len(batch), batch[0])
-                continue
+            if failed is not None:
+                failed.update(batch)
+            continue
         for pmid in batch:
             authors = records.get(pmid)
             if not authors:
                 continue
             found[pmid] = authors
-            if cache_dir and not fallback:  # short names are not cached
+            if cache_dir:
                 path = Path(cache_dir) / "pubmed_efetch" / f"{pmid}.json"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps({"authors": authors}, ensure_ascii=False))

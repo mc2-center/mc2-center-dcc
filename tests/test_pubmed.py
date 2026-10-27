@@ -2,7 +2,14 @@
 import json
 from xml.sax.saxutils import escape
 
+import pytest
+
 import pubmed
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit():
+    pubmed._last_request[0] = 0.0
 
 
 class Resp:
@@ -35,21 +42,14 @@ def efetch_xml(known, ids):
     return f"<?xml version='1.0'?><PubmedArticleSet>{articles}</PubmedArticleSet>"
 
 
-def eutils(known, short=None, efetch_fails=False):
-    """A fake E-utilities: efetch XML from ``known`` (PMID -> [(last, fore) | collective]); esummary from ``short``."""
+def eutils(known):
+    """A fake efetch: XML from ``known`` (PMID -> [(last, fore) | collective])."""
     calls = []
 
     def get(url, params):
         calls.append((url.rsplit("/", 1)[1], params))
         ids = params["id"].split(",")
-        if url.endswith("efetch.fcgi"):
-            if efetch_fails:
-                raise RuntimeError("503")
-            return Resp(text=efetch_xml(known, ids))
-        result = {"uids": ids}
-        for i in ids:
-            result[i] = {"uid": i, "authors": [{"name": n} for n in (short or {}).get(i, [])]}
-        return Resp(result=result)
+        return Resp(text=efetch_xml(known, ids))
 
     return get, calls
 
@@ -124,18 +124,59 @@ def test_responses_are_cached_on_disk_and_misses_are_not(tmp_path):
     assert calls2[0][1]["id"] == "2"
 
 
-def test_esummary_is_the_logged_fallback_when_efetch_fails(tmp_path, caplog):
-    get, calls = eutils({}, short={"1": ["Charles NA", "Holland EC"]}, efetch_fails=True)
-    out = pubmed.fetch_authors(["1"], cache_dir=tmp_path, get=get, sleep=lambda s: None)
-    assert out == {"1": ["Charles NA", "Holland EC"]}
-    assert [c[0] for c in calls] == ["efetch.fcgi", "esummary.fcgi"]
-    assert calls[1][1]["retmode"] == "json"
-    assert "falling back to esummary" in caplog.text
-    assert not (tmp_path / "pubmed_efetch").exists()  # short names are not cached
+class Flaky:
+    """A get that fails with the given statuses / exceptions, then answers."""
+
+    def __init__(self, failures, known):
+        self.failures = list(failures)
+        self.known = known
+        self.calls = 0
+
+    def __call__(self, url, params):
+        self.calls += 1
+        if self.failures:
+            failure = self.failures.pop(0)
+            if isinstance(failure, Exception):
+                raise failure
+            if isinstance(failure, str):  # a 200 whose body is not XML
+                return Resp(text=failure)
+            r = Resp()
+            r.status_code = failure
+            r.raise_for_status = lambda: (_ for _ in ()).throw(RuntimeError(f"HTTP {failure}")) if failure >= 400 else None
+            return r
+        return Resp(text=efetch_xml(self.known, params["id"].split(",")))
 
 
-def test_a_batch_failing_on_both_endpoints_is_skipped_not_raised():
-    def get(url, params):
-        raise RuntimeError("503")
+def test_efetch_is_retried_with_1_4_16_second_backoff_on_429_5xx_and_bad_xml():
+    sleeps = []
+    get = Flaky([429, 503, "<not xml"], {"1": [("B", "A")]})
+    out = pubmed.fetch_authors(["1"], get=get, sleep=sleeps.append, clock=lambda: 0.0)
+    assert out == {"1": ["A B"]} and get.calls == 4
+    assert [x for x in sleeps if x >= 1] == [1, 4, 16]
 
-    assert pubmed.fetch_authors(["1"], get=get, sleep=lambda s: None) == {}
+
+def test_network_errors_are_retried_too():
+    import requests
+    get = Flaky([requests.ConnectionError("reset")], {"1": [("B", "A")]})
+    assert pubmed.fetch_authors(["1"], get=get, sleep=lambda s: None) == {"1": ["A B"]}
+
+
+def test_after_three_retries_the_batch_fails_without_short_names(tmp_path, caplog):
+    sleeps = []
+    get = Flaky([503, 503, 503, 503, 503], {"1": [("B", "A")]})
+    failed = set()
+    out = pubmed.fetch_authors(["1", "2"], cache_dir=tmp_path, get=get, sleep=sleeps.append, failed=failed)
+    assert out == {} and failed == {"1", "2"} and get.calls == 4  # the first try plus 3 retries
+    assert [x for x in sleeps if x >= 1] == [1, 4, 16]
+    assert "stay truncated" in caplog.text and not (tmp_path / "pubmed_efetch").exists()
+
+
+def test_a_non_retryable_status_fails_at_once():
+    get = Flaky([400], {})
+    failed = set()
+    assert pubmed.fetch_authors(["1"], get=get, sleep=lambda s: None, failed=failed) == {}
+    assert get.calls == 1 and failed == {"1"}
+
+
+def test_there_is_no_esummary_fallback():
+    assert not hasattr(pubmed, "ESUMMARY_URL") and not hasattr(pubmed, "parse_esummary")

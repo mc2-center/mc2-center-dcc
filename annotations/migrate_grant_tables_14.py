@@ -464,17 +464,29 @@ def resolve_duplicates(df: pd.DataFrame, legacy_id, component: str, normalizer, 
     return df.iloc[keep].reset_index(drop=True), pd.DataFrame(resolutions, columns=RESOLUTION_COLUMNS)
 
 
+RECOVERED_COLUMNS = ["key", "old", "new", "pubmed_id", "source", "reason"]
+
+
+def _same_name(a: str, b: str) -> bool:
+    return value_maps.fold(a) == value_maps.fold(b)
+
+
 def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, recover, key: str):
     """Replace truncated ``PublicationAuthors`` lists with PubMed's: ``(converted, changes, recovered)``.
 
-    ``recover(pmids)`` returns ``{pmid: [author, ...]}`` for the PMIDs PubMed
-    knows (``pubmed.fetch_authors``). The PMID is the row's ``PubmedId`` (the key
-    when blank). A recovered cell is a ``recovered_pubmed`` change instead of
-    ``truncated``; a PMID PubMed does not return stays truncated.
-    ``recovered`` has ``key, old, new, pubmed_id``.
+    ``recover(pmids)`` returns ``(found, failed)``: ``{pmid: [author, ...]}`` for
+    the PMIDs PubMed knows and the set of PMIDs whose request failed
+    (``pubmed.fetch_authors``). The PMID is the row's ``PubmedId`` (the key when
+    blank). A list is replaced only if the cell's complete leading items (all but
+    the cut-off one) equal the first PubMed names (case and whitespace
+    ignored); then the change is ``recovered_pubmed`` instead of ``truncated``.
+    Otherwise the cell stays truncated: ``recovery_mismatch`` when PubMed's
+    list disagrees with the leading items; ``truncated`` when PubMed was
+    unavailable or did not return the PMID. ``recovered`` lists every attempt
+    (``key, old, new, pubmed_id, source, reason``; ``reason`` is blank for a recovered cell).
     """
     column = "PublicationAuthors"
-    empty = pd.DataFrame(columns=["key", "old", "new", "pubmed_id"])
+    empty = pd.DataFrame(columns=RECOVERED_COLUMNS)
     if recover is None or column not in converted.columns:
         return converted, changes, empty
     suffix = value_maps.TRUNCATED_SUFFIX
@@ -484,26 +496,40 @@ def recover_truncated_authors(converted: pd.DataFrame, changes: pd.DataFrame, re
         return converted, changes, empty
     pmid_of = {i: (str(converted["PubmedId"].iloc[i]).strip() if "PubmedId" in converted.columns else "")
                or str(converted[key].iloc[i]).strip() for i in rows}
-    found = recover(sorted(set(pmid_of.values())))
-    cells, recovered, done = list(converted[column]), [], set()
+    found, failed = recover(sorted(set(pmid_of.values())))
+    cells, records, done, mismatched = list(converted[column]), [], set(), set()
     for i in rows:
-        authors = found.get(pmid_of[i])
+        pmid, k, old = pmid_of[i], converted[key].iloc[i], cells[i]
+        base = {"key": k, "old": ", ".join(old), "pubmed_id": pmid, "source": pubmed.SOURCE}
+        authors = found.get(pmid)
         if not authors:
+            records.append({**base, "new": "",
+                            "reason": "PubMed unavailable" if pmid in failed else "PMID not returned by PubMed"})
             continue
-        recovered.append({"key": converted[key].iloc[i], "old": ", ".join(cells[i]), "new": ", ".join(authors),
-                          "pubmed_id": pmid_of[i]})
+        cut = next(n for n, item in enumerate(old) if suffix in str(item))
+        leading = old[:cut]
+        if len(authors) <= cut or not all(_same_name(a, b) for a, b in zip(leading, authors)):
+            records.append({**base, "new": ", ".join(authors),
+                            "reason": f"recovery_mismatch: the {len(leading)} complete leading name(s) differ from PubMed's"})
+            mismatched.add(k)
+            continue
+        records.append({**base, "new": ", ".join(authors), "reason": ""})
         cells[i] = list(authors)
-        done.add(converted[key].iloc[i])
-    if not recovered:
-        return converted, changes, empty
+        done.add(k)
+    recovered = pd.DataFrame(records, columns=RECOVERED_COLUMNS)
+    if not done and not mismatched:
+        return converted, changes, recovered
     converted = converted.copy()
     converted[column] = cells
-    gone = changes["key"].isin(done) & (changes["column"] == column) & (changes["rule"] == "truncated")
+    is_truncated = (changes["column"] == column) & (changes["rule"] == "truncated")
+    gone = changes["key"].isin(done | mismatched) & is_truncated
+    mismatch_rows = changes[gone & changes["key"].isin(mismatched)].assign(rule="recovery_mismatch")
     new = pd.DataFrame(
-        [{"key": r["key"], "column": column, "from": r["old"], "to": r["new"], "rule": "recovered_pubmed"} for r in recovered],
+        [{"key": r["key"], "column": column, "from": r["old"], "to": r["new"], "rule": "recovered_pubmed"}
+         for r in records if not r["reason"]],
         columns=value_maps.CHANGE_COLUMNS,
     )
-    return converted, pd.concat([changes[~gone], new], ignore_index=True), pd.DataFrame(recovered, columns=empty.columns)
+    return converted, pd.concat([changes[~gone], mismatch_rows, new], ignore_index=True), recovered
 
 
 def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", reference=lambda: None,
@@ -788,10 +814,11 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         _write(resolutions, report_dir / "duplicates_resolved.csv")
     if len(recovered):
         _write(recovered, report_dir / "recovered.csv")
+    authors_recovered = int((recovered["reason"] == "").sum())
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
-        dropped=dropped, duplicates_resolved=len(resolutions), authors_recovered=len(recovered), _resolved_keys=resolutions["key"].tolist(),
-        truncated=int((changes["rule"] == "truncated").sum()),
+        dropped=dropped, duplicates_resolved=len(resolutions), authors_recovered=authors_recovered, _resolved_keys=resolutions["key"].tolist(),
+        truncated=int(changes["rule"].isin(["truncated", "recovery_mismatch"]).sum()),
     )
     if not args.execute:
         summary.update(status="dryrun", message="dry run: nothing written")
@@ -922,7 +949,10 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
     by_rule = all_changes[all_changes["rule"] != "truncated"].groupby("rule").size().sort_values(ascending=False)
     lines.append("changes by rule: " + (", ".join(f"{r}={n}" for r, n in by_rule.items()) or "none"))
     recovered = [f["recovered"] for f in frames.values() if f.get("recovered") is not None and len(f["recovered"])]
-    lines.append(f"authors recovered from PubMed: {sum(len(r) for r in recovered)}")
+    attempts = pd.concat(recovered) if recovered else pd.DataFrame(columns=RECOVERED_COLUMNS)
+    lines.append(f"authors recovered from PubMed: {int((attempts['reason'] == '').sum())}")
+    reasons = attempts[attempts["reason"] != ""]["reason"].map(lambda r: r.split(":")[0]).value_counts()
+    lines.append("authors not recovered: " + (", ".join(f"{r}={n}" for r, n in reasons.items()) or "none"))
     lines.append(f"duplicate keys resolved: {sum(int(s.get('duplicates_resolved', 0)) for s in summaries)}")
     unmapped = [f["unmapped"] for f in frames.values() if f.get("unmapped") is not None and len(f["unmapped"])]
     if unmapped:
@@ -945,24 +975,25 @@ def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
 
 
 def truncated_values(frames: dict[str, dict]) -> pd.DataFrame:
-    """``grant, key, column, value`` of every cell reported as truncated."""
+    """``grant, key, column, value, rule`` of every cell that is still truncated (``truncated``, or
+    ``recovery_mismatch`` when PubMed's authors did not agree with the cell)."""
     rows = []
     for grant, f in frames.items():
         changes = f.get("changes")
         if changes is None or changes.empty:
             continue
-        for r in changes[changes["rule"] == "truncated"].to_dict("records"):
-            rows.append({"grant": grant, "key": r["key"], "column": r["column"], "value": r["from"]})
-    return pd.DataFrame(rows, columns=["grant", "key", "column", "value"])
+        for r in changes[changes["rule"].isin(["truncated", "recovery_mismatch"])].to_dict("records"):
+            rows.append({"grant": grant, "key": r["key"], "column": r["column"], "value": r["from"], "rule": r["rule"]})
+    return pd.DataFrame(rows, columns=["grant", "key", "column", "value", "rule"])
 
 
 def portal_author_fixes(frames: dict[str, dict]) -> pd.DataFrame:
-    """``pubMedId, authors`` of every recovered author list (one row per PMID), for the portal table and
+    """``pubMedId, authors, source`` of every recovered author list (one row per PMID), for the portal table and
     the merged manifest, which probably hold the same truncation."""
-    parts = [f["recovered"][["pubmed_id", "new"]] for f in frames.values()
+    parts = [f["recovered"][f["recovered"]["reason"] == ""][["pubmed_id", "new", "source"]] for f in frames.values()
              if f.get("recovered") is not None and len(f["recovered"])]
     if not parts:
-        return pd.DataFrame(columns=["pubMedId", "authors"])
+        return pd.DataFrame(columns=["pubMedId", "authors", "source"])
     out = pd.concat(parts).drop_duplicates("pubmed_id").sort_values("pubmed_id")
     return out.rename(columns={"pubmed_id": "pubMedId", "new": "authors"}).reset_index(drop=True)
 
@@ -1038,7 +1069,8 @@ def main(argv=None, syn=None):
     recover = None
     if args.recover_truncated:
         def recover(pmids):
-            return pubmed.fetch_authors(pmids, cache_dir=args.cache_dir)
+            failed: set = set()
+            return pubmed.fetch_authors(pmids, cache_dir=args.cache_dir, failed=failed), failed
 
     portal_cache = []
 

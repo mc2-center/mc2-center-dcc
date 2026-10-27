@@ -46,9 +46,12 @@ class FakeSynapse:
         self.portal_source = None     # live portal table frame or None
         self.pubmed_authors = {}      # PMID -> author list PubMed returns
         self.pubmed_calls = []
+        self.pubmed_failed = set()    # PMIDs whose request fails
 
-    def fetch_authors(self, pmids, cache_dir=None, **kw):
+    def fetch_authors(self, pmids, cache_dir=None, failed=None, **kw):
         self.pubmed_calls.append((list(pmids), cache_dir))
+        if failed is not None:
+            failed.update(p for p in pmids if p in self.pubmed_failed)
         return {p: self.pubmed_authors[p] for p in pmids if p in self.pubmed_authors}
 
     def read_portal(self, syn, component):
@@ -754,7 +757,7 @@ def test_truncated_values_are_listed_separately(tmp_path):
     code, rep = run(tmp_path, FakeSynapse({"synT1": ("CA1", "synP1", table)}))
     truncated = pd.read_csv(rep / "truncated.csv", dtype=str)
     assert truncated.to_dict("records") == [
-        {"grant": "CA1", "key": "p1", "column": "Assay", "value": "Sin(Read more on Pubmed)"}]
+        {"grant": "CA1", "key": "p1", "column": "Assay", "value": "Sin(Read more on Pubmed)", "rule": "truncated"}]
     text = (rep / "run_summary.txt").read_text()
     assert "truncated values (need recovering from source records): 1" in text
     assert "truncated" not in text.split("changes by rule:")[1].splitlines()[0]
@@ -901,7 +904,7 @@ def truncated_authors_table():
     headers = HEADERS + ["Pubmed Id", "Publication Authors"]
     rows = [
         ["PublicationView", "p1", "CA123456", "First", "10.1038/abc", "", "", "Open Access", "1", "syn1", "111",
-         "Charles NA, Holland EC, Gilbe(Read more on Pubmed)"],
+         "Nathan A Charles, Eric C Holland, Gilbe(Read more on Pubmed)"],
         ["PublicationView", "p2", "CA123456", "Second", "", "", "", "Open Access", "2", "syn2", "222",
          "Kwak M, Han(Read more on Pubmed)"],
         ["PublicationView", "p3", "CA123456", "Third", "", "", "", "Open Access", "3", "syn3", "333",
@@ -912,26 +915,57 @@ def truncated_authors_table():
 
 def test_truncated_authors_are_recovered_from_pubmed_by_pubmed_id(tmp_path):
     fake = FakeSynapse({"synT1": ("CA1", "synP1", truncated_authors_table())})
-    fake.pubmed_authors = {"111": ["Charles NA", "Holland EC", "Gilbertson R"]}
+    fake.pubmed_authors = {"111": ["Nathan A  Charles", "eric c holland", "Gilbertson R"]}  # case/space-insensitive guard
     code, rep = run(tmp_path, fake)
     assert fake.pubmed_calls[0][0] == ["111", "222"] and fake.pubmed_calls[0][1] == str(tmp_path / "cache")
     converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str, keep_default_na=False).set_index(KEY)
-    assert converted.loc["p1", "PublicationAuthors"] == '["Charles NA","Holland EC","Gilbertson R"]'
+    assert converted.loc["p1", "PublicationAuthors"] == '["Nathan A  Charles","eric c holland","Gilbertson R"]'
     assert "Read more" in converted.loc["p2", "PublicationAuthors"]  # PubMed returned nothing: stays
-    recovered = pd.read_csv(rep / "CA1" / "recovered.csv", dtype=str)
-    assert recovered.to_dict("records") == [{
-        "key": "p1", "old": "Charles NA, Holland EC, Gilbe(Read more on Pubmed)",
-        "new": "Charles NA, Holland EC, Gilbertson R", "pubmed_id": "111"}]
+    recovered = pd.read_csv(rep / "CA1" / "recovered.csv", dtype=str, keep_default_na=False)
+    assert recovered.columns.tolist() == ["key", "old", "new", "pubmed_id", "source", "reason"]
+    ok = recovered[recovered["key"] == "p1"].iloc[0]
+    assert (ok["old"], ok["source"], ok["reason"]) == (
+        "Nathan A Charles, Eric C Holland, Gilbe(Read more on Pubmed)", "pubmed_efetch", "")
+    assert recovered[recovered["key"] == "p2"].iloc[0]["reason"] == "PMID not returned by PubMed"
     changes = pd.read_csv(rep / "CA1" / "changes.csv", dtype=str, keep_default_na=False)
     assert changes[changes["rule"] == "recovered_pubmed"]["key"].tolist() == ["p1"]
     truncated = pd.read_csv(rep / "truncated.csv", dtype=str)
     assert truncated["key"].tolist() == ["p2"]  # p1 is recovered, p2 is still truncated
     summary = (rep / "CA1" / "summary.txt").read_text()
     assert "authors_recovered=1" in summary and "truncated=1" in summary
-    text = (rep / "run_summary.txt").read_text()
-    assert "authors recovered from PubMed: 1" in text
+    assert "authors recovered from PubMed: 1" in (rep / "run_summary.txt").read_text()
     fixes = pd.read_csv(rep / "portal_author_fixes.csv", dtype=str)
-    assert fixes.to_dict("records") == [{"pubMedId": "111", "authors": "Charles NA, Holland EC, Gilbertson R"}]
+    assert fixes.to_dict("records") == [{"pubMedId": "111", "authors": "Nathan A  Charles, eric c holland, Gilbertson R",
+                                         "source": "pubmed_efetch"}]
+
+
+def test_a_recovered_list_that_disagrees_with_the_leading_items_is_not_applied(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", truncated_authors_table())})
+    fake.pubmed_authors = {"111": ["Nathan A Charles", "Someone Else", "Gilbertson R"],  # 2nd leading name differs
+                           "222": ["Mincheol Kwak"]}                                     # shorter than the cut point
+    code, rep = run(tmp_path, fake)
+    converted = pd.read_csv(rep / "CA1" / "converted.csv", dtype=str, keep_default_na=False).set_index(KEY)
+    assert "Read more" in converted.loc["p1", "PublicationAuthors"] and "Read more" in converted.loc["p2", "PublicationAuthors"]
+    recovered = pd.read_csv(rep / "CA1" / "recovered.csv", dtype=str, keep_default_na=False).set_index("key")
+    assert recovered.loc["p1", "reason"].startswith("recovery_mismatch") and recovered.loc["p1", "new"].endswith("Gilbertson R")
+    assert recovered.loc["p2", "reason"].startswith("recovery_mismatch")
+    changes = pd.read_csv(rep / "CA1" / "changes.csv", dtype=str, keep_default_na=False)
+    assert sorted(changes[changes["rule"] == "recovery_mismatch"]["key"]) == ["p1", "p2"]
+    assert "recovered_pubmed" not in changes["rule"].tolist()
+    truncated = pd.read_csv(rep / "truncated.csv", dtype=str)
+    assert sorted(truncated["key"]) == ["p1", "p2"] and set(truncated["rule"]) == {"recovery_mismatch"}
+    assert pd.read_csv(rep / "portal_author_fixes.csv").empty
+
+
+def test_pubmed_unavailable_leaves_the_cell_truncated_with_that_reason(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", truncated_authors_table())})
+    fake.pubmed_failed = {"111", "222"}
+    code, rep = run(tmp_path, fake)
+    recovered = pd.read_csv(rep / "CA1" / "recovered.csv", dtype=str, keep_default_na=False)
+    assert recovered["reason"].tolist() == ["PubMed unavailable", "PubMed unavailable"]
+    changes = pd.read_csv(rep / "CA1" / "changes.csv", dtype=str, keep_default_na=False)
+    assert changes[changes["rule"] == "truncated"]["key"].tolist() == ["p1", "p2"]
+    assert "authors recovered from PubMed: 0" in (rep / "run_summary.txt").read_text()
 
 
 def test_recovery_can_be_switched_off_and_is_off_for_other_components(tmp_path):
@@ -952,7 +986,7 @@ def test_pubmed_id_falls_back_to_the_key_when_blank(tmp_path):
     fake.pubmed_authors = {"777": ["X Y"]}
     code, rep = run(tmp_path, fake)
     recovered = pd.read_csv(rep / "CA1" / "recovered.csv", dtype=str)
-    assert recovered["pubmed_id"].tolist() == ["777"]
+    assert recovered["pubmed_id"].tolist() == ["777", "222"]
 
 
 def test_nothing_is_fetched_when_no_author_is_truncated(tmp_path):
