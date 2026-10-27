@@ -143,12 +143,37 @@ def build_normalizer(component: str, overrides=None, ref=None) -> "value_maps.No
     return normalizer
 
 
+CREDENTIALS = frozenset({"md", "phd", "do", "mph", "ms", "msc", "mba", "dvm", "rn", "pharmd", "drph", "scd"})
+# Credentials that are also surnames or words (Do, Ms): stripped only when written upper-case, dotted, or after a comma.
+AMBIGUOUS_CREDENTIALS = frozenset({"do", "ms"})
+_CREDENTIAL_SPACING = re.compile(r"\b(?P<a>Ph|M)\.?\s+(?P<b>D)\b\.?(?=[\s,.]*$)", re.IGNORECASE)
+
+
+def strip_credentials(name: str) -> str:
+    """``name`` without trailing credential tokens (MD, PhD, DO, MPH, MS, MSc, MBA, DVM, RN, PharmD, DrPH, ScD;
+    any case, dots optional, comma or space separated, any number). Generational suffixes (Jr, Sr, II ...) stay.
+    ``Do`` and ``Ms`` count only as ``DO`` / ``D.O.`` / ``M.S.`` or after a comma, so a surname ``Do`` stays."""
+    text = _CREDENTIAL_SPACING.sub(lambda m: m["a"] + m["b"], name.strip())  # "Ph. D." -> "PhD", "M. D." -> "MD"
+    while True:
+        match = re.search(r"(?P<sep>[\s,]+)(?P<token>[A-Za-z][A-Za-z.]*)[.,\s]*$", text)
+        if not match:
+            return text
+        token = match["token"]
+        folded = token.replace(".", "").lower()
+        if folded not in CREDENTIALS:
+            return text
+        if folded in AMBIGUOUS_CREDENTIALS and not ("," in match["sep"] or "." in token or token.isupper()):
+            return text
+        text = text[:match.start()].rstrip(" ,")
+
+
 def mint_person_key(name) -> str:
-    """``person.<name-slug>``: NFKD-normalised without accents, lowercase, each run of non-alphanumeric
-    characters one ``-``, no leading or trailing ``-``. Blank when ``name`` has no letter or digit."""
+    """``person.<name-slug>``: trailing credentials dropped (:func:`strip_credentials`), NFKD-normalised without
+    accents, lowercase, each run of non-alphanumeric characters one ``-``, no leading or trailing ``-``.
+    Blank when ``name`` has no letter or digit."""
     if name is None or (not isinstance(name, str) and pd.isna(name)):
         return ""
-    text = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode().lower()
+    text = unicodedata.normalize("NFKD", strip_credentials(str(name))).encode("ascii", "ignore").decode().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
     return f"person.{slug}" if slug else ""
 
@@ -176,9 +201,12 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     if key_missing and component == "PersonView" and "Name" in df.columns:
         # The PersonView table has no key. Mint it from Name (owner decision, 2026-10-27). The minted key is
         # stored in the RecordSet and is never re-derived from Name later: a renamed person keeps the key.
-        df.insert(0, key, [mint_person_key(n) for n in df["Name"]])
+        # An override row (column PersonViewId, current_value = the source Name) sets a person's key instead.
+        chosen = [normalizer.overrides.get((key, str(n).strip())) for n in df["Name"]]
+        df.insert(0, key, [o or mint_person_key(n) for o, n in zip(chosen, df["Name"])])
         key_missing = False
-        changes += [{"key": k, "column": key, "from": "", "to": k, "rule": "minted_key"} for k in df[key] if k]
+        changes += [{"key": k, "column": key, "from": f"(override for Name {n!r})" if o else "", "to": k,
+                     "rule": "minted_key"} for k, o, n in zip(df[key], chosen, df["Name"]) if k]
     elif key_missing:
         df.insert(0, key, [f"row {i + 1}" for i in range(len(df))])
     else:

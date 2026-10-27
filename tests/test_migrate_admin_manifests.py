@@ -277,6 +277,34 @@ def test_minted_person_keys(name, key):
     assert adm.mint_person_key(name) == key
 
 
+@pytest.mark.parametrize("name,key", [
+    ("Christine M. Lovly, MD, PhD", "person.christine-m-lovly"),
+    ("Robert C. G. Martin II, M.D., Ph.D.", "person.robert-c-g-martin-ii"),
+    ("Robert C. G. Martin II M.D. Ph.D.", "person.robert-c-g-martin-ii"),
+    ("Ada Lovelace Ph. D.", "person.ada-lovelace"),
+    ("Ada Lovelace phd", "person.ada-lovelace"),
+    ("Ann Poe, DVM, MPH, MBA", "person.ann-poe"),
+    ("Ann Poe MSc", "person.ann-poe"), ("Ann Poe, PharmD, DrPH, ScD, RN", "person.ann-poe"),
+    ("Ann Poe, DO", "person.ann-poe"), ("Ann Poe D.O.", "person.ann-poe"), ("Ann Poe M.S.", "person.ann-poe"),
+    ("Thuy Do", "person.thuy-do"), ("Pat Ms", "person.pat-ms"),  # a surname is not a credential
+    ("Julia M D'Angelo", "person.julia-m-d-angelo"),
+    ("Martin Luther King Jr., PhD", "person.martin-luther-king-jr"), ("John Smith III", "person.john-smith-iii"),
+    ("PhD", "person.phd"),
+])
+def test_trailing_credentials_are_dropped_from_minted_keys(name, key):
+    assert adm.mint_person_key(name) == key
+
+
+def test_a_key_override_sets_the_key_and_is_noted(tmp_path):
+    path = tmp_path / "o.csv"
+    path.write_text("column,current_value,proposed_value\nPersonViewId,Bob,person.robert-b\n")
+    norm = adm.build_normalizer("PersonView", adm.value_maps.load_overrides(path))
+    converted, changes, *_ = adm.convert_admin_table(person_table(), "PersonView", norm)
+    assert converted["PersonViewId"].tolist() == ["person.ada", "person.robert-b"]
+    minted = changes[changes["rule"] == "minted_key"]
+    assert minted[["key", "from"]].values.tolist() == [["person.ada", ""], ["person.robert-b", "(override for Name 'Bob')"]]
+
+
 def test_slug_collisions_and_blank_names_are_reported_not_disambiguated():
     source = person_table()
     source.loc[1, "name"] = "ADA"
