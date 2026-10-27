@@ -322,6 +322,32 @@ def test_a_key_override_sets_the_key_and_is_noted(tmp_path):
     assert minted[["key", "from"]].values.tolist() == [["person.ada", ""], ["person.robert-b", "(override for Name 'Bob')"]]
 
 
+@pytest.mark.parametrize("row_key", ["person.bob", "Bob"])  # the minted key or the source Name
+def test_a_keyed_override_of_the_key_column_sets_the_key(tmp_path, row_key):
+    path = tmp_path / "o.csv"
+    path.write_text("key,column,current_value,proposed_value\n" f"{row_key},PersonViewId,Bob,person.robert-b\n")
+    norm = adm.build_normalizer("PersonView", adm.value_maps.load_overrides(path))
+    converted, changes, *_ = adm.convert_admin_table(person_table(), "PersonView", norm)
+    assert converted["PersonViewId"].tolist() == ["person.ada", "person.robert-b"]
+    minted = changes[changes["rule"] == "minted_key"]
+    assert minted[["key", "from"]].values.tolist() == [["person.ada", ""], ["person.robert-b", "(override for Name 'Bob')"]]
+    assert norm.used_row_overrides == {("PersonViewId", row_key, adm.value_maps.ROW)}
+
+
+def test_unused_row_overrides_are_reported_for_an_admin_run(tmp_path):
+    path = tmp_path / "o.csv"
+    path.write_text("key,column,current_value,proposed_value\n"
+                    "person.bob,PersonViewId,Bob,person.robert-b\nperson.typo,PersonViewId,,person.x\n")
+    fake = FakeSynapse("PersonView", person_table())
+    code, rep = run(tmp_path, fake, "--overrides", str(path))
+    assert csv_of(rep, "converted.csv")["PersonViewId"].tolist() == ["person.ada", "person.robert-b"]
+    text = (rep.parent / "run_summary.txt").read_text()
+    assert "row overrides that matched no row: 1" in text and "PersonViewId / person.typo" in text
+    assert "person.bob" not in text
+    unused = pd.read_csv(rep.parent / "unused_row_overrides.csv", dtype=str, keep_default_na=False)
+    assert unused.values.tolist() == [["PersonViewId", "person.typo", ""]]
+
+
 def test_slug_collisions_and_blank_names_are_reported_not_disambiguated():
     source = person_table()
     source.loc[1, "name"] = "ADA"

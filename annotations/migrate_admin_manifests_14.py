@@ -35,8 +35,10 @@ Conversion, per component:
 * dates of ``format: date`` columns become ``YYYY-MM-DD`` (``date_iso``, ``value_maps``); an
   unparseable one is kept and reported as unmapped;
 * PersonView has no key column: ``PersonViewId`` is minted from ``Name`` as ``person.<slug>``
-  (``minted_key``; trailing credentials dropped; an override row with column ``PersonViewId`` and
-  the source ``Name`` as current_value sets the key). The minted key is stored in the RecordSet and
+  (``minted_key``; trailing credentials dropped). An override row with column ``PersonViewId`` sets the
+  key: keyed (``key`` = the minted key or the source ``Name``, ``proposed_value`` = the key; the curator
+  template way) or value-only (the source ``Name`` as current_value). A keyed one that matches no row is
+  listed in ``unused_row_overrides.csv`` and run_summary.txt. The minted key is stored in the RecordSet and
   never re-derived. A slug collision or blank name fails the component, as do duplicate or blank
   keys of any component (``duplicates.csv``): converted.csv is written, nothing is loaded into Synapse.
 
@@ -203,12 +205,22 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     if key_missing and component == "PersonView" and "Name" in df.columns:
         # The PersonView table has no key. Mint it from Name (owner decision, 2026-10-27). The minted key is
         # stored in the RecordSet and is never re-derived from Name later: a renamed person keeps the key.
-        # An override row (column PersonViewId, current_value = the source Name) sets a person's key instead.
-        chosen = [normalizer.overrides.get((key, str(n).strip())) for n in df["Name"]]
-        df.insert(0, key, [o or mint_person_key(n) for o, n in zip(chosen, df["Name"])])
+        # An override sets a person's key instead: either a keyed row (column PersonViewId, key = the minted key
+        # or the source Name, proposed_value = the key to use; counted in normalizer.used_row_overrides)
+        # or a value-only row (column PersonViewId, current_value = the source Name).
+        minted = [mint_person_key(n) for n in df["Name"]]
+        chosen = []
+        for k, n in zip(minted, df["Name"]):
+            names = [t for t in ((key, k, value_maps.ROW), (key, str(n).strip(), value_maps.ROW)) if t in normalizer.overrides]
+            if names:
+                normalizer.used_row_overrides.add(names[0])
+                chosen.append(normalizer.overrides[names[0]])
+            else:
+                chosen.append(normalizer.overrides.get((key, str(n).strip())))
+        df.insert(0, key, [o or k for o, k in zip(chosen, minted)])
         key_missing = False
         changes += [{"key": k, "column": key, "from": f"(override for Name {n!r})" if o else "", "to": k,
-                     "rule": "minted_key"} for k, o, n in zip(df[key], chosen, df["Name"]) if k]
+                     "rule": "minted_key"} for k, o, n, m in zip(df[key], chosen, df["Name"], minted) if k]
     elif key_missing:
         df.insert(0, key, [f"row {i + 1}" for i in range(len(df))])
     else:
@@ -310,6 +322,7 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     source = read_source(syn, entry["table"])
     summary["source_rows"] = len(source)
     source_keys = source_keys_of(source, component)
+    normalizer.used_row_overrides.clear()
     try:
         converted, changes, unmapped, dropped, duplicates, key_missing = convert_admin_table(
             source, component, normalizer, args.model_ref)
@@ -334,6 +347,7 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
         dropped=dropped, no_source_columns=no_source, key_missing=key_missing, keys_minted=minted,
+        _row_overrides_used=[[t[0], t[1], entry["grant"]] for t in sorted(normalizer.used_row_overrides)],
     )
     if key_missing:
         summary.update(status="failed", message=(
@@ -463,6 +477,10 @@ def main(argv=None, syn=None):
     (run_dir / "comparison.txt").write_text(text + "\n")
     pd.DataFrame([{k: v for k, v in summary.items() if not k.startswith("_")}]).to_csv(run_dir / "summary.csv", index=False)
     report = grants.run_report([summary], frames)
+    unused_overrides, _ = grants.unused_inputs([summary], overrides, None)
+    report += (f"\nrow overrides that matched no row: {len(unused_overrides)}"
+               + "".join(f"\n  {c} / {k}" + (f" / {g}" if g else "") for c, k, g in unused_overrides))
+    pd.DataFrame(unused_overrides, columns=["column", "key", "grant"]).to_csv(run_dir / "unused_row_overrides.csv", index=False)
     (run_dir / "run_summary.txt").write_text(report + "\n")
     if summary.get("key_missing") and frames.get(component, {}).get("converted") is not None:
         labelled = frames[component]["converted"]  # reports name a row without a key as "row N"
