@@ -21,7 +21,8 @@ cells; list columns are split into Python lists) and records every change as
 
 An exact valid value is kept and not recorded. A value no rule can map is left
 unchanged and reported as unmapped (except licenses, which are blanked).
-List cells are handled per item; items are split on commas (no valid value
+List cells are handled per item; repeated items are dropped only in set-like columns (enum
+or data use codes; free text such as authors keeps them); items are split on commas (no valid value
 contains a comma). The nonpreferred terms of ``all_valid_values.csv`` are joined
 with ", " too, so a term that itself holds a comma is split into fragments;
 only fragments that look like a term (:func:`acceptable_fragment`) or are a spelling
@@ -291,10 +292,10 @@ class Normalizer:
                 changes.append({"key": key, "column": column, "from": text.strip(), "to": proposed, "rule": "override"})
                 return split_items(proposed)
             items = text if isinstance(text, list) else split_items(text)
-            out = []
+            out, set_like = [], column in self.enum_maps or column == "DatasetDataUseCodes"
             for item in items:
                 new = self._item(key, column, str(item).strip(), changes, unmapped)
-                if new and new not in out:
+                if new and not (set_like and new in out):  # free-text items (authors) keep their repeats
                     out.append(new)
             return out
         text = str(text)

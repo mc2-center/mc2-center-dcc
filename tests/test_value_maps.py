@@ -56,6 +56,14 @@ def test_list_cells_are_handled_per_item_and_deduplicated():
     assert unmapped.to_dict("records") == [{"key": "p1", "column": "Assay", "value": "Western blot"}]
 
 
+def test_repeated_items_are_kept_in_free_text_list_columns_and_dropped_in_set_like_ones():
+    norm = normalizer()
+    norm.list_cols.add("PublicationAuthors")
+    row, _, _ = run(norm, PublicationAuthors="Wei Wang, Li Chen, Wei Wang", DatasetDataUseCodes="DUO:0000042, DUO:0000042")
+    assert row["PublicationAuthors"] == ["Wei Wang", "Li Chen", "Wei Wang"]
+    assert row["DatasetDataUseCodes"] == ["DUO:0000042"]
+
+
 @pytest.mark.parametrize("fragment,ok", [
     ("Kidney", False), ("unclassified", False), ("conventional", False), ("Clear Cell", True),
     ("RNA-seq", True), ("snATAC", True), ("HCC", True), ("3C", True), ("Hepatoma", False), ("", False),
