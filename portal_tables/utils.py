@@ -199,7 +199,9 @@ def get_args(resource: str) -> argparse.Namespace:
         default=None,
         help=(
             "Read the manifest from this local CSV instead of --manifest_id "
-            "(for dry runs against a regenerated manifest; not for grant syncs)."
+            "(for dry runs against a regenerated manifest; not for grant syncs). The CSV must be in the "
+            "legacy manifest shape (display headers such as 'GrantView Key', lists comma-joined), not a "
+            "RecordSet export; --manifest-source is ignored when it is given."
         ),
     )
     parser.add_argument(
