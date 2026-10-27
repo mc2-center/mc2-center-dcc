@@ -476,7 +476,7 @@ def main(argv=None, syn=None):
         compare_ok, text = True, "nothing to compare: conversion failed"
     (run_dir / "comparison.txt").write_text(text + "\n")
     pd.DataFrame([{k: v for k, v in summary.items() if not k.startswith("_")}]).to_csv(run_dir / "summary.csv", index=False)
-    report = grants.run_report([summary], frames)
+    report = grants.run_report([summary], frames, grant_level=False)
     unused_overrides, _ = grants.unused_inputs([summary], overrides, None)
     report += (f"\nrow overrides that matched no row: {len(unused_overrides)}"
                + "".join(f"\n  {c} / {k}" + (f" / {g}" if g else "") for c, k, g in unused_overrides))

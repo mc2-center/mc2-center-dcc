@@ -348,6 +348,14 @@ def test_unused_row_overrides_are_reported_for_an_admin_run(tmp_path):
     assert unused.values.tolist() == [["PersonViewId", "person.typo", ""]]
 
 
+def test_the_admin_run_summary_omits_grant_only_lines(tmp_path):
+    code, rep = run(tmp_path, FakeSynapse("PersonView", person_table()))
+    text = (rep.parent / "run_summary.txt").read_text()
+    for grant_only in ("manifest ids", "mangled PMID keys", "PubMed", "curated manifest"):
+        assert grant_only not in text
+    assert "changes by rule" in text and "local validation failures" in text
+
+
 def test_slug_collisions_and_blank_names_are_reported_not_disambiguated():
     source = person_table()
     source.loc[1, "name"] = "ADA"

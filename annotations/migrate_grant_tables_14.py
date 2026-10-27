@@ -1227,31 +1227,37 @@ def comparison(syn, args, legacy_keys: dict[str, list[str]], source_keys: dict[s
 # --- run summary --------------------------------------------------------------
 
 
-def run_report(summaries: list[dict], frames: dict[str, dict]) -> str:
-    """Totals over every grant: changes by rule, unmapped and truncated values, duplicates, validation failures."""
+def run_report(summaries: list[dict], frames: dict[str, dict], grant_level: bool = True) -> str:
+    """Totals over every grant: changes by rule, unmapped and truncated values, duplicates, validation failures.
+
+    ``grant_level=False`` (the admin migration) omits what only grant tables have: the PubMed author recovery,
+    the manifest ids, and the known and curated-manifest differences.
+    """
     lines = []
     changes = [f["changes"] for f in frames.values() if f.get("changes") is not None and len(f["changes"])]
     all_changes = pd.concat(changes) if changes else pd.DataFrame(columns=value_maps.CHANGE_COLUMNS)
     by_rule = all_changes[all_changes["rule"] != "truncated"].groupby("rule").size().sort_values(ascending=False)
     lines.append("changes by rule: " + (", ".join(f"{r}={n}" for r, n in by_rule.items()) or "none"))
-    recovered = [f["recovered"] for f in frames.values() if f.get("recovered") is not None and len(f["recovered"])]
-    attempts = pd.concat(recovered) if recovered else pd.DataFrame(columns=RECOVERED_COLUMNS)
-    lines.append(f"authors recovered from PubMed: {int((attempts['reason'] == '').sum())}")
-    reasons = attempts[attempts["reason"] != ""]["reason"].map(lambda r: r.split(":")[0]).value_counts()
-    lines.append("authors not recovered: " + (", ".join(f"{r}={n}" for r, n in reasons.items()) or "none"))
+    if grant_level:
+        recovered = [f["recovered"] for f in frames.values() if f.get("recovered") is not None and len(f["recovered"])]
+        attempts = pd.concat(recovered) if recovered else pd.DataFrame(columns=RECOVERED_COLUMNS)
+        lines.append(f"authors recovered from PubMed: {int((attempts['reason'] == '').sum())}")
+        reasons = attempts[attempts["reason"] != ""]["reason"].map(lambda r: r.split(":")[0]).value_counts()
+        lines.append("authors not recovered: " + (", ".join(f"{r}={n}" for r, n in reasons.items()) or "none"))
     empty = [s["grant"] for s in summaries if s["status"] == "empty_source"]
     lines.append("empty source tables (no RecordSet): " + (", ".join(map(str, empty)) or "none"))
     lines.append(f"duplicate keys resolved: {sum(int(s.get('duplicates_resolved', 0)) for s in summaries)}")
     total = lambda field: sum(int(s.get(field, 0)) for s in summaries)  # noqa: E731
-    lines.append(f"manifest ids: remapped={total('manifest_id_remapped')} (of which other grant "
-                 f"{total('manifest_id_other_grant')}), collisions kept={total('manifest_id_collision')}, "
-                 f"ambiguous={total('manifest_id_ambiguous')}, no manifest row={total('manifest_id_unmatched')}; rows whose key is not in the manifest: {total('not_in_manifest')}")
-    lines.append(f"known differences: authors recovered {total('known_authors_recovered')}, "
-                 f"mangled PMID keys {total('known_mangled_keys')}")
-    differences = manifest_differences_all(frames)
-    lines.append(f"differences from the curated manifest: {len(differences)}"
-                 + (" (" + ", ".join(f"{c}={n}" for c, n in differences["column"].value_counts().items()) + ")"
-                    if len(differences) else ""))
+    if grant_level:
+        lines.append(f"manifest ids: remapped={total('manifest_id_remapped')} (of which other grant "
+                     f"{total('manifest_id_other_grant')}), collisions kept={total('manifest_id_collision')}, "
+                     f"ambiguous={total('manifest_id_ambiguous')}, no manifest row={total('manifest_id_unmatched')}; rows whose key is not in the manifest: {total('not_in_manifest')}")
+        lines.append(f"known differences: authors recovered {total('known_authors_recovered')}, "
+                     f"mangled PMID keys {total('known_mangled_keys')}")
+        differences = manifest_differences_all(frames)
+        lines.append(f"differences from the curated manifest: {len(differences)}"
+                     + (" (" + ", ".join(f"{c}={n}" for c, n in differences["column"].value_counts().items()) + ")"
+                        if len(differences) else ""))
     unmapped = [f["unmapped"] for f in frames.values() if f.get("unmapped") is not None and len(f["unmapped"])]
     if unmapped:
         counts = pd.concat(unmapped).groupby(["column", "value"]).size().sort_values(ascending=False)
