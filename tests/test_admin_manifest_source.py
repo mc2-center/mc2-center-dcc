@@ -142,8 +142,29 @@ def test_a_recordset_manifest_goes_through_prepare_manifest(monkeypatch, tmp_pat
 @pytest.mark.parametrize("module,resource", [(sync_projects, "project"), (sync_people, "people")])
 def test_syncs_read_through_the_switch(module, resource):
     source = inspect.getsource(module.main)
-    assert f'resolve_manifest_id(syn, args, "{resource}")' in source
-    assert "component=COMPONENT" in source
+    assert f'read_sync_manifest(syn, args, "{resource}", component=COMPONENT)' in source
+
+
+def test_read_sync_manifest_resolves_the_admin_source_and_shapes_by_component(monkeypatch):
+    from types import SimpleNamespace
+
+    calls = []
+    monkeypatch.setattr(utils, "resolve_manifest_id", lambda syn, args, resource: f"syn-{resource}")
+    monkeypatch.setattr(mc, "read_manifest", lambda syn, mid, component=None: calls.append((mid, component)) or "df")
+    args = SimpleNamespace(manifest_csv=None, manifest_id="synTABLE")
+    assert utils.read_sync_manifest("syn", args, "project", component="ProjectView") == "df"
+    assert utils.read_sync_manifest("syn", args) == "df"
+    assert calls == [("syn-project", "ProjectView"), ("synTABLE", None)]
+
+
+def test_read_sync_manifest_prefers_a_local_csv(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    path = tmp_path / "m.csv"
+    path.write_text("a\nx\n")
+    monkeypatch.setattr(utils, "resolve_manifest_id", lambda *a: pytest.fail("must not resolve"))
+    out = utils.read_sync_manifest("syn", SimpleNamespace(manifest_csv=str(path)), "people", component="PersonView")
+    assert out["a"].tolist() == ["x"]
 
 
 def test_sync_grants_passes_the_resolved_manifest_to_process_new_grants():

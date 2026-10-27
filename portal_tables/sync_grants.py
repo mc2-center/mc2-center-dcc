@@ -59,7 +59,9 @@ def main():
     """Main function. Returns the process exit code (1 if any grant failed)."""
     syn = utils.syn_login()
     args = utils.get_args("grant")
-    
+    if isinstance(getattr(args, "manifest_csv", None), str):
+        raise SystemExit("--manifest-csv is not supported for the grant sync")
+
     # Info for table scope updates
     project_tables = "syn52750482"
     all_files_table = "syn27210848"

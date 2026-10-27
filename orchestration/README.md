@@ -106,16 +106,15 @@ tables**. Run once per component:
    grant's RecordSet CSV, normalized back to display-name headers) alongside
    the legacy table mode, and removes the legacy mode's per-grant mirror
    tables, which were duplicating rows every run.
-2. `union_qc.py -m -s -db` — validates the UNION table against the live
-   portal table and the QC model variant, producing `<component>_updated.csv`
-   (new/changed rows) and a validation log. **Its `schematic` subprocess is
-   being removed** (infrastructure task I6): validation moves to Synapse's
-   own RecordSet validation results when Phase 2 is on the `recordset`
-   target, or to `jsonschema` against the registered 14.0.0 schemas
-   otherwise. Either way, `union_qc.py` no longer shells out to `schematic`.
-3. **Human review and correction** of `_updated.csv` against the validation
-   log, then a re-validation pass (`union_qc.py -tp <updated.csv>`, using
-   whichever validation method step 2 used) to confirm the fixes land.
+2. `union_qc.py --regenerate` (I6) — builds the union (RecordSets, or local
+   `converted.csv` files with `--input-dir`), merges rows by alias key, applies
+   the curated key corrections, fills empty cells, validates with `jsonschema`
+   against the 14.x JSON Schemas (`--schema-version`) and writes
+   `<Component>_merged_manifest.csv` (14.x headers) plus `validation.csv`. It
+   is a dry run unless `--upload`. No `schematic`, and invalid rows are kept
+   and reported, never trimmed. (The legacy `-l/-m/-s/-db` compare mode still
+   exists and now validates with `jsonschema` too.)
+3. **Human review and correction** of the validation report.
 4. `merge_and_correct_manifests.py` — folds `_updated.csv` into
    `<component>_merged.csv`, producing `<component>_merged_corrected.csv`.
 5. `build_tag_lists.py` — PublicationView and DatasetView only. Adds content
