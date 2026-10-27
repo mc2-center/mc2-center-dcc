@@ -414,4 +414,28 @@ def test_override_template_defaults_proposed_value_to_the_manifest_value(tmp_pat
     assert vm.load_overrides(out) == {}  # nothing accepted yet
     template.loc[0, "accept"] = "yes"
     template.to_csv(out, index=False)
-    assert vm.load_overrides(out) == {("PublicationTitle", "p1", vm.ROW): "new"}
+    assert vm.load_overrides(out) == {("PublicationTitle", "p1", vm.ROW, "CA1"): "new"}  # the template names the grant
+
+
+def test_a_row_override_with_a_grant_applies_only_in_that_grant():
+    norm = normalizer({("PublicationTitle", "p1", vm.ROW, "CA1"): "A"})
+    df = pd.DataFrame({"PublicationViewId": ["p1"], "PublicationTitle": ["t"]})
+    assert norm.normalize_frame(df, "PublicationViewId", "CA1")[0].iloc[0]["PublicationTitle"] == "A"
+    assert norm.used_row_overrides == {("PublicationTitle", "p1", vm.ROW, "CA1")}
+    assert norm.normalize_frame(df, "PublicationViewId", "CA2")[0].iloc[0]["PublicationTitle"] == "t"
+    # a grant-specific row wins over one without a grant
+    both = normalizer({("PublicationTitle", "p1", vm.ROW): "any", ("PublicationTitle", "p1", vm.ROW, "CA1"): "A"})
+    assert both.normalize_frame(df, "PublicationViewId", "CA1")[0].iloc[0]["PublicationTitle"] == "A"
+    assert both.normalize_frame(df, "PublicationViewId", "CA2")[0].iloc[0]["PublicationTitle"] == "any"
+
+
+def test_two_accepted_rows_for_one_target_with_different_values_raise(tmp_path):
+    columns = ("column", "key", "current_value", "proposed_value", "grant", "accept")
+    path = _write_overrides(tmp_path / "o.csv", [["PublicationTitle", "p1", "", "A", "CA1", "yes"],
+                                                 ["PublicationTitle", "p1", "", "B", "CA1", "yes"]], columns=columns)
+    with pytest.raises(ValueError, match="two accepted rows"):
+        vm.load_overrides(path)
+    same = _write_overrides(tmp_path / "s.csv", [["PublicationTitle", "p1", "", "A", "CA1", "yes"],
+                                                 ["PublicationTitle", "p1", "", "A", "CA1", "yes"],
+                                                 ["PublicationTitle", "p1", "", "B", "CA1", ""]], columns=columns)
+    assert vm.load_overrides(same) == {("PublicationTitle", "p1", vm.ROW, "CA1"): "A"}

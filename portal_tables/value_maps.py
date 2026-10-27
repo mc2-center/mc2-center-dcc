@@ -214,7 +214,8 @@ def normalize_doi(value: str):
     return value, "unmapped"
 
 
-ROW = "\x00row"  # third element of the key of a per-row override: ``(column, row key, ROW)``
+ROW = "\x00row"  # third element of a per-row override key: ``(column, row key, ROW)``, or
+# ``(column, row key, ROW, grant)`` when the CSV row names a grant
 ACCEPTED = frozenset({"y", "yes", "true", "1", "x", "accept", "accepted"})
 
 
@@ -223,8 +224,9 @@ def load_overrides(path) -> dict[tuple, str]:
 
     The ``column`` may be a class label or a display name. A row with a
     non-blank ``key`` applies only to the cell of that row (``(column, key, ROW)``
-    -> proposed value; its ``current_value`` is informational) and wins over a
-    value-only override of the same cell; a row without ``key`` applies to every
+    -> proposed value; its ``current_value`` is informational; a filled ``grant`` column limits it to that
+    grant's row, ``(column, key, ROW, grant)``) and wins over a value-only override of the same cell;
+    two accepted rows for one target with different proposed values raise ``ValueError``; a row without ``key`` applies to every
     cell holding ``current_value``. If the file has an ``accept`` column
     (``write_override_template``), only rows with ``accept`` yes/y/true/1/x are applied.
     """
@@ -240,7 +242,13 @@ def load_overrides(path) -> dict[tuple, str]:
         column = labels.get(row["column"].strip(), row["column"].strip())
         row_key = row["key"].strip() if "key" in df.columns else ""
         if row_key:
-            out[(column, row_key, ROW)] = row["proposed_value"].strip()
+            grant = row["grant"].strip() if "grant" in df.columns else ""
+            target = (column, row_key, ROW, grant) if grant else (column, row_key, ROW)
+            proposed = row["proposed_value"].strip()
+            if target in out and out[target] != proposed:
+                raise ValueError(f"{path}: two accepted rows for {target[:2]}{' / ' + grant if grant else ''} "
+                                 f"propose {out[target]!r} and {proposed!r}")
+            out[target] = proposed
         else:
             out[(column, row["current_value"].strip())] = row["proposed_value"].strip()
     return out
@@ -278,6 +286,7 @@ class Normalizer:
         self.overrides = overrides or {}
         self.list_cols = set(list_cols)
         self.rejected = pd.DataFrame(columns=REJECTED_COLUMNS)
+        self.used_row_overrides: set = set()  # override keys that matched a cell (the caller clears it per grant)
 
     @classmethod
     def for_component(cls, component: str, overrides=None, ref: str | None = None):
@@ -300,6 +309,7 @@ class Normalizer:
 
         other = copy.copy(self)
         other.overrides = {k: v for k, v in self.overrides.items() if len(k) == 2}
+        other.used_row_overrides = set()
         return other
 
     # -- one value ---------------------------------------------------------
@@ -326,11 +336,13 @@ class Normalizer:
             return "", "license_blanked"
         return new, rule
 
-    def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list):
+    def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list, grant: str = ""):
         """The normalized cell: a list for list columns, else a string."""
         text = "" if cell is None or (not isinstance(cell, (str, list)) and pd.isna(cell)) else cell
-        row_override = self.overrides.get((column, str(key), ROW))
-        if row_override is not None:  # a per-row override wins over everything, even a blank cell
+        target = next((t for t in ((column, str(key), ROW, grant), (column, str(key), ROW)) if t in self.overrides), None)
+        row_override = self.overrides[target] if target is not None else None
+        if row_override is not None:
+            self.used_row_overrides.add(target)  # a per-row override wins over everything, even a blank cell
             old = ", ".join(map(str, text)) if isinstance(text, list) else str(text).strip()
             if old != row_override:
                 changes.append({"key": key, "column": column, "from": old, "to": row_override, "rule": "override"})
@@ -374,7 +386,7 @@ class Normalizer:
 
     # -- a frame -----------------------------------------------------------
 
-    def normalize_frame(self, df: pd.DataFrame, key_col: str):
+    def normalize_frame(self, df: pd.DataFrame, key_col: str, grant: str = ""):
         """``(normalized frame, changes, unmapped)``; the last two are DataFrames."""
         changes: list[dict] = []
         unmapped: list[dict] = []
@@ -383,7 +395,7 @@ class Normalizer:
             if column == key_col:
                 continue
             out[column] = [
-                self.normalize_cell(str(k).strip(), column, cell, changes, unmapped)
+                self.normalize_cell(str(k).strip(), column, cell, changes, unmapped, grant)
                 for k, cell in zip(df[key_col], df[column])
             ]
         return (
