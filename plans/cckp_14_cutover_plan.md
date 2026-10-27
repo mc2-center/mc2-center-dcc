@@ -191,6 +191,8 @@ All of these come from your review notes and answers on 2026-10-26.
 | D-Q46 | **Migrated values: rewrite only when a rule maps a value to exactly one 14.x term**; keep and report everything else. Nonpreferred fragments of comma-split synonym cells are refused unless multi-word, identifier-like or a spelling variant of their own term. | Section 2.3; `portal_tables/value_maps.py` |
 | D-Q47 | **List cells keep comma-containing items whole.** The curation pipeline writes list columns as JSON arrays; DCC parses JSON arrays everywhere it splits a list cell. Where only comma text exists (legacy tables, hand-made manifests), keyword cells keep known comma terms whole using `portal_tables/comma_terms.csv` (4,214 MeSH 2025 descriptors, from `utils/sync_comma_terms.py`). RecordSet uploads add new comma-containing keywords from JSON arrays to the list; the run says to commit the file. | Migration rule `comma_term` (section 2.3); pipeline #14; portal text unchanged |
 | D-Q48 | **The kg-pipeline schema follows the portal tables.** `data-models/kg-pipeline/schema/cckp_portal.linkml.yaml` describes Dataset, Publication, Tool, Grant and EducationalResource for the kg-pipeline. In data-models **#278** (stacked on #277): `Tool.license`, `EducationalResource.license` and `Grant.investigator` become `multivalued`, splitting on `\|` (the list form) or, for those three only, on `,` (today's text; for `Grant.investigator` with the "Last, First"-aware name heuristic); the derived `cckp_portal.ttl`/`.shacl.ttl` are regenerated, and `mc2_model.linkml.yaml` is regenerated from 14.1.0. | Section 2.1 item 1; D-2 step 4; W12 |
+| D-Q49 | **Row removal (D-Q34) is the one write outside a Grid session.** Spike (infrastructure report, 2026-10-27): a Grid import is an upsert and can't remove a row; a direct store of a new version without the row removes it and keeps the binding, upsert key and CurationTask, and a fresh Grid export then re-validates. Removals are requested in an admin table `MC2Center_RecordSet_Removals` (test copy in `syn78387305` first); `annotations/remove_recordset_rows.py` takes the write-log lock, refuses while any Grid session is open, stores the version without the rows, runs a validating Grid export and logs both (`removed`, `written`). Replay drops removed keys; pipeline uploads skip them; a removed key that a Grid session brings back is kept as a contributor row and reported (`readded_removed_key`), not undone. | DCC row-removal step; owner approval 2026-10-27 |
+| D-Q50 | **Admin manifests become RecordSets** (Grant `syn53259587`, Project `syn59074382`, PersonView `syn38301033`): one `MC2Center_<Component>_RecordSet` per type in a folder in CCKP - MC2 Admin, written and logged like the grant RecordSets; `utils.CONFIG` reads them behind a switch until the migration runs. | Admin manifests step; owner decision 2026-10-27 |
 | D-Q21 | **`NPUNCU` → the single ID `DUO:0000018`**, not NPU + NCU. `DUO:0000018` is a current DUO term, and governanceDUO and data-models both list it. | Reverses master plan S4.5's split. I8.4 maps `RTN` → `DUO:0000029` and `NPUNCU` → `DUO:0000018`, one to one. |
 
 ---
@@ -232,7 +234,7 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | A4 P5 DOI form | ✅ | Pipeline `01e35ca`; DCC normalization in the migration value maps |
 | A5 report noise | ✅ | Pipeline `78b7b2b`, `016074c` |
 | A6 merges | ⏳ you (W4, W5) | |
-| A7 D17a deletions PR | ⏳ A6 | |
+| A7 D17a deletions PR | ⏳ A6 | Branch `d17a-deletions` ready (9 commits, local) |
 | B1 DM-14/DM-16 fixes | ✅ pushed to #277 (released as 14.1.0, D-Q45) | Merge and tag ⏳ W6 |
 | B2 verify 14.0.0; register 14.1.0 | ✅ verify; ⏳ W6/W7 register | |
 | B3 bump `MODEL_REF` to v14.1.0 | ⏳ B1 tag | Both repos; remove the pipeline's `Not-Applicable` workaround |
@@ -245,14 +247,14 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | D-2 portal type changes (+ `accessInformation` 300) | ⏳ W4, W9, W12 | kg-pipeline schema in data-models #278 (D-Q48), open |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
 | E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
-| E2 regenerate merged manifests (I6) | ⬜ | Apply the PMID, DOI and author fixes |
+| E2 regenerate merged manifests (I6) | 🔄 | Branch `i6-merged-manifests`: union_qc without schematic, 14.x headers, dry-run comparison |
 | E3 bindings (I7) | ⬜ | Done per RecordSet by I5a; admin manifests remain |
 | E4 first sync (I9) | ⬜ | Dataset sync needs D-2's `accessInformation` change |
 | E5 communication (I10) | ⬜ | |
 | E6 archive legacy tables (I11) | ⬜ | Admin-folder move; delete `syn52750482` |
 | F orchestrator | ⬜ | After E1 |
-| Admin manifests (Grant / Project / PersonView → RecordSets) | ⬜ | Not yet in the I5a script (see Later) |
-| DCC row-removal step (D-Q34) | ⬜ | With I5a |
+| Admin manifests (Grant / Project / PersonView → RecordSets) | 🔄 | D-Q50; branch `admin-recordsets` (dry runs only) |
+| DCC row-removal step (D-Q34) | 🔄 | Spike done (D-Q49); branch `dq34-row-removal` |
 
 ### Phase A: Land the code (no Synapse writes)
 | Step | Task | Owner/tier | Check |
