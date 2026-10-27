@@ -3,7 +3,8 @@
 Gate G1: each grant has one RecordSet per type (``MC2Center_<Component>_RecordSet``
 in the grant's data-type folder) that the pipeline and contributors both edit.
 The pipeline writes only through a Grid session (:func:`write_via_grid`), which
-validates and versions the data. Every version it creates is recorded in a
+validates and versions the data; the one exception is a DCC row removal
+(D-Q49, below). Every version it creates is recorded in a
 :class:`WriteLog` (write log v2), together with ``baseVersion``, the latest
 version the run had read and reconciled against.
 
@@ -38,7 +39,22 @@ C contributor) and ``set_at`` (version):
   contributor edit (``kept_edit``: value, owner C, ``set_at = v``), even when
   it matches an older value (e.g. undoing a pipeline change). A state key
   missing from ``v`` is restored whatever its owner (``restored_missing``); a
-  real deletion is done by the DCC.
+  real deletion is a DCC removal (D-Q49).
+* Removal version (D-Q49) [owner decision]: a Grid import is an upsert and
+  cannot remove a row, so real deletions are the one write that is not a Grid
+  session. The DCC removal step (``annotations/remove_recordset_rows.py``)
+  stores a new version without the rows (:func:`store_new_version`; binding,
+  upsert key and CurationTask are kept), logs it ``removed``, then exports a
+  fresh Grid session so the data is re-validated (logged ``written``). The
+  keys go in the removals table (:class:`Removals`) with ``removedInVersion``.
+  At a removal version, which is a pipeline version, the listed keys are first
+  dropped from the state (``removed``), then the version is processed as any
+  pipeline version. A removed key that reappears is remembered: in a pipeline
+  version it is added as P (``readded_by_pipeline``, should not happen); in a
+  foreign version it is added back as a contributor row
+  (``readded_removed_key``, as ``kept_contributor_row``) and reported, never
+  undone automatically (a Grid session opened before the removal can do this).
+  The pipeline skips uploading rows whose key is currently ``removed``.
 
 :func:`merge_upload` then applies an upload to the replayed state: a differing
 cell owned by C is kept and reported as a conflict (contributor wins), any
@@ -335,7 +351,8 @@ class WriteLog:
     Columns: ``recordSetId, version`` (null while ``pending``), ``baseVersion``
     (the latest version the run read and reconciled against), ``runId``,
     ``principalId`` (the runner's Synapse user ID), ``status`` (``pending``;
-    ``written`` per export; ``done`` once every export of the write is logged;
+    ``written`` per export; ``removed`` for a DCC removal's direct-store
+    version (D-Q49); ``done`` once every export of the write is logged;
     ``recovered``; or ``aborted`` when a run created nothing), ``writtenOn``,
     ``rowsWritten``. A ``pending`` row is resolved only by a later ``done``,
     ``recovered`` or ``aborted`` row with the same ``runId`` and
@@ -364,12 +381,16 @@ class WriteLog:
         self._append(self._row(rs_id, None, base, run_id, principal, "pending", None))
 
     def record(self, rs_id, version, run_id, rows, base=None, principal="", status="written") -> None:
-        """Record a version the pipeline created (``written`` or ``recovered``).
+        """Record a version the pipeline created (``written``, ``removed`` or ``recovered``).
 
         ``base`` defaults to ``version - 1``.
         """
         base = version - 1 if base is None and version is not None else base
         self._append(self._row(rs_id, version, base, run_id, principal, status, rows))
+
+    def removed(self, rs_id, version, base, run_id, principal, rows) -> None:
+        """Record a DCC removal's direct-store version (``removed``: a pipeline version)."""
+        self._append(self._row(rs_id, version, base, run_id, principal, "removed", rows))
 
     def finish(self, rs_id: str, base: int, run_id: str, principal) -> None:
         """Resolve a ``pending`` row once every export of its write is logged."""
@@ -400,10 +421,16 @@ class WriteLog:
         return int(max(df["version"])) if len(df) else None
 
     def pipeline_map(self, rs_id: str) -> dict[int, int]:
-        """``{version: baseVersion}`` of every pipeline version (written or recovered)."""
+        """``{version: baseVersion}`` of every pipeline version (written, removed or recovered)."""
         df = self._read(rs_id)
-        df = df[df["status"].isin(["written", "recovered"]) & df["version"].notna()]
+        df = df[df["status"].isin(["written", "removed", "recovered"]) & df["version"].notna()]
         return {int(v): int(b) if pd.notna(b) else int(v) - 1 for v, b in zip(df["version"], df["baseVersion"])}
+
+    def removal_versions(self, rs_id: str) -> set[int]:
+        """Versions logged ``removed`` (a DCC removal's direct store)."""
+        df = self._read(rs_id)
+        df = df[(df["status"] == "removed") & df["version"].notna()]
+        return {int(v) for v in df["version"]}
 
     def pipeline_versions(self, rs_id: str) -> list[int]:
         return sorted(self.pipeline_map(rs_id))

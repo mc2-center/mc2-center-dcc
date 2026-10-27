@@ -753,3 +753,16 @@ def test_pre_start_recovery_leaves_a_young_live_row_alone(tmp_path):
 
 def test_leading_space_number_compares_as_number():
     assert rs._cells_equal(" 2020", "2020.0", False)
+
+
+# --- D-Q49 removals ---
+
+
+def test_write_log_removed_status_is_a_pipeline_version(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.start("syn1", 4, "run1", "42")
+    log.removed("syn1", 5, 4, "run1", "42", 9)
+    log.record("syn1", 6, "run1", 9, base=5, principal="42")
+    assert log.pipeline_map("syn1") == {5: 4, 6: 5}
+    assert log.removal_versions("syn1") == {5} and log.removal_versions("syn2") == set()
+    assert [r["runId"] for r in log.unresolved_pending("syn1")] == ["run1"]  # removed doesn't close the lock
