@@ -647,14 +647,38 @@ def _only(df: pd.DataFrame, columns) -> pd.DataFrame:
     return df[[c for c in df.columns if c in columns]]
 
 
+def verify_version(syn, rs_id, version, args, converted, key, stored, list_cols, set_like, report_dir, summary):
+    """Read ``version`` back, compare it with ``converted`` and collect Synapse's validation results.
+
+    Returns the list of differences (empty when it matches); writes ``synapse_validation.csv``.
+    """
+    written = recordsets.read_recordset(syn, rs_id, version=version, cache_dir=args.cache_dir, list_cols=list_cols)
+    problems = recordsets.differences(converted, _only(written, stored), key, set_like)
+    validation = recordsets.get_validation(
+        syn, rs_id, version, report_dir, [recordsets._key_of(r, [key]) for _, r in written.iterrows()]
+    )
+    if validation is not None:
+        validation.to_csv(report_dir / "synapse_validation.csv", index=False)
+        summary["invalid_rows"] = int((~validation["is_valid"].astype(str).str.lower().eq("true")).sum())
+    return problems
+
+
 def migrate_recordset(syn, entry, args, write_log, converted, converted_path, report_dir, summary, list_cols, set_like):
-    """``--execute`` for one grant; updates ``summary`` (status, message, ...)."""
+    """``--execute`` for one grant; updates ``summary`` (status, message, ...).
+
+    A RecordSet is ``already_migrated`` only when its newest logged load has a
+    ``verified`` row; a logged load without one is verified now (read back and
+    compared with ``converted``), then marked ``verified``. A RecordSet this
+    script created whose load never started (a ``created`` row, no ``written``,
+    still at the creation version) is loaded now.
+    """
     component, key = args.component, KEYS[args.component]
     stored = recordsets.schema_columns(component) | {key}
     folder_id = find_or_create_folder(syn, entry["project"], FOLDER_MAP[component])
     rs_id = recordsets.find_recordset(syn, folder_id, component)
     principal = recordsets.principal_id(syn)
     recovered = {}
+    note = None
     if rs_id is not None:
         summary["recordset"] = rs_id
         locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
@@ -667,41 +691,56 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
         recovered = recordsets.recover_pending(
             syn, rs_id, write_log, latest, record=True, skip_younger_than=recordsets.LOCK_HOURS
         )
-        if not write_log.pipeline_map(rs_id):
-            summary.update(status="failed", message=f"{rs_id} exists but not migrated; investigate")
-            return
-        if not recovered:
-            summary.update(status="already_migrated", message=f"{rs_id} already migrated (write log has its load)")
-            return
-        summary["recovered"] = sorted(recovered)
-        created = [max(recovered)]
-        summary["version"] = created[-1]
+        logged = write_log.pipeline_map(rs_id)
+        if logged:
+            version = max(logged)
+            base = logged[version]
+            if version in write_log.verified_versions(rs_id):
+                summary.update(status="already_migrated", message=f"{rs_id} already migrated (v{version} verified)")
+                return
+            summary["version"] = version
+            if recovered:
+                summary["recovered"] = sorted(recovered)
+            note = (f"verified v{version}, recovered from an earlier run" if recovered
+                    else f"verified v{version}, logged by an earlier run but never verified")
+        else:
+            created_at = write_log.created_version(rs_id)
+            if created_at is None:
+                summary.update(status="failed", message=f"{rs_id} exists but not migrated; investigate")
+                return
+            if latest != created_at:
+                summary.update(status="failed", message=(
+                    f"{rs_id} exists but not migrated; investigate (created at v{created_at}, now v{latest}: "
+                    "a version nobody logged was written)"))
+                return
+            version = None  # the load never started: load now, from the creation version
+            base = latest
+            note = f"loaded the RecordSet left empty at v{created_at} by an earlier run"
     else:
         rs_id = create_recordset(syn, args, entry["project"], folder_id, entry["grant"], entry["table"])
         summary["recordset"] = rs_id
         latest, upsert = recordsets.recordset_info(syn, rs_id)
+        write_log.created(rs_id, latest, args.run_id, principal)
         if upsert != [key]:
             summary.update(status="failed", message=f"{rs_id} was created with upsert key {upsert}, expected {[key]}")
             return
+        version, base = None, latest
+
+    if version is None:
         try:
             created = recordsets.write_logged(
-                syn, rs_id, converted_path, write_log, args.run_id, principal, len(converted), latest
+                syn, rs_id, converted_path, write_log, args.run_id, principal, len(converted), latest,
+                retry_note="rerun the migration (the RecordSet stays empty)",
             )
         except recordsets.WriteRefused as refused:
             summary.update(status=refused.status, message=refused.message)
             return
-        summary["version"] = created[-1]
+        version = created[-1]
+        summary["version"] = version
+        note = (note + "; " if note else "") + f"wrote v{version}"
 
-    version = created[-1]
-    written = recordsets.read_recordset(syn, rs_id, version=version, cache_dir=args.cache_dir, list_cols=list_cols)
-    problems = recordsets.differences(converted, _only(written, stored), key, set_like)
-    validation = recordsets.get_validation(
-        syn, rs_id, version, report_dir, [recordsets._key_of(r, [key]) for _, r in written.iterrows()]
-    )
-    if validation is not None:
-        validation.to_csv(report_dir / "synapse_validation.csv", index=False)
-        summary["invalid_rows"] = int((~validation["is_valid"].astype(str).str.lower().eq("true")).sum())
-    notes = [f"wrote v{version}" if not recovered else f"recovered v{version} from an earlier run"]
+    problems = verify_version(syn, rs_id, version, args, converted, key, stored, list_cols, set_like, report_dir, summary)
+    notes = [note]
     newest, _ = recordsets.recordset_info(syn, rs_id)
     if newest > version:
         notes.append(f"v{newest} exists after the load; contributor edits are handled by the next sync's replay")
@@ -710,6 +749,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
         summary.update(status="verification_mismatch", message=(
             f"v{version} differs from converted.csv ({len(problems)} differences)"))
         return
+    write_log.verified(rs_id, version, base, args.run_id, principal)
     summary.update(status="migrated", message="; ".join(notes))
 
 

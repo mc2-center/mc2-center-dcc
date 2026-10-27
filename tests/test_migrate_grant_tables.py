@@ -443,8 +443,9 @@ def test_execute_creates_folder_and_recordset_loads_through_grid_and_logs(tmp_pa
     rs_id = next(iter(fake.rs))
     assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
     log = rs.CsvWriteLog(tmp_path / "log.csv")._read(rs_id)
-    assert log["status"].tolist() == ["pending", "written", "done"]
-    assert log["baseVersion"].tolist() == [1, 1, 1]
+    assert log["status"].tolist() == ["created", "pending", "written", "done", "verified"]
+    assert log["baseVersion"].tolist() == [1, 1, 1, 1, 1]
+    assert log["version"].dropna().astype(int).tolist() == [1, 2, 2]  # created v1, written v2, verified v2
     assert rs.CsvWriteLog(tmp_path / "log.csv").pipeline_map(rs_id) == {2: 1}
     assert status_of(rep) == "migrated"
     assert (rep / "CA1" / "synapse_validation.csv").exists()
@@ -482,7 +483,7 @@ def test_execute_read_back_accepts_grids_json_array_lists(tmp_path):
     assert not (rep / "CA1" / "verification.txt").exists()
 
 
-def seed_existing(fake, rs_id="synRSX", logged=False, log_path=None):
+def seed_existing(fake, rs_id="synRSX", logged=False, verified=False, log_path=None):
     folder = "synFX"
     fake.folders[("synP1", "publications")] = folder
     fake.rs_folder[folder] = rs_id
@@ -492,14 +493,107 @@ def seed_existing(fake, rs_id="synRSX", logged=False, log_path=None):
         log.start(rs_id, 1, "old", "42")
         log.record(rs_id, 2, "old", 1, base=1, principal="42")
         log.finish(rs_id, 1, "old", "42")
+    if verified:
+        rs.CsvWriteLog(log_path).verified(rs_id, 2, 1, "old", "42")
 
 
-def test_execute_skips_a_logged_existing_recordset(tmp_path):
+def test_execute_skips_a_logged_and_verified_existing_recordset(tmp_path):
     fake = FakeSynapse()
-    seed_existing(fake, logged=True, log_path=tmp_path / "log.csv")
+    seed_existing(fake, logged=True, verified=True, log_path=tmp_path / "log.csv")
     code, rep = run(tmp_path, fake, execute=True)
     assert status_of(rep) == "already_migrated" and fake.writes == [] and fake.created == []
     assert len(fake.rs["synRSX"]) == 2
+
+
+def test_execute_verifies_a_logged_but_unverified_load_instead_of_skipping(tmp_path):
+    fake = FakeSynapse()
+    seed_existing(fake, logged=True, log_path=tmp_path / "log.csv")  # content p1 only: not what converted holds
+    code, rep = run(tmp_path, fake, execute=True)
+    assert status_of(rep) == "verification_mismatch" and code == 1 and fake.writes == []
+    assert (rep / "CA1" / "verification.txt").exists()
+    assert rs.CsvWriteLog(tmp_path / "log.csv").verified_versions("synRSX") == set()
+
+
+def test_a_run_that_failed_after_the_export_is_verified_not_skipped_on_rerun(tmp_path):
+    fake = FakeSynapse()
+    real_read = fake.read
+    state = {"fail": True}
+
+    def flaky(syn, rs_id, version=None, cache_dir=None, list_cols=()):
+        if state["fail"]:
+            raise RuntimeError("read-back failed")
+        return real_read(syn, rs_id, version, cache_dir, list_cols)
+
+    fake.read = flaky
+    code, rep = run(tmp_path, fake, execute=True, run_id="r1")
+    assert status_of(rep) == "failed" and len(fake.writes) == 1
+    rs_id = next(iter(fake.rs))
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    assert log.pipeline_map(rs_id) == {2: 1} and log.verified_versions(rs_id) == set()
+    state["fail"] = False
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2")
+    assert status_of(rep) == "migrated" and "never verified" in (rep / "CA1" / "summary.txt").read_text()
+    assert len(fake.writes) == 1 and len(fake.created) == 1  # verified, not rewritten or recreated
+    assert log.verified_versions(rs_id) == {2}
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")
+    assert status_of(rep) == "already_migrated"
+
+
+def test_verified_and_created_rows_are_neither_versions_nor_pending_closers(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.created("synR", 1, "r1", "42")
+    log.start("synR", 1, "r1", "42")
+    log.verified("synR", 2, 1, "r1", "42")
+    assert log.pipeline_map("synR") == {} and log.last_version("synR") is None
+    assert [p["runId"] for p in log.unresolved_pending("synR")] == ["r1"]  # not closed by verified
+    assert log.locked_by("synR", "other") == "r1"
+    assert log.created_version("synR") == 1 and log.verified_versions("synR") == {2}
+
+
+def test_an_empty_recordset_left_after_a_failed_load_is_loaded_on_rerun(tmp_path):
+    fake = FakeSynapse()
+    real_write = fake.write
+
+    def boom(syn, rs_id, csv_path, on_version=None, **kw):
+        raise RuntimeError("grid down")
+
+    fake.write = boom
+    code, rep = run(tmp_path, fake, execute=True, run_id="r1")
+    assert status_of(rep) == "failed"
+    fake.write = real_write
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2")
+    assert status_of(rep) == "migrated" and len(fake.created) == 1 and len(fake.writes) == 1
+    assert "left empty at v1" in (rep / "CA1" / "summary.txt").read_text()
+    rs_id = next(iter(fake.rs))
+    assert rs.CsvWriteLog(tmp_path / "log.csv").verified_versions(rs_id) == {2}
+
+
+def test_a_newer_unlogged_version_after_creation_is_not_loaded_over(tmp_path):
+    fake = FakeSynapse()
+    real_write = fake.write
+
+    def boom(syn, rs_id, csv_path, on_version=None, **kw):
+        raise RuntimeError("grid down")
+
+    fake.write = boom
+    run(tmp_path, fake, execute=True, run_id="r1")
+    rs_id = next(iter(fake.rs))
+    fake.rs[rs_id].append(pd.DataFrame({KEY: ["someone else"]}))  # a contributor wrote v2
+    fake.write = real_write
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2")
+    assert status_of(rep) == "failed" and fake.writes == []
+    assert "exists but not migrated; investigate" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def test_retry_message_on_the_migration_path_says_rerun_the_migration(tmp_path):
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    csv = tmp_path / "c.csv"
+    csv.write_text("a\n1\n")
+    with mock.patch.object(rs, "recordset_info", lambda syn, rs_id: (3, [KEY])):
+        with pytest.raises(rs.WriteRefused) as err:
+            rs.write_logged(object(), "synR", csv, log, "r1", "42", 1, 1, retry_note="rerun the migration (the RecordSet stays empty)")
+    assert err.value.status == "retry" and "rerun the migration" in err.value.message
+    assert "next run replays" not in err.value.message
 
 
 def test_execute_fails_an_unlogged_existing_recordset_and_never_overwrites(tmp_path):
@@ -522,7 +616,7 @@ def test_execute_aborts_the_pending_row_when_the_write_fails(tmp_path):
     assert status_of(rep) == "failed" and "grid down" in (rep / "CA1" / "summary.txt").read_text()
     rs_id = next(iter(fake.rs))
     log = rs.CsvWriteLog(tmp_path / "log.csv")
-    assert log._read(rs_id)["status"].tolist() == ["pending", "aborted"]
+    assert log._read(rs_id)["status"].tolist() == ["created", "pending", "aborted"]
     assert log.unresolved_pending(rs_id) == []
 
 

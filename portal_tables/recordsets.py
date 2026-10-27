@@ -329,8 +329,10 @@ class WriteLog:
     ``rowsWritten``. A ``pending`` row is resolved only by a later ``done``,
     ``recovered`` or ``aborted`` row with the same ``runId`` and
     ``baseVersion``, so a reused runId, a rerun, or a write with several exports
-    keeps its lock and stays recoverable until it finishes. Subclasses implement ``_read`` and
-    ``_append``.
+    keeps its lock and stays recoverable until it finishes. The migration also
+    logs ``created`` (the RecordSet's creation version) and ``verified`` (a
+    version read back and matched); neither is a pipeline version nor closes a
+    ``pending`` row. Subclasses implement ``_read`` and ``_append``.
     """
 
     def _read(self, rs_id: str) -> pd.DataFrame:
@@ -365,6 +367,26 @@ class WriteLog:
     def abort(self, rs_id: str, base: int, run_id: str, principal) -> None:
         """Resolve a ``pending`` row whose run failed before creating any version."""
         self._append(self._row(rs_id, None, base, run_id, principal, "aborted", None))
+
+    def created(self, rs_id: str, version: int, run_id: str, principal) -> None:
+        """Record the RecordSet's creation version (``created``: not a pipeline version, no lock)."""
+        self._append(self._row(rs_id, version, version, run_id, principal, "created", None))
+
+    def verified(self, rs_id: str, version: int, base: int, run_id: str, principal) -> None:
+        """Record that ``version`` was read back and matched what was loaded (``verified``:
+        neither a pipeline version nor a pending closer)."""
+        self._append(self._row(rs_id, version, base, run_id, principal, "verified", None))
+
+    def verified_versions(self, rs_id: str) -> set[int]:
+        df = self._read(rs_id)
+        df = df[(df["status"] == "verified") & df["version"].notna()]
+        return {int(v) for v in df["version"]}
+
+    def created_version(self, rs_id: str) -> int | None:
+        """The creation version in the newest ``created`` row, or None."""
+        df = self._read(rs_id)
+        df = df[(df["status"] == "created") & df["version"].notna()]
+        return int(max(df["version"])) if len(df) else None
 
     def pipeline_map(self, rs_id: str) -> dict[int, int]:
         """``{version: baseVersion}`` of every pipeline version (written or recovered)."""
@@ -906,7 +928,8 @@ class WriteRefused(Exception):
         self.message = message
 
 
-def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, rows: int, base: int) -> list[int]:
+def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, rows: int, base: int,
+                 retry_note: str = "the next run replays it") -> list[int]:
     """Write ``csv_path`` through a Grid session behind a write-log ``pending`` row.
 
     ``base`` is the RecordSet version the content was computed against. Logs
@@ -939,7 +962,7 @@ def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, r
             write_log.abort(rs_id, base, run_id, principal)
             raise WriteRefused("retry", (
                 f"{rs_id} moved from v{base} to v{now_latest} before the write; nothing written, "
-                "the next run replays it"))
+                f"{retry_note}"))
         write_via_grid(syn, rs_id, csv_path, on_version=on_version)
         write_log.finish(rs_id, base, run_id, principal)
     except WriteRefused:
