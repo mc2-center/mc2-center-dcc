@@ -1265,3 +1265,30 @@ def test_a_write_that_exports_no_version_fails_the_grant_instead_of_raising(tmp_
     code, rep = run(tmp_path, fake, execute=True)
     assert status_of(rep) == "failed" and code == 1
     assert "exported no version" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def float_key_table():
+    table = dup_table()
+    table["PublicationView_id"] = [123.0, 123.0]  # a numeric key column: float dtype
+    return table
+
+
+def test_a_float_typed_duplicate_key_is_removed_from_the_source_keys_as_text(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", float_key_table())})
+    code, rep = run(tmp_path, fake)
+    assert status_of(rep) == "dryrun"
+    assert mig.load_state(tmp_path / "out" / "state.json")["grants"]["CA1"]["source_keys"] == ["123"]
+
+
+def test_a_resolved_duplicate_key_missing_from_the_source_keys_is_noted_not_raised(tmp_path):
+    fake = FakeSynapse({"synT1": ("CA1", "synP1", dup_table())})
+    real = mig.convert_table
+
+    def convert(*a, **kw):
+        converted, changes, unmapped, dropped, resolutions = real(*a, **kw)
+        return converted, changes, unmapped, dropped, resolutions.assign(key="zzz")
+
+    with mock.patch.object(mig, "convert_table", convert):
+        code, rep = run(tmp_path, fake)
+    assert status_of(rep) == "dryrun"
+    assert "not found among the source keys: ['zzz']" in (rep / "CA1" / "summary.txt").read_text()

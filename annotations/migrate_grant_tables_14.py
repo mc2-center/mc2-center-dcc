@@ -824,6 +824,14 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     summary.update(status="migrated", message="; ".join(notes))
 
 
+def _noted(summary: dict, absent: list) -> dict:
+    """``summary`` with a note on resolved-duplicate keys that were not among the source keys."""
+    if absent:
+        note = f"resolved duplicate key(s) not found among the source keys: {absent}"
+        summary["message"] = "; ".join(filter(None, [summary.get("message"), note]))
+    return summary
+
+
 def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None,
                   recover=None, choices=None):
     """Convert (and with ``--execute`` migrate) one grant table.
@@ -837,15 +845,19 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     source = read_source(syn, entry["table"])
     summary["source_rows"] = len(source)
     source_key = f"{component}_id"
-    source_keys = [str(v).strip() for v in source[source_key]] if source_key in source.columns else []
+    source_keys = [str(v).strip() for v in _as_text(source[source_key])] if source_key in source.columns else []
     try:
         converted, changes, unmapped, dropped, resolutions = convert_table(source, component, normalizer, reference, portal, choices_for(choices, entry["grant"]))
     except ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys
     converted, changes, recovered = recover_truncated_authors(converted, changes, recover, key)
+    absent = []
     for k in resolutions["key"]:  # the source side of the comparison loses one row per resolved duplicate
-        source_keys.remove(k)
+        if k in source_keys:
+            source_keys.remove(k)
+        else:
+            absent.append(k)
     if dropped:
         logger.info("%s: not schema columns, dropped: %s", entry["grant"], dropped)
     validation = validate_frame(converted, component, args.model_ref)
@@ -867,12 +879,12 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     )
     if converted.empty:  # nothing to load: no RecordSet is created and nothing is written
         summary.update(status="empty_source", message="no rows after conversion; no RecordSet created, nothing written")
-        return summary, converted, source_keys
+        return _noted(summary, absent), converted, source_keys
     if not args.execute:
         summary.update(status="dryrun", message="dry run: nothing written")
-        return summary, converted, source_keys
+        return _noted(summary, absent), converted, source_keys
     migrate_recordset(syn, entry, args, write_log, converted, converted_path, report_dir, summary, list_cols, set_like)
-    return summary, converted, source_keys
+    return _noted(summary, absent), converted, source_keys
 
 
 def summary_line(s: dict) -> str:
