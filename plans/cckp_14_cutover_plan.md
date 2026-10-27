@@ -1,6 +1,6 @@
 # Consolidated plan: data model 14.0.0 cutover (pipeline, DCC, Synapse, orchestration)
 
-**As of 2026-10-26, revision 3** (status updated at end of day). Revision 2 folded in your answers on revision 1; this revision adds the current status of every step. This document replaces the "what's next" parts of:
+**As of 2026-10-27, revision 4.** Revision 2 folded in your answers on revision 1; revision 3 added the status of every step; this revision adds the migration's value changes (section 2.3) and the 14.1.0 renumbering (D-Q45). This document replaces the "what's next" parts of:
 - `plans/impl_ai_curation_pipeline_14.md` (P-tasks) and its report
 - `plans/impl_dcc_14_alignment.md` (D-tasks) and its report
 - `plans/impl_synapse_14_infrastructure.md` (I-tasks) and its report
@@ -12,16 +12,16 @@ Those files stay as the record of what was specified and done. Their task IDs (P
 
 ---
 
-## 1. Where things stand (2026-10-26, end of day)
+## 1. Where things stand (2026-10-27)
 
 | Stream | State | Where |
 |---|---|---|
-| data-models | `v14.0.0` tagged (2026-10-23). The **v14.0.1 patch** (DM-14 + DM-16) is pushed to PR **#277**:<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>DataCatalog `immunoassay` stays lowercase. Not merged or tagged. | `review-fixes`, PR #277 |
+| data-models | `v14.0.0` tagged (2026-10-23). The DM-14 + DM-16 fixes are pushed to PR **#277**, now released as **14.1.0** rather than 14.0.1 because the PR also adds `File Data Use Codes` (a breaking header change for file manifests; D-Q45):<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>DataCatalog `immunoassay` stays lowercase. Not merged or tagged. | `review-fixes`, PR #277 |
 | ai-curation-pipeline | P0–P3 plus P5 (DOI form) and the report-noise fix, reviewed. P4 deferred. | PRs **#12 → #13 → #14** (stacked), open |
-| mc2-center-dcc code | All D-tasks done except D17a (deletions, separate PR after #167):<br>• D11 RecordSet upload with replay/ownership reconciliation and write log v2<br>• D12 RecordSet union<br>• D15 upload driver<br>• **I5a migration script** (`annotations/migrate_grant_tables_14.py`)<br>452 tests pass, 1 slow benchmark skipped. Four independent reviews addressed. | `model-alignment`; PR **#167** (stacked on **#166**) pushed at `9280205`; the I5a commits since are local |
+| mc2-center-dcc code | All D-tasks done except D17a (deletions, separate PR after #167):<br>• D11 RecordSet upload with replay/ownership reconciliation and write log v2<br>• D12 RecordSet union<br>• D15 upload driver<br>• **I5a migration script** (`annotations/migrate_grant_tables_14.py`)<br>• migration value maps (section 2.3), PubMed author recovery, duplicate tie-break<br>540 tests pass, 1 skipped. Four independent reviews addressed. | `model-alignment`; PR **#167** (stacked on **#166**), I5a commits pushed 2026-10-27 |
 | Synapse registry | 14.0.0 verified for all 38 schemas (B2). Cleanup: I1 deleted 30, B4 deleted 29; 16 refused because bound, and they stay. | `MC2Center` |
 | Portal tables (syn21498902) | **Unchanged.** No type changes and no non-dryrun syncs. | Section 2 |
-| Grant-level manifests | Still 13.1.0 tables. The migration dry runs of all 4 types compare **EQUAL** with the legacy unions. No production RecordSets yet. | grant projects |
+| Grant-level manifests | Still 13.1.0 tables. The migration dry runs of all 4 types keep every row and key of the legacy unions (**EQUAL** on counts and keys; cell values are not compared). About 870 values are rewritten to 14.x terms (section 2.3). No production RecordSets yet. | grant projects |
 | Test project `syn78387305` | The RecordSet spike, reconciliation, crash, lock and stale-session tests, the D-2 rollback rehearsal on a Tools copy, and the write-log test tables. To be cleared after I9. | infrastructure report |
 | Orchestrator | Design only. The Phase 2 driver (D15) is built. | `orchestration/README.md` |
 
@@ -96,7 +96,34 @@ The portal doesn't read any of these (D-Q9).
 | `MC2_All_Project_Tables` view `syn52750482` | **deleted** | It empties by itself once the tables move out of the grant projects. Delete it and remove it from `sync_grants.py`. See E6. | E6 |
 | UNION MaterializedViews (per type) | **deleted / rebuilt** | Deleted if G1 = RecordSets (D12 builds unions in Python); rebuilt if G1 = tables | E1 / E6 |
 
-### 2.3 Outside the CCKP projects (no effect on how the CCKP reads data)
+### 2.3 Values the grant-table migration rewrites (I5a)
+
+The migration copies each grant's 13.1.0 table into a 14.x RecordSet: new headers, list columns as lists, the same rows under the same keys. Because 14.x validates many columns against a controlled vocabulary, it also rewrites a value when, and only when, a rule maps it to exactly one 14.x term (`portal_tables/value_maps.py`). Anything else is kept as written and reported. **The dry-run "EQUAL" check compares row counts and keys with the legacy union views, not cell values**; every value change is listed per grant in `changes.csv`.
+
+Counts from the latest full dry runs (publications and datasets 2026-10-27, tools and education 2026-10-26). Education has no value changes.
+
+| Rule | Example | Pubs | Datasets | Tools |
+|---|---|---|---|---|
+| `doi`: bare DOI, `doi:` form or `http(s)://(dx.\|www.)doi.org/` URL → `https://doi.org/{doi}`, trailing `.` dropped | `10.1371/journal.pone.0299267` → `https://doi.org/10.1371/journal.pone.0299267` | 625 | 3 | 6 |
+| `enum_case`: differs from a 14.x term only by case or spaces | `ChIP-seq` → `ChIP-Seq`; `project` → `Project`; `Histology` → `histology` | 18 | 10 | 41 |
+| `nonpreferred`: a data-models nonpreferred term (`all_valid_values.csv`) → its preferred term | `Western Blot` → `Western Blotting`; `Prostate` → `Prostate Gland` | 16 | 17 | 0 |
+| `duo_code`: shorthand → DUO ID | `RTN` → `DUO:0000029`; `NPUNCU` → `DUO:0000018` | 0 | 10 | 0 |
+| `doi_placeholder`: placeholder blanked (the portal shows `DOI Not Available`) | `https://doi.org/No DOI listed`, `No DOI Listed` → blank | 6 | 1 | 0 |
+| `recovered_pubmed`: author list cut by the 400-character cap → full list from PubMed (D-Q42, D-Q43) | | 85 | 0 | 0 |
+
+The 625 publication DOIs are bare in the grant tables; the portal already shows them as `https://doi.org/` links, so they look the same there. The changes worth checking:
+
+- **Some terms become lower case**, because the 14.x term is: `Histology` → `histology`, `TUNEL Assay` → `TUNEL assay`, `Proximity Extension Assay` → `proximity extension assay`, `Spatial Transcriptomics` → `spatial transcriptomics`. If unwanted, fix the term in data-models or add an override.
+- **Synonyms change the term:** `Western Blot` → `Western Blotting` (18), `Prostate` → `Prostate Gland` (6), `Murine Models` → `Murine Model` (3), `Micro-CT` → `X-Ray Micro-Computed Tomography` (2), and 1 each of `Comet Assay` → `Single Cell Gel Electrophoresis`, `RNA-Seq` → `RNA Sequencing`, `Exome Sequencing` → `Whole Exome Sequencing`, `SNP Array` → `Single Nucleotide Polymorphism Array`.
+- **No license values change in the migration**; the SPDX change (section 2.1) is in the portal tables.
+
+What the mapping refuses to do: touch an exact valid value; match part of a cell or fuzzily; use a synonym that names two preferred terms; case-match two 14.x terms that differ only by case. `all_valid_values.csv` joins a term's synonyms with `, `, so a synonym containing a comma falls apart; a piece is kept only if it has two or more words, looks like an identifier or acronym (`RNA-seq`, `HCC`), or is a spelling variant of its own term (`Ligaments`). The 153 refused pieces (`Hepatic`, `Blotting`, `Electron`, …) are in `rejected_synonyms.csv`. A curator override (`--overrides`, W10) wins over every rule.
+
+Kept as written and reported: 108 / 34 / 5 unmapped values (pubs / datasets / tools), mostly assay names with no 14.x term (`Immunofluorescence`, `Immunohistochemistry`, `Drug Response Assay`) and typos (`Not Appplicable`); these rows migrate and are flagged (D-Q39). Also 17 + 4 truncated cells, 7 author lists whose PubMed list did not match (`recovery_mismatch`), and 2 nonstandard DOI URLs (`doi_nonstandard`).
+
+The portal sees none of this until E2 regenerates the merged manifests and the next sync runs.
+
+### 2.4 Outside the CCKP projects (no effect on how the CCKP reads data)
 - **The `MC2Center` schema registry** and its table `syn69735275` (project "Curator"). Deletions are listed in Appendix C.
 - **The 532 grant-level tables** while they're still in the grant projects, and the bindings on them.
 - **The test project `syn78387305`**.
@@ -156,13 +183,15 @@ All of these come from your review notes and answers on 2026-10-26.
 | D-Q42 | **Truncated `PublicationAuthors` (109 cells, from the old 400-character cap) are recovered from PubMed** by PMID (read-only NCBI E-utilities) during migration. The same fixes go to the portal manifest at E2. | I5a (in progress); E2 |
 | D-Q43 | **Recovered authors use full names** (`ForeName LastName`, PubMed efetch), matching the curation pipeline's output | I5a `--recover-truncated` |
 | D-Q44 | **The 2 duplicate pairs that tie on every compared field (`syn77038794`, `syn77038892`) are settled by hand**; the other 5 are decided by the live portal row | `output/worklists/duplicate_ties.csv` → I5a `--duplicate-choices` |
+| D-Q45 | **The DM-14/DM-16 release is 14.1.0, not 14.0.1** (data-models #277, `release_14.1.0_notes.md`): the PR adds `File Data Use Codes` for file-level templates, a new attribute and a changed column header | Steps below that named 14.0.1 now name 14.1.0. **The W6 tag approval was given for `v14.0.1`; confirm it for `v14.1.0`.** |
+| D-Q46 | **Migrated values: rewrite only when a rule maps a value to exactly one 14.x term**; keep and report everything else. Nonpreferred fragments of comma-split synonym cells are refused unless multi-word, identifier-like or a spelling variant of their own term. | Section 2.3; `portal_tables/value_maps.py` |
 | D-Q21 | **`NPUNCU` → the single ID `DUO:0000018`**, not NPU + NCU. `DUO:0000018` is a current DUO term, and governanceDUO and data-models both list it. | Reverses master plan S4.5's split. I8.4 maps `RTN` → `DUO:0000029` and `NPUNCU` → `DUO:0000018`, one to one. |
 
 ---
 
 ## 4. Open decisions and actions waiting on you
 
-**Decisions open now:** none. The last two were the duplicate-row tie-break (extended to "match the live portal row", D-Q41) and PubMed recovery of truncated authors (D-Q42); both are being implemented as extensions of your earlier answers. Object if either should differ.
+**Decisions open now:** one confirmation: tag `v14.1.0` instead of the approved `v14.0.1` (D-Q45). Before that, the last two were the duplicate-row tie-break (extended to "match the live portal row", D-Q41) and PubMed recovery of truncated authors (D-Q42); both are being implemented as extensions of your earlier answers. Object if either should differ.
 
 **Actions waiting on you:**
 
@@ -170,11 +199,11 @@ All of these come from your review notes and answers on 2026-10-26.
 |---|---|---|
 | W4 | **Merge #166, then #167** (mc2-center-dcc) | Phase D, D17a PR, B3 |
 | W5 | **Merge pipeline #12 → #13 → #14** | Pipeline output in 14.0.0 form |
-| W6 | **Merge data-models #277.** Then I tag `v14.0.1` (approved) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
-| W7 | **Go-ahead: register 14.0.1** in `MC2Center` 🔒 | B2, E1 binding version |
+| W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approval given for `v14.0.1`; reconfirm, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
+| W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
 | W8 | **Go-ahead: Consortium table update** (`consortiumId` + 3 approved rows) 🔒 | D-1, then people sync |
 | W9 | **Go-ahead: portal table changes**, one table at a time with the rehearsed rollback 🔒, after W4 | D-2 |
-| W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`), and **pick one row per key** in `output/worklists/duplicate_ties.csv` (2 keys; it feeds `--duplicate-choices`) | Cleaner E1 validation |
+| W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`) and the migration's value changes in section 2.3 (especially the lower-case terms), and **pick one row per key** in `output/worklists/duplicate_ties.csv` (2 keys; it feeds `--duplicate-choices`) | Cleaner E1 validation |
 | W11 | **Go-ahead: create the production write-log table** in CCKP - MC2 Admin and migrate a first small batch of grants 🔒, after W6/W7 | E1 |
 | W3 | Go-ahead for each other 🔒 step as it comes up. Deletions are confirmed against a printed list. | — |
 
@@ -197,9 +226,9 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | A5 report noise | ✅ | Pipeline `78b7b2b`, `016074c` |
 | A6 merges | ⏳ you (W4, W5) | |
 | A7 D17a deletions PR | ⏳ A6 | |
-| B1 DM-14/DM-16 patch | ✅ pushed to #277 | Merge and tag ⏳ W6 |
-| B2 verify 14.0.0; register 14.0.1 | ✅ verify; ⏳ W6/W7 register | |
-| B3 bump `MODEL_REF` to v14.0.1 | ⏳ B1 tag | Both repos; remove the pipeline's `Not-Applicable` workaround |
+| B1 DM-14/DM-16 fixes | ✅ pushed to #277 (released as 14.1.0, D-Q45) | Merge and tag ⏳ W6 |
+| B2 verify 14.0.0; register 14.1.0 | ✅ verify; ⏳ W6/W7 register | |
+| B3 bump `MODEL_REF` to v14.1.0 | ⏳ B1 tag | Both repos; remove the pipeline's `Not-Applicable` workaround |
 | B4 registry cleanup | ✅ | 29 deleted, 16 bound and kept |
 | B5 registry table rows | ⬜ | After B2 |
 | C1–C7 RecordSet spike, grant creation, rollback rehearsal | ✅ | G1 = RecordSets (D-Q29) |
@@ -208,7 +237,7 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | D-1 Consortium table | ⏳ W8 | |
 | D-2 portal type changes (+ `accessInformation` 300) | ⏳ W4, W9 | |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
-| E1 I5a migration | 🔄 | Script built and dry-run EQUAL for all 4 types. Finishing the portal tie-break and author recovery. Live run ⏳ W6/W7/W11 |
+| E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
 | E2 regenerate merged manifests (I6) | ⬜ | Apply the PMID, DOI and author fixes |
 | E3 bindings (I7) | ⬜ | Done per RecordSet by I5a; admin manifests remain |
 | E4 first sync (I9) | ⬜ | Dataset sync needs D-2's `accessInformation` change |
@@ -232,11 +261,11 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 ### Phase B: Model patch and registry (parallel with A)
 | Step | Task | Check |
 |---|---|---|
-| B1 | data-models **DM-14** (`qc_attribute_mapping.csv`: `Data Use Codes` → `Dataset Data Use Codes`) and **DM-16**, all in one PR (Sonnet), then the **`v14.0.1` release** 🔒. DM-16 covers:<br>• drop `Not-Applicable` from Tumor Type<br>• `immunoassay` → `Immunoassay` in the JSON-LD<br>• change the `Publication Doi` description (and any other DOI description that names a prefix) to `https://doi.org/{doi}`<br>• **DUO (D-Q18, D-Q19):** change `modules/shared/duo.csv` `Properties` to the official shorthands (`USE`→`US`, `RST`→`RS`, `TSM`→`TS`, `IST`→`IS`, `GSR`→`GS`, `DSR`→`DS`); widen the `Dataset Data Use Codes` pattern to `^(DUO:\d{7,8}\|DUOPlus\d+\|Pending Annotation)$` (and any other DUO pattern in the model); optionally align `duo.csv` descriptions with governanceDUO's "Label - definition" form. | `scripts/check_json_schemas.py` finds 0 failures; the regenerated `json_schemas/` show only these diffs; `DUO:00000044` validates |
-| B2 | **I2 verification and patch registration.** Read-only first: compare each registered 14.0.0 schema with `json_schemas/` at `v14.0.0`, ignoring `$id` and key order. Then register 14.0.1 with `make register-json VERSION=14.0.1 …` 🔒, and repeat the comparison against `v14.0.1`. | All registered schemas match. 14.0.1 is the highest version for every schema with a 14.x. |
-| B3 | Bump `MODEL_REF` to `v14.0.1`: `portal_tables/model_contract.py` and the pipeline's `manifest_fields.py` (one commit each). Remove the pipeline's `Not-Applicable` workaround. | Tests pass. Vocab counts are logged: Tumor Type 186 → 185. |
+| B1 | data-models **DM-14** (`qc_attribute_mapping.csv`: `Data Use Codes` → `Dataset Data Use Codes`) and **DM-16**, all in one PR (Sonnet), then the **`v14.0.1` release** 🔒 (released as 14.1.0, D-Q45). DM-16 covers:<br>• drop `Not-Applicable` from Tumor Type<br>• `immunoassay` → `Immunoassay` in the JSON-LD<br>• change the `Publication Doi` description (and any other DOI description that names a prefix) to `https://doi.org/{doi}`<br>• **DUO (D-Q18, D-Q19):** change `modules/shared/duo.csv` `Properties` to the official shorthands (`USE`→`US`, `RST`→`RS`, `TSM`→`TS`, `IST`→`IS`, `GSR`→`GS`, `DSR`→`DS`); widen the `Dataset Data Use Codes` pattern to `^(DUO:\d{7,8}\|DUOPlus\d+\|Pending Annotation)$` (and any other DUO pattern in the model); optionally align `duo.csv` descriptions with governanceDUO's "Label - definition" form. | `scripts/check_json_schemas.py` finds 0 failures; the regenerated `json_schemas/` show only these diffs; `DUO:00000044` validates |
+| B2 | **I2 verification and patch registration.** Read-only first: compare each registered 14.0.0 schema with `json_schemas/` at `v14.0.0`, ignoring `$id` and key order. Then register 14.1.0 with `make register-json VERSION=14.1.0 …` 🔒, and repeat the comparison against `v14.1.0`. | All registered schemas match. 14.1.0 is the highest version for every schema with a 14.x. |
+| B3 | Bump `MODEL_REF` to `v14.1.0`: `portal_tables/model_contract.py` and the pipeline's `manifest_fields.py` (one commit each). Remove the pipeline's `Not-Applicable` workaround. | Tests pass. Vocab counts are logged: Tumor Type 186 → 185. |
 | B4 | **Registry cleanup (R5).** A dry-run script prints Appendix C, refreshed live. You confirm the printed list 🔒, then it deletes one version at a time, recording deletions and refusals. Guards: never a version ≥ 14, nothing in the keep column, nothing from `AccessRequirementCA261841`, `AccessRequirementCA123`, `Landscape` or `Resource`. | `POST /schema/version/list` shows none of Appendix C's "Delete" versions, apart from logged refusals |
-| B5 | Registry table `syn69735275`: add rows for 14.0.0 and 14.0.1, mark the older data-model versions `superseded`, and mark the deleted ones `deleted`. 🔒 | Rows present |
+| B5 | Registry table `syn69735275`: add rows for 14.0.0 and 14.1.0, mark the older data-model versions `superseded`, and mark the deleted ones `deleted`. 🔒 | Rows present |
 
 ### Phase C: RecordSet spike in `syn78387305` (I3), which decides gate G1
 Lay `syn78387305` out like one grant project, so D11's "find the RecordSet in the grant's data-type folder" logic runs unchanged. Bind on the RecordSets, not the project.
@@ -264,7 +293,7 @@ Lay `syn78387305` out like one grant project, so D11's "find the RecordSet in th
 |---|---|
 | E1 | **I5a** (G1 = RecordSets) or **I5b** (G1 = tables), one type at a time, with the I8 corrections. After each type, the union's row count and keys must equal the legacy union's. 🔒 |
 | E2 | **I6**: regenerate the merged manifests and the `release_validation` files with 14.0.x headers. Remove `union_qc.py`'s `schematic` call. 🔒 |
-| E3 | **I7** bindings: bind 14.0.1 to each RecordSet (I5a) or grant data-type folder (I5b), and to the admin manifests. The I1 refusals stay (D-Q8). 🔒 |
+| E3 | **I7** bindings: bind 14.1.0 to each RecordSet (I5a) or grant data-type folder (I5b), and to the admin manifests. The I1 refusals stay (D-Q8). 🔒 |
 | E4 | **I9** first sync. First the B0 scratch-table write test (a copy of a portal table in `syn78387305`). Then each sync, one at a time, compared with `--output_csv` and checked on the portal. The dataset sync waits for W1. 🔒 |
 | E5 | **I10** communication: curators and the people who run syncs. Lift the I0 holds. |
 | E6 | **I11 archive** (only if G1 = RecordSets), after one full sync cycle with no regressions. Details below. 🔒 |
