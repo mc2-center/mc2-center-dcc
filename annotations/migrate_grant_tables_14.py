@@ -1090,6 +1090,7 @@ def options_hash(args) -> str:
         "component": args.component, "overrides": content(args.overrides),
         "duplicate_choices": content(args.duplicate_choices), "schema_version": args.schema_version,
         "include_unlisted": bool(args.include_unlisted), "recover_truncated": bool(args.recover_truncated),
+        "model_ref": getattr(args, "model_ref", None) or model_contract.MODEL_REF,  # the tag the enum maps and validation read
     }
     return hashlib.sha256(json.dumps(effective, sort_keys=True).encode()).hexdigest()
 

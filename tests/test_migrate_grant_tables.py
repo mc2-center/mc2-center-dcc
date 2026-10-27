@@ -1292,3 +1292,13 @@ def test_a_resolved_duplicate_key_missing_from_the_source_keys_is_noted_not_rais
         code, rep = run(tmp_path, fake)
     assert status_of(rep) == "dryrun"
     assert "not found among the source keys: ['zzz']" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def test_options_hash_covers_the_resolved_data_models_ref():
+    def h(ref):
+        args = mig.get_args(["--component", "PublicationView"])
+        args.model_ref = ref
+        return mig.options_hash(args)
+
+    assert h("v14.0.1") != h("v14.0.2") and h("v14.0.1") == h("v14.0.1")
+    assert h(None) == h(mig.model_contract.MODEL_REF)  # a fallback is the same as naming MODEL_REF
