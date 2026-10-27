@@ -56,6 +56,7 @@ import logging
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -79,7 +80,6 @@ ADMIN_LABEL = "CCKP - MC2 Admin"
 # String columns that hold one or more keys; split and rejoined per item.
 KEY_LIST_COLUMNS = frozenset({"ConsortiumKey", "GrantViewKey"})
 CONSORTIUM_PREFIX = "program."
-_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DUPLICATE_COLUMNS = ["key", "rows"]
 
 
@@ -141,8 +141,14 @@ def build_normalizer(component: str, overrides=None, ref=None) -> "value_maps.No
     return normalizer
 
 
-def date_columns(component: str, ref=None) -> list[str]:
-    return [c for c, p in grants.load_schema(component, ref)["properties"].items() if p.get("format") == "date"]
+def mint_person_key(name) -> str:
+    """``person.<name-slug>``: NFKD-normalised without accents, lowercase, each run of non-alphanumeric
+    characters one ``-``, no leading or trailing ``-``. Blank when ``name`` has no letter or digit."""
+    if name is None or (not isinstance(name, str) and pd.isna(name)):
+        return ""
+    text = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return f"person.{slug}" if slug else ""
 
 
 def _joined(items) -> str:
@@ -163,14 +169,19 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     dropped = [c for c in df.columns if c not in schema]
     df = df[[c for c in df.columns if c in schema]].copy().astype(object)
     key_missing = key not in df.columns
-    labels = [f"row {i + 1}" for i in range(len(df))]
-    if key_missing:
-        df.insert(0, key, labels)
+    changes: list[dict] = []
+    unmapped: list[dict] = []
+    if key_missing and component == "PersonView" and "Name" in df.columns:
+        # The PersonView table has no key. Mint it from Name (owner decision, 2026-10-27). The minted key is
+        # stored in the RecordSet and is never re-derived from Name later: a renamed person keeps the key.
+        df.insert(0, key, [mint_person_key(n) for n in df["Name"]])
+        key_missing = False
+        changes += [{"key": k, "column": key, "from": "", "to": k, "rule": "minted_key"} for k in df[key] if k]
+    elif key_missing:
+        df.insert(0, key, [f"row {i + 1}" for i in range(len(df))])
     else:
         df[key] = [str(k).strip() for k in df[key]]
     array_cols = recordsets.list_columns(component)
-    changes: list[dict] = []
-    unmapped: list[dict] = []
 
     # List cells in a column the schema types as a string: joined (key-list columns are normalized per item first).
     for column in df.columns:
@@ -196,19 +207,23 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     changes += norm_changes.to_dict("records")
     unmapped += norm_unmapped.to_dict("records")
 
-    for column in keyed:  # one or more keys: rejoined; a ConsortiumKey that is not a program.* ID is unmapped
+    consortia = utils.load_consortium_keys()
+    for column in keyed:  # one or more keys, rejoined; a ConsortiumKey name becomes its program.* ID
         cells = []
         for k, items in zip(out[key], out[column]):
             items = items if isinstance(items, list) else utils.split_cell(items)
             if column == "ConsortiumKey":
-                unmapped += [{"key": k, "column": column, "value": i} for i in items if not i.startswith(CONSORTIUM_PREFIX)]
+                mapped = []
+                for item in items:
+                    if item in consortia:
+                        changes.append({"key": k, "column": column, "from": item, "to": consortia[item], "rule": "consortium_key"})
+                        item = consortia[item]
+                    elif not item.startswith(CONSORTIUM_PREFIX):
+                        unmapped.append({"key": k, "column": column, "value": item})
+                    mapped.append(item)
+                items = mapped
             cells.append(_joined(items))
         out[column] = cells
-
-    for column in date_columns(component, ref):
-        if column in out.columns:
-            unmapped += [{"key": k, "column": column, "value": v} for k, v in zip(out[key], out[column])
-                         if str(v).strip() and not _ISO_DATE.match(str(v).strip())]
 
     keys = [str(k).strip() for k in out[key]]
     counts = pd.Series(keys).value_counts()
@@ -265,8 +280,9 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     except grants.ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys or []
+    minted = source_keys is None and not key_missing
     if source_keys is None:
-        source_keys = list(converted[key])  # row labels: only the row count is comparable
+        source_keys = list(converted[key])  # minted keys (or row labels): there are no source keys to compare
     validation = validate_admin(converted, component, key_missing, args.model_ref)
     if key_missing:
         converted = converted.assign(**{key: ""})
@@ -281,7 +297,7 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     no_source = sorted(recordsets.schema_columns(component) - set(converted.columns))
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
-        dropped=dropped, no_source_columns=no_source, key_missing=key_missing,
+        dropped=dropped, no_source_columns=no_source, key_missing=key_missing, keys_minted=minted,
     )
     if key_missing:
         summary.update(status="failed", message=(
@@ -315,6 +331,16 @@ def options_hash(args) -> str:
 def comparison_text(args, summary: dict, source_keys: list[str], converted_keys: list[str], has_source_keys: bool):
     """``(ok, text)``: row counts and keys of the converted frame against the source table."""
     lines = [f"{args.component} comparison, run {args.run_id} ({'execute' if args.execute else 'dry run'})"]
+    if summary.get("keys_minted"):  # no source keys: the rows must be all there, each with its own minted key
+        rows = int(summary.get("source_rows", 0))
+        unique = len(set(converted_keys)) == len(converted_keys) and all(converted_keys)
+        ok = len(converted_keys) == rows and unique
+        lines += [f"{args.component}: source table rows={rows}; converted rows={len(converted_keys)}; minted keys "
+                  f"unique and non-blank={unique}", f"  {'EQUAL' if ok else 'DIFFERENT'}",
+                  f"  the source table has no {SOURCE_KEY_HEADER[args.component]} column: keys are minted, not compared"]
+        if args.execute:
+            lines.append(f"  RecordSet {summary.get('recordset', '-')}: {summary.get('status')}")
+        return ok, "\n".join(lines)
     ok, more = grants.compare_keys("converted frame vs source table", source_keys, converted_keys, "source table")
     lines += more
     if not has_source_keys:
@@ -392,6 +418,8 @@ def main(argv=None, syn=None):
     if summary.get("key_missing") and frames.get(component, {}).get("converted") is not None:
         labelled = frames[component]["converted"]  # reports name a row without a key as "row N"
         frames[component]["converted"] = labelled.assign(**{key: [f"row {i + 1}" for i in range(len(labelled))]})
+    if frames.get(component, {}).get("converted") is not None:  # duplicate keys: the worklist looks up the first row
+        frames[component]["converted"] = frames[component]["converted"].drop_duplicates(key)
     grants.validation_worklist(frames, key).to_csv(run_dir / "validation_worklist.csv", index=False)
     print(text)
     print(report)

@@ -44,6 +44,17 @@ MANIFEST_SOURCE = "table"
 MANIFEST_SOURCES = ("table", "recordset")
 
 
+def load_consortium_keys() -> dict[str, str]:
+    """``{display name: consortiumId}`` from ``consortium_keys.csv`` (``#`` lines are comments).
+
+    Mirrors the Consortium table's ``consortiumId`` (plan D-1); replace it with a read of that table once it exists.
+    """
+    path = os.path.join(os.path.dirname(__file__), "consortium_keys.csv")
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = csv.DictReader(line for line in f if not line.startswith("#"))
+        return {r["display_name"]: r["consortium_id"] for r in rows}
+
+
 def admin_recordset_name(component: str) -> str:
     """Name of the admin RecordSet of ``component``: ``MC2Center_<Component>_RecordSet``."""
     return f"MC2Center_{component}_RecordSet"

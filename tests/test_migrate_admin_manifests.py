@@ -190,35 +190,57 @@ def test_grant_conversion_renames_headers_splits_lists_and_drops_non_schema_colu
     assert converted["Investigator"].tolist()[0] == ["Ada Lovelace", "Alan Turing"]
     assert converted["GrantThemeName"].tolist()[0] == ["Heterogeneity", "Evolution"]
     assert sorted(dropped) == ["Component", "Id", "entityId"]
-    assert changes.empty
+    assert set(changes["rule"]) == {"consortium_key", "date_iso"}
+    assert unmapped.empty
 
 
-def test_consortium_names_are_reported_unmapped_and_kept_not_guessed():
-    converted, _, unmapped, *_ = convert(grant_table(), "GrantView")
-    assert converted["ConsortiumKey"].tolist() == ["CSBC", "Sage Bionetworks"]
-    rows = unmapped[unmapped["column"] == "ConsortiumKey"]
-    assert rows["value"].tolist() == ["CSBC", "Sage Bionetworks"] and rows["key"].tolist() == ["CA111111", "CA222222"]
+def test_consortium_names_become_program_ids_by_the_vendored_map():
+    converted, changes, unmapped, *_ = convert(grant_table(), "GrantView")
+    assert converted["ConsortiumKey"].tolist() == ["program.csbc", "program.sage-bionetworks"]
+    rows = changes[changes["rule"] == "consortium_key"]
+    assert rows[["key", "from", "to"]].values.tolist() == [
+        ["CA111111", "CSBC", "program.csbc"], ["CA222222", "Sage Bionetworks", "program.sage-bionetworks"]]
+    assert unmapped.empty
 
 
-def test_a_program_id_is_not_reported_and_an_override_maps_a_name(tmp_path):
+def test_the_consortium_map_file_covers_the_approved_names():
+    keys = utils.load_consortium_keys()
+    assert keys["CSBC"] == "program.csbc" and keys["PS-ON"] == "program.ps-on" and keys["MetNet"] == "program.metnet"
+    assert keys["NCI"] == "program.nci" and keys["HTAN"] == "program.htan"
+    assert keys["Sage Bionetworks"] == "program.sage-bionetworks" and len(keys) == 11
+
+
+def test_an_unknown_consortium_stays_and_is_reported_and_a_program_id_is_left_alone():
     source = grant_table()
     source.loc[0, "Grant Consortium Name"] = "program.csbc"
-    _, _, unmapped, *_ = convert(source, "GrantView")
-    assert unmapped[unmapped["column"] == "ConsortiumKey"]["value"].tolist() == ["Sage Bionetworks"]
+    source.loc[1, "Grant Consortium Name"] = "Mystery Network"
+    converted, changes, unmapped, *_ = convert(source, "GrantView")
+    assert converted["ConsortiumKey"].tolist() == ["program.csbc", "Mystery Network"]
+    assert unmapped[unmapped["column"] == "ConsortiumKey"].values.tolist() == [["CA222222", "ConsortiumKey", "Mystery Network"]]
+    assert "consortium_key" not in set(changes["rule"])
+
+
+def test_an_override_maps_a_name_before_the_consortium_map(tmp_path):
     path = tmp_path / "o.csv"
-    path.write_text("column,current_value,proposed_value\nConsortiumKey,Sage Bionetworks,program.sage-bionetworks\n")
+    path.write_text("column,current_value,proposed_value\nConsortiumKey,CSBC,program.other\n")
     norm = adm.build_normalizer("GrantView", adm.value_maps.load_overrides(path))
-    converted, changes, unmapped, *_ = adm.convert_admin_table(source, "GrantView", norm)
-    assert converted["ConsortiumKey"].tolist() == ["program.csbc", "program.sage-bionetworks"]
-    assert changes[changes["rule"] == "override"]["to"].tolist() == ["program.sage-bionetworks"]
-    assert unmapped[unmapped["column"] == "ConsortiumKey"].empty
+    converted, changes, *_ = adm.convert_admin_table(grant_table(), "GrantView", norm)
+    assert converted["ConsortiumKey"].tolist()[0] == "program.other"
+    assert changes[changes["rule"] == "override"]["to"].tolist() == ["program.other"]
 
 
-def test_dates_that_are_not_iso_are_reported_unmapped():
-    _, _, unmapped, *_ = convert(grant_table(), "GrantView")
-    dates = unmapped[unmapped["column"].isin(["GrantStartDate", "GrantEndDate"])]
-    assert dates["key"].tolist() == ["CA111111", "CA111111"]  # the ISO dates of the second row are fine
-    assert sorted(dates["value"]) == ["5/31/20", "6/1/14"]
+def test_dates_become_iso_and_iso_dates_and_junk_are_left_alone():
+    source = grant_table()
+    source.loc[1, "Grant End Date"] = "6/30/2021"
+    source.loc[1, "Grant Start Date"] = "soon"
+    converted, changes, unmapped, *_ = convert(source, "GrantView")
+    assert converted["GrantStartDate"].tolist() == ["2014-06-01", "soon"]
+    assert converted["GrantEndDate"].tolist() == ["2020-05-31", "2021-06-30"]
+    dates = changes[changes["rule"] == "date_iso"]
+    assert dates[["key", "column", "from", "to"]].values.tolist() == [
+        ["CA111111", "GrantStartDate", "6/1/14", "2014-06-01"], ["CA111111", "GrantEndDate", "5/31/20", "2020-05-31"],
+        ["CA222222", "GrantEndDate", "6/30/2021", "2021-06-30"]]
+    assert unmapped[unmapped["column"] == "GrantStartDate"].values.tolist() == [["CA222222", "GrantStartDate", "soon"]]
 
 
 def test_project_conversion_uses_the_admin_header_map():
@@ -227,21 +249,41 @@ def test_project_conversion_uses_the_admin_header_map():
                                        "Investigator", "ConsortiumKey", "GrantViewKey"]
     assert converted["Investigator"].tolist()[1] == ["Alan Turing", "Grace Hopper"]
     assert converted["GrantViewKey"].tolist() == ["CA111111", "CA111111"]
-    assert sorted(unmapped["column"].unique()) == ["ConsortiumKey"]
+    assert converted["ConsortiumKey"].tolist() == ["program.csbc", "program.ps-on"]
+    assert unmapped.empty
 
 
 def test_person_conversion_joins_list_cells_of_string_columns_and_fixes_enum_case():
     converted, changes, unmapped, dropped, duplicates, key_missing = convert(person_table(), "PersonView")
-    assert key_missing and duplicates.empty
-    assert converted["PersonViewId"].tolist() == ["row 1", "row 2"] and list(converted.columns)[0] == "PersonViewId"
+    assert not key_missing and duplicates.empty
+    assert converted["PersonViewId"].tolist() == ["person.ada", "person.bob"] and list(converted.columns)[0] == "PersonViewId"
     assert converted["GrantViewKey"].tolist() == ["CA111111, CA222222", "Affiliated/Non-Grant Associated"]
-    assert converted["ConsortiumKey"].tolist() == ["CSBC, HTAN", "PS-ON"]
+    assert converted["ConsortiumKey"].tolist() == ["program.csbc, program.htan", "program.ps-on"]
     assert converted["AlternativeNames"].tolist() == [[], ["Robert"]]
     assert converted["ChairRoles"].tolist() == [["Working Group", "Annual Meeting"], []]
     assert converted["PortalDisplay"].tolist() == ["TRUE", "FALSE"]
     assert converted["LastKnownInstitution"].tolist()[0] == "Columbia University"
-    assert set(changes["rule"]) == {"list_to_string", "enum_case"}
-    assert sorted(unmapped["value"]) == ["CSBC", "HTAN", "PS-ON"]
+    assert set(changes["rule"]) == {"list_to_string", "enum_case", "minted_key", "consortium_key"}
+    assert changes[changes["rule"] == "minted_key"][["key", "column", "from", "to"]].values.tolist() == [
+        ["person.ada", "PersonViewId", "", "person.ada"], ["person.bob", "PersonViewId", "", "person.bob"]]
+    assert unmapped.empty
+
+
+@pytest.mark.parametrize("name,key", [
+    ("Meenal Datta", "person.meenal-datta"), ("Cristina Caescu", "person.cristina-caescu"),
+    ("José  Núñez-O'Brien Jr.", "person.jose-nunez-o-brien-jr"), ("  Anil   Korkut ", "person.anil-korkut"),
+    ("Zoë Müller", "person.zoe-muller"), ("", ""), ("!!!", ""), (None, "")])
+def test_minted_person_keys(name, key):
+    assert adm.mint_person_key(name) == key
+
+
+def test_slug_collisions_and_blank_names_are_reported_not_disambiguated():
+    source = person_table()
+    source.loc[1, "name"] = "ADA"
+    source = pd.concat([source, source.iloc[[0]].assign(name="")], ignore_index=True)
+    converted, changes, unmapped, dropped, duplicates, key_missing = convert(source, "PersonView")
+    assert duplicates.to_dict("records") == [{"key": "person.ada", "rows": "1, 2"}, {"key": "", "rows": "3"}]
+    assert converted["PersonViewId"].tolist() == ["person.ada", "person.ada", ""]
 
 
 def test_duplicate_and_blank_keys_are_reported_not_resolved():
@@ -265,7 +307,7 @@ def test_unknown_header_fails_the_conversion():
 def test_dry_run_writes_nothing_to_synapse_and_writes_the_reports(tmp_path):
     fake = FakeSynapse()
     code, rep = run(tmp_path, fake)
-    assert code == 2  # unmapped consortium names and dates
+    assert code == 0  # every value maps and validates
     assert status_of(rep) == "dryrun"
     assert not fake.created and not fake.created_folders and not fake.writes
     for name in ("converted.csv", "changes.csv", "unmapped.csv", "validation.csv", "validation_counts.csv", "summary.txt"):
@@ -284,16 +326,35 @@ def test_duplicate_keys_fail_the_component_and_nothing_is_written(tmp_path):
     assert not fake.created and not fake.writes
 
 
-def test_a_source_without_a_key_column_fails_and_writes_nothing_even_with_execute(tmp_path):
+def test_person_keys_are_minted_and_compared_as_row_count_and_uniqueness(tmp_path):
     fake = FakeSynapse("PersonView", person_table())
+    code, rep = run(tmp_path, fake)
+    assert code == 2  # migrate-and-flag: ChairRoles required etc.
+    assert status_of(rep) == "dryrun"
+    assert csv_of(rep, "converted.csv")["PersonViewId"].tolist() == ["person.ada", "person.bob"]
+    assert set(csv_of(rep, "changes.csv")["rule"]) >= {"minted_key"}
+    text = (rep.parent / "comparison.txt").read_text()
+    assert "source table rows=2; converted rows=2; minted keys unique and non-blank=True" in text and "EQUAL" in text
+
+
+def test_person_key_collision_fails_and_writes_nothing_even_with_execute(tmp_path):
+    source = person_table()
+    source.loc[1, "name"] = "ADA"
+    fake = FakeSynapse("PersonView", source)
+    code, rep = run(tmp_path, fake, execute=True)
+    assert code == 1 and status_of(rep) == "failed"
+    assert csv_of(rep, "duplicates.csv").to_dict("records") == [{"key": "person.ada", "rows": "1, 2"}]
+    assert not fake.created and not fake.created_folders and not fake.writes
+    assert "DIFFERENT" in (rep.parent / "comparison.txt").read_text()
+
+
+def test_person_without_a_name_column_has_no_key_and_nothing_is_written(tmp_path):
+    fake = FakeSynapse("PersonView", person_table().drop(columns=["name"]))
     code, rep = run(tmp_path, fake, execute=True)
     assert code == 1 and status_of(rep) == "failed"
     assert "PersonViewId cannot be filled" in (rep / "summary.txt").read_text()
-    assert not fake.created and not fake.created_folders and not fake.writes
+    assert not fake.created and not fake.writes
     assert csv_of(rep, "converted.csv")["PersonViewId"].tolist() == ["", ""]
-    assert "only the row count is compared" in (rep.parent / "comparison.txt").read_text()
-    worklist = csv_of(rep.parent, "validation_worklist.csv")
-    assert {"row 1", "row 2"} <= set(worklist["key"])
     assert "PersonViewId" in set(csv_of(rep, "validation.csv")["field"])
 
 
