@@ -198,7 +198,7 @@ All of these come from your review notes and answers on 2026-10-26.
 
 | # | What | Unblocks |
 |---|---|---|
-| W4 | **Merge #166, then #167** (mc2-center-dcc) | Phase D, D17a PR, B3 |
+| W4 | **Merge #166, then #167, then #171** (mc2-center-dcc; #171 = migration follow-ups D-Q49–D-Q52) | Phase D, D17a PR, B3, E1 |
 | W5 | **Merge pipeline #12 → #13 → #14** (merge #167 before #14's JSON-array output is uploaded) | Pipeline output in 14.0.0 form |
 | W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approved, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
 | W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
@@ -227,7 +227,7 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | A4 P5 DOI form | ✅ | Pipeline `01e35ca`; DCC normalization in the migration value maps |
 | A5 report noise | ✅ | Pipeline `78b7b2b`, `016074c` |
 | A6 merges | ⏳ you (W4, W5) | |
-| A7 D17a deletions PR | ⏳ A6 | Branch `d17a-deletions` ready (9 commits, local) |
+| A7 D17a deletions PR | ⏳ A6 | Branch `d17a-deletions` ready (9 commits, local); its own PR after #167 merges |
 | B1 DM-14/DM-16 fixes | ✅ pushed to #277 (released as 14.1.0, D-Q45) | Merge and tag ⏳ W6 |
 | B2 verify 14.0.0; register 14.1.0 | ✅ verify; ⏳ W6/W7 register | |
 | B3 bump `MODEL_REF` to v14.1.0 | ⏳ B1 tag | Both repos; remove the pipeline's `Not-Applicable` workaround |
@@ -240,14 +240,14 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | D-2 Datasets `accessInformation` size 100 → 300 | ⏳ W4, W9 | Type changes dropped (D-Q51) |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
 | E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
-| E2 regenerate merged manifests (I6) | 🔄 | Branch `i6-merged-manifests` built and dry-run compared; dataset IDs wait for D-Q52 |
+| E2 regenerate merged manifests (I6) | ✅ code, PR #171 | Dry-run compared; `--upload` after E1 |
 | E3 bindings (I7) | ⬜ | Done per RecordSet by I5a; admin manifests remain |
 | E4 first sync (I9) | ⬜ | Dataset sync needs D-2's `accessInformation` change |
 | E5 communication (I10) | ⬜ | |
 | E6 archive legacy tables (I11) | ⬜ | Admin-folder move; delete `syn52750482` |
 | F orchestrator | ⬜ | After E1 |
-| Admin manifests (Grant / Project / PersonView → RecordSets) | 🔄 | D-Q50; branch `admin-recordsets` (dry runs only) |
-| DCC row-removal step (D-Q34) | 🔄 | Spike done (D-Q49); branch `dq34-row-removal` |
+| Admin manifests (Grant / Project / PersonView → RecordSets) | ✅ code, PR #171 | D-Q50; dry runs clean; live run after D-1 and W11 |
+| DCC row-removal step (D-Q34) | ✅ code, PR #171 | D-Q49; live-tested in `syn78387305`; production removals table created with W11 |
 
 ### Phase A: Land the code (no Synapse writes)
 | Step | Task | Owner/tier | Check |
