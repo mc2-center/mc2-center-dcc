@@ -249,7 +249,7 @@ def read_manifest(syn, manifest_id):
     Accepts both 13.1.0 and 14.0.0 headers: legacy headers are renamed
     (with a warning) before normalizing display names to keys.
     """
-    manifest = model_contract.read_manifest(syn, manifest_id)
+    manifest = model_contract.read_manifest(syn, manifest_id, component=COMPONENT)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     return model_contract.normalize_headers(manifest, to="keys")
 

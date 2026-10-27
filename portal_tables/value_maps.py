@@ -18,6 +18,8 @@ cells; list columns are split into Python lists) and records every change as
 * ``doi``: a bare DOI, ``doi:`` form or doi.org URL rewritten to ``https://doi.org/...`` (D-Q1).
 * ``doi_nonstandard``: any other URL in a DOI column; reported, value unchanged.
 * ``doi_placeholder``: ``No DOI Listed`` / ``DOI Not Available`` blanked (D-Q22).
+* ``date_iso``: ``m/d/yy`` or ``m/d/yyyy`` in a ``format: date`` column rewritten to
+  ``YYYY-MM-DD`` (two-digit years are ``20yy``); ISO dates are kept, anything else is unmapped.
 
 An exact valid value is kept and not recorded. A value no rule can map is left
 unchanged and reported as unmapped (except licenses, which are blanked).
@@ -32,6 +34,7 @@ the rest are reported in ``rejected_synonyms.csv``.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import re
@@ -214,6 +217,38 @@ def normalize_doi(value: str):
     return value, "unmapped"
 
 
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_US_DATE = re.compile(r"^(?P<m>\d{1,2})/(?P<d>\d{1,2})/(?P<y>\d{2}|\d{4})$")
+
+
+def normalize_date(value: str):
+    """``(new, rule)`` for a cell of a ``format: date`` column.
+
+    ``YYYY-MM-DD`` is kept. ``m/d/yy`` and ``m/d/yyyy`` become ISO (a two-digit
+    year is ``20yy``), rule ``date_iso``. Anything else, or a day that does not
+    exist, is ``unmapped``.
+    """
+    text = value.strip()
+    try:
+        if _ISO_DATE.match(text):
+            datetime.date.fromisoformat(text)
+            return value, None
+        match = _US_DATE.match(text)
+        if match:
+            year = int(match["y"]) + (2000 if len(match["y"]) == 2 else 0)
+            return datetime.date(year, int(match["m"]), int(match["d"])).isoformat(), "date_iso"
+    except ValueError:
+        pass
+    return value, "unmapped"
+
+
+def date_columns(component: str, ref: str | None = None) -> set[str]:
+    """Class-label names of the component's ``format: date`` properties (``json_schemas/<component>.json``)."""
+    with open(model_contract.fetch(f"json_schemas/{component}.json", ref=ref), encoding="utf-8") as fh:
+        properties = json.load(fh)["properties"]
+    return {k for k, v in properties.items() if v.get("format") == "date"}
+
+
 ROW = "\x00row"  # third element of a per-row override key: ``(column, row key, ROW)``, or
 # ``(column, row key, ROW, grant)`` when the CSV row names a grant
 ACCEPTED = frozenset({"y", "yes", "true", "1", "x", "accept", "accepted"})
@@ -279,8 +314,9 @@ def write_override_template(differences_csv, path) -> int:
 class Normalizer:
     """Apply every rule to a frame of one component."""
 
-    def __init__(self, component, enum_maps, code_to_id, overrides=None, list_cols=()):
+    def __init__(self, component, enum_maps, code_to_id, overrides=None, list_cols=(), date_cols=()):
         self.component = component
+        self.date_cols = set(date_cols)
         self.enum_maps = enum_maps
         self.code_to_id = code_to_id
         self.overrides = overrides or {}
@@ -299,6 +335,7 @@ class Normalizer:
             sync_datasets.duo_code_to_id(),
             overrides,
             recordsets.list_columns(component),
+            date_columns(component, ref),
         )
         norm.rejected = pd.DataFrame(rejected, columns=REJECTED_COLUMNS).drop_duplicates()
         return norm
@@ -322,6 +359,8 @@ class Normalizer:
             return value, "truncated"
         if column.endswith("Doi"):
             return normalize_doi(value)
+        if column in self.date_cols:
+            return normalize_date(value)
         if column == "DatasetDataUseCodes":
             if _DUO_VALID.match(value):
                 return value, None
