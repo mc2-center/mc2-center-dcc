@@ -162,7 +162,10 @@ def test_license_maps_to_spdx_and_blanks_what_it_cannot_map():
     "doi:10.1038/s41586-020-1234-5",
     "http://dx.doi.org/10.1038/s41586-020-1234-5",
     "HTTPS://DOI.ORG/10.1038/s41586-020-1234-5",
-    " https://www.nature.com/doi/10.1038/s41586-020-1234-5",
+    "https://www.doi.org/10.1038/s41586-020-1234-5",
+    "https://doi.org/10.1038/s41586-020-1234-5.",
+    "10.1038/s41586-020-1234-5),",
+    "doi: 10.1038/s41586-020-1234-5;",
 ])
 def test_doi_is_normalized_to_https_doi_org(raw):
     row, changes, _ = run(normalizer(), PublicationDoi=raw)
@@ -171,8 +174,8 @@ def test_doi_is_normalized_to_https_doi_org(raw):
 
 
 def test_canonical_doi_is_unchanged():
-    row, changes, _ = run(normalizer(), PublicationDoi="https://doi.org/10.1/abc")
-    assert row["PublicationDoi"] == "https://doi.org/10.1/abc" and changes.empty
+    row, changes, _ = run(normalizer(), PublicationDoi="https://doi.org/10.1000/abc")
+    assert row["PublicationDoi"] == "https://doi.org/10.1000/abc" and changes.empty
 
 
 @pytest.mark.parametrize("placeholder", ["No DOI Listed", "DOI Not Available", "no doi listed", "https://doi.org/No DOI listed", "https://doi.org/"])
@@ -259,3 +262,16 @@ def test_override_beats_truncated():
     norm = normalizer({("Assay", "Sin(Read more on Pubmed)"): "RNA Sequencing"})
     row, changes, _ = run(norm, Assay="Sin(Read more on Pubmed)")
     assert row["Assay"] == ["RNA Sequencing"] and changes["rule"].tolist() == ["override"]
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.biorxiv.org/content/10.1101/2020.01.01.123456v2.full",
+    "https://pubs.acs.org/doi/10.1021/acs.jmedchem.0c00001?ref=pdf",
+    "https://www.nature.com/articles/10.1038/s41586-020-1234-5",
+    "http://example.org/doi.org/10.1000/abc",
+])
+def test_other_urls_are_left_unchanged_and_reported_as_nonstandard(url):
+    row, changes, unmapped = run(normalizer(), PublicationDoi=url)
+    assert row["PublicationDoi"] == url and unmapped.empty
+    assert changes.to_dict("records") == [{"key": "p1", "column": "PublicationDoi", "from": url, "to": url,
+                                           "rule": "doi_nonstandard"}]

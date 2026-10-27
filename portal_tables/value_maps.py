@@ -15,7 +15,8 @@ cells; list columns are split into Python lists) and records every change as
 * ``truncated``: an enum or list cell ending ``(Read more on Pubmed)``, cut off
   by an old export; reported with the value unchanged (not unmapped), it needs
   recovering from the source record.
-* ``doi``: a DOI rewritten to ``https://doi.org/...`` (D-Q1).
+* ``doi``: a bare DOI, ``doi:`` form or doi.org URL rewritten to ``https://doi.org/...`` (D-Q1).
+* ``doi_nonstandard``: any other URL in a DOI column; reported, value unchanged.
 * ``doi_placeholder``: ``No DOI Listed`` / ``DOI Not Available`` blanked (D-Q22).
 
 An exact valid value is kept and not recorded. A value no rule can map is left
@@ -46,7 +47,6 @@ UNMAPPED_COLUMNS = ["key", "column", "value"]
 DOI_PLACEHOLDERS = frozenset({"no doi listed", "doi not available"})
 TRUNCATED_SUFFIX = "(Read more on Pubmed)"
 DOI_PREFIX = "https://doi.org/"
-_DOI_RE = re.compile(r"(10\.\d{4,9}/\S+)", re.IGNORECASE)
 _DUO_VALID = re.compile(r"^(DUO:\d{7}|DUOPlus\d+|Pending Annotation)$")
 
 
@@ -170,18 +170,33 @@ def load_enum_maps(component: str, rejected: list | None = None, ref: str | None
     return maps
 
 
+_DOI_URL = re.compile(r"^https?://(?:www\.|dx\.)?doi\.org/(?P<doi>10\.\d{4,9}/\S+)$", re.IGNORECASE)
+_DOI_PREFIXED = re.compile(r"^doi:\s*(?P<doi>10\.\d{4,9}/\S+)$", re.IGNORECASE)
+_DOI_BARE = re.compile(r"^(?P<doi>10\.\d{4,9}/\S+)$")
+
+
 def normalize_doi(value: str):
-    """``(new, rule)`` for a DOI cell; ``rule`` is ``"unmapped"`` when it holds no DOI."""
+    """``(new, rule)`` for a DOI cell.
+
+    Only a bare DOI, a ``doi:`` prefix and ``doi.org`` / ``dx.doi.org`` /
+    ``www.doi.org`` URLs are rewritten to ``https://doi.org/<doi>`` (trailing
+    ``.``, ``,``, ``)`` and ``;`` stripped). Placeholders become blank. Any other
+    URL is left unchanged with rule ``doi_nonstandard`` (reported, not unmapped);
+    other text is ``unmapped``.
+    """
     text = value.strip()
     # a placeholder may already carry the prefix ("https://doi.org/No DOI listed"), or be only the prefix
-    bare = re.sub(r"^https?://(dx\.)?doi\.org/", "", text, flags=re.IGNORECASE).strip().casefold()
+    bare = re.sub(r"^https?://(www\.|dx\.)?doi\.org/", "", text, flags=re.IGNORECASE).strip().casefold()
     if bare in DOI_PLACEHOLDERS or (bare == "" and text != ""):
         return "", "doi_placeholder"
-    match = _DOI_RE.search(text)
-    if not match:
-        return value, "unmapped"
-    new = DOI_PREFIX + match.group(1)
-    return new, (None if new == value else "doi")
+    for pattern in (_DOI_URL, _DOI_PREFIXED, _DOI_BARE):
+        match = pattern.match(text)
+        if match:
+            new = DOI_PREFIX + match.group("doi").rstrip(".,);")
+            return new, (None if new == value else "doi")
+    if re.match(r"^https?://", text, flags=re.IGNORECASE):
+        return value, "doi_nonstandard"
+    return value, "unmapped"
 
 
 def load_overrides(path) -> dict[tuple[str, str], str]:
@@ -278,7 +293,7 @@ class Normalizer:
         new, rule = self._value(column, value)
         if rule == "license_blanked":
             unmapped.append({"key": key, "column": column, "value": value})  # blanked and reported (O6)
-        if rule == "truncated":
+        if rule in ("truncated", "doi_nonstandard"):  # reported, value unchanged
             changes.append({"key": key, "column": column, "from": value, "to": value, "rule": rule})
             return value
         if rule == "unmapped":
