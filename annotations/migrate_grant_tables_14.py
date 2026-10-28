@@ -857,7 +857,8 @@ def convert_table(source: pd.DataFrame, component: str, normalizer: "value_maps.
     if info is not None:
         new_keys = [str(v).strip() for v in df[key]]
         info["remapped"] = {n: old_keys[i] for n, i in zip(new_keys, kept) if n != old_keys[i]}
-        info["dropped_keys"] = [old_keys[i] for i in range(len(old_keys)) if i not in set(kept)]
+        kept_rows = set(kept)
+        info["dropped_keys"] = [old_keys[i] for i in range(len(old_keys)) if i not in kept_rows]
         info["manifest_ids"] = counts
         info["choices_used"] = sorted(set(resolutions.loc[resolutions["reason"] == "owner choice", "key"]))
         info["id_worklist"] = id_worklist

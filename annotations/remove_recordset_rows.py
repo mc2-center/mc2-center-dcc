@@ -267,7 +267,8 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
             summary.update(status="nothing_to_remove", message=f"none of the requested keys is in v{latest}")
             return summary
 
-        remaining = current[[k not in set(to_remove) for k in _keys_of(current, key_cols)]]
+        drop = set(to_remove)
+        remaining = current[[k not in drop for k in _keys_of(current, key_cols)]]
         report_dir.mkdir(parents=True, exist_ok=True)
         path = report_dir / "removal.csv"
         recordsets.to_csv(remaining, path)
