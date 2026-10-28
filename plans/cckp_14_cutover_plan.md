@@ -202,10 +202,10 @@ All of these come from your review notes and answers on 2026-10-26.
 | W5 | **Merge pipeline #12 → #13 → #14** (merge #167 before #14's JSON-array output is uploaded) | Pipeline output in 14.0.0 form |
 | W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approved, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
 | W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
-| W8 | **Go-ahead: Consortium table update** (`consortiumId` + 3 approved rows) 🔒 | D-1, then people sync |
-| W9 | **Go-ahead: the Datasets `accessInformation` size change** 🔒, after W4 | D-2 |
+| W8 | ✅ Done 2026-10-27: Consortium table update (`consortiumId` + 3 approved rows) | D-1, then people sync |
+| W9 | ✅ Done 2026-10-27: the Datasets `accessInformation` size change (check the portal's Datasets page) | D-2 |
 | W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`) and the migration's value changes in section 2.3 (especially the lower-case terms), and the D-Q52 curator worklists from the migration dry run: `manifest_differences.csv` (85 dataset and 5 publication cells; accept rows through the `--write-override-template` CSV) and `manifest_id_worklist.csv` (26 alias collisions, 4 aliases with two manifest IDs, 29 rows newer than the manifest). The 2 duplicate ties of D-Q44 are now decided by the merged manifest, so no hand pick is needed | Cleaner E1 validation |
-| W11 | **Go-ahead: create the production write-log table** in CCKP - MC2 Admin and migrate a first small batch of grants 🔒, after W6/W7 | E1 |
+| W11 | Write-log (`syn78404341`) and removals (`syn78404342`) tables created 2026-10-27. **Go-ahead: migrate a first small batch of grants** 🔒, after W6/W7 | E1 |
 | W12 | **Merge data-models #278** (kg schema, D-Q48), after #277 | kg-pipeline splits comma-joined licenses and investigators into items; no longer gates D-2 (D-Q51) |
 | W3 | Go-ahead for each other 🔒 step as it comes up. Deletions are confirmed against a printed list. | — |
 
@@ -236,8 +236,8 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | C1–C7 RecordSet spike, grant creation, rollback rehearsal | ✅ | G1 = RecordSets (D-Q29) |
 | C5 D11 / D12 / D15 | ✅ | Plus the reconciliation rework (D-Q32–D-Q37) |
 | C8 clear the test project | ⏳ after I9 | |
-| D-1 Consortium table | ⏳ W8 | |
-| D-2 Datasets `accessInformation` size 100 → 300 | ⏳ W4, W9 | Type changes dropped (D-Q51) |
+| D-1 Consortium table | ✅ 2026-10-27 | `consortiumId` + HTAN, NCI, Sage Bionetworks; infrastructure report |
+| D-2 Datasets `accessInformation` size 100 → 300 | ✅ 2026-10-27 | Verified by crosswalk check and sync dry run; portal page check pending |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
 | E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
 | E2 regenerate merged manifests (I6) | ✅ code, PR #171 | Dry-run compared; `--upload` after E1 |
