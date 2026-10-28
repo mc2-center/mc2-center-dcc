@@ -79,10 +79,17 @@ def _regenerate(tmp_path, mapping_csv, grants, **kw):
 def test_no_schematic_subprocess():
     assert not hasattr(uq, "subprocess")
     assert not hasattr(uq, "trim_tables") and not hasattr(uq, "parse_out")
-    with pytest.raises(SystemExit):  # the schematic config argument is gone
-        uq.get_args(["-c", "config.yml"])
-    with pytest.raises(SystemExit):  # so is trimming
-        uq.get_args(["-t"])
+
+
+def test_deprecated_sop_flags_are_accepted_but_ignored(caplog):
+    """CCKP SOP commands still pass -c (schematic config), -t (trim) and -bl (rows to trim)."""
+    with caplog.at_level("WARNING"):
+        args = uq.get_args(["-l", "syn1", "-c", "~/qc_config.yml", "-p", "m.csv", "-m", "-s", "-db"])
+        args2 = uq.get_args(["-tp", "x_updated.csv", "-c", "~/qc_config.yml", "-p", "m.csv", "-t", "-bl", "rows.csv"])
+    assert args.l == ["syn1"] and args.m and args.s and args.db and args2.tp == "x_updated.csv"
+    text = caplog.text
+    assert "-c is deprecated" in text and "-t is deprecated" in text and "-bl is deprecated" in text
+    assert "jsonschema" in text and "never trimmed" in text
 
 
 def test_headers_are_display_names_in_template_order(tmp_path, mapping_csv):

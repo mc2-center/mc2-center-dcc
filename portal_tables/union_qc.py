@@ -145,6 +145,10 @@ def get_args(argv=None):
     # legacy mode
     parser.add_argument("-l", nargs="+", help="Legacy mode: Synapse table IDs to query.")
     parser.add_argument("-p", help="Legacy mode: path to mapping CSV")
+    # Deprecated legacy flags: accepted so existing SOP commands keep running, otherwise ignored.
+    parser.add_argument("-c", default=None, help="Deprecated, ignored: schematic config (validation is now jsonschema).")
+    parser.add_argument("-t", action="store_true", help="Deprecated, ignored: rows are never trimmed.")
+    parser.add_argument("-bl", default=None, help="Deprecated, ignored: row numbers to trim (rows are never trimmed).")
     parser.add_argument(
         "-tp", required=False, default=None, help="Legacy mode: path to a manifest CSV to validate (and merge with -m)."
     )
@@ -169,7 +173,12 @@ def get_args(argv=None):
         help="""Boolean; if flag is provided,
         column labels will be added to updated output to indicate table source.""",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    for flag, given in (("-c", args.c), ("-t", args.t), ("-bl", args.bl)):
+        if given:
+            logger.warning("%s is deprecated and ignored: validation is now jsonschema (no schematic config) "
+                           "and rows are never trimmed", flag)
+    return args
 
 
 def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tuple[pd.DataFrame | str, str]]:
