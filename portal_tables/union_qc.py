@@ -44,6 +44,7 @@ import os
 import pandas as pd
 from pathlib import Path
 import re
+import comma_terms
 import manifest_cleanup
 import merge_tables
 import model_contract
@@ -377,11 +378,24 @@ def alias_column(mapping: pd.DataFrame, component: str) -> str | None:
     return rows["attribute"].iat[0] if len(rows) else None
 
 
+_MANGLED_KEY = re.compile(r"^\d{1,3}(,\d{3})+$")  # as migrate_grant_tables_14._MANGLED_KEY
+
+
+def _cell_items(column: str, value) -> list[str]:
+    """The items of a list cell: known comma-containing terms kept whole in a keyword column (MeSH names
+    such as ``Neoplasms, Experimental``), JSON arrays and plain comma text parsed as everywhere else."""
+    if isinstance(value, str) and _MANGLED_KEY.match(value.strip()):
+        return [value.strip()]  # a spreadsheet-mangled PMID key (D-Q35): one item, for apply_key_corrections
+    if comma_terms.is_keyword_column(column.replace(" ", "")):  # a display name or a class label
+        return comma_terms.split_keyword_cell(value)
+    return utils.split_cell(value)
+
+
 def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
     """Merge rows that share the alias key, as ``combine_rows`` did for the live manifests.
 
     The first row's value is kept ("first"); the join columns collect the distinct
-    items of every row, comma-joined, in first-seen order. Rows are ordered by alias;
+    items of every row, ``", "``-joined like ``assemble_union`` writes them, in first-seen order. Rows are ordered by alias;
     rows with a blank alias are never merged and follow at the end. The id column
     (``idColumn``) must agree: a group whose rows hold more than one distinct id is
     still comma-joined in the output but is listed in ``stats["id_conflicts"]``
@@ -405,7 +419,7 @@ def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
     for _, group in union[~blank].groupby(alias, sort=True):
         row = group.iloc[0].to_dict()
         for col in join_cols:
-            row[col] = ",".join(dict.fromkeys(i for v in group[col] for i in utils.split_cell(v)))
+            row[col] = ", ".join(dict.fromkeys(i for v in group[col] for i in _cell_items(col, v)))
         stats["merged_groups"] += int(len(group) > 1)
         if id_col in union.columns and len(group) > 1:
             ids = list(dict.fromkeys(i for v in group[id_col] for i in utils.split_cell(v)))

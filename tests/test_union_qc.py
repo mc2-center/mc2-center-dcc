@@ -117,9 +117,9 @@ def test_rows_with_the_same_alias_merge_keys_and_keep_first_values(tmp_path, map
     assert len(manifest) == 1
     row = manifest.iloc[0]
     assert row["Dataset Name"] == "first"
-    assert row["GrantView Key"] == "CA100001,CA100002"
+    assert row["GrantView Key"] == "CA100001, CA100002"
     assert row["DatasetView_id"] == "syn1"  # identical ids are not repeated
-    assert row["PublicationView Key"] == "11111111,22222222"
+    assert row["PublicationView Key"] == "11111111, 22222222"
 
 
 def test_invalid_rows_are_kept_and_reported(tmp_path, mapping_csv):
@@ -247,3 +247,25 @@ def test_upload_is_refused_while_id_conflicts_exist(tmp_path, mapping_csv):
         with pytest.raises(SystemExit, match="id_conflicts"):
             uq.regenerate_main(args)
     upload.assert_not_called()
+
+
+def test_merge_keeps_comma_terms_whole_and_joins_with_comma_space():
+    mapping = pd.DataFrame([
+        ("PublicationView", "Publication Alias", "first", "aliasColumn"),
+        ("PublicationView", "PublicationView_id", '",".join', "idColumn"),
+        ("PublicationView", "GrantView Key", '",".join', "grantColumn"),
+        ("PublicationView", "Publication Keywords", '",".join', ""),
+        ("PublicationView", "Assay", '",".join', ""),
+    ], columns=["component", "attribute", "mapping", "tag"])
+    union = pd.DataFrame([
+        {"Publication Alias": "P", "PublicationView_id": "syn1", "GrantView Key": "CA1",
+         "Publication Keywords": "Mammary Neoplasms, Experimental, Humans", "Assay": '["RNA Sequencing", "ATAC-Seq"]'},
+        {"Publication Alias": "P", "PublicationView_id": "syn1", "GrantView Key": "CA2",
+         "Publication Keywords": "Humans, Mammary Neoplasms, Experimental", "Assay": "ATAC-Seq, Imaging"},
+    ])
+    merged, stats = uq.merge_by_alias(union, "PublicationView", mapping)
+    row = merged.iloc[0]
+    assert row["Publication Keywords"] == "Mammary Neoplasms, Experimental, Humans"  # the term is not split and doubled
+    assert row["Assay"] == "RNA Sequencing, ATAC-Seq, Imaging"
+    assert row["GrantView Key"] == "CA1, CA2" and row["PublicationView_id"] == "syn1"
+    assert stats["id_conflicts"] == []
