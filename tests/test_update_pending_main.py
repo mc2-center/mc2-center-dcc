@@ -11,7 +11,7 @@ def test_dryrun_does_not_upload(monkeypatch, tmp_path):
     uploads = []
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("builtins.input", lambda *_: "y")
-    monkeypatch.setattr(upa, "login", lambda: object())
+    monkeypatch.setattr(upa._portal_utils, "syn_login", lambda: object())
     monkeypatch.setattr(
         upa,
         "get_args",
@@ -29,7 +29,7 @@ def test_dryrun_does_not_upload(monkeypatch, tmp_path):
 def test_real_run_uploads(monkeypatch, tmp_path):
     uploads = []
     monkeypatch.setattr("builtins.input", lambda *_: "y")
-    monkeypatch.setattr(upa, "login", lambda: object())
+    monkeypatch.setattr(upa._portal_utils, "syn_login", lambda: object())
     monkeypatch.setattr(
         upa,
         "get_args",

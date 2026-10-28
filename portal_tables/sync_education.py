@@ -6,15 +6,16 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import re
-from synapseclient import operations
+import crosswalk
+import model_contract
 import utils
 
 def add_missing_info(
     education: pd.DataFrame) -> pd.DataFrame:
     """Add missing information into table before syncing."""
 
-    url_pattern = re.compile(".*(synapse\.org).*")
-    alias_pattern = re.compile("^syn\d{7,8}$")
+    url_pattern = re.compile(r".*(synapse\.org).*")
+    alias_pattern = re.compile(r"^syn\d{7,8}$")
     education["synapseLink"] = ""
     if "iconTags" not in education.columns:
         education["iconTags"] = ""
@@ -31,7 +32,7 @@ def add_missing_info(
         syn_links = ", ".join(formatted_syn_link_list)
         education.at[_, "synapseLink"] = syn_links
 
-        education.at[_, "ResourceTopic"] = ", ".join(set([topic for topic in row["ResourceTopic"].split(", ") if topic != "Diversity/Equity/Inclusion"]))
+        education.at[_, "ResourceTopic"] = ", ".join(dict.fromkeys(topic for topic in row["ResourceTopic"].split(", ") if topic != "Diversity/Equity/Inclusion"))
         
         for key_col, external_link_col in zip(["DatasetViewKey", "ToolViewKey"], ["ResourceDatasetAlias", "ResourceToolLink"]):
             key_links = [f"[{key}](https://www.synapse.org/#!Synapse:{key})" for key in row[key_col].split(", ") if row[key_col]]
@@ -40,67 +41,13 @@ def add_missing_info(
     
     return education
 
-def clean_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean up the table one final time."""
-    
-    df = df.rename(columns={
-        "GrantViewKey": "ResourceGrantNumber",
-        "PublicationViewKey": "ResourcePubmedId"
-    })
-    
-    # Convert string columns to string-list.
-    cols = [
-        "ResourceTopic",
-        "ResourceActivityType",
-        "ResourcePrimaryFormat",
-        "ResourceIntendedUse",
-        "ResourcePrimaryAudience",
-        "ResourceEducationalLevel",
-        "ResourceOriginInstitution",
-        "ResourceLanguage",
-        "ResourceContributors",
-        "ResourceGrantNumber",
-        "ResourceSecondaryTopic",
-        "ResourceMediaAccessibility",
-        "ResourceAccessHazard",
-        "ResourcePubmedId",
-        "iconTags"
-    ]
-    
-    for col in cols:
-        df[col] = utils.convert_to_stringlist(pd.Series(df[col].values.flatten()))
+def clean_table(df: pd.DataFrame, live_types: dict[str, str]) -> pd.DataFrame:
+    """Convert to the portal table's shape (names, order and list columns)."""
 
-    # Ensure columns match the table order.
-    col_order = [
-        "Component",
-        "ResourceTitle",
-        "ResourceLink",
-        "ResourceTopic",
-        "ResourceActivityType",
-        "ResourcePrimaryFormat",
-        "ResourceIntendedUse",
-        "ResourcePrimaryAudience",
-        "ResourceEducationalLevel",
-        "ResourceDescription",
-        "ResourceOriginInstitution",
-        "ResourceLanguage",
-        "ResourceContributors",
-        "ResourceGrantNumber",
-        "ResourceSecondaryTopic",
-        "ResourceLicense",
-        "ResourceUseRequirements",
-        "ResourceAlias",
-        "ResourceInternalIdentifier",
-        "ResourceMediaAccessibility",
-        "ResourceAccessHazard",
-        "ResourceDatasetAlias",
-        "ResourceToolLink",
-        "ResourceDoi",
-        "synapseLink",
-        "ResourcePubmedId",
-        "iconTags"
-    ]
-    return df[col_order]
+    if "iconTags" not in df.columns:
+        df["iconTags"] = ""
+
+    return crosswalk.to_portal(df, "EducationalResource", live_types)
 
 
 def main():
@@ -111,8 +58,9 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path).fillna("")
-    manifest.columns = manifest.columns.str.replace(" ", "")
+    manifest = utils.fill_blank(model_contract.read_manifest(syn, args.manifest_id))
+    manifest = model_contract.rename_legacy_headers(manifest, "EducationalResource")
+    manifest = model_contract.normalize_headers(manifest, to="keys")
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
@@ -120,14 +68,22 @@ def main():
 
     print("Processing educational resource staging database...")
     database = add_missing_info(manifest)
-    final_database = clean_table(database)
+    live_types = crosswalk.check_crosswalk(
+        syn, args.portal_table_id, "EducationalResource"
+    )
+    final_database = clean_table(database, live_types)
     if args.verbose:
         print("\n🔍 Educational resource(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
     if not args.dryrun:
-        utils.update_table(syn, args.portal_table_id, final_database)
+        utils.update_table(
+            syn,
+            args.portal_table_id,
+            final_database,
+            component="EducationalResource",
+        )
         print()
 
     if not args.noprint:

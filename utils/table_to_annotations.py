@@ -18,10 +18,27 @@ author: orion.banks
 
 from synapseclient import Synapse
 import argparse
+import os
 import pandas as pd
 import re
+import sys
 
-from synapseclient.models import RecordSet, Table
+from synapseclient.models import Table
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -92,33 +109,47 @@ def get_args():
     return parser.parse_args()
 
 
-def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool = False) -> pd.DataFrame:
-    """Collect columns from a Synapse table entity and return as a Dataframe."""
+def get_table(
+    syn,
+    source_id: str,
+    cols: str | list = "*",
+    is_record_set: bool = False,
+    legacy_component: str | None = None,
+) -> pd.DataFrame:
+    """Collect columns from a Synapse table entity and return as a Dataframe.
 
-    if type(cols) == list and is_record_set is False:
-        cols = ", ".join(["".join(['"', col, '"']) for col in cols])
-    
-    if is_record_set:
-        file = RecordSet(id=source_id).get(synapse_client=syn)
-        data = file.path
-        table = pd.read_csv(data, header=0, dtype=str).fillna("")
-        table = table[cols]
-        for _, row in table.iterrows():
-            for col in cols:
-                entry = re.findall(r'"(.*?)"', row[col])
-                table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
+    If ``legacy_component`` is given, the source may still use 13.1.0 headers:
+    the whole table is read, renamed with ``rename_legacy_headers``, and then
+    ``cols`` (14.0.0 display names) is selected.
+    """
+
+    wanted = cols
+    whole_table = is_record_set or legacy_component is not None or cols == "*"
+
+    if whole_table:
+        table = _portal_utils.fill_blank(model_contract.read_manifest(syn, source_id))
+        if legacy_component is not None:
+            table = model_contract.rename_legacy_headers(table, legacy_component)
+        if type(wanted) == list:
+            table = table[wanted]
+        if is_record_set:
+            for _, row in table.iterrows():
+                for col in table.columns:
+                    entry = re.findall(r'"(.*?)"', row[col])
+                    table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
     else:
-        query = f"SELECT {cols} FROM {source_id}"
-        table = (
-            Table(id=source_id)
-            .query(
-                query=query,
+        # A column subset of a table or view is queried directly, so a wide
+        # FileView isn't pulled whole.
+        if type(cols) == list:
+            cols = ", ".join(["".join(['"', col, '"']) for col in cols])
+        table = _portal_utils.fill_blank(
+            Table(id=source_id).query(
+                query=f"SELECT {cols} FROM {source_id}",
                 include_row_id_and_row_version=False,
                 synapse_client=syn,
             )
-            .fillna("")
         )
-    
+
     print(f"Data acquired from Synapse table {source_id}")
 
     return table
@@ -230,7 +261,8 @@ def collect_database_annotations(
 
     component, table_id, column_list = info_tuple
 
-    data_table = get_table(syn, table_id, column_list, is_record_set)
+    legacy_component = component if component == "DatasetView" else None
+    data_table = get_table(syn, table_id, column_list, is_record_set, legacy_component)
     metadata = None
 
     if component == "DatasetView":
@@ -287,8 +319,7 @@ def apply_annotations_to_entity(
 
 def main():
 
-    syn = Synapse()
-    syn.login()
+    syn = syn_login()
 
     args = get_args()
 
@@ -432,23 +463,9 @@ def main():
        "ChannelSubcycleNumber1",
     ]
 
+    # Read from the template so the column list can't drift from the model.
     datasetview_columns = [
-        "DatasetView_id",
-        "GrantView Key",
-        "Study Key",
-        "PublicationView Key",
-        "Dataset Name",
-        "Dataset Alias",
-        "Dataset Description",
-        "Dataset Design",
-        "Dataset Assay",
-        "Dataset Species",
-        "Dataset Tumor Type",
-        "Dataset Tissue",
-        "Dataset Url",
-        "Dataset Doi",
-        "Dataset File Formats",
-        "Data Use Codes",
+        h for h in model_contract.template_headers("DatasetView") if h != "Component"
     ]
 
     ada_psi_study_columns = [
@@ -535,7 +552,7 @@ def main():
             collect_record_annotations(syn, image_channel_tuple, channel_dict, keys_to_drop, is_record_set)
 
     if datasetview_table is not None:
-        collect_database_annotations(syn, target, dataset_info_tuple, keys_to_drop=None, is_record_set=is_record_set)
+        collect_database_annotations(syn, target, dataset_info_tuple, keys_to_drop=[], is_record_set=is_record_set)
     
     if ada_psi_study_table is not None:
         if duo_only is True:

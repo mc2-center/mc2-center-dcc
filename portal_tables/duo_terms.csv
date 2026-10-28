@@ -1,0 +1,33 @@
+id,shorthand,label,portal_text,source
+DUO:0000042,GRU,General Research Use,General Research Use - This data use permission indicates that use is allowed for general research use for any research purpose.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000027,PS,Project Specific Restriction,Project Specific Restriction - This data use modifier indicates that use is limited to use within an approved project.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000016,GSO,Genetic Studies Only,"Genetic Studies Only - This data use modifier indicates that use is limited to genetic studies only (i.e., studies that include genotype research alone or both genotype and phenotype research, but not phenotype research exclusively)",governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000029,RTN,Return to Database or Resource,Return to Database or Resource - This data use modifier indicates that the requestor must return derived/enriched data to the database/resource.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000043,CC,Clinical Care Use,Clinical Care Use - This data use modifier indicates that use is allowed for clinical use and care.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000015,NMDS,No General Methods Research,"No General Methods Research - This data use modifier indicates that use does not allow methods development research (e.g., development of software or algorithms).",governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000004,NRES,No Restriction,No Restriction - This data use permission indicates there is no restriction on use.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000045,NPU,Not-for-Profit Organisation Use Only,Not-for-Profit Organisation Use Only - This data use modifier indicates that use of the data is limited to not-for-profit organizations.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000017,DUM,,Data use modifiers indicate additional conditions for use.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000011,POA,Population Origins or Ancestry Research Only,Population Origins or Ancestry Research Only - This data use permission indicates that use of the data is limited to the study of population origins or ancestry.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000046,NCU,Non-Commercial Use Only,Non-Commercial Use Only - This data use modifier indicates that use of the data is limited to not-for-profit use.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000018,NPUNCU,"Not-for-Profit, Non-Commercial Use Only","Not-for-Profit, Non-Commercial Use Only - This data use modifier indicates that use of the data is limited to not-for-profit organizations and not-for-profit use, non-commercial use.",governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000044,NPOA,Population Origins or Ancestry Research Prohibited,"Population Origins or Ancestry Research Prohibited - This data use modifier indicates use for purposes of population, origin, or ancestry research is prohibited.",governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000021,IRB,Ethics Approval Required,Ethics Approval Required - This data use modifier indicates that the requestor must provide documentation of local IRB/ERB approval.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000006,HMB,Health or Medical or Biomedical Research,Health or Medical or Biomedical Research - This data use permission indicates that use is allowed for health/medical/biomedical purposes; does not include the study of population origins or ancestry.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000019,PUB,Publication Required,Publication Required - This data use modifier indicates that requestor agrees to make results of studies using the data available to the larger scientific community.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000026,US,User Specific Restriction,User Specific Restriction - This data use modifier indicates that use is limited to use by approved users.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000020,COL,Collaboration Required,Collaboration Required - This data use modifier indicates that the requestor must agree to collaboration with the primary study investigator(s).,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000012,RS,Research Specific Restrictions,Research Specific Restrictions - This data use modifier indicates that use is limited to studies of a certain research type.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000025,TS,Time Limit on Use,Time Limit on Use - This data use modifier indicates that use is approved for a specific number of months.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000024,MOR,Publication Moratorium,Publication Moratorium - This data use modifier indicates that requestor agrees not to publish results of studies until a specific date.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000028,IS,Institution Specific Restriction,Institution Specific Restriction - This data use modifier indicates that use is limited to use within an approved institution.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000022,GS,Geographical Restriction,Geographical Restriction - This data use modifier indicates that use is limited to within a specific geographic region.,governanceDUO@868f184 linkml/mixins.yaml
+DUO:0000007,DS,Disease Specific Research,Disease Specific Research - This data use permission indicates that use is allowed provided it is related to the specified disease.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus1,,,Source geography is relevant to governance decisions.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus2,,,Study population is relevant to governance decisions.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus3,,,Data deidentification is relevant to governance decisions.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus4,,,A data permission designation is associated with the Study.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus5,,,A data tier designation is associated with the Study.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus6,,,A license is associated with the Study.,governanceDUO@868f184 linkml/mixins.yaml
+DUOPlus7,,,Attribution conditions are associated with this Study.,governanceDUO@868f184 linkml/mixins.yaml
+Pending Annotation,,,The data use modifier for this record has not yet been annotated.,governanceDUO@868f184 linkml/mixins.yaml

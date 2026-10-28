@@ -3,20 +3,22 @@ Check if Synapse user account is certified.
 Prints output to terminal, unless '-f' is provided as a flag at run time
 """
 
-from synapseclient import Synapse
 from synapseclient.models import UserProfile
 import argparse
 import pandas as pd
 from pathlib import Path
 
-
-### Login to Synapse ###
-def login():
-
-    syn = Synapse()
-    syn.login()
-
-    return syn
+import importlib.util
+import os
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -47,7 +49,7 @@ def get_status(syn, idList):
 
 def main():
 
-    syn = login()
+    syn = syn_login()
     args = get_args()
     out = get_status(syn, args.l)
 

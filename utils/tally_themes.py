@@ -4,11 +4,22 @@ This script will get a count of themes across the grants and
 consortiums in the CCKP. (Based on James' `nbs/portal_summary.Rmd`)
 """
 
-import re
+import argparse
+import os
 
-from synapseclient import Synapse
 from synapseclient.models import Table
 import pandas as pd
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 # Source table IDs
 GRANTS = "syn21918972"
@@ -116,28 +127,27 @@ def tally_by_group(syn, themes):
     return res[~res["theme"].isin(["Computational Resource"])]
 
 
-def update_table(syn, table_id, updated_table):
-    """Truncate table then add new rows."""
-    table = Table(id=table_id)
-    table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
-
-    # Strip embedded newlines/carriage returns from free-text cells. A literal
-    # line break inside a quoted CSV field survives synapseclient's row
-    # serialization (csv.writer with QUOTE_NONNUMERIC), but Synapse's
-    # server-side bulk CSV ingestion splits large uploads by scanning for
-    # newlines rather than parsing quotes, which corrupts the batch containing
-    # that row into blank rows. See the same fix in portal_tables/utils.py
-    # (row-version 2230/2231 duplicated blank rows in syn21897968).
-    updated_table = updated_table.map(
-        lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
+def get_args():
+    """Set up command-line interface and get arguments."""
+    parser = argparse.ArgumentParser(description="Tally themes in portal tables.")
+    parser.add_argument(
+        "--dryrun",
+        action="store_true",
+        help="Compute and print the tallies and write local CSVs, but make no "
+        "Synapse writes (the three destination tables are not truncated or updated).",
     )
-    table.store_rows(values=updated_table, synapse_client=syn)
+    parser.add_argument(
+        "--outdir",
+        default=".",
+        help="Directory for the local CSVs written by --dryrun. (Default: .)",
+    )
+    return parser.parse_args()
 
 
 def main():
     """Main function."""
-    syn = Synapse()
-    syn.login(silent=True)
+    args = get_args()
+    syn = syn_login()
 
     # Table of theme names and their descriptions.
     themes = (
@@ -160,9 +170,23 @@ def main():
     theme_consortium_counts = tally_by_theme_consortium(grants, themes)
     theme_counts = tally_by_group(syn, themes)
 
-    update_table(syn, CONSORTIUM_CTS, consortium_counts)
-    update_table(syn, CON_THEME_CTS, theme_consortium_counts)
-    update_table(syn, THEME_CTS, theme_counts)
+    results = {
+        CONSORTIUM_CTS: ("consortium_counts", consortium_counts),
+        CON_THEME_CTS: ("theme_consortium_counts", theme_consortium_counts),
+        THEME_CTS: ("theme_counts", theme_counts),
+    }
+
+    if args.dryrun:
+        os.makedirs(args.outdir, exist_ok=True)
+        for table_id, (name, df) in results.items():
+            path = os.path.join(args.outdir, f"{name}.csv")
+            df.to_csv(path, index=False)
+            print(f"[dryrun] {name}: {len(df)} rows for {table_id} -> {path}")
+        print("[dryrun] No Synapse tables were updated.")
+        return
+
+    for table_id, (_, df) in results.items():
+        _portal_utils.update_table(syn, table_id, df)
 
 
 if __name__ == "__main__":

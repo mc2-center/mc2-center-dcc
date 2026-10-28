@@ -39,18 +39,27 @@ author: orion.banks
 
 import argparse
 import io
-from IPython.display import display, Image
-import matplotlib.pyplot as plt
-import networkx as nx
 import os
 import pandas as pd
 from pathlib import Path
-from PIL import Image
-import pydotplus
 import rdflib
-from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
-from rdflib.tools import rdf2dot
 import re
+
+# Plotting dependencies (matplotlib, networkx, pydotplus, PIL) are imported
+# lazily in main(), only when -bg/-ig is requested.
+
+
+def is_template_mask(df: pd.DataFrame) -> pd.Series:
+	"""Boolean mask of template (node) rows.
+
+	Uses the IsTemplate column; models without it fall back to the older
+	convention of "Component" listed in DependsOn.
+	"""
+	if "IsTemplate" in df.columns:
+		return df["IsTemplate"].fillna("").astype(str).str.strip().str.lower() == "true"
+	if "DependsOn" in df.columns:
+		return df["DependsOn"].fillna("").astype(str).str.contains("Component")
+	raise ValueError("Model has neither an IsTemplate nor a DependsOn column; cannot find templates.")
 
 
 def get_args():
@@ -162,14 +171,15 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 	
 	# Step 1: Identify all node rows (treat rows with non-empty DependsOn as nodes)
 	if subset is None:
-		node_rows = input_df[input_df["DependsOn"].str.contains("Component")]
+		node_rows = input_df[is_template_mask(input_df)]
 		node_list = node_rows["Attribute"].to_list()
 		input_df = subset_model(input_df, node_list)
 	
-	node_rows = input_df[input_df["DependsOn"].str.contains("Component")]
+	template_mask = is_template_mask(input_df)
+	node_rows = input_df[template_mask]
 	node_list = node_rows["Attribute"].to_list()
 	
-	attribute_rows = input_df[~input_df["DependsOn"].str.contains("Component")].set_index("Attribute")
+	attribute_rows = input_df[~template_mask].set_index("Attribute")
 	attribute_to_node = {row["Attribute"]: str(row["DependsOn"]).split(", ") for _, row in node_rows.iterrows()}
 	attribute_info = set([(attribute, node) for node, attribute_list in attribute_to_node.items() for attribute in attribute_list])
 	
@@ -193,10 +203,11 @@ def convert_schematic_model_to_ttl_format(input_df: pd.DataFrame, org_name: str,
 		out_df.at[_, "node"] = row["Resolved_Node_URI"]
 		out_df.at[_, "is_key"] = "true" if "primary_key" in mappings[1] else ""
 		out_df.at[_, "required_by"] = row["Resolved_Node_URI"] if str(attribute_rows.loc[row["label"], "Required"]).strip().lower() == "true" else ""
-		out_df.at[_, "has_enum"] = '"[' + ", ".join(str(attribute_rows.loc[row["label"], "Valid Values"]).split(", ")) + ']"' if str(attribute_rows.loc[row["label"], "Valid Values"]) != "nan" else ""
+		valid_values = attribute_rows.loc[row["label"], "Valid Values"]
+		is_enum = pd.notna(valid_values) and str(valid_values).strip() != ""
+		out_df.at[_, "has_enum"] = '"[' + ", ".join(str(valid_values).split(", ")) + ']"' if is_enum else ""
 		col_type = attribute_rows.loc[row["label"], "columnType"]
 		validation = attribute_rows.loc[row["label"], "Validation Rules"]
-		is_enum = True if str(attribute_rows.loc[row["label"], "Valid Values"]) != "" else False
 		out_df.at[_, "type"] = '"' + convert_schematic_column_type(col_type, validation, is_enum) + '"'
 		for e in mappings[1]:
 			key_tuples.append((e, row["Resolved_Node_URI"], row["term"]))
@@ -255,8 +266,8 @@ def format_uri(node:str, attribute:str) -> str:
 	Returns:
 		str: Formatted URI string."""
 
-	node_segment = str(node).strip().lower().replace(" ", "_").replace('10x_', '')
-	attr_segment = attribute.strip().lower().replace(" ", "_").replace('10x_', '')
+	node_segment = str(node).strip().lower().replace(" ", "_")
+	attr_segment = attribute.strip().lower().replace(" ", "_")
     
 	return f"{node_segment}:{attr_segment}"
 
@@ -291,7 +302,9 @@ def get_reference_id(entry: str) -> tuple[str, list[str]]:
 	entry = entry.split(", ") if len(entry.split(", ")) > 1 else [entry]
 
 	refs = [e for e in entry if len(e.split(":")) > 1]
-	keys = [e for e in entry if len(e.split("_")) > 1]
+	# Keys are bare names like primary_key/foreign_key; prefixed entries
+	# (e.g. CRDC_CDE:123) are references, even though the prefix contains "_".
+	keys = [e for e in entry if ":" not in e and len(e.split("_")) > 1]
 	
 	ref_out = ", ".join([f"{ref.split(':')[0]}:{ref.split(':')[1]}" for ref in refs])
 	key_out = keys
@@ -340,8 +353,11 @@ def subset_model(model_df: pd.DataFrame, nodes: str) -> pd.DataFrame:
 		subset_df = pd.DataFrame()
 		node_attributes = model_df.loc[node, "DependsOn"].split(", ")
 		attribute_deps = model_df.loc[model_df["DependsOn"] != ""]
-		attribute_deps = attribute_deps.loc[~attribute_deps["DependsOn"].str.contains("Component", regex=False)]
-		attribute_attributes = attribute_deps["DependsOn"].tolist()
+		attribute_deps = attribute_deps.loc[~is_template_mask(attribute_deps)]
+		# Only follow dependencies of this node's own attributes; otherwise every
+		# conditional-dependency row in the model is pulled into every node.
+		attribute_deps = attribute_deps.loc[attribute_deps.index.isin(node_attributes)]
+		attribute_attributes = [dep for entry in attribute_deps["DependsOn"] for dep in str(entry).split(", ") if dep]
 		node_attributes.append(node)
 		
 		node_rows = model_df.loc[node_attributes]
@@ -370,8 +386,10 @@ def main():
 	reqby = "requiredBy"
 	key = "isKey"
 	enum = "acceptableValues"
-	duo = "DUO_"
+	duo = "DUO"
 	cde = "CDE"
+	crdc_cde = "CRDC_CDE"
+	mixs = "MIXS"
 
 	tag_dict = {  # Can replace tuples with alternative tag definitions
 		label : ("rdfs", "<http://www.w3.org/2000/01/rdf-schema#>"),
@@ -381,8 +399,10 @@ def main():
 		reqby : (base_ref, f"<{base_tag}/>"),
 		key : (base_ref, f"<{base_tag}/>"),
 		enum : (base_ref, f"<{base_tag}/>"),
-		duo : ("obo", "<http://purl.obolibrary.org/obo/>"),
+		duo : ("duo", "<http://purl.obolibrary.org/obo/DUO_>"),
+		mixs : ("mixs", "<https://w3id.org/mixs/>"),
 		cde : (base_ref, f"<{base_tag}/>"),
+		crdc_cde : (base_ref, f"<{base_tag}/>"),
 		}
 	
 	if args.mapping:
@@ -473,7 +493,7 @@ def main():
 		node_set = set(node_list)
 		first_lines = [f"@prefix {tag_dict[prefix][0]}: {tag_dict[prefix][1]}"+" .\n" for prefix in prefix_set]
 		org_line = f"@prefix {args.org_name}: <{base_ref}:{args.org_name}/> .\n"
-		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_').replace('10x_', '')}: <{args.org_name}:{node_type.lower().replace(' ', '_').replace('10x_', '')}/> .\n" for node_type in node_set])
+		node_lines = "".join([f"@prefix {node_type.lower().replace(' ', '_')}: <{args.org_name}:{node_type.lower().replace(' ', '_')}/> .\n" for node_type in node_set])
 		first_lines_set = "".join(set(first_lines))
 		f.write(first_lines_set)
 		f.write(org_line)
@@ -494,6 +514,9 @@ def main():
 	image_path = "/".join([args.output, f"{args.org_name}_{node_name}_{args.version}.png"])
 
 	if args.build_graph is not None:
+		from PIL import Image
+		import pydotplus
+		from rdflib.tools import rdf2dot
 		retry = 1
 		image = None
 		while image is None:
@@ -521,6 +544,9 @@ def main():
 		
 	if args.interactive_graph is not None:
 		print("Generating interactive plot...")
+		import matplotlib.pyplot as plt
+		import networkx as nx
+		from rdflib.extras.external_graph_libs import rdflib_to_networkx_multidigraph
 		model_graph = rdflib_to_networkx_multidigraph(model_graph)
 		nx.draw_networkx(model_graph, arrows=False, with_labels=True, font_size=4, node_size=200)
 		plt.show()

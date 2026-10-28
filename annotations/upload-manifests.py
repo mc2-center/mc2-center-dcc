@@ -4,6 +4,8 @@ upload-manifests.py
 This script accepts a CSV file containing manifest file paths and their corresponding Synapse IDs for target folders. 
 It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
 
+DEPRECATED for components that have moved to RecordSets: use upload_recordsets.py instead.
+
 author: aditi.gopalan
 author: orion.banks
 
@@ -19,7 +21,9 @@ from functools import partial
 
 def get_args():
     """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="DEPRECATED for components that have moved to RecordSets: use upload_recordsets.py instead."
+    )
     parser.add_argument(
         "-m",
         type=str,

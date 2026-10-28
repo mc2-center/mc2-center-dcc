@@ -10,6 +10,12 @@ import csv
 import argparse
 from datetime import datetime
 
+import os
+import sys
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import utils
+
 def get_folder_type_argument():
     parser = argparse.ArgumentParser(description="Process Synapse folders and create a manifest.")
     parser.add_argument("csv_file_path", help="Path to the input CSV file.")
@@ -46,8 +52,7 @@ def get_project_name(syn, folder_id):
 def main():
     csv_file_path, folder_type, upload = get_folder_type_argument()
     
-    syn = synapseclient.Synapse()
-    syn.login()
+    syn = utils.syn_login()
 
     df = pd.read_csv(csv_file_path)
     results = []

@@ -8,9 +8,12 @@ import re
 from typing import List
 
 import pandas as pd
-from synapseclient import operations
 from synapseclient.models import Table
+import crosswalk
+import model_contract
 import utils
+
+COMPONENT = "PublicationView"
 
 
 def add_missing_info(
@@ -19,21 +22,29 @@ def add_missing_info(
     """Add missing information into table before syncing."""
     pubs["link"] = [
         "".join(["[PMID:", str(pmid), "](", url, ")"])
-        for pmid, url in zip(pubs["Pubmed Id"], pubs["Pubmed Url"])
+        for pmid, url in zip(pubs["PubmedId"], pubs["PubmedUrl"])
+    ]
+
+    # A blank DOI, or the manifest's "No DOI Listed", shows as "DOI Not
+    # Available" (the text sync_datasets writes for datasets).
+    pubs["PublicationDoi"] = [
+        utils.DOI_NOT_AVAILABLE
+        if not str(doi).strip() or str(doi).strip() == utils.NO_DOI_LISTED
+        else doi
+        for doi in pubs["PublicationDoi"].fillna("")
     ]
 
     pattern = re.compile(r"(')([\s\w/-]+)(')")
 
     for _, row in pubs.iterrows():
-        datasets = row["Publication Dataset Alias"]
+        datasets = row["PublicationDatasetAlias"]
         final_datasets = [d for d in datasets.split(", ") if d.startswith("SRX") is False]
-        pubs.at[_, "Publication Dataset Alias"] = ", ".join(final_datasets)
+        pubs.at[_, "PublicationDatasetAlias"] = ", ".join(final_datasets)
 
     for col in new_cols:
         pubs[col] = ""
-        for row in pubs.itertuples():
-            i = row[0]
-            n = row[4].split(",")
+        for i, row in pubs.iterrows():
+            n = row["GrantViewKey"].split(",")
             extracted = []
             for g in n:
                 if len(grants[grants.grantNumber == g][col].values) > 0:
@@ -54,51 +65,19 @@ def add_missing_info(
     return pubs
 
 
-def clean_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean up the table one final time."""
-    
-    df = df.rename(columns={
-        "GrantView Key": "Publication Grant Number"
-        })
-    
-    # Convert string columns to string-list.
-    for col in [
-        "Publication Assay",
-        "Publication Tumor Type",
-        "Publication Tissue",
-        "Publication Grant Number",
-        "iconTags"
-    ]:
-        df[col] = utils.convert_to_stringlist(df[col])
-
-    # Reorder columns to match the table order.
-    col_order = [
-        "Publication Doi",
-        "Publication Journal",
-        "Pubmed Id",
-        "Pubmed Url",
-        "link",
-        "Publication Title",
-        "Publication Year",
-        "Publication Keywords",
-        "Publication Authors",
-        "Publication Abstract",
-        "Publication Assay",
-        "Publication Tumor Type",
-        "Publication Tissue",
-        "theme",
-        "consortium",
-        "Publication Grant Number",
-        "grantName",
-        "Publication Dataset Alias",
-        "Publication Accessibility",
-        "iconTags"
-    ]
-
+def clean_table(df: pd.DataFrame, live_types: dict[str, str]) -> pd.DataFrame:
+    """Sort and convert the table into the portal table's shape."""
     # Show most recent publications at the top of the table
-    df = df.sort_values(by=["Publication Year", "Pubmed Id"], ascending=False)
-    
-    return df[col_order]
+    df = df.sort_values(by=["PublicationYear", "PubmedId"], ascending=False)
+    return crosswalk.to_portal(df, COMPONENT, live_types)
+
+
+def prepare_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
+    """Give the raw manifest class-label headers (13.1.0 or 14.0.0 input)."""
+    manifest = utils.fill_blank(manifest)
+    manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
+    # iconTags is an enrichment column that comes with the manifest.
+    return model_contract.normalize_headers(manifest, to="keys", passthrough=["iconTags"])
 
 
 def main():
@@ -114,7 +93,7 @@ def main():
             "\n\nDatabase will NOT be updated.",
         )
 
-    manifest = pd.read_csv(operations.get(args.manifest_id, synapse_client=syn).path, header=0).fillna("")
+    manifest = prepare_manifest(model_contract.read_manifest(syn, args.manifest_id))
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
@@ -127,14 +106,15 @@ def main():
     )
 
     database = add_missing_info(manifest, grants, new_cols)
-    final_database = clean_table(database)
+    live_types = crosswalk.check_crosswalk(syn, args.portal_table_id, COMPONENT)
+    final_database = clean_table(database, live_types)
     if args.verbose:
         print("\n🔍 Publication(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
     if not args.dryrun:
-        utils.update_table(syn, args.portal_table_id, final_database)
+        utils.update_table(syn, args.portal_table_id, final_database, component=COMPONENT)
         print()
 
     if not args.noprint:

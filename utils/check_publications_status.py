@@ -13,11 +13,22 @@ from datetime import datetime
 import requests
 
 import pandas as pd
-from synapseclient import Synapse
 from synapseclient.models import File, Table
 
-sys.path.insert(0, "./annotations")
-from attribute_dictionary import PUBLICATION_DICT
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -52,10 +63,21 @@ def get_args():
     parser.add_argument(
         "--send_email", type=str, nargs="+", help="Send email report to listed persons."
     )
+    parser.add_argument(
+        "--dryrun",
+        action="store_true",
+        help="Run the check and write the results CSV locally, but skip the "
+        "Synapse File upload and the email (sendMessage).",
+    )
+    parser.add_argument(
+        "--outdir",
+        default=".",
+        help="Directory for the local CSV written by --dryrun. (Default: .)",
+    )
     return parser.parse_args()
 
 
-def status_check(syn, table_id, query, colname, email, publication_dict):
+def status_check(syn, table_id, query, colname, email):
     """
     Check availability of publications and return df of open/accessible
     publications and their current annotations on the portal.
@@ -84,21 +106,26 @@ def status_check(syn, table_id, query, colname, email, publication_dict):
     else:
         ready_for_review = pd.DataFrame(columns=df.columns)
 
-    # Switch column name dictionary key/value pairs
-    column_names = {value: key for key, value in publication_dict.items()}
+    return to_manifest(ready_for_review)
 
-    # Edit data frame to match data model
-    ready_for_review = ready_for_review.rename(columns=column_names).drop(
-        ["pubMedLink", "grantName", "theme", "consortium"], axis=1
-    )
-    ready_for_review["Component"] = "PublicationView"
 
+def to_manifest(portal_df: pd.DataFrame) -> pd.DataFrame:
+    """Convert PublicationView portal-table rows to manifest (display-name) form.
+
+    Portal columns map to display names through the crosswalk; the columns the
+    sync script computes (``pubMedLink``, ``grantName``, ``theme``,
+    ``consortium``, ``dataType``) are dropped.
+    """
+    component = "PublicationView"
+    df = portal_df.drop(columns=header_maps.derived_portal_columns(component), errors="ignore")
+    df = df.rename(columns=header_maps.portal_to_display(component))
+    df["Component"] = component
     # Convert grant number from list type to string
-    ready_for_review["Publication Grant Number"] = [
-        ",".join(map(str, grant))
-        for grant in ready_for_review["Publication Grant Number"]
+    df["GrantView Key"] = [
+        grant if isinstance(grant, str) else ",".join(map(str, grant))
+        for grant in df["GrantView Key"]
     ]
-    return ready_for_review
+    return df
 
 
 def upload_results(syn, results, parent):
@@ -112,8 +139,7 @@ def upload_results(syn, results, parent):
 
 def main():
     """Main function."""
-    syn = Synapse()
-    syn.login(silent=True)
+    syn = syn_login()
     args = get_args()
 
     query = (
@@ -122,8 +148,25 @@ def main():
     )
     email = "mc2center@sagebase.org"
     ready_for_review = status_check(
-        syn, args.portal_table, query, args.colname, email, PUBLICATION_DICT
+        syn, args.portal_table, query, args.colname, email
     )
+
+    if args.dryrun:
+        os.makedirs(args.outdir, exist_ok=True)
+        output_file = os.path.join(
+            args.outdir, f"status_check_{datetime.today().strftime('%Y-%m-%d')}.csv"
+        )
+        ready_for_review.to_csv(output_file, index=False)
+        print(
+            f"[dryrun] {len(ready_for_review)} publications now Open Access; "
+            f"results written to {output_file}"
+        )
+        print(
+            f"[dryrun] Skipped: File upload to {args.folder_id}"
+            + (f", sendMessage to {args.send_email}" if args.send_email else "")
+        )
+        print("-- DONE --")
+        return
 
     file_id = upload_results(syn, ready_for_review, args.folder_id)
     print(f"Results ID: {file_id}")
