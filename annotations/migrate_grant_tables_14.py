@@ -493,7 +493,8 @@ def remap_manifest_ids(df: pd.DataFrame, component: str, grant: str, reference, 
         name = str(df[alias].iloc[i]).strip()
         rows = candidates.get(name, [])
         if len(rows) > 1:
-            rows = [r for r in rows if grant in r[1]]
+            # rows listing this grant win; when none does, the same alias in other grants is the same dataset
+            rows = [r for r in rows if grant in r[1]] or rows
         ids = list(dict.fromkeys(i_ for ids_, _ in rows for i_ in ids_))
         if not ids:
             counts["unmatched"] += 1

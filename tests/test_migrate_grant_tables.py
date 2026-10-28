@@ -1395,8 +1395,8 @@ def test_the_grant_picks_among_manifest_rows_of_one_alias():
     converted, *_ = ms_convert(source, ref, grant="CA2")
     assert converted[MS_KEY].tolist() == ["syn_for2"]
     info = {}
-    ms_convert(source, ref, grant="CA9", info=info)  # no row names this grant: ambiguous would need ids; none -> unmatched
-    assert info["manifest_ids"]["unmatched"] == 1 and info["remapped"] == {}
+    ms_convert(source, ref, grant="CA9", info=info)  # no row names this grant: both rows' ids count -> ambiguous
+    assert info["manifest_ids"]["ambiguous"] == 1 and info["manifest_ids"]["unmatched"] == 0 and info["remapped"] == {}
 
 
 def test_a_remap_that_makes_two_rows_of_one_alias_share_a_key_goes_through_duplicate_handling():
@@ -1586,6 +1586,18 @@ def test_a_remap_to_a_manifest_row_of_another_grant_has_its_own_rule_and_no_work
     assert changes["rule"].tolist() == ["manifest_id_other_grant"]
     assert info["manifest_ids"]["other_grant"] == 1 and info["manifest_ids"]["remapped"] == 1
     assert info["id_worklist"] == []  # the same dataset in another grant is expected: tagged, not for the curator
+
+
+def test_an_alias_whose_manifest_rows_all_list_other_grants_is_remapped_or_ambiguous():
+    source = ms_source([["syn_a", "CA1", "N", "GSE1", "d", "1"], ["syn_b", "CA1", "N", "GSE2", "d", "2"]])
+    ref = ms_reference([["syn_x", "CA2", "N", "GSE1", "d"], ["syn_x", "CA3", "N", "GSE1", "d"],
+                        ["syn_y", "CA2", "N", "GSE2", "d"], ["syn_z", "CA3", "N", "GSE2", "d"]])
+    info = {}
+    converted, changes, *_ = ms_convert(source, ref, grant="CA1", info=info)
+    assert converted[MS_KEY].tolist() == ["syn_x", "syn_b"]  # one distinct id: remapped
+    assert changes["rule"].tolist() == ["manifest_id_other_grant", "manifest_id_ambiguous"]
+    assert [(w["kind"], w["alias"]) for w in info["id_worklist"]] == [("ambiguous", "GSE2")]
+    assert info["manifest_ids"]["unmatched"] == 0 and info["manifest_ids"]["other_grant"] == 1
 
 
 def test_duplicate_matching_uses_the_manifest_equality_rule():
