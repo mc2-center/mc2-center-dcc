@@ -376,3 +376,21 @@ def test_request_skips_a_key_that_is_already_removed(tmp_path, capsys):
                   "--reason", "dup", "--execute"], syn=object())
     assert removals.removed("synRS") == {"a": 2} and removals.requested("synRS") == {}
     assert len(pd.read_csv(tmp_path / "removals.csv")) == 2  # nothing appended
+
+
+def test_a_crashed_revalidation_export_is_recovered_as_written_not_removed(tmp_path):
+    fake, log, removals = setup(tmp_path, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
+    log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)  # a removal whose export is owed
+
+    def export_then_die(syn, rs_id, on_version=None, **kw):
+        fake.versions.append(fake.versions[-1].copy())  # v3 exists; the crash is before it is logged
+        raise RuntimeError("died after the export")
+
+    fake.export = export_then_die
+    with pytest.raises(RuntimeError):
+        process(tmp_path, fake, log, removals, run_id="dcc-removal-2")
+    assert log.removal_versions("synRS") == {2}  # v3 is not a removal store
+    assert log.pipeline_map("synRS") == {2: 1, 3: 2}
+    status = dict(zip(log._read("synRS")["version"], log._read("synRS")["status"]))
+    assert status[3] == "recovered" and log.unresolved_pending("synRS") == []
+    assert log.unexported_removals("synRS") == []

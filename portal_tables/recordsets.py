@@ -119,6 +119,10 @@ WRITE_LOG_COLUMNS = [
 ]
 LOCK_HOURS = 2
 REMOVAL_RUN_PREFIX = "dcc-removal-"  # runId of a DCC removal run (D-Q49); recover_pending keys on it
+# A removal run's re-validation (Grid export only, no direct store) opens its pending row under
+# ``<run id><suffix>``: the write log has no kind column, and the runId is what it can hold. recover_pending
+# does not take the first version of such a row for a removal store.
+REVALIDATE_RUN_SUFFIX = "-revalidate"
 # Recovery compares Synapse's server-side modifiedOn with the runner's local
 # writtenOn, so the two clocks may disagree; accept a version modified up to
 # this long before the pending row was written.
@@ -870,7 +874,8 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
     A DCC removal run (runId with :data:`REMOVAL_RUN_PREFIX`) stores its version
     directly: the first recovered version of such a row, when the run has not
     logged its ``removed`` version yet, is the store and is logged ``removed``
-    (replay drops its keys); later ones are Grid exports, ``recovered``.
+    (replay drops its keys); later ones are Grid exports, ``recovered``. A row whose runId ends with
+    :data:`REVALIDATE_RUN_SUFFIX` is a removal run's re-validation: it only exports, so all its versions are ``recovered``.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
     logged = write_log.pipeline_map(rs_id)
@@ -892,6 +897,7 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
                 mine.append(v)
         store = None
         if (mine and str(row["runId"]).startswith(REMOVAL_RUN_PREFIX)
+                and not str(row["runId"]).endswith(REVALIDATE_RUN_SUFFIX)
                 and not write_log.removal_versions(rs_id, row["runId"])):
             store = mine[0]
             found.removal.add(store)

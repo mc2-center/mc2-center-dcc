@@ -159,6 +159,7 @@ def _revalidate(syn, rs_id, write_log, run_id, principal, latest, owed):
 
     Returns a refusal ``(status, message)`` or None when done.
     """
+    run_id += recordsets.REVALIDATE_RUN_SUFFIX  # marks the pending row as export-only for recover_pending
     write_log.start(rs_id, latest, run_id, principal)
     try:
         refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
