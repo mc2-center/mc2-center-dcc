@@ -115,10 +115,13 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
         "LINK": str,
         "USERID": str,
         "BOOLEAN": bool,
+        "MEDIUMTEXT": str,
     }
 
-    # Create a new dictionary with column names as keys anve values as data types
-    col_types_dict = {k: data_type_dict.get(v, v) for k, v in col_dict.items()}
+    # Create a new dictionary with column names as keys and values as data
+    # types. Column types not in data_type_dict (DATE, ENTITYID, INTEGER_LIST,
+    # ...) map to None and are not cast.
+    col_types_dict = {k: data_type_dict.get(v) for k, v in col_dict.items()}
 
     # Strip embedded newlines first (df.map would turn Int64 columns into float).
     final_df = strip_newlines(final_df)
@@ -129,8 +132,21 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     for column_name in final_df:
         if column_name in ("ROW_ID", "ROW_VERSION"):
             continue
-        col_type = col_types_dict[column_name]
-        if col_type == list:
+        col_type = col_types_dict.get(column_name)
+        if col_type is None:
+            # Unsupported column type: leave the values alone, but turn the ""
+            # filled in above back into null.
+            final_df[column_name] = final_df[column_name].where(
+                final_df[column_name] != "", pd.NA
+            )
+        elif col_type == bool:
+            # Nullable BOOLEAN columns: "" is a null, not False.
+            final_df[column_name] = (
+                final_df[column_name]
+                .where(final_df[column_name] != "", pd.NA)
+                .astype("boolean")
+            )
+        elif col_type == list:
             # Only split strings; STRING_LIST columns not in the manifest are
             # already Python lists. Empty values become None (null).
             final_df[column_name] = final_df[column_name].map(
@@ -181,7 +197,9 @@ def main():
             update_df, annots_results, syn, args.table_id, args.dryrun
         )
 
-        manifest_upload(syn, args.table_id, final_df)
+        # edit_annotations() returns None on a dry run.
+        if not args.dryrun:
+            manifest_upload(syn, args.table_id, final_df)
 
     elif choice == "n":
         print("\n\nPlease validate first, then rerun this script to upload!")

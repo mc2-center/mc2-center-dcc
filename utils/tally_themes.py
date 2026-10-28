@@ -60,14 +60,10 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
     )
 
 
-def _join_or_missing(col):
-    """Join list cells with ", "; empty lists/strings become NaN (dropped by groupby)."""
-    return col.str.join(", ").replace("", pd.NA)
-
-
 def tally_by_consortium(grants):
     """Portal - Consortium Counts (syn21641485)"""
-    grants["consortium"] = _join_or_missing(grants["consortium"])
+    # An empty list joins to "", so grants without a consortium are counted under "".
+    grants["consortium"] = grants["consortium"].str.join(", ")
     return (
         grants[["grantId", "consortium"]]
         .groupby("consortium")
