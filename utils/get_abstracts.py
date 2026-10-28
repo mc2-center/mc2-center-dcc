@@ -1,9 +1,19 @@
 from synapseclient import Synapse
 from synapseclient.models import Table
 import argparse
-import re
+import importlib.util
+import os
 import requests
 from time import sleep
+
+# portal_tables/utils.py (loaded by path; "utils" would collide with this package)
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+strip_newlines = _portal_utils.strip_newlines
 
 
 ### Login to Synapse ###
@@ -72,9 +82,9 @@ def get_abstracts(pmid_list, pubs_df):
 
 def store_edited_publications(syn, table_id, pubs_df):
 
-    # Same as portal_tables/utils.strip_newlines: Synapse bulk CSV ingestion
-    # turns rows with embedded newlines (e.g. PubTator abstracts) into blank rows.
-    pubs_df = pubs_df.map(lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v)
+    # Synapse bulk CSV ingestion turns rows with embedded newlines (e.g.
+    # PubTator abstracts) into blank rows.
+    pubs_df = strip_newlines(pubs_df)
     Table(id=table_id).store_rows(values=pubs_df, synapse_client=syn)
 
     print("\n\nPublications have been updated with Abstracts!")
