@@ -16,7 +16,7 @@ options:
 author: orion.banks
 """
 
-from synapseclient import Synapse, operations
+from synapseclient import Synapse
 import argparse
 import pandas as pd
 import re
@@ -268,11 +268,11 @@ def apply_annotations_to_entity(
     converting new_annotations tuple to key:value pairs within the retrieved annotation object,
     storing modified annotation object in Synapse."""
 
-    entity = operations.get(
-        entity_id,
-        file_options=operations.FileOptions(download_file=False),
-        synapse_client=syn,
-    )
+    # Annotations-only round trip. entity.store() would be a full entity PUT
+    # (version bump, schema re-sync), and operations.get() returns a plain dict
+    # for RecordSets, which has no .annotations. The OOP entity models have no
+    # annotations-only store, so syn.get/set_annotations stays.
+    entity_annotations = syn.get_annotations(entity_id)
     filtered_annotations = [
         tup
         for tup in new_annotations
@@ -280,8 +280,8 @@ def apply_annotations_to_entity(
     ]
     for key, annot in filtered_annotations:
         if key not in keys_to_drop:
-            entity.annotations[key.replace(" ", "")] = annot
-    entity.store(synapse_client=syn)
+            entity_annotations[key.replace(" ", "")] = annot
+    syn.set_annotations(entity_annotations)
     print(f"{component} annotations applied to Synapse entity: {entity_id}\n")
 
 
