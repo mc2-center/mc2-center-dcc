@@ -224,8 +224,9 @@ _US_DATE = re.compile(r"^(?P<m>\d{1,2})/(?P<d>\d{1,2})/(?P<y>\d{2}|\d{4})$")
 def normalize_date(value: str):
     """``(new, rule)`` for a cell of a ``format: date`` column.
 
-    ``YYYY-MM-DD`` is kept. ``m/d/yy`` and ``m/d/yyyy`` become ISO (a two-digit
-    year is ``20yy``), rule ``date_iso``. Anything else, or a day that does not
+    ``YYYY-MM-DD`` is kept. ``m/d/yy`` and ``m/d/yyyy`` become ISO, rule ``date_iso``.
+    A two-digit year ``yy`` is ``20yy`` if ``2000 + yy <= current year + 10`` (so a grant
+    end date such as ``5/31/30`` stays 2030), otherwise ``19yy`` (``3/15/98`` is 1998). Anything else, or a day that does not
     exist, is ``unmapped``.
     """
     text = value.strip()
@@ -235,7 +236,9 @@ def normalize_date(value: str):
             return value, None
         match = _US_DATE.match(text)
         if match:
-            year = int(match["y"]) + (2000 if len(match["y"]) == 2 else 0)
+            year = int(match["y"])
+            if len(match["y"]) == 2:
+                year += 2000 if 2000 + year <= datetime.date.today().year + 10 else 1900
             return datetime.date(year, int(match["m"]), int(match["d"])).isoformat(), "date_iso"
     except ValueError:
         pass

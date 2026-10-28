@@ -18,6 +18,17 @@ def test_normalize_date(value, expected):
     assert vm.normalize_date(value) == expected
 
 
+def test_two_digit_year_pivot_is_ten_years_ahead():
+    import datetime
+
+    now = datetime.date.today().year
+    assert vm.normalize_date("3/15/98") == ("1998-03-15", "date_iso")
+    assert vm.normalize_date("5/31/30") == ("2030-05-31", "date_iso")
+    latest = (now + 10) % 100   # newest year still read as 20yy
+    assert vm.normalize_date(f"1/1/{latest:02d}")[0] == f"{2000 + latest}-01-01"
+    assert vm.normalize_date(f"1/1/{(latest + 1) % 100:02d}")[0] == f"{1900 + (latest + 1) % 100}-01-01"
+
+
 def test_date_columns_come_from_the_schema():
     assert vm.date_columns("GrantView") == {"GrantStartDate", "GrantEndDate", "EmbargoEndDate"}
     assert vm.date_columns("ToolView") == {"ToolDateLastModified", "ToolReleaseDate"}

@@ -85,7 +85,7 @@ ADMIN_LABEL = "CCKP - MC2 Admin"
 # String columns that hold one or more keys; split and rejoined per item.
 KEY_LIST_COLUMNS = frozenset({"ConsortiumKey", "GrantViewKey"})
 # Bump when a conversion rule changes: a done run is skipped on rerun only if its options (including this) match.
-CONVERSION_RULES = 3  # 2: minted PersonViewId, consortium_key, date_iso; 3: credentials, case-insensitive consortia
+CONVERSION_RULES = 4  # 2: minted PersonViewId, consortium_key, date_iso; 3: credentials, case-insensitive consortia; 4: date_iso two-digit-year pivot
 DUPLICATE_COLUMNS = ["key", "rows"]
 
 
