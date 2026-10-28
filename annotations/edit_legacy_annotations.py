@@ -7,6 +7,17 @@ from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Table
 from attribute_dictionary import ATTRIBUTE_DICT
 
+import importlib.util
+import os
+
+# portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+
 
 def login() -> Synapse:
     """Log into Synapse. If env variables not found, prompt user."""
@@ -115,7 +126,12 @@ def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
         if dryrun:
             updated_table.to_csv(table_id + "-updated.csv", index=False)
         else:
-            table.store_rows(values=updated_table, synapse_client=syn)
+            # Embedded newlines turn rows into blank rows in Synapse's bulk
+            # CSV ingestion; see portal_tables/utils.strip_newlines.
+            table.store_rows(
+                values=_portal_utils.strip_newlines(updated_table),
+                synapse_client=syn,
+            )
 
 
 def main():
