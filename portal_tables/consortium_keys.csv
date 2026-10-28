@@ -1,0 +1,15 @@
+# Consortium display name -> consortiumId, as approved by the owner (plan Appendix B, W2, 2026-10-26; plus the existing consortia of plan 2.2).
+# This mirrors the Consortium table (syn36345930) `consortiumId` column that plan D-1 adds. Once D-1 lands, replace this file with a read of that table.
+# Lines starting with # are comments. Read by utils.load_consortium_keys().
+display_name,consortium_id
+CSBC,program.csbc
+PS-ON,program.ps-on
+TEC,program.tec
+ICBP,program.icbp
+NCI Clinical and Translational Exploratory/Developmental Studies,program.nci-clinical-and-translational-exploratory-developmental-studies
+CCBIR,program.ccbir
+MetNet,program.metnet
+PDMC,program.pdmc
+NCI,program.nci
+HTAN,program.htan
+Sage Bionetworks,program.sage-bionetworks

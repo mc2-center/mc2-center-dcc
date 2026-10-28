@@ -205,14 +205,8 @@ def test_read_manifest_table(monkeypatch, concrete):
     assert syn.calls == ["/entity/syn1"]
 
 
-@pytest.mark.parametrize(
-    "concrete,attr",
-    [
-        ("org.sagebionetworks.repo.model.RecordSet", "RecordSet"),
-        ("org.sagebionetworks.repo.model.FileEntity", "File"),
-    ],
-)
-def test_read_manifest_csv_entities(monkeypatch, tmp_path, concrete, attr):
+def test_read_manifest_file_entity(monkeypatch, tmp_path):
+    concrete, attr = "org.sagebionetworks.repo.model.FileEntity", "File"
     path = _csv(tmp_path)
     seen = {}
 
@@ -237,6 +231,30 @@ def test_read_manifest_csv_entities(monkeypatch, tmp_path, concrete, attr):
     assert list(out.columns) == ["Component", "Year", "Name"]
     assert out["Year"].tolist()[0] == "2020" and pd.isna(out["Year"].tolist()[1])
     assert all(dt == object or str(dt) == "str" for dt in out.dtypes)
+
+
+def test_read_manifest_recordset_goes_through_read_recordset(monkeypatch, tmp_path):
+    import recordsets
+
+    calls = []
+
+    def stub(syn, rs_id, version=None, cache_dir=None, list_cols=()):
+        calls.append((syn, rs_id, version))
+        return pd.DataFrame({"PersonViewId": ["p1", "p2"], "Name": ["Ada", ""]})
+
+    class NoBareGet:
+        def __init__(self, *a, **k):
+            raise AssertionError("a RecordSet must be read through recordsets.read_recordset")
+
+    monkeypatch.setattr(recordsets, "read_recordset", stub)
+    monkeypatch.setattr(mc, "File", NoBareGet, raising=False)
+    monkeypatch.setattr("synapseclient.models.RecordSet", NoBareGet)
+    syn = _FakeSyn("org.sagebionetworks.repo.model.RecordSet")
+    out = mc.read_manifest(syn, "synRS", version=4)
+    assert calls == [(syn, "synRS", 4)]
+    assert out["PersonViewId"].tolist() == ["p1", "p2"] and pd.isna(out["Name"].tolist()[1])  # empty cells NaN
+    shaped = mc.read_manifest(syn, "synRS", component="PersonView")
+    assert list(shaped.columns) == ["PersonView_id", "Name"]
 
 
 def test_read_manifest_unsupported_type():

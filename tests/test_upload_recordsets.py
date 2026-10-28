@@ -88,7 +88,7 @@ def run(tmp_path, fake, *extra, execute=True, log=None, grants=("syn100",), run_
             "--cache-dir", str(tmp_path / "cache"), *extra]
     argv += ["--write-log-table", "synLOG"] if execute else ["--write-log-csv", str(log)]
     if execute:
-        argv.append("--execute")
+        argv += ["--execute", "--removals-csv", str(tmp_path / "removals.csv")]
     with mock.patch.object(ur.recordsets, "find_recordset", fake.find_recordset), \
          mock.patch.object(ur.recordsets, "recordset_info", fake.info), \
          mock.patch.object(ur.recordsets, "read_recordset", fake.read), \

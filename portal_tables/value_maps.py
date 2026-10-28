@@ -18,6 +18,8 @@ cells; list columns are split into Python lists) and records every change as
 * ``doi``: a bare DOI, ``doi:`` form or doi.org URL rewritten to ``https://doi.org/...`` (D-Q1).
 * ``doi_nonstandard``: any other URL in a DOI column; reported, value unchanged.
 * ``doi_placeholder``: ``No DOI Listed`` / ``DOI Not Available`` blanked (D-Q22).
+* ``date_iso``: ``m/d/yy`` or ``m/d/yyyy`` in a ``format: date`` column rewritten to
+  ``YYYY-MM-DD`` (two-digit years are ``20yy``); ISO dates are kept, anything else is unmapped.
 
 An exact valid value is kept and not recorded. A value no rule can map is left
 unchanged and reported as unmapped (except licenses, which are blanked).
@@ -32,6 +34,7 @@ the rest are reported in ``rejected_synonyms.csv``.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import re
@@ -214,33 +217,115 @@ def normalize_doi(value: str):
     return value, "unmapped"
 
 
-def load_overrides(path) -> dict[tuple[str, str], str]:
-    """``{(column key, current_value): proposed_value}`` from a curated CSV.
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_US_DATE = re.compile(r"^(?P<m>\d{1,2})/(?P<d>\d{1,2})/(?P<y>\d{2}|\d{4})$")
 
-    The ``column`` may be a class label or a display name.
+
+def normalize_date(value: str):
+    """``(new, rule)`` for a cell of a ``format: date`` column.
+
+    ``YYYY-MM-DD`` is kept. ``m/d/yy`` and ``m/d/yyyy`` become ISO, rule ``date_iso``.
+    A two-digit year ``yy`` is ``20yy`` if ``2000 + yy <= current year + 10`` (so a grant
+    end date such as ``5/31/30`` stays 2030), otherwise ``19yy`` (``3/15/98`` is 1998). Anything else, or a day that does not
+    exist, is ``unmapped``.
+    """
+    text = value.strip()
+    try:
+        if _ISO_DATE.match(text):
+            datetime.date.fromisoformat(text)
+            return value, None
+        match = _US_DATE.match(text)
+        if match:
+            year = int(match["y"])
+            if len(match["y"]) == 2:
+                year += 2000 if 2000 + year <= datetime.date.today().year + 10 else 1900
+            return datetime.date(year, int(match["m"]), int(match["d"])).isoformat(), "date_iso"
+    except ValueError:
+        pass
+    return value, "unmapped"
+
+
+def date_columns(component: str, ref: str | None = None) -> set[str]:
+    """Class-label names of the component's ``format: date`` properties (``json_schemas/<component>.json``)."""
+    with open(model_contract.fetch(f"json_schemas/{component}.json", ref=ref), encoding="utf-8") as fh:
+        properties = json.load(fh)["properties"]
+    return {k for k, v in properties.items() if v.get("format") == "date"}
+
+
+ROW = "\x00row"  # third element of a per-row override key: ``(column, row key, ROW)``, or
+# ``(column, row key, ROW, grant)`` when the CSV row names a grant
+ACCEPTED = frozenset({"y", "yes", "true", "1", "x", "accept", "accepted"})
+
+
+def load_overrides(path) -> dict[tuple, str]:
+    """``{(column key, current_value): proposed_value}`` from a curated CSV, plus per-row entries.
+
+    The ``column`` may be a class label or a display name. A row with a
+    non-blank ``key`` applies only to the cell of that row (``(column, key, ROW)``
+    -> proposed value; its ``current_value`` is informational; a filled ``grant`` column limits it to that
+    grant's row, ``(column, key, ROW, grant)``) and wins over a value-only override of the same cell;
+    two accepted rows for one target with different proposed values raise ``ValueError``; a row without ``key`` applies to every
+    cell holding ``current_value``. If the file has an ``accept`` column
+    (``write_override_template``), only rows with ``accept`` yes/y/true/1/x are applied.
     """
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
     missing = {"column", "current_value", "proposed_value"} - set(df.columns)
     if missing:
         raise ValueError(f"{path} lacks column(s) {sorted(missing)}")
     labels = model_contract.label_map()
-    return {
-        (labels.get(row["column"].strip(), row["column"].strip()), row["current_value"].strip()):
-        row["proposed_value"].strip()
-        for _, row in df.iterrows()
-    }
+    out = {}
+    for _, row in df.iterrows():
+        if "accept" in df.columns and row["accept"].strip().lower() not in ACCEPTED:
+            continue
+        column = labels.get(row["column"].strip(), row["column"].strip())
+        row_key = row["key"].strip() if "key" in df.columns else ""
+        if row_key:
+            grant = row["grant"].strip() if "grant" in df.columns else ""
+            target = (column, row_key, ROW, grant) if grant else (column, row_key, ROW)
+            proposed = row["proposed_value"].strip()
+            if target in out and out[target] != proposed:
+                raise ValueError(f"{path}: two accepted rows for {target[:2]}{' / ' + grant if grant else ''} "
+                                 f"propose {out[target]!r} and {proposed!r}")
+            out[target] = proposed
+        else:
+            out[(column, row["current_value"].strip())] = row["proposed_value"].strip()
+    return out
+
+
+TEMPLATE_COLUMNS = ["grant", "key", "column", "current_value", "manifest_value", "proposed_value", "accept"]
+
+
+def override_template(differences: pd.DataFrame) -> pd.DataFrame:
+    """An overrides CSV template from ``manifest_differences.csv`` rows (``grant, key, column, grant_value,
+    manifest_value``): ``proposed_value`` starts as the manifest value, ``accept`` is blank. The curator
+    fills ``accept`` (yes) on the rows to apply and may edit ``proposed_value``; ``load_overrides`` applies
+    only accepted rows, each to its own ``key`` cell."""
+    return pd.DataFrame({
+        "grant": differences["grant"], "key": differences["key"], "column": differences["column"],
+        "current_value": differences["grant_value"], "manifest_value": differences["manifest_value"],
+        "proposed_value": differences["manifest_value"], "accept": "",
+    }, columns=TEMPLATE_COLUMNS)
+
+
+def write_override_template(differences_csv, path) -> int:
+    """Write the template for a ``manifest_differences.csv``; returns the row count."""
+    template = override_template(pd.read_csv(differences_csv, dtype=str, keep_default_na=False))
+    template.to_csv(path, index=False)
+    return len(template)
 
 
 class Normalizer:
     """Apply every rule to a frame of one component."""
 
-    def __init__(self, component, enum_maps, code_to_id, overrides=None, list_cols=()):
+    def __init__(self, component, enum_maps, code_to_id, overrides=None, list_cols=(), date_cols=()):
         self.component = component
+        self.date_cols = set(date_cols)
         self.enum_maps = enum_maps
         self.code_to_id = code_to_id
         self.overrides = overrides or {}
         self.list_cols = set(list_cols)
         self.rejected = pd.DataFrame(columns=REJECTED_COLUMNS)
+        self.used_row_overrides: set = set()  # override keys that matched a cell (the caller clears it per grant)
 
     @classmethod
     def for_component(cls, component: str, overrides=None, ref: str | None = None):
@@ -253,9 +338,19 @@ class Normalizer:
             sync_datasets.duo_code_to_id(),
             overrides,
             recordsets.list_columns(component),
+            date_columns(component, ref),
         )
         norm.rejected = pd.DataFrame(rejected, columns=REJECTED_COLUMNS).drop_duplicates()
         return norm
+
+    def without_row_overrides(self):
+        """A copy without the per-row overrides (for the curated manifest, which they must not change)."""
+        import copy
+
+        other = copy.copy(self)
+        other.overrides = {k: v for k, v in self.overrides.items() if len(k) == 2}
+        other.used_row_overrides = set()
+        return other
 
     # -- one value ---------------------------------------------------------
 
@@ -267,6 +362,8 @@ class Normalizer:
             return value, "truncated"
         if column.endswith("Doi"):
             return normalize_doi(value)
+        if column in self.date_cols:
+            return normalize_date(value)
         if column == "DatasetDataUseCodes":
             if _DUO_VALID.match(value):
                 return value, None
@@ -281,9 +378,17 @@ class Normalizer:
             return "", "license_blanked"
         return new, rule
 
-    def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list):
+    def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list, grant: str = ""):
         """The normalized cell: a list for list columns, else a string."""
         text = "" if cell is None or (not isinstance(cell, (str, list)) and pd.isna(cell)) else cell
+        target = next((t for t in ((column, str(key), ROW, grant), (column, str(key), ROW)) if t in self.overrides), None)
+        row_override = self.overrides[target] if target is not None else None
+        if row_override is not None:
+            self.used_row_overrides.add(target)  # a per-row override wins over everything, even a blank cell
+            old = ", ".join(map(str, text)) if isinstance(text, list) else str(text).strip()
+            if old != row_override:
+                changes.append({"key": key, "column": column, "from": old, "to": row_override, "rule": "override"})
+            return split_items(row_override, comma_terms.is_keyword_column(column)) if column in self.list_cols else row_override
         if column in self.list_cols:
             if isinstance(text, str) and (column, text.strip()) in self.overrides:
                 # the whole cell is overridden before its items are looked at
@@ -323,7 +428,7 @@ class Normalizer:
 
     # -- a frame -----------------------------------------------------------
 
-    def normalize_frame(self, df: pd.DataFrame, key_col: str):
+    def normalize_frame(self, df: pd.DataFrame, key_col: str, grant: str = ""):
         """``(normalized frame, changes, unmapped)``; the last two are DataFrames."""
         changes: list[dict] = []
         unmapped: list[dict] = []
@@ -332,7 +437,7 @@ class Normalizer:
             if column == key_col:
                 continue
             out[column] = [
-                self.normalize_cell(str(k).strip(), column, cell, changes, unmapped)
+                self.normalize_cell(str(k).strip(), column, cell, changes, unmapped, grant)
                 for k, cell in zip(df[key_col], df[column])
             ]
         return (

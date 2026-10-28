@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pandas as pd
 from synapseclient.core.constants import concrete_types
-from synapseclient.models import File, RecordSet, Table
+from synapseclient.models import File, Table
 
 logger = logging.getLogger(__name__)
 
@@ -298,14 +298,64 @@ _TABLE_TYPES = frozenset(
 )
 
 
-def read_manifest(syn, entity_id: str) -> pd.DataFrame:
+def array_columns(component: str) -> set[str]:
+    """Class labels of the component's array (list) properties in ``json_schemas/<component>.json``."""
+    with open(fetch(f"json_schemas/{component}.json"), encoding="utf-8") as fh:
+        properties = json.load(fh)["properties"]
+    return {k for k, v in properties.items() if v.get("type") == "array"}
+
+
+def _parse_json_list(value):
+    """A JSON-array cell as a list of strings; any other cell unchanged."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                parsed = json.loads(text)
+            except ValueError:
+                return value
+            if isinstance(parsed, list):
+                return [str(v) for v in parsed]
+    return value
+
+
+def recordset_to_manifest(df: pd.DataFrame, component: str) -> pd.DataFrame:
+    """A RecordSet export in the shape of a manifest table.
+
+    RecordSets carry class-label headers (``GrantViewKey``) and JSON-array list
+    cells; manifest tables carry display names (``GrantView Key``) and list
+    cells as lists (or comma text). Known labels are renamed to display names
+    (other columns are kept) and the component's array columns are parsed to
+    lists, so the result goes through the same ``prepare_manifest`` steps as a
+    table.
+    """
+    display = {label: name for name, label in label_map().items()}
+    out = df.rename(columns={c: display[c] for c in df.columns if c in display})
+    for label in array_columns(component):
+        column = display.get(label, label)
+        if column in out.columns:
+            out[column] = out[column].map(_parse_json_list).astype(object)
+    return out
+
+
+def _at(version: int | None) -> dict:
+    """Constructor keyword for one entity version (none for the latest)."""
+    return {} if version is None else {"version_number": version}
+
+
+def read_manifest(syn, entity_id: str, component: str | None = None, version: int | None = None) -> pd.DataFrame:
     """Read a manifest from a Synapse Table, view, RecordSet or File.
+
+    With ``component``, a RecordSet is returned as :func:`recordset_to_manifest`
+    (display-name headers, list cells as lists), the shape a table of that
+    component has; ``component`` is ignored for the other entity types.
 
     The entity type comes from a metadata-only REST get (no download).
     Tables and views are queried with ``SELECT *`` and no row ID/version
-    columns. RecordSets and Files are downloaded and read as CSV with every
-    column as a string (empty cells stay NaN, as ``pd.read_csv`` returns
-    them). Any other entity type raises ``ValueError``.
+    columns. A RecordSet is read through ``recordsets.read_recordset`` (md5-checked download);
+    RecordSets and Files are read as CSV with every column as a string (empty cells stay NaN, as
+    ``pd.read_csv`` returns them). Any other entity type raises ``ValueError``. ``version`` reads that version of a RecordSet or File
+    (default: the latest); a Table or view has no such version and is read as it is.
     """
     concrete = syn.restGET(f"/entity/{entity_id}").get("concreteType")
     if concrete in _TABLE_TYPES:
@@ -315,9 +365,13 @@ def read_manifest(syn, entity_id: str) -> pd.DataFrame:
             synapse_client=syn,
         )
     if concrete == concrete_types.RECORD_SET_ENTITY:
-        entity = RecordSet(id=entity_id).get(synapse_client=syn)
+        import recordsets  # here, not at the top: recordsets imports this module
+
+        # md5-checked download; empty cells are NaN here, as pd.read_csv returned them (the syncs fill them)
+        frame = recordsets.read_recordset(syn, entity_id, version=version).replace("", float("nan"))
+        return recordset_to_manifest(frame, component) if component else frame
     elif concrete == concrete_types.FILE_ENTITY:
-        entity = File(id=entity_id).get(synapse_client=syn)
+        entity = File(id=entity_id, **_at(version)).get(synapse_client=syn)
     else:
         raise ValueError(
             f"Cannot read a manifest from {entity_id}: unsupported entity type {concrete!r}"
