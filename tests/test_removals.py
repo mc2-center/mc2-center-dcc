@@ -204,3 +204,12 @@ def test_append_many_validates_before_writing(tmp_path):
     with pytest.raises(ValueError):
         r.append_many("syn1", [{"key": "a", "status": "removed"}, {"key": "b", "status": "bogus"}])
     assert not (tmp_path / "r.csv").exists()
+
+
+def test_a_not_found_row_never_supersedes_a_removed_status(tmp_path):
+    r = rs.CsvRemovals(tmp_path / "removals.csv")
+    r.append("syn1", "a", "requested")
+    r.append("syn1", "a", "removed", removed_in_version=5, run_id="r1")
+    r.append("syn1", "a", "not_found", run_id="r2")  # a repeat request resolved against a version without it
+    assert r.removed("syn1") == {"a": 5}
+    assert r.requested("syn1") == {}

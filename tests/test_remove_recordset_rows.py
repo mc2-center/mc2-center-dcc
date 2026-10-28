@@ -360,3 +360,19 @@ def test_request_composite_key_values_are_joined_per_key_column(tmp_path):
                          "--reason", "dup", "--execute"], syn=object()) == 1  # one value for two key columns
     assert list(removals.requested("synRS")) == [rs.KEY_SEP.join(["G1", "T1"])]
     assert removals.requested("synRS")[rs.KEY_SEP.join(["G1", "T1"])]["requestedBy"] == "me"
+
+
+def test_request_skips_a_key_that_is_already_removed(tmp_path, capsys):
+    removals = rs.CsvRemovals(tmp_path / "removals.csv")
+    removals.append("synRS", "a", "requested")
+    removals.append("synRS", "a", "removed", removed_in_version=2)
+    assert request(tmp_path, "--key", "a", "--key", "b") == 0  # dry run
+    out = capsys.readouterr().out
+    assert "already removed (v2)" in out and "request 1 key(s) ['b']" in out
+    with mock.patch.object(cmd.recordsets, "SynapseTableRemovals", lambda syn, tid: removals), \
+         mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
+         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
+        cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "a",
+                  "--reason", "dup", "--execute"], syn=object())
+    assert removals.removed("synRS") == {"a": 2} and removals.requested("synRS") == {}
+    assert len(pd.read_csv(tmp_path / "removals.csv")) == 2  # nothing appended

@@ -670,8 +670,10 @@ class Removals:
         """RecordSets that have any row."""
         raise NotImplementedError
 
-    def _latest(self, rs_id: str) -> pd.DataFrame:
+    def _latest(self, rs_id: str, ignore=()) -> pd.DataFrame:
         df = self._read(rs_id)
+        if len(df) and ignore:
+            df = df[~df["status"].isin(ignore)]
         if df.empty:
             return df
         df = df.assign(_on=df["changedOn"].map(_to_dt)).sort_values("_on", kind="stable")
@@ -701,8 +703,12 @@ class Removals:
         return {r["key"]: {"reason": r["reason"], "requestedBy": r["requestedBy"]} for _, r in df.iterrows()}
 
     def removed(self, rs_id: str) -> dict[str, int]:
-        """``{key: removedInVersion}`` of keys whose current status is ``removed``."""
-        df = self._latest(rs_id)
+        """``{key: removedInVersion}`` of keys whose current status is ``removed``.
+
+        A ``not_found`` row (a repeated request resolved against a version that no longer holds the key)
+        never supersedes an earlier ``removed`` one.
+        """
+        df = self._latest(rs_id, ignore=("not_found",))
         df = df[(df["status"] == "removed") & df["removedInVersion"].notna()] if len(df) else df
         return {r["key"]: int(r["removedInVersion"]) for _, r in df.iterrows()}
 

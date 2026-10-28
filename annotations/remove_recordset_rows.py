@@ -369,10 +369,13 @@ def request_main(argv, syn=None):
             return 1
         keys.append(recordsets.KEY_SEP.join(p.strip() for p in parts))
     pending = set(removals.requested(args.recordset))
-    new = [k for k in dict.fromkeys(keys) if k not in pending]
+    gone = removals.removed(args.recordset)
+    new = [k for k in dict.fromkeys(keys) if k not in pending and k not in gone]
     for k in keys:
         if k in pending:
             print(f"already requested, skipped: {k!r}")
+        elif k in gone:
+            print(f"already removed (v{gone[k]}), nothing to do: {k!r}")
     print(f"{'EXECUTE' if args.execute else 'dry run'}: {args.recordset} request {len(new)} key(s) {new}")
     if args.execute and new:
         principal = recordsets.principal_id(syn)
