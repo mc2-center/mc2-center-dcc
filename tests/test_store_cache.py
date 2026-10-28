@@ -130,3 +130,23 @@ def test_read_recordset_raises_when_the_fresh_download_is_wrong_too(tmp_path):
         with pytest.raises(ValueError, match="md5"):
             rs.read_recordset(FakeSyn(b"k\nY\n"), "syn1", version=5, cache_dir=tmp_path / "cache")
     assert not (tmp_path / "cache" / "syn1" / "v5.csv").exists()
+
+
+def test_a_cached_file_is_checked_against_its_md5_sidecar_and_one_without_it_is_refetched(tmp_path):
+    cache = tmp_path / "cache" / "syn1"
+    cache.mkdir(parents=True)
+    (cache / "v5.csv").write_text("k\nA\n")  # cached before the md5 check: v6's contents under v5's name
+    good = tmp_path / "good.csv"
+    good.write_text("k\nA\nB\n")
+    entity = entity_with(good, b"k\nA\nB\n")
+    entity.version_number = 5
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = entity
+        df = rs.read_recordset("syn", "syn1", version=5, cache_dir=tmp_path / "cache")
+        assert list(df["k"]) == ["A", "B"] and cls.return_value.get.call_count == 1  # no sidecar: stale
+        assert (cache / "v5.csv.md5").read_text() == md5(b"k\nA\nB\n")
+        rs.read_recordset("syn", "syn1", version=5, cache_dir=tmp_path / "cache")
+        assert cls.return_value.get.call_count == 1  # now a hit, no network
+        (cache / "v5.csv").write_text("k\nZ\n")  # the file changed under its sidecar
+        df = rs.read_recordset("syn", "syn1", version=5, cache_dir=tmp_path / "cache")
+        assert list(df["k"]) == ["A", "B"] and cls.return_value.get.call_count == 2

@@ -285,13 +285,14 @@ def read_recordset(
     :func:`list_columns`); every other cell stays a string, empty is ``""``.
     With ``cache_dir`` and an explicit ``version``, the CSV is cached on disk
     as ``<cache_dir>/<rs_id>/v<version>.csv`` (versions are immutable, the
-    latest included) and read from there on later calls. ``version=None`` is
+    latest included) with ``v<version>.csv.md5`` beside it, and read from there on later calls
+    when the file still matches that md5 (else it is fetched, and checked, again). ``version=None`` is
     never cached.
     """
     cached = None
     if cache_dir is not None and version is not None:
         cached = Path(cache_dir) / rs_id / f"v{version}.csv"
-        if cached.exists():
+        if _cache_hit(cached):
             return _load_csv(cached, list_cols)
     entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
     path, fresh_dir = entity.path, None
@@ -310,10 +311,27 @@ def read_recordset(
             tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
             shutil.copyfile(path, tmp)
             tmp.replace(cached)
+            want = getattr(getattr(entity, "file_handle", None), "content_md5", None)
+            _md5_sidecar(cached).write_text(
+                want if isinstance(want, str) and want else synapse_utils.md5_for_file_hex(filename=str(cached)))
         return _load_csv(path, list_cols)
     finally:
         if fresh_dir is not None:
             shutil.rmtree(fresh_dir, ignore_errors=True)
+
+
+def _md5_sidecar(cached: Path) -> Path:
+    return cached.with_name(cached.name + ".md5")
+
+
+def _cache_hit(cached: Path) -> bool:
+    """Whether the cached ``vN.csv`` can be used: its ``vN.csv.md5`` (the md5 the file handle gave when it
+    was cached) matches the file. A file without the sidecar was cached before the md5 check existed and may
+    be another version's contents (a poisoned client cache): stale, fetched again. Local read, no network."""
+    sidecar = _md5_sidecar(cached)
+    if not cached.exists() or not sidecar.exists():
+        return False
+    return sidecar.read_text().strip() == synapse_utils.md5_for_file_hex(filename=str(cached))
 
 
 def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
