@@ -196,7 +196,9 @@ def main():
             update_df, annots_results, syn, args.table_id, args.dryrun
         )
 
-        manifest_upload(syn, args.table_id, final_df)
+        # edit_annotations() returns None on a dry run.
+        if not args.dryrun:
+            manifest_upload(syn, args.table_id, final_df)
 
     elif choice == "n":
         print("\n\nPlease validate first, then rerun this script to upload!")
