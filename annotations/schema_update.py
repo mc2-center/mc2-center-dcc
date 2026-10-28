@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import header_maps
 import model_contract
 import utils
+from column_sizing import reset_for_new_type
 
 
 def _get_children(parent, include_types=None, *, synapse_client=None):
@@ -179,6 +180,10 @@ for my_table_synid in table_ids_list:
                 continue
 
             column_to_modify = my_table.columns[column_name]
+            # Start from a clean column: only name, the new type and, where
+            # it applies, maximum_size are set below (as when a fresh Column
+            # was built), not the old type's size, enum values, etc.
+            reset_for_new_type(column_to_modify)
             # Size by the 13.1.0 name when this is a renamed column.
             sizing_name = new_to_old.get(column_name, column_name)
 

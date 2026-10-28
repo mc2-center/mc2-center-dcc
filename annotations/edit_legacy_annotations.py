@@ -106,7 +106,12 @@ def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
         if dryrun:
             updated_table.to_csv(table_id + "-updated.csv", index=False)
         else:
-            table.store_rows(values=updated_table, synapse_client=syn)
+            # Embedded newlines turn rows into blank rows in Synapse's bulk
+            # CSV ingestion; see portal_tables/utils.strip_newlines.
+            table.store_rows(
+                values=utils.strip_newlines(updated_table),
+                synapse_client=syn,
+            )
 
 
 def main():

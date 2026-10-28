@@ -6,6 +6,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "portal_tables"))
+sys.path.insert(0, str(ROOT / "annotations"))
 
 # Never hit the network: model files come from the vendored v14.0.0 fixtures.
 os.environ["MC2_MODEL_DIR"] = str(Path(__file__).parent / "fixtures")
@@ -43,3 +44,13 @@ def _temp_comma_terms(tmp_path, monkeypatch):
     comma_terms._folds.cache_clear()
     yield
     comma_terms._folds.cache_clear()
+
+
+def load_script(relpath, name):
+    """Load a script by path (several modules share the name "utils")."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, os.path.join(str(ROOT), relpath))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

@@ -19,11 +19,16 @@ def _load(relpath, name):
 
 
 class FakeEntity:
+    """The entity's annotations, read and written through a fake Synapse client's annotations-only calls."""
+
     def __init__(self):
         self.annotations = {}
         self.stored = False
+        self.syn = SimpleNamespace(get_annotations=lambda entity_id: dict(self.annotations),
+                                   set_annotations=self._set)
 
-    def store(self, synapse_client=None):
+    def _set(self, annotations):
+        self.annotations = dict(annotations)
         self.stored = True
 
 
@@ -35,7 +40,6 @@ def _dataset_df(headers):
 
 def _patch(tta, monkeypatch, df):
     entity = FakeEntity()
-    monkeypatch.setattr(tta.operations, "get", lambda *a, **k: entity)
 
     class FakeTable:
         queries = []
@@ -61,7 +65,7 @@ def test_keys_to_drop_empty_list_does_not_raise(monkeypatch):
     # main() used to pass keys_to_drop=None here, so `key not in None` raised.
     tta = _load("utils/table_to_annotations.py", "tta")
     entity, _ = _patch(tta, monkeypatch, pd.DataFrame())
-    tta.apply_annotations_to_entity(None, "DatasetView", "syn1", [("Dataset Name", "n")], [])
+    tta.apply_annotations_to_entity(entity.syn, "DatasetView", "syn1", [("Dataset Name", "n")], [])
     assert entity.annotations == {"DatasetName": "n"} and entity.stored
 
 
@@ -80,7 +84,7 @@ def _run_dataset(monkeypatch, source_headers):
     df.loc[0, [c for c in source_headers if c.endswith("Assay")][0]] = "scRNA-seq"
     entity, fake = _patch(tta, monkeypatch, df)
     cols = [h for h in model_contract.template_headers("DatasetView") if h != "Component"]
-    tta.collect_database_annotations(None, "syn1", ("DatasetView", "syn9", cols), [])
+    tta.collect_database_annotations(entity.syn, "syn1", ("DatasetView", "syn9", cols), [])
     return entity, fake
 
 
