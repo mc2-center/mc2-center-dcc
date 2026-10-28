@@ -180,11 +180,12 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
     removal_versions = write_log.removal_versions(rs_id) | set(recovered.removal)
-    restored = removals.restored(rs_id) if removals is not None else set()
+    removed = recordsets.removed_keys(versions, {v: log_map[v] for v in removal_versions if v in log_map}, key)
+    # a restore lifts only the removal it follows: not a later one whose removals rows are missing
+    restored = removals.restored(rs_id, removed) if removals is not None else set()
     base, owned, decisions = recordsets.replay(versions, log_map, key, set_like, removal_versions, restored)
     # D-Q49: a removed row is not uploaded again until its key is ``restored``. The removed keys
     # come from the history (so a removal the table doesn't list yet counts) and the table.
-    removed = recordsets.removed_keys(versions, {v: log_map[v] for v in removal_versions if v in log_map}, key)
     if removals is not None:
         removed.update(removals.removed(rs_id))
     removed = {k: v for k, v in removed.items() if k not in restored}

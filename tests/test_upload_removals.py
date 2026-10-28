@@ -83,3 +83,26 @@ def test_restored_key_is_uploaded_normally(tmp_path):
     assert merged_keys(rep) == {"p1", "p2"}
     assert pd.read_csv(rep / "syn100" / "removal_skipped.csv").empty
     assert "removal_skipped" not in (rep / "syn100" / "summary.txt").read_text()
+
+
+def test_second_removal_with_missing_rows_is_not_lifted_by_the_older_restore(tmp_path):
+    """removed (v2) -> restored -> re-added (v4) -> removed again (v5), crash before the removals rows:
+    the table's newest status is still ``restored``, but it predates the v5 removal."""
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    log.record("synRS", 1, "r0", 2, base=0, principal="42")
+    log.removed("synRS", 2, 1, "dcc-removal-1", "42", 1)
+    log.record("synRS", 3, "dcc-removal-1", 1, base=2, principal="42")
+    log.record("synRS", 4, "r1", 2, base=3, principal="42")
+    log.removed("synRS", 5, 4, "dcc-removal-2", "42", 1)
+    removals = rs.CsvRemovals(tmp_path / "removals.csv")
+    removals.append("synRS", "p2", "requested", reason="dup")
+    removals.append("synRS", "p2", "removed", removed_in_version=2, run_id="dcc-removal-1")
+    removals.append("synRS", "p2", "restored")
+    v1 = stored(["p1", "Old", ""], ["p2", "Second", ""])
+    v2 = stored(["p1", "Old", ""])
+    fake = FakeSynapse([v1, v2, v2, v1, v2])
+    code, rep = run(tmp_path, fake, "--removals-csv", str(tmp_path / "removals.csv"), execute=False,
+                    log=tmp_path / "log.csv")
+    assert merged_keys(rep) == {"p1"}
+    skipped = pd.read_csv(rep / "syn100" / "removal_skipped.csv", dtype=str)
+    assert list(skipped[KEY]) == ["p2"] and list(skipped["removedInVersion"]) == ["5"]

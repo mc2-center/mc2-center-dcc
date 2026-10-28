@@ -677,10 +677,22 @@ class Removals:
         df = df.assign(_on=df["changedOn"].map(_to_dt)).sort_values("_on", kind="stable")
         return df.drop_duplicates("key", keep="last")
 
-    def restored(self, rs_id: str) -> set[str]:
-        """Keys whose current status is ``restored`` (their removal is lifted)."""
+    def restored(self, rs_id: str, removed: dict | None = None) -> set[str]:
+        """Keys whose current status is ``restored`` (their removal is lifted).
+
+        ``removed`` is the history's ``{key: removal version}`` (:func:`removed_keys`). A restore
+        lifts only the removal it follows, so with ``removed`` given a key counts only if the table's
+        newest ``removed`` row for it (highest ``removedInVersion``) is at least the history's
+        removal version. A later removal the table does not list yet (a crash after the store,
+        before its removals rows) is newer than the restore, and the key stays removed.
+        """
         df = self._latest(rs_id)
-        return {r["key"] for _, r in df[df["status"] == "restored"].iterrows()} if len(df) else set()
+        keys = {r["key"] for _, r in df[df["status"] == "restored"].iterrows()} if len(df) else set()
+        if not removed or not keys:
+            return keys
+        events = self.removal_events(rs_id)
+        newest = {k: v for v, ks in sorted(events.items()) for k in ks}
+        return {k for k in keys if k not in removed or newest.get(k, -1) >= removed[k]}
 
     def requested(self, rs_id: str) -> dict[str, dict]:
         """``{key: {reason, requestedBy}}`` of keys whose current status is ``requested``."""
