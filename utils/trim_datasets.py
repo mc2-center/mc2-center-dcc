@@ -47,8 +47,10 @@ def remove_files_from_dataset(syn, dataset: str, files: list[str]) -> tuple[str,
         file_options=operations.FileOptions(download_file=False),
         synapse_client=syn,
     )
-    dataset_files = pd.DataFrame([{"entityId": item.id} for item in dataset_entity.items])
-    files_to_remove = [file for file in files if file in dataset_files["entityId"].to_list()]
+    # Compare against the item ids directly: a Dataset with no items would
+    # give a DataFrame without an entityId column.
+    dataset_file_ids = {item.id for item in dataset_entity.items}
+    files_to_remove = [file for file in files if file in dataset_file_ids]
     # remove_item() needs a full EntityRef (id + version); match refs by id only
     # like the legacy remove_item(id).
     for ref in [r for r in dataset_entity.items if r.id in files_to_remove]:
