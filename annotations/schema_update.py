@@ -17,6 +17,8 @@ from synapseclient.api import get_children
 import pandas as pd
 import sys
 
+from column_sizing import reset_for_new_type
+
 
 def _get_children(parent, include_types=None, *, synapse_client=None):
     """Sync wrapper around the async-only get_children() API."""
@@ -163,6 +165,10 @@ for my_table_synid in table_ids_list:
                 continue
 
             column_to_modify = my_table.columns[column_name]
+            # Start from a clean column: only name, the new type and, where
+            # it applies, maximum_size are set below (as when a fresh Column
+            # was built), not the old type's size, enum values, etc.
+            reset_for_new_type(column_to_modify)
 
             # Set columnType and maximumSize accordingly
             if column_name in [
