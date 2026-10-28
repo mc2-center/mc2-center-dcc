@@ -269,3 +269,20 @@ def test_merge_keeps_comma_terms_whole_and_joins_with_comma_space():
     assert row["Assay"] == "RNA Sequencing, ATAC-Seq, Imaging"
     assert row["GrantView Key"] == "CA1, CA2" and row["PublicationView_id"] == "syn1"
     assert stats["id_conflicts"] == []
+
+
+def test_an_empty_component_is_skipped_and_the_summary_is_still_written(tmp_path, mapping_csv, caplog):
+    import merge_tables
+
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")]})  
+    args = uq.get_args(["--regenerate", "--components", "ToolView", "DatasetView", "--input-dir", str(root),
+                        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--carry-columns"])
+    real = merge_tables.build_union_from_dir
+    empty = lambda component, d: (pd.DataFrame(), {}) if component == "ToolView" else real(component, d)
+    with caplog.at_level("WARNING"), mock.patch.object(merge_tables, "build_union_from_dir", side_effect=empty):
+        code = uq.regenerate_main(args)
+    assert code == 2  # something was skipped
+    assert "ToolView union is empty" in caplog.text
+    assert (tmp_path / "out" / "DatasetView" / "DatasetView_merged_manifest.csv").exists()
+    summary = (tmp_path / "out" / "summary.txt").read_text()
+    assert "DatasetView: union rows=1" in summary and "ToolView: skipped" in summary

@@ -554,6 +554,7 @@ def regenerate_main(args, syn=None) -> int:
     mapping = load_mapping(args.mapping, args.schema_version)
     failures = 0
     results = []
+    skipped = []  # components whose union is empty
     for component in args.components:
         if args.input_dir:
             union, stats = merge_tables.build_union_from_dir(component, args.input_dir)
@@ -563,7 +564,9 @@ def regenerate_main(args, syn=None) -> int:
             union, stats = merge_tables.build_union(syn, component, grants)
         print(f"{component} union: {stats}")
         if union.empty:
-            raise SystemExit(f"{component} union is empty; nothing to regenerate")
+            logger.warning("%s union is empty; skipping it", component)
+            skipped.append(component)
+            continue
         reference = None
         if args.carry_columns:
             if args.reference_csv:
@@ -588,7 +591,11 @@ def regenerate_main(args, syn=None) -> int:
                   f"I6 regenerated from the {args.schema_version or model_contract.MODEL_REF} union"))
         else:
             print("Dry run: nothing uploaded (use --upload).")
-    return 2 if failures else 0
+    lines = [r["lines"][0] for r in results] + [f"{c}: skipped, the union is empty" for c in skipped]
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    (Path(args.output_dir) / "summary.txt").write_text("\n".join(lines) + "\n")
+    print("\n".join(lines))
+    return 2 if failures or skipped else 0
 
 
 def main(argv=None):
