@@ -16,12 +16,12 @@ options:
 author: orion.banks
 """
 
-import synapseclient
+from synapseclient import Synapse
 import argparse
 import pandas as pd
 import re
 
-from synapseclient.models import RecordSet
+from synapseclient.models import RecordSet, Table
 
 
 def get_args():
@@ -99,7 +99,7 @@ def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool =
         cols = ", ".join(["".join(['"', col, '"']) for col in cols])
     
     if is_record_set:
-        file = RecordSet(source_id).get()
+        file = RecordSet(id=source_id).get(synapse_client=syn)
         data = file.path
         table = pd.read_csv(data, header=0, dtype=str).fillna("")
         table = table[cols]
@@ -109,7 +109,15 @@ def get_table(syn, source_id: str, cols: str | list = "*", is_record_set: bool =
                 table.at[_, col] = ", ".join(entry) if len(entry) > 0 else row[col]
     else:
         query = f"SELECT {cols} FROM {source_id}"
-        table = syn.tableQuery(query).asDataFrame().fillna("")
+        table = (
+            Table(id=source_id)
+            .query(
+                query=query,
+                include_row_id_and_row_version=False,
+                synapse_client=syn,
+            )
+            .fillna("")
+        )
     
     print(f"Data acquired from Synapse table {source_id}")
 
@@ -260,6 +268,10 @@ def apply_annotations_to_entity(
     converting new_annotations tuple to key:value pairs within the retrieved annotation object,
     storing modified annotation object in Synapse."""
 
+    # Annotations-only round trip. entity.store() would be a full entity PUT
+    # (version bump, schema re-sync), and operations.get() returns a plain dict
+    # for RecordSets, which has no .annotations. The OOP entity models have no
+    # annotations-only store, so syn.get/set_annotations stays.
     entity_annotations = syn.get_annotations(entity_id)
     filtered_annotations = [
         tup
@@ -275,7 +287,8 @@ def apply_annotations_to_entity(
 
 def main():
 
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     args = get_args()
 

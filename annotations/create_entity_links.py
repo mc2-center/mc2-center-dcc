@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import synapseclient
-from synapseclient import File
+from synapseclient import Synapse
+from synapseclient.models import File
 
 from geo_synapse.mc2_table import parse_accession, find_project_for_grant
 from geo_synapse.synapse_ops import (
@@ -105,8 +105,7 @@ def create_links(syn, path_name_link_target: list[tuple[str, str, str, str]]) ->
 
         n = n.translate(str.maketrans("", "", "[]:/!@#$<>"))
 
-        entity = File(path=l, name=n, parent=t, synapseStore=False)
-        entity = syn.store(entity)
+        entity = File(external_url=l, name=n, parent_id=t, synapse_store=False).store(synapse_client=syn)
         id = entity.id
         info = (p, n, id)
         path_name_id.append(info)
@@ -134,7 +133,7 @@ def add_ids_to_manifests(path_name_id: list[tuple[str, str, str]], name_column: 
 
 
 def _index_geo_dataset(
-    syn: synapseclient.Synapse,
+    syn: Synapse,
     accession: str,
     grant_number: str,
     outdir: Path,
@@ -192,7 +191,8 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
 
 def main():
 
-    syn = synapseclient.login()
+    syn = Synapse()
+    syn.login()
 
     args = get_args()
 
@@ -251,8 +251,7 @@ def main():
 
             # Non-GEO or failed GEO: create plain File link entity
             n_clean = n.translate(str.maketrans("", "", "[]:/!@#$<>"))
-            entity = File(path=l, name=n_clean, parent=t, synapseStore=False)
-            entity = syn.store(entity)
+            entity = File(external_url=l, name=n_clean, parent_id=t, synapse_store=False).store(synapse_client=syn)
             path_name_id.append((p, n, entity.id))
 
     else:

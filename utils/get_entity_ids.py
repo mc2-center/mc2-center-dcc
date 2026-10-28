@@ -2,7 +2,7 @@
 Get synIDs for entities matching input name
 """
 
-import synapseclient
+from synapseclient import Synapse, operations
 import argparse
 import pandas as pd
 from pathlib import Path
@@ -11,7 +11,7 @@ from pathlib import Path
 ### Login to Synapse ###
 def login():
 
-    syn = synapseclient.Synapse()
+    syn = Synapse()
     syn.login()
 
     return syn
@@ -32,7 +32,7 @@ def get_list(syn, name, projects):
     df = pd.DataFrame(columns=["projectId", "entityId"])
 
     for project in projects:
-        entityId = syn.findEntityId(name, project)
+        entityId = operations.find_entity_id(name, project, synapse_client=syn)
         newRow = pd.DataFrame([[project, entityId]], columns=["projectId", "entityId"])
         df = pd.concat([df, newRow])
 

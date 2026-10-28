@@ -2,22 +2,36 @@ import argparse
 from getpass import getpass
 
 import pandas as pd
-import synapseclient
+from synapseclient import Synapse
+from synapseclient.core.exceptions import SynapseNoCredentialsError
+from synapseclient.models import Table
 from attribute_dictionary import ATTRIBUTE_DICT
 
+import importlib.util
+import os
 
-def login() -> synapseclient.Synapse:
+# portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+
+
+def login() -> Synapse:
     """Log into Synapse. If env variables not found, prompt user."""
+    syn = Synapse()
     try:
-        syn = synapseclient.login(silent=True)
-    except synapseclient.core.exceptions.SynapseNoCredentialsError:
+        syn.login(silent=True)
+    except SynapseNoCredentialsError:
         print(
             ".synapseConfig not found; please manually provide your",
             "Synapse Personal Access Token (PAT). You can generate"
             "one at https://www.synapse.org/#!PersonalAccessTokens:0",
         )
         pat = getpass("Your Synapse PAT: ")
-        syn = synapseclient.login(authToken=pat, silent=True)
+        syn.login(authToken=pat, silent=True)
     return syn
 
 
@@ -104,19 +118,20 @@ def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
     """Update each parent table found in union table."""
     for table_id in scope_ids:
         print(f"Updating annotations found in table ID: {table_id}")
-        table = syn.tableQuery(f"SELECT * FROM {table_id}")
+        table = Table(id=table_id)
         updated_table = update_nonpreferred_terms(
-            table.asDataFrame().fillna(""),
+            table.query(query=f"SELECT * FROM {table_id}", synapse_client=syn).fillna(""),
             cv_dict
         )
         if dryrun:
             updated_table.to_csv(table_id + "-updated.csv", index=False)
         else:
-            syn.store(synapseclient.Table(
-                table_id,
-                updated_table,
-                etag=table.etag
-            ))
+            # Embedded newlines turn rows into blank rows in Synapse's bulk
+            # CSV ingestion; see portal_tables/utils.strip_newlines.
+            table.store_rows(
+                values=_portal_utils.strip_newlines(updated_table),
+                synapse_client=syn,
+            )
 
 
 def main():
@@ -125,8 +140,8 @@ def main():
     args = get_args()
 
     union_table_scope_ids = (
-        syn.tableQuery(f"SELECT entityId FROM {args.union_table_id}")
-        .asDataFrame()["entityId"]
+        Table(id=args.union_table_id)
+        .query(query=f"SELECT entityId FROM {args.union_table_id}", synapse_client=syn)["entityId"]
         .unique()
     )
     cv_dict = map_legacy_terms_to_standard(args.cv_list)

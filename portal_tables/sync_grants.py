@@ -6,6 +6,7 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import re
+from synapseclient.models import EntityView
 import utils
 from create_grant_projects import process_new_grants
 
@@ -58,7 +59,9 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = process_new_grants(args.manifest_id, args.portal_table_id, args.dryrun)
+    manifest = process_new_grants(
+        args.manifest_id, args.portal_table_id, args.dryrun, synapse_client=syn
+    )
     
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
@@ -76,12 +79,11 @@ def main():
 
     if not args.dryrun:
         for table in table_list:
-            current_table = syn.get(table)
-            current_scope = current_table.scopeIds
-            updated_scope = [s for s in updated_scope if s not in ["syn" + scope for scope in current_scope]]
-            current_table.add_scope(updated_scope)
-            syn.store(current_table)
-            print(f"Scope updated for table: {current_table.name}")
+            view = EntityView(id=table).get(synapse_client=syn)
+            updated_scope = [s for s in updated_scope if s not in view.scope_ids]
+            view.scope_ids = view.scope_ids | set(updated_scope)
+            view.store(synapse_client=syn)
+            print(f"Scope updated for table: {view.name}")
         utils.update_table(syn, args.portal_table_id, final_database)
         print()
 
