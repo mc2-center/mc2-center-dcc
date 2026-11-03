@@ -2566,7 +2566,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -2666,7 +2666,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -2796,7 +2796,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -2935,7 +2935,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -3187,7 +3187,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -3378,7 +3378,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -3539,7 +3539,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -3715,7 +3715,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -3908,7 +3908,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -4014,7 +4014,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -4126,7 +4126,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -4262,7 +4262,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -4455,7 +4455,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -4837,7 +4837,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -4940,7 +4940,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -5397,7 +5397,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -5567,7 +5567,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -5791,7 +5791,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -5970,7 +5970,7 @@
      "@id": "bts:FileAssayCategory"
     },
     {
-     "@id": "bts:DataUseCodes"
+     "@id": "bts:FileDataUseCodes"
     },
     {
      "@id": "bts:FileLongitudinalGroup"
@@ -6096,6 +6096,11 @@
      "@id": "bts:ImagePixelType"
     }
    ]
+  },
+  {
+   "@id": "bts:FileDataUseCodes",
+   "rdfs:label": "FileDataUseCodes",
+   "sms:displayName": "File Data Use Codes"
   }
  ]
 }

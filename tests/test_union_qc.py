@@ -130,7 +130,8 @@ def test_invalid_rows_are_kept_and_reported(tmp_path, mapping_csv):
     report = pd.read_csv(out / "validation.csv")
     assert list(report.columns) == ["key", "field", "validator", "message"]
     assert set(report["key"]) == {"syn2"}
-    assert {"Assay", "DatasetDoi"} <= set(report["field"])
+    assert "Assay" in set(report["field"])
+    assert "DatasetDoi" not in set(report["field"])  # optional as of data-models 14.1.0
     assert "enum" in set(report["validator"])
     assert (out / "validation_counts.csv").exists()
 
