@@ -474,8 +474,8 @@ assay,Co-Immunoprecipitation Mass Spectrometry,
 assay,Deep Learning,
 assay,Gene Ontology Enrichment Analysis,
 assay,Gene Set Enrichment Analysis,GSEA
-assay,Gene Silencing ,
-assay,Human Induced Pluripotent Stem Cell-derived Cardiomyocytes Culture,hiPSC-CM 
+assay,Gene Silencing,
+assay,Human Induced Pluripotent Stem Cell-derived Cardiomyocytes Culture,hiPSC-CM
 assay,Imaging Mass Cytometry,IMC
 assay,Immunofluorescent Staining Method,
 assay,Immunotherapy,
@@ -801,7 +801,6 @@ tumorType,Uterine Adenosarcoma,
 tumorType,Uveal Melanoma,"Uveal Tract Melanoma, UVM, Intraocular Melanoma, Melanoma of Uvea, Melanoma of the Uvea, intraocular melanoma"
 tumorType,Uveal Neoplasm,"Uvea Tumor, Neoplasm of the Uvea, Neoplasm of Uvea, Tumor of Uvea, Uvea Neoplasm, Uveal Tumor, Uveal Tract Neoplasm, Tumor of the Uvea"
 tumorType,Vascular Neoplasm,"Vascular Tumor, Vascular Tissue Tumor, Tumor of Vascular Tissue, Tumors, Vascular, Neoplasm of Vascular Tissue, Vascular Neoplasms, Neoplasms, Vascular, Vascular Tissue Neoplasm, Vascular Tumors"
-tumorType,Not-Applicable,
 tumorType,Plexiform Neurofibroma,
 publication_accessibility,Open Access,
 publication_accessibility,Restricted Access,
@@ -1635,7 +1634,7 @@ tool_format,Cytoscape Input File Format,
 tool_format,DCC,
 tool_format,DCD,
 tool_format,DSV,
-tool_format,Database Hits (Sequence) Format ,
+tool_format,Database Hits (Sequence) Format,
 tool_format,Docker Image Format,
 tool_format,Document Format,
 tool_format,Dot-Bracket Format,

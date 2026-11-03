@@ -93,7 +93,7 @@ def main():
             "\n\nDatabase will NOT be updated.",
         )
 
-    manifest = prepare_manifest(model_contract.read_manifest(syn, args.manifest_id))
+    manifest = prepare_manifest(utils.read_sync_manifest(syn, args))
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)

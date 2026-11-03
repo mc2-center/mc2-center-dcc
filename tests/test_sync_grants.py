@@ -82,7 +82,7 @@ def _run(manifest, dryrun=True, create_result=None, live_types=None):
     factory = _table_factory(manifest)
     with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
             patch.object(cgp.model_contract, "read_manifest",
-                         lambda syn, entity_id: manifest.copy()), \
+                         lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = create_result or {"NEW1": ("syn99", "123")}
         staged = cgp.process_new_grants(
@@ -174,7 +174,7 @@ def test_conversion_error_creates_nothing():
     manifest.loc[1, "Duration of Funding"] = "60 months"
     factory = _table_factory(manifest)
     with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
-            patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id: manifest.copy()), \
+            patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         with pytest.raises(ValueError, match="60 months"):
             cgp.process_new_grants("syn53259587", "syn21918972", False, MagicMock(),
@@ -186,7 +186,7 @@ def test_failed_grant_is_left_out_and_reported():
     factory = _table_factory(_manifest(False))
     manifest = _manifest(False)
     with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
-            patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id: manifest.copy()), \
+            patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = {"NEW1": ("None", "None")}
         staged = cgp.process_new_grants("syn53259587", "syn21918972", False, MagicMock(),
