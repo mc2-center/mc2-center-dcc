@@ -16,10 +16,10 @@ Those files stay as the record of what was specified and done. Their task IDs (P
 
 | Stream | State | Where |
 |---|---|---|
-| data-models | `v14.0.0` tagged (2026-10-23). **PR #277 (DM-14 + DM-16, released as 14.1.0; D-Q45) and #278 (kg-pipeline schema, D-Q48) merged 2026-10-28** (`main` @ `2b223025`):<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>• `File Data Use Codes` added<br>DataCatalog `immunoassay` stays lowercase. **`v14.1.0` is not tagged yet**, so nothing downstream (registration, pins) can use it. | `main` |
+| data-models | `v14.0.0` tagged (2026-10-23); **`v14.1.0` tagged, released and registered 2026-11-03**. **PR #277 (DM-14 + DM-16, released as 14.1.0; D-Q45) and #278 (kg-pipeline schema, D-Q48) merged 2026-10-28** (`main` @ `2b223025`):<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>• `File Data Use Codes` added<br>DataCatalog `immunoassay` stays lowercase. The pins (B3) still name `v14.0.0`. | `main` |
 | ai-curation-pipeline | **Merged to `main` 2026-10-28** (#12–#14 stacked, then #15 squash-merged to `main` @ `1bec43d`): P0–P3, P5 (DOI form), the report-noise fix, and list columns as JSON arrays with the keyword merge fix (D-Q47). **Still pinned to `v14.0.0`** and still carries the `Not-Applicable` workaround (B3). P4 deferred. Unrelated PRs #8–#11 open. | `main` |
 | mc2-center-dcc code | All D-tasks done except D17a (deletions):<br>• D11 RecordSet upload with replay/ownership reconciliation and write log v2<br>• D12 RecordSet union<br>• D15 upload driver<br>• **I5a migration script** (`annotations/migrate_grant_tables_14.py`)<br>• migration value maps (section 2.3), PubMed author recovery, duplicate tie-break<br>• #171: manifest-ID reconcile (D-Q52), admin RecordSets (D-Q50), I6 merged manifests, row removal (D-Q49), and the #166/#171 review fixes<br>All work branches are folded into #171 except `d17a-deletions` (9 commits, local, unpushed). **None of the stack is merged**, and `MODEL_REF` is still `v14.0.0`. | PRs **#166 → #167 → #171** (stacked), open |
-| Synapse registry | 14.0.0 verified for all 38 schemas (B2). Cleanup: I1 deleted 30, B4 deleted 29; 16 refused because bound, and they stay. 14.1.0 not registered (no tag yet). | `MC2Center` |
+| Synapse registry | 14.0.0 verified for all 38 schemas (B2). Cleanup: I1 deleted 30, B4 deleted 29; 16 refused because bound, and they stay. **14.1.0 registered for all 38 schemas and verified (2026-11-03).** | `MC2Center` |
 | Portal tables (syn21498902) | Datasets `accessInformation` item size is 300 (D-2, 2026-10-27); the portal page check is still to do. Otherwise unchanged; no non-dryrun syncs. | Section 2 |
 | CCKP - MC2 Admin (syn28742843) | Consortium table updated (D-1); write-log `syn78404341` and removals `syn78404342` tables created (W11). | Section 2.2 |
 | Grant-level manifests | Still 13.1.0 tables. The migration dry runs of all 4 types keep every row and key of the legacy unions (**EQUAL** on counts and keys; cell values are not compared). About 870 values are rewritten to 14.x terms (section 2.3). No production RecordSets yet. | grant projects |
@@ -203,8 +203,8 @@ All of these come from your review notes and answers on 2026-10-26.
 |---|---|---|
 | W4 | **Merge #166, then #167, then #171** (mc2-center-dcc; #171 = migration follow-ups D-Q49–D-Q52). Also urgent because of the merge-order hazard (section 1). | Phase D, D17a PR, B3, E1 |
 | W5 | ✅ Done 2026-10-28: pipeline #12 → #13 → #14, then #15 to `main` | Pipeline output in 14.0.0 form |
-| W6 | ✅ #277 merged 2026-10-28. **Go-ahead: tag `v14.1.0`** on `main` @ `2b223025` 🔒 (approved in D-Q45; not yet done) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
-| W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
+| W6 | ✅ Done 2026-11-03: #277 merged 2026-10-28; `v14.1.0` tagged on `main` @ `2b223025` and released on GitHub | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
+| W7 | ✅ Done 2026-11-03: 14.1.0 registered in `MC2Center` (38 schemas) and verified against the tag | B2, E1 binding version |
 | W8 | ✅ Done 2026-10-27: Consortium table update (`consortiumId` + 3 approved rows) | D-1, then people sync |
 | W9 | ✅ Done 2026-10-27: the Datasets `accessInformation` size change (check the portal's Datasets page) | D-2 |
 | W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`) and the migration's value changes in section 2.3 (especially the lower-case terms), and the D-Q52 curator worklists from the migration dry run: `manifest_differences.csv` (85 dataset and 5 publication cells; accept rows through the `--write-override-template` CSV) and `manifest_id_worklist.csv` (26 alias collisions, 4 aliases with two manifest IDs, 29 rows newer than the manifest). The 2 duplicate ties of D-Q44 are now decided by the merged manifest, so no hand pick is needed | Cleaner E1 validation |
@@ -233,11 +233,11 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | A5 report noise | ✅ | Pipeline `78b7b2b`, `016074c` |
 | A6 merges | 🔄 pipeline ✅; DCC ⏳ you (W4) | |
 | A7 D17a deletions PR | ⏳ A6 | Branch `d17a-deletions` ready (9 commits, local, unpushed); its own PR after #167 merges |
-| B1 DM-14/DM-16 fixes | ✅ #277 merged 2026-10-28 (released as 14.1.0, D-Q45) | Tag ⏳ W6 |
-| B2 verify 14.0.0; register 14.1.0 | ✅ verify; ⏳ W6 tag, W7 register | |
-| B3 bump `MODEL_REF` to v14.1.0 | ⏳ W6 tag | Both repos: `portal_tables/model_contract.py`; pipeline `parse_publication_pdfs.py` and its tests. Remove the pipeline's `Not-Applicable` workaround. |
+| B1 DM-14/DM-16 fixes | ✅ #277 merged 2026-10-28; `v14.1.0` tagged and released 2026-11-03 | |
+| B2 verify 14.0.0; register 14.1.0 | ✅ 2026-11-03 | 38 of 38 registered 14.1.0 schemas match the tag |
+| B3 bump `MODEL_REF` to v14.1.0 | ⬜ unblocked | Both repos: `portal_tables/model_contract.py`; pipeline `parse_publication_pdfs.py` and its tests. Remove the pipeline's `Not-Applicable` workaround. |
 | B4 registry cleanup | ✅ | 29 deleted, 16 bound and kept |
-| B5 registry table rows | ⬜ | After B2 |
+| B5 registry table rows | — out of scope | Owner, 2026-11-03: the registry table `syn69735275` isn't managed here |
 | C1–C7 RecordSet spike, grant creation, rollback rehearsal | ✅ | G1 = RecordSets (D-Q29) |
 | C5 D11 / D12 / D15 | ✅ | Plus the reconciliation rework (D-Q32–D-Q37) |
 | C8 clear the test project | ⏳ after I9 | |
@@ -261,7 +261,7 @@ The phase tables below stay as the specification. This is the order to do what's
 | Group | Contents (step IDs) | Depends on |
 |---|---|---|
 | **G-1 Land the DCC code** | Merge #166 → #167 → #171, pointing each PR at the next base as the one below merges, and run `pytest` on `main` (A6, W4). Push `d17a-deletions` and open its PR, including the newly unreferenced `attribute_dictionary.py`, `utils/reporter_project_query.py` and `utils/clean_reporter_results.py` (A7). Decide on #169 (W14). | Your review and merges |
-| **G-2 Cut and pin 14.1.0** | Tag `v14.1.0` 🔒 (W6). Register it in `MC2Center` 🔒 and compare it with `json_schemas/` at the tag (B2, W7). Add the registry table rows 🔒 (B5). Bump `MODEL_REF` and remove the `Not-Applicable` workaround in the pipeline, in its own PR (B3). Bump the DCC pin in a follow-up PR after #171, or add it to #171 (B3). | None; can run alongside G-1 |
+| **G-2 Cut and pin 14.1.0** | ✅ Tag, release and registration, verified (W6, W7, B2; 2026-11-03). B5 dropped (not managed here). Bump `MODEL_REF` and remove the `Not-Applicable` workaround in the pipeline, in its own PR (B3). Bump the DCC pin in a follow-up PR after #171, or add it to #171 (B3). | None; can run alongside G-1 |
 | **G-3 Curator review** | The W10 worklists (enums, section 2.3 rewrites, `manifest_differences.csv`, `manifest_id_worklist.csv`), which produce the `--overrides` file. The D-2 portal page check (W13). | Can start now |
 | **G-4 Migration** | E1: a small first batch 🔒 (W11), then all 4 types one at a time with EQUAL checks 🔒. Live run of the admin-manifest RecordSets 🔒 (D-Q50). Bind 14.1.0 to the admin RecordSets 🔒 (E3). | G-1, G-2, G-3 |
 | **G-5 Publish to the portal** | E2: regenerate and upload the merged and `release_validation` manifests 🔒. E4: the scratch-table write test, then each sync one at a time, compared with `--output_csv` and checked on the portal 🔒. E5: tell the curators and the people who run syncs, and lift the I0 holds. | G-4 |
@@ -290,7 +290,7 @@ Small DCC follow-ups that can ride along with any code PR after G-1:
 | B2 | **I2 verification and patch registration.** Read-only first: compare each registered 14.0.0 schema with `json_schemas/` at `v14.0.0`, ignoring `$id` and key order. Then register 14.1.0 with `make register-json VERSION=14.1.0 …` 🔒, and repeat the comparison against `v14.1.0`. | All registered schemas match. 14.1.0 is the highest version for every schema with a 14.x. |
 | B3 | Bump `MODEL_REF` to `v14.1.0`: `portal_tables/model_contract.py` and the pipeline's `manifest_fields.py` (one commit each). Remove the pipeline's `Not-Applicable` workaround. | Tests pass. Vocab counts are logged: Tumor Type 186 → 185. |
 | B4 | **Registry cleanup (R5).** A dry-run script prints Appendix C, refreshed live. You confirm the printed list 🔒, then it deletes one version at a time, recording deletions and refusals. Guards: never a version ≥ 14, nothing in the keep column, nothing from `AccessRequirementCA261841`, `AccessRequirementCA123`, `Landscape` or `Resource`. | `POST /schema/version/list` shows none of Appendix C's "Delete" versions, apart from logged refusals |
-| B5 | Registry table `syn69735275`: add rows for 14.0.0 and 14.1.0, mark the older data-model versions `superseded`, and mark the deleted ones `deleted`. 🔒 | Rows present |
+| B5 | ~~Registry table `syn69735275` rows~~ **Dropped 2026-11-03:** the owner doesn't manage this table. | — |
 
 ### Phase C: RecordSet spike in `syn78387305` (I3), which decides gate G1
 Lay `syn78387305` out like one grant project, so D11's "find the RecordSet in the grant's data-type folder" logic runs unchanged. Bind on the RecordSets, not the project.
