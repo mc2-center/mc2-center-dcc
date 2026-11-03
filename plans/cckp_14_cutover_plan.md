@@ -1,6 +1,6 @@
 # Consolidated plan: data model 14.0.0 cutover (pipeline, DCC, Synapse, orchestration)
 
-**As of 2026-10-27, revision 4.** Revision 2 folded in your answers on revision 1; revision 3 added the status of every step; this revision adds the migration's value changes (section 2.3) and the 14.1.0 renumbering (D-Q45). This document replaces the "what's next" parts of:
+**As of 2026-11-03, revision 5.** Revision 2 folded in your answers on revision 1; revision 3 added the status of every step; revision 4 added the migration's value changes (section 2.3) and the 14.1.0 renumbering (D-Q45). This revision records what landed on 2026-10-28 (data-models #277/#278, pipeline #12–#15), the untagged 14.1.0 and the pipeline-before-DCC merge order, and regroups the remaining work into ordered action groups (section 5, "Remaining work"). This document replaces the "what's next" parts of:
 - `plans/impl_ai_curation_pipeline_14.md` (P-tasks) and its report
 - `plans/impl_dcc_14_alignment.md` (D-tasks) and its report
 - `plans/impl_synapse_14_infrastructure.md` (I-tasks) and its report
@@ -12,20 +12,23 @@ Those files stay as the record of what was specified and done. Their task IDs (P
 
 ---
 
-## 1. Where things stand (2026-10-27)
+## 1. Where things stand (2026-11-03)
 
 | Stream | State | Where |
 |---|---|---|
-| data-models | `v14.0.0` tagged (2026-10-23). The DM-14 + DM-16 fixes are pushed to PR **#277**, now released as **14.1.0** rather than 14.0.1 because the PR also adds `File Data Use Codes` (a breaking header change for file manifests; D-Q45):<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>DataCatalog `immunoassay` stays lowercase. Not merged or tagged. | `review-fixes`, PR #277 |
-| ai-curation-pipeline | P0–P3 plus P5 (DOI form) and the report-noise fix, reviewed. List columns written as JSON arrays, with the keyword merge fix (D-Q47; #14 at `0071443`, independently reviewed, 162 tests pass). P4 deferred. | PRs **#12 → #13 → #14** (stacked), open |
-| mc2-center-dcc code | All D-tasks done except D17a (deletions, separate PR after #167):<br>• D11 RecordSet upload with replay/ownership reconciliation and write log v2<br>• D12 RecordSet union<br>• D15 upload driver<br>• **I5a migration script** (`annotations/migrate_grant_tables_14.py`)<br>• migration value maps (section 2.3), PubMed author recovery, duplicate tie-break<br>540 tests pass, 1 skipped. Four independent reviews addressed. | `model-alignment`; PR **#167** (stacked on **#166**), I5a commits pushed 2026-10-27 |
-| Synapse registry | 14.0.0 verified for all 38 schemas (B2). Cleanup: I1 deleted 30, B4 deleted 29; 16 refused because bound, and they stay. | `MC2Center` |
-| Portal tables (syn21498902) | **Unchanged.** No type changes and no non-dryrun syncs. | Section 2 |
+| data-models | `v14.0.0` tagged (2026-10-23). **PR #277 (DM-14 + DM-16, released as 14.1.0; D-Q45) and #278 (kg-pipeline schema, D-Q48) merged 2026-10-28** (`main` @ `2b223025`):<br>• `Not-Applicable` removed<br>• official DUO shorthands<br>• DUO pattern `\d{7,8}`<br>• `Dataset Doi` optional<br>• trailing whitespace stripped<br>• DOI description fixed<br>• `File Data Use Codes` added<br>DataCatalog `immunoassay` stays lowercase. **`v14.1.0` is not tagged yet**, so nothing downstream (registration, pins) can use it. | `main` |
+| ai-curation-pipeline | **Merged to `main` 2026-10-28** (#12–#14 stacked, then #15 squash-merged to `main` @ `1bec43d`): P0–P3, P5 (DOI form), the report-noise fix, and list columns as JSON arrays with the keyword merge fix (D-Q47). **Still pinned to `v14.0.0`** and still carries the `Not-Applicable` workaround (B3). P4 deferred. Unrelated PRs #8–#11 open. | `main` |
+| mc2-center-dcc code | All D-tasks done except D17a (deletions):<br>• D11 RecordSet upload with replay/ownership reconciliation and write log v2<br>• D12 RecordSet union<br>• D15 upload driver<br>• **I5a migration script** (`annotations/migrate_grant_tables_14.py`)<br>• migration value maps (section 2.3), PubMed author recovery, duplicate tie-break<br>• #171: manifest-ID reconcile (D-Q52), admin RecordSets (D-Q50), I6 merged manifests, row removal (D-Q49), and the #166/#171 review fixes<br>All work branches are folded into #171 except `d17a-deletions` (9 commits, local, unpushed). **None of the stack is merged**, and `MODEL_REF` is still `v14.0.0`. | PRs **#166 → #167 → #171** (stacked), open |
+| Synapse registry | 14.0.0 verified for all 38 schemas (B2). Cleanup: I1 deleted 30, B4 deleted 29; 16 refused because bound, and they stay. 14.1.0 not registered (no tag yet). | `MC2Center` |
+| Portal tables (syn21498902) | Datasets `accessInformation` item size is 300 (D-2, 2026-10-27); the portal page check is still to do. Otherwise unchanged; no non-dryrun syncs. | Section 2 |
+| CCKP - MC2 Admin (syn28742843) | Consortium table updated (D-1); write-log `syn78404341` and removals `syn78404342` tables created (W11). | Section 2.2 |
 | Grant-level manifests | Still 13.1.0 tables. The migration dry runs of all 4 types keep every row and key of the legacy unions (**EQUAL** on counts and keys; cell values are not compared). About 870 values are rewritten to 14.x terms (section 2.3). No production RecordSets yet. | grant projects |
-| Test project `syn78387305` | The RecordSet spike, reconciliation, crash, lock and stale-session tests, the D-2 rollback rehearsal on a Tools copy, and the write-log test tables. To be cleared after I9. | infrastructure report |
-| Orchestrator | Design only. The Phase 2 driver (D15) is built. | `orchestration/README.md` |
+| Test project `syn78387305` | The RecordSet spike, reconciliation, crash, lock and stale-session tests, the D-2 rollback rehearsal on a Tools copy, the row-removal spike, and the write-log and removals test tables. To be cleared after I9. | infrastructure report |
+| Orchestrator | Design only (`orchestration/README.md`; PR #169 holds an earlier plan doc). The Phase 2 driver (D15) is built. | Phase F |
 
-**The 2026-11-01 deadline is soft.** Both monthly cron jobs (`update-theme-graphs.yml`, `publications-status-check.yml`) run `main`'s code against the portal tables. Those haven't changed, and both jobs succeeded on 2026-10-01, after data-models #262. The rule is: **nothing in section 2.1 changes before #166/#167 merge.**
+**Merge-order hazard (2026-11-03).** The pipeline merged before the DCC stack, so the pipeline's `main` writes list columns as JSON arrays that DCC `main` can't parse. **Don't feed new pipeline output to DCC `main`'s upload scripts until #167 merges.** The monthly crons don't read pipeline output, so they aren't affected.
+
+**The 2026-11-01 soft deadline has passed with no breakage.** Both monthly cron jobs (`update-theme-graphs.yml`, `publications-status-check.yml`) run `main`'s code against the portal tables, and both succeeded on 2026-10-01 and again on **2026-11-01**, after D-2's size change. The next run is 2026-12-01. The rule still holds: **nothing else in section 2.1 changes before #166/#167 merge.**
 
 ---
 
@@ -198,15 +201,17 @@ All of these come from your review notes and answers on 2026-10-26.
 
 | # | What | Unblocks |
 |---|---|---|
-| W4 | **Merge #166, then #167, then #171** (mc2-center-dcc; #171 = migration follow-ups D-Q49–D-Q52) | Phase D, D17a PR, B3, E1 |
-| W5 | **Merge pipeline #12 → #13 → #14** (merge #167 before #14's JSON-array output is uploaded) | Pipeline output in 14.0.0 form |
-| W6 | **Merge data-models #277.** Then I tag `v14.1.0` (approved, D-Q45) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
+| W4 | **Merge #166, then #167, then #171** (mc2-center-dcc; #171 = migration follow-ups D-Q49–D-Q52). Also urgent because of the merge-order hazard (section 1). | Phase D, D17a PR, B3, E1 |
+| W5 | ✅ Done 2026-10-28: pipeline #12 → #13 → #14, then #15 to `main` | Pipeline output in 14.0.0 form |
+| W6 | ✅ #277 merged 2026-10-28. **Go-ahead: tag `v14.1.0`** on `main` @ `2b223025` 🔒 (approved in D-Q45; not yet done) | B2 registration, B3 pin bump, cleaner validation (no `Dataset Doi` failures) |
 | W7 | **Go-ahead: register 14.1.0** in `MC2Center` 🔒 | B2, E1 binding version |
 | W8 | ✅ Done 2026-10-27: Consortium table update (`consortiumId` + 3 approved rows) | D-1, then people sync |
 | W9 | ✅ Done 2026-10-27: the Datasets `accessInformation` size change (check the portal's Datasets page) | D-2 |
 | W10 | **Review the 96 `needs_curator` enum rows** in `output/worklists/i8_1_enums.csv` (they feed I5a `--overrides`) and the migration's value changes in section 2.3 (especially the lower-case terms), and the D-Q52 curator worklists from the migration dry run: `manifest_differences.csv` (85 dataset and 5 publication cells; accept rows through the `--write-override-template` CSV) and `manifest_id_worklist.csv` (26 alias collisions, 4 aliases with two manifest IDs, 29 rows newer than the manifest). The 2 duplicate ties of D-Q44 are now decided by the merged manifest, so no hand pick is needed | Cleaner E1 validation |
 | W11 | Write-log (`syn78404341`) and removals (`syn78404342`) tables created 2026-10-27. **Go-ahead: migrate a first small batch of grants** 🔒, after W6/W7 | E1 |
-| W12 | **Merge data-models #278** (kg schema, D-Q48), after #277 | kg-pipeline splits comma-joined licenses and investigators into items; no longer gates D-2 (D-Q51) |
+| W12 | ✅ Done 2026-10-28: data-models #278 (kg schema, D-Q48) | kg-pipeline splits comma-joined licenses and investigators into items |
+| W13 | **Look at the live Datasets page** after D-2: explore page, access facet, one detail page | Closes D-2 |
+| W14 | **Decide on PR #169** (orchestration plan doc): close it as superseded by Phase F, or fold it into `orchestration/README.md` | F |
 | W3 | Go-ahead for each other 🔒 step as it comes up. Deletions are confirmed against a printed list. | — |
 
 ---
@@ -223,21 +228,21 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 |---|---|---|
 | A1 refresh #167 description | ✅ | Refreshed with the push at `9280205` |
 | A2 independent pre-PR review | ✅ | Four reviews; all must-fix and should-fix items addressed |
-| A3 pipeline PRs | ✅ | #12, #13, #14 open |
+| A3 pipeline PRs | ✅ | #12–#14 merged, #15 to `main` 2026-10-28 |
 | A4 P5 DOI form | ✅ | Pipeline `01e35ca`; DCC normalization in the migration value maps |
 | A5 report noise | ✅ | Pipeline `78b7b2b`, `016074c` |
-| A6 merges | ⏳ you (W4, W5) | |
-| A7 D17a deletions PR | ⏳ A6 | Branch `d17a-deletions` ready (9 commits, local); its own PR after #167 merges |
-| B1 DM-14/DM-16 fixes | ✅ pushed to #277 (released as 14.1.0, D-Q45) | Merge and tag ⏳ W6 |
-| B2 verify 14.0.0; register 14.1.0 | ✅ verify; ⏳ W6/W7 register | |
-| B3 bump `MODEL_REF` to v14.1.0 | ⏳ B1 tag | Both repos; remove the pipeline's `Not-Applicable` workaround |
+| A6 merges | 🔄 pipeline ✅; DCC ⏳ you (W4) | |
+| A7 D17a deletions PR | ⏳ A6 | Branch `d17a-deletions` ready (9 commits, local, unpushed); its own PR after #167 merges |
+| B1 DM-14/DM-16 fixes | ✅ #277 merged 2026-10-28 (released as 14.1.0, D-Q45) | Tag ⏳ W6 |
+| B2 verify 14.0.0; register 14.1.0 | ✅ verify; ⏳ W6 tag, W7 register | |
+| B3 bump `MODEL_REF` to v14.1.0 | ⏳ W6 tag | Both repos: `portal_tables/model_contract.py`; pipeline `parse_publication_pdfs.py` and its tests. Remove the pipeline's `Not-Applicable` workaround. |
 | B4 registry cleanup | ✅ | 29 deleted, 16 bound and kept |
 | B5 registry table rows | ⬜ | After B2 |
 | C1–C7 RecordSet spike, grant creation, rollback rehearsal | ✅ | G1 = RecordSets (D-Q29) |
 | C5 D11 / D12 / D15 | ✅ | Plus the reconciliation rework (D-Q32–D-Q37) |
 | C8 clear the test project | ⏳ after I9 | |
 | D-1 Consortium table | ✅ 2026-10-27 | `consortiumId` + HTAN, NCI, Sage Bionetworks; infrastructure report |
-| D-2 Datasets `accessInformation` size 100 → 300 | ✅ 2026-10-27 | Verified by crosswalk check and sync dry run; portal page check pending |
+| D-2 Datasets `accessInformation` size 100 → 300 | ✅ 2026-10-27 | Verified by crosswalk check and sync dry run; portal page check ⏳ W13 |
 | D-3 worklists | ✅ generated | Enum curator review ⏳ W10 |
 | E1 I5a migration | 🔄 | Script built, with value maps, PubMed author recovery and the portal tie-break. Dry runs keep every row and key for all 4 types; value changes in section 2.3. Live run ⏳ W6/W7/W10/W11 |
 | E2 regenerate merged manifests (I6) | ✅ code, PR #171 | Dry-run compared; `--upload` after E1 |
@@ -248,6 +253,24 @@ Phases run in order; within a phase, items run in parallel unless one names anot
 | F orchestrator | ⬜ | After E1 |
 | Admin manifests (Grant / Project / PersonView → RecordSets) | ✅ code, PR #171 | D-Q50; dry runs clean; live run after D-1 and W11 |
 | DCC row-removal step (D-Q34) | ✅ code, PR #171 | D-Q49; live-tested in `syn78387305`; production removals table created with W11 |
+
+### Remaining work, grouped (2026-11-03)
+
+The phase tables below stay as the specification. This is the order to do what's left, with related steps grouped so each group is done in one go. **🔒 = a Synapse write or other outward-facing action.**
+
+| Group | Contents (step IDs) | Depends on |
+|---|---|---|
+| **G-1 Land the DCC code** | Merge #166 → #167 → #171, pointing each PR at the next base as the one below merges, and run `pytest` on `main` (A6, W4). Push `d17a-deletions` and open its PR, including the newly unreferenced `attribute_dictionary.py`, `utils/reporter_project_query.py` and `utils/clean_reporter_results.py` (A7). Decide on #169 (W14). | Your review and merges |
+| **G-2 Cut and pin 14.1.0** | Tag `v14.1.0` 🔒 (W6). Register it in `MC2Center` 🔒 and compare it with `json_schemas/` at the tag (B2, W7). Add the registry table rows 🔒 (B5). Bump `MODEL_REF` and remove the `Not-Applicable` workaround in the pipeline, in its own PR (B3). Bump the DCC pin in a follow-up PR after #171, or add it to #171 (B3). | None; can run alongside G-1 |
+| **G-3 Curator review** | The W10 worklists (enums, section 2.3 rewrites, `manifest_differences.csv`, `manifest_id_worklist.csv`), which produce the `--overrides` file. The D-2 portal page check (W13). | Can start now |
+| **G-4 Migration** | E1: a small first batch 🔒 (W11), then all 4 types one at a time with EQUAL checks 🔒. Live run of the admin-manifest RecordSets 🔒 (D-Q50). Bind 14.1.0 to the admin RecordSets 🔒 (E3). | G-1, G-2, G-3 |
+| **G-5 Publish to the portal** | E2: regenerate and upload the merged and `release_validation` manifests 🔒. E4: the scratch-table write test, then each sync one at a time, compared with `--output_csv` and checked on the portal 🔒. E5: tell the curators and the people who run syncs, and lift the I0 holds. | G-4 |
+| **G-6 Cleanup after one clean cycle** | E6 steps 1–4: move the 532 tables to `archive_13.1.0/` 🔒, delete the UNION MaterializedViews 🔒, merge the code change (remove `syn52750482` from `sync_grants.py`; remove `merge_tables.py` legacy mode and `-s`), then delete `syn52750482` 🔒. Clear `syn78387305` 🔒 (C8). | G-5, plus one good monthly cron run |
+| **G-7 Orchestrator** | Phase F stage driver. Bring the pipeline's open PRs #8–#11 back in (#8, the review app, fits checkpoint 1). | G-4 |
+
+Small DCC follow-ups that can ride along with any code PR after G-1:
+- Make the team ID in `create_grant_projects()` a string (C6).
+- Remove `sync_datasets.py`'s short-token PMID cleanup once E2's regenerated manifests are clean (D-Q35).
 
 ### Phase A: Land the code (no Synapse writes)
 | Step | Task | Owner/tier | Check |
@@ -329,11 +352,10 @@ The README's design holds, with these updates:
 
 ### Later (not scheduled)
 - P4 pipeline branch rebases (R3).
-- DM-13 (CI gate), DM-15 (`GrantView Key` as a list).
+- DM-13 (CI gate; local branch `ci/dm-13-gate` in the `data-models-dm13` checkout, 4 commits, not opened as a PR), DM-15 (`GrantView Key` as a list).
 - Missing upstream templates for ProjectView, Consortium, Institution and Theme.
 - CLI consolidation (`plans/cckp_metadata_and_cli_consolidation.md`).
 - **`license` → `STRING_LIST` on Tools and Education (deferred by D-Q51)**, if the portal starts linking or faceting by individual license. The code is ready (`to_portal` follows the live type), data-models #278 already reads both forms, and the rollback for a type change was rehearsed in C7 (2026-10-26). It needs the portal facet/link work and a check of other `license` readers (Croissant export).
-- **Admin manifests to RecordSets** (Grant `syn53259587`, Project `syn59074382`, PersonView `syn38301033`): extend the I5a script or add a sibling, then point `utils.CONFIG` at them (needs D16's `read_manifest`, already done).
 - **governanceDUO follow-ups** (that repo, not this plan):
   - NPOA's `meaning: DUO:0000044` points at an IRI DUO doesn't define; the real term is `DUO:00000044`.
   - Its LinkML model is only on `synapse-curator-infra`. Once that merges to `main`, re-run `utils/sync_duo_terms.py` against `main`.
@@ -342,6 +364,7 @@ The README's design holds, with these updates:
 
 ## 6. Risks and known issues
 - **A section 2.1 change before the code merges** would break the crons and the syncs on `main`. Gate: Phase D waits for A6.
+- **Pipeline output ahead of DCC `main`** (2026-11-03): the pipeline's JSON-array list columns aren't parsed by DCC `main`. Gate: no pipeline output goes through DCC upload scripts until #167 merges (section 1).
 - **Bindings below the top two levels:** I1's own check missed some. B4 relies on Synapse refusing to delete bound versions (it did in I1), and records every refusal.
 - **Grant creation has never run live** until C6.
 - **Dataset access text changes on every row** (D-Q17). Anything that matches `accessInformation` strings (saved portal searches, downstream filters) has to be checked against Appendix A.
