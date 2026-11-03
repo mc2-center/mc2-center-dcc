@@ -186,6 +186,13 @@ def test_data_use_codes_become_duo_ids():
     assert unmapped["value"].tolist() == ["XYZ"]
 
 
+def test_eight_digit_duo_id_is_valid():
+    # 14.1.0 widens the pattern to DUO:\d{7,8} for NPOA's official DUO:00000044
+    row, changes, unmapped = run(normalizer(), DatasetDataUseCodes="DUO:00000044")
+    assert row["DatasetDataUseCodes"] == ["DUO:00000044"]
+    assert changes.empty and unmapped.empty
+
+
 def test_license_maps_to_spdx_and_blanks_what_it_cannot_map():
     row, changes, unmapped = run(normalizer(), License="Apache 2.0, Our own terms, MIT License")
     assert row["License"] == ["Apache-2.0", "MIT"]

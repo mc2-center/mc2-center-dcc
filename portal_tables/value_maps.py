@@ -54,7 +54,7 @@ UNMAPPED_COLUMNS = ["key", "column", "value"]
 DOI_PLACEHOLDERS = frozenset({"no doi listed", "doi not available"})
 TRUNCATED_SUFFIX = "(Read more on Pubmed)"
 DOI_PREFIX = "https://doi.org/"
-_DUO_VALID = re.compile(r"^(DUO:\d{7}|DUOPlus\d+|Pending Annotation)$")
+_DUO_VALID = re.compile(r"^(DUO:\d{7,8}|DUOPlus\d+|Pending Annotation)$")
 
 
 def fold(value: str) -> str:
