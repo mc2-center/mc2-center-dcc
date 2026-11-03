@@ -93,7 +93,7 @@ def get_args(argv=None):
     parser = argparse.ArgumentParser(description="Migrate an admin manifest (Grant, Project, PersonView) to a RecordSet")
     parser.add_argument("--component", required=True, choices=COMPONENTS)
     parser.add_argument("--source", help="Synapse ID of the source table (default: utils.CONFIG manifest of the component)")
-    parser.add_argument("--schema-version", default="14.0.0",
+    parser.add_argument("--schema-version", default="14.1.0",
                         help="registered MC2Center-<Component>-<version> schema to bind (default: %(default)s)")
     parser.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
     parser.add_argument("--out-dir", help="default: output/migration_14/admin/<component>")
