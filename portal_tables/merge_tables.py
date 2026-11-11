@@ -28,6 +28,8 @@ import recordsets
 import utils
 
 GRANTS_TABLE = "syn21918972"
+# Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
+UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
 FOLDER_MAP = {
     "PublicationView": "publications",
     "DatasetView": "datasets",
@@ -130,8 +132,10 @@ def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org =
 
 
 def list_grant_projects(syn, source=GRANTS_TABLE):
+    """Every project that holds resource RecordSets: the Grants table's projects plus ``UNLISTED_LABELS``."""
     df = Table(id=source).query(query=f"SELECT grantId FROM {source}", synapse_client=syn)
-    return [g for g in df["grantId"].tolist() if g]
+    grants = [g for g in df["grantId"].tolist() if g]
+    return grants + [p for p in UNLISTED_LABELS if p not in grants]
 
 
 def _join_cell(value):

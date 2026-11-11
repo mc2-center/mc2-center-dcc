@@ -550,6 +550,8 @@ def upload_manifest(syn, component: str, path, comment: str) -> str:
 def regenerate_main(args, syn=None) -> int:
     if args.upload and args.input_dir:
         raise SystemExit("--upload is refused with --input-dir: local converted.csv files are test input, not production data")
+    if args.upload and args.grant_projects:
+        raise SystemExit("--upload is refused with --grant-projects: a subset of grants would replace the whole manifest")
     pmid_keys = args.pmid_keys or (DEFAULT_PMID_KEYS if os.path.exists(DEFAULT_PMID_KEYS) else None)
     mapping = load_mapping(args.mapping, args.schema_version)
     failures = 0

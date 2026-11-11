@@ -183,6 +183,12 @@ def test_upload_is_refused_with_a_local_input_dir(tmp_path, mapping_csv):
         uq.regenerate_main(args)
 
 
+def test_upload_is_refused_with_a_grant_subset(mapping_csv):
+    args = uq.get_args(["--regenerate", "--grant-projects", "syn1", "--upload", "--mapping", mapping_csv])
+    with pytest.raises(SystemExit, match="grant-projects"):
+        uq.regenerate_main(args, syn=mock.MagicMock())
+
+
 def test_dry_run_never_uploads(tmp_path, mapping_csv):
     with mock.patch.object(uq, "upload_manifest") as upload:
         _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
@@ -239,10 +245,11 @@ def test_upload_is_refused_while_id_conflicts_exist(tmp_path, mapping_csv):
     root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")],
                                            "CA100002": [_row("syn2", "A", GrantViewKey="CA100002")]})
     union, stats = merge_tables.build_union_from_dir("DatasetView", str(root))
-    args = uq.get_args(["--regenerate", "--components", "DatasetView", "--grant-projects", "syn1",
+    args = uq.get_args(["--regenerate", "--components", "DatasetView",
                         "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--upload"])
     args.carry_columns = []
-    with mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
+    with mock.patch.object(merge_tables, "list_grant_projects", return_value=["syn1"]), \
+            mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
             mock.patch.object(utils, "syn_login", return_value=mock.MagicMock()), \
             mock.patch.object(uq, "upload_manifest") as upload:
         with pytest.raises(SystemExit, match="id_conflicts"):
