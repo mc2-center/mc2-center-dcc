@@ -18,6 +18,7 @@ author: orion.banks
 from synapseclient import operations
 from synapseclient.models import MaterializedView, RecordSet, SchemaStorageStrategy, Table
 import argparse
+import glob
 from datetime import datetime
 import logging
 import os
@@ -173,6 +174,30 @@ def build_union(syn, component, grant_ids):
             continue
         frames.append(recordsets.read_recordset(syn, rs_id, list_cols=recordsets.list_columns(component)))
 
+    return assemble_union(component, frames, len(grant_ids), len(missing))
+
+
+def read_converted_dir(component, input_dir):
+    """Frames of every ``converted.csv`` under ``input_dir`` (the I5a dry-run output), sorted by path.
+
+    ``<input_dir>/<Component>`` is searched when it exists, else ``input_dir``.
+    Class-label headers; list cells parsed to lists, as ``recordsets.read_recordset`` returns them.
+    """
+    root = os.path.join(input_dir, component)
+    root = root if os.path.isdir(root) else input_dir
+    paths = sorted(glob.glob(os.path.join(root, "**", "converted.csv"), recursive=True))
+    list_cols = recordsets.list_columns(component)
+    return [recordsets._load_csv(p, list_cols) for p in paths], paths
+
+
+def build_union_from_dir(component, input_dir):
+    """Like :func:`build_union` but from local per-grant ``converted.csv`` files."""
+    frames, paths = read_converted_dir(component, input_dir)
+    return assemble_union(component, [f for f in frames if len(f.columns)], len(paths), 0)
+
+
+def assemble_union(component, frames, grants_scanned, missing):
+    """Union of per-grant frames: display headers in template order, list cells comma-space joined. Returns (frame, stats)."""
     headers = model_contract.template_headers(component)
     if frames:
         union = pd.concat(frames, ignore_index=True, sort=False).fillna("")
@@ -197,9 +222,9 @@ def build_union(syn, component, grant_ids):
         keyed = union[union[key] != ""][key]
         dupes = int(keyed.duplicated(keep="first").sum())
     stats = {
-        "grants_scanned": len(grant_ids),
+        "grants_scanned": grants_scanned,
         "recordsets_found": len(frames),
-        "missing": len(missing),
+        "missing": missing,
         "rows": len(union),
         "duplicate_keys": dupes,
     }

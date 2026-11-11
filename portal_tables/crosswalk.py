@@ -336,5 +336,9 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
                 col[is_str] = utils.convert_to_stringlist(col[is_str])
         elif kind == "int" and live_type == "INTEGER":
             col = pd.to_numeric(col.replace("", pd.NA), errors="raise").astype("Int64")
+        if kind != "int" and not (kind == "list" and live_type == "STRING_LIST"):
+            # A STRING column (a list kind live as STRING, or a string kind such as chairRoles) cannot hold a
+            # list: list cells (RecordSet manifests) are joined with ", "; string cells stay.
+            col = col.map(lambda v: ", ".join(str(i) for i in v) if isinstance(v, (list, tuple)) else v)
         out[portal_col] = col
     return out

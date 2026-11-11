@@ -127,3 +127,12 @@ def test_split_cell_parses_json_array_keeping_commas_inside_items():
     assert utils.split_cell('["Aged, 80 and over", "Humans"]') == ["Aged, 80 and over", "Humans"]
     assert utils.split_cell("A, B,C") == ["A", "B", "C"]
     assert utils.split_cell("[not json, x]") == ["[not json", "x]"]
+
+
+def test_manifest_csv_help_states_the_shape_and_that_manifest_source_is_ignored(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["sync", "-h"])
+    with pytest.raises(SystemExit):
+        utils.get_args("dataset")
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "legacy manifest shape" in help_text and "display headers" in help_text
+    assert "--manifest-source is ignored when it is given" in help_text
