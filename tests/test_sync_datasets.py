@@ -153,8 +153,9 @@ def test_access_text_for_ids_and_short_codes_match():
 
 def test_pending_annotation_and_duoplus_are_mapped():
     code_to_id = sync_datasets.duo_code_to_id()
-    assert sync_datasets.translate_access("Pending Annotation", code_to_id) == utils.DUO_DICT["Pending Annotation"]
+    assert sync_datasets.translate_access("Pending Annotation", code_to_id) == sync_datasets.PENDING_ACCESS_TEXT
     assert sync_datasets.translate_access("DUOPlus1", code_to_id).startswith("Source geography")
+    assert sync_datasets.translate_access("NOPE", code_to_id) is None
 
 
 def test_duoplus_text_matches_data_models_description():
@@ -166,13 +167,19 @@ def test_duoplus_text_matches_data_models_description():
         assert desc.startswith(text), code
 
 
+def test_entry_with_no_mapped_code_gets_no_access_text():
+    rows = [dict(MANIFEST_14[1], **{"Dataset Data Use Codes": "NOPE,ALSONOPE"})]
+    row = run(rows).iloc[0]
+    assert row["accessInformation"] == [sync_datasets.NO_ACCESS_TEXT]
+
+
 def test_unknown_code_warns_and_row_is_still_processed(caplog):
     with caplog.at_level(logging.WARNING):
         out = run(MANIFEST_14)
     assert "NOPE" in caplog.text
     row = out[out["datasetAlias"] == "setB"].iloc[0]
-    assert "Access information not mapped: NOPE" in row["accessInformation"]
-    assert utils.DUO_DICT["Pending Annotation"] in row["accessInformation"]
+    assert not any("NOPE" in t for t in row["accessInformation"])  # unmapped code dropped
+    assert sync_datasets.PENDING_ACCESS_TEXT in row["accessInformation"]
     assert row["downloadType"] == "Open Access"
     assert row["downloadSynId"] == "syn222"
     # set from the link/alias, not skipped because of the unknown code

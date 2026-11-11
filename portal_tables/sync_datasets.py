@@ -57,22 +57,28 @@ def duo_code_to_id() -> dict[str, str]:
     return mapping
 
 
-def translate_access(code: str, code_to_id: dict) -> str:
-    """Access text for one data use code.
+PENDING_ACCESS_TEXT = "Access information was not provided for this dataset"
+NO_ACCESS_TEXT = "No access information available"
+
+
+def translate_access(code: str, code_to_id: dict) -> str | None:
+    """Access text for one data use code, or None if the code has no mapping.
 
     Manifests store ``DUO:`` IDs, ``DUOPlus*`` and ``Pending Annotation``,
     which are looked up directly (an aliased ID such as ``DUO:00000044`` is
     resolved by ``translate_duo``). Short codes (still held by the live manifest
     until it is migrated) are first translated to their DUO ID. A code with
-    no entry gets a logged warning and fallback text instead of raising.
+    no entry is logged as a warning and dropped.
     """
     code = code.strip()
+    if code == "Pending Annotation":
+        return PENDING_ACCESS_TEXT
     key = code_to_id.get(code, code)
     try:
         return utils.translate_duo(key)
     except KeyError:
         logger.warning("No access information mapped for data use code %r", code)
-        return f"Access information not mapped: {code}"
+        return None
 
 
 def _get_croissant_versions(syn: Synapse) -> dict:
@@ -198,7 +204,8 @@ def add_missing_info(
             datasets.at[_, "DatasetDoi"] = usable[0].strip() if usable else utils.DOI_NOT_AVAILABLE
         if str(datasets.at[_, "DatasetDoi"]).strip() == utils.NO_DOI_LISTED:
             datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
-        d = [translate_access(code, code_to_id) for code in row["DatasetDataUseCodes"].split(",")]
+        d = [t for code in row["DatasetDataUseCodes"].split(",") if (t := translate_access(code, code_to_id))]
+        d = d or [NO_ACCESS_TEXT]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         # Keep the texts as a list: several contain commas, so joining them
         # here and splitting again in clean_table would break them apart.
