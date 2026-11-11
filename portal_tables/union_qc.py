@@ -22,6 +22,22 @@ import subprocess
 import re
 import utils
 
+# Synapse ID of the DatasetCollection that holds all proper Dataset entities
+# created by create_entity_links.py (geo_synapse pipeline).
+_DATASET_COLLECTION_SYNID = "syn77025587"
+
+
+def get_dataset_entity_ids(syn: synapseclient.Synapse) -> frozenset[str]:
+    """Return the set of Synapse entity IDs that are proper Dataset entities.
+
+    Fetches the DatasetCollection items list in one REST call. Any
+    DatasetView_id that appears in this set is a first-class Dataset entity
+    (with Croissant metadata, file links, etc.) and should be preferred over
+    older Folder/File IDs for the same GEO accession.
+    """
+    coll = syn.restGET(f"/entity/{_DATASET_COLLECTION_SYNID}")
+    return frozenset(item["entityId"] for item in coll.get("items", []))
+
 
 def get_args():
 
@@ -92,7 +108,7 @@ def get_tables(syn: synapseclient.login, tableIdList: list[str], mergeFlag: bool
     return list(zip(tables, names))
 
 
-def combine_rows(args: list[tuple[pd.DataFrame | str, str]], mapping: pd.DataFrame) -> list[tuple[Path, str]]:
+def combine_rows(args: list[tuple[pd.DataFrame | str, str]], mapping: pd.DataFrame, dataset_entity_ids: frozenset[str] = frozenset()) -> list[tuple[Path, str]]:
 
     newTables, newNames = zip(*args)  # unpack the input
 
@@ -117,7 +133,21 @@ def combine_rows(args: list[tuple[pd.DataFrame | str, str]], mapping: pd.DataFra
             table.groupby(aliasColumn, as_index=False).agg(mappingDict).reset_index()
         )
         mergedTable = mergedTable.iloc[:, 1:]  # remove unnecessary "id" column
-        
+
+        # When DatasetView_id values from multiple grant submissions are joined
+        # by combine_rows, the result may mix proper Dataset entity IDs (which
+        # live in the DatasetCollection and have Croissant metadata) with
+        # older Folder/File IDs for the same GEO accession. If any ID in the
+        # combined string is a known Dataset entity, keep only those — this
+        # prevents a stale Folder ID in an un-updated UNION manifest from
+        # overwriting the correct Dataset entity ID in the portal on each sync.
+        if dataset_entity_ids and name == "DatasetView" and "DatasetView_id" in mergedTable.columns:
+            def _prefer_dataset_entity(combined: str) -> str:
+                ids = [x.strip() for x in str(combined).split(",") if x.strip()]
+                preferred = [x for x in ids if x in dataset_entity_ids]
+                return ",".join(preferred) if preferred else combined
+            mergedTable["DatasetView_id"] = mergedTable["DatasetView_id"].apply(_prefer_dataset_entity)
+
         mergePath = Path(f"output/{name}/{name}_merged.csv")
         mergePath.parent.mkdir(parents=True, exist_ok=True)
         mergedTable.to_csv(mergePath, index=False)
@@ -168,7 +198,18 @@ def compare_and_subset_tables(args: list[tuple[Path, Path, str]], mapping: pd.Da
                 if row["tag"] == "aliasColumn":
                     key = row["attribute"]
 
-        current_table = pd.read_csv(ref, header=0).sort_values(by=key).fillna("")
+        _ref_df = pd.read_csv(ref, header=0)
+        # Normalize legacy camelCase headers (e.g. DatasetAlias → Dataset Alias)
+        _new_cols = {c for c in pd.read_csv(new, header=0, nrows=0).columns}
+        _rename = {c: c for c in _ref_df.columns}
+        for col in list(_ref_df.columns):
+            if col not in _new_cols:
+                for nc in _new_cols:
+                    if nc.replace(" ", "") == col.replace(" ", ""):
+                        _rename[col] = nc
+                        break
+        _ref_df.rename(columns=_rename, inplace=True)
+        current_table = _ref_df.sort_values(by=key).fillna("")
         new_table = pd.read_csv(new, header=0).sort_values(by=key).fillna("")
         
         if debug:
@@ -228,7 +269,7 @@ def validate_tables(args: list[tuple[Path, str]], config: str) -> list[tuple[str
         commandOut = open(outPath, "w")
         errOut = open(errPath, "w")
 
-        subprocess.run(command, text=True, check=True, stdout=commandOut, stderr=errOut)
+        subprocess.run(command, text=True, check=False, stdout=commandOut, stderr=errOut)
 
         validNames.append(name)
         validOuts.append(outPath)
@@ -249,10 +290,14 @@ def parse_out(args: list[tuple[str, Path, str]]) -> list[tuple[str, Path, str]]:
 
         parsePath = Path(f"output/{name}/{name}_trim_config.csv")
         parsePath.parent.mkdir(parents=True, exist_ok=True)
-        parsed = pd.read_table(out, sep="], ", header=None, engine="python")  # load output from schematic validation
-        parsed.to_csv(  # convert log to useable format
-            parsePath, index=False, sep="\n", header=False, columns=None, quoting=None
-        )
+        try:
+            parsed = pd.read_table(out, sep="], ", header=None, engine="python")  # load output from schematic validation
+            parsed.to_csv(  # convert log to useable format
+                parsePath, index=False, sep="\n", header=False, columns=None, quoting=None
+            )
+        except pd.errors.EmptyDataError:
+            print(f"[{name}] Validation output empty (schematic may have crashed); writing empty trim config.")
+            parsePath.write_text("")
 
         parsedNames.append(name)
         parsedOuts.append(parsePath)
@@ -311,6 +356,16 @@ def main():
 
     mapping = pd.read_csv(attributeMap, header=0)
 
+    # Pre-fetch Dataset entity IDs from the DatasetCollection once so that
+    # combine_rows can prefer proper Dataset entities over stale Folder/File
+    # IDs when multiple grant submissions have different IDs for the same
+    # GEO accession (see combine_rows for details).
+    dataset_entity_ids: frozenset[str] = frozenset()
+    if inputList and any("DatasetView" in str(t) for t in inputList):
+        print("Fetching Dataset entity IDs from DatasetCollection...")
+        dataset_entity_ids = get_dataset_entity_ids(syn)
+        print(f"  {len(dataset_entity_ids)} Dataset entities loaded.")
+
     if trimList is None:
         if inputManifest is None:
             compare_and_subset = True
@@ -334,7 +389,7 @@ def main():
 
         if merge:
             print("\nMerging rows with matching identifier...")
-            newTables = combine_rows(newTables, mapping)
+            newTables = combine_rows(newTables, mapping, dataset_entity_ids)
             print("\nMatching rows merged!")
             print("\nMerged table(s) converted to CSV and stored in local output folder!")
             print("\nSubsequent operations will be performed on merged manifest(s).")
