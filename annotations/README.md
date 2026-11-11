@@ -61,7 +61,7 @@ Creates `month_filepaths.csv` in present directory
 - File path information in `./output/output_month`
 
 ### Process:
-Runs the Python script `processing-splits.py` to process split files from the specified output folder. Adds missing columns required to match the schema, truncates free-text cells over 500 characters to 400 (enum, list, pattern and format columns are never cut), and adds "Read more on Pubmed."
+Runs the Python script `processing-splits.py` to process split files from the specified output folder. Adds missing columns required to match the schema, truncates free-text cells over 500 characters to 400 (enum, list, pattern and format columns are never cut), and appends "(Read more on Pubmed)".
 
 ### Output:
 Performs processing on split files.
