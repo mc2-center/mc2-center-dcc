@@ -962,6 +962,12 @@ def _is_blank(value) -> bool:
     return _norm(value) == ""
 
 
+def _is_pending(value) -> bool:
+    """The ``Pending Annotation`` placeholder (case and surrounding space ignored)."""
+    n = _norm(value)
+    return isinstance(n, str) and n.strip().casefold() == "pending annotation"
+
+
 def _session_base(cf, diffs, fingerprints, v) -> int:
     """The version a foreign version ``v`` was exported from: ``v - 1`` or an older stale base.
 
@@ -1127,7 +1133,7 @@ def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()
             snapshot = cf[_session_base(cf, diffs, fingerprints, v)] if v > 1 else {}
             for k, row in frame.items():
                 if k not in state:
-                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) else C)
+                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) or _is_pending(x) else C)
                     if k in gone:
                         gone.discard(k)
                         srow = snapshot.get(k)

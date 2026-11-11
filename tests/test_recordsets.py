@@ -305,6 +305,16 @@ def test_stale_session_spanning_pipeline_write_and_other_contributors_edit():
     assert ("b", "Title") in owned  # B's own edit (v3) remains contributor-owned
 
 
+def test_pending_annotation_in_a_new_contributor_row_is_pipeline_owned():
+    v1 = df(["a", "T", ""])
+    v2 = df(["a", "T", ""], ["r", "Mine", "Pending Annotation"])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    assert owned == {("r", "Title")}
+    merged, conflicts = rs.merge_upload(state, df(["r", "Upload", ["x"]]), K, owned)
+    assert cell(merged, "r", "Assay") == ["x"]  # filled without a conflict
+    assert conflicts["column"].tolist() == ["Title"]  # only the contributor's real value conflicts
+
+
 def test_deleted_contributor_row_is_restored():
     v1 = df(["a", "T", ""])
     v2 = df(["a", "T", ""], ["r", "Mine", ""])
