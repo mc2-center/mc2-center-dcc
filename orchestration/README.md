@@ -132,9 +132,11 @@ tables**. Run once per component:
    exists and now validates with `jsonschema` too.) `build_tag_lists.py` is no
    longer a separate step in this flow.
 3. **Human review and correction** of the validation report.
-4. `merge_and_correct_manifests.py` — only for hand corrections: folds
-   `_updated.csv` into `<component>_merged.csv`, producing
-   `<component>_merged_corrected.csv`.
+4. Hand corrections. **Preferred: make them in Curator**, on the grant's
+   RecordSet; the next `--regenerate` picks them up. Alternatively,
+   `merge_and_correct_manifests.py` folds `_updated.csv` into
+   `<component>_merged.csv`, producing `<component>_merged_corrected.csv`;
+   that file is not what step 5 uploads, so upload it by hand instead.
 5. `union_qc.py --regenerate --upload` — uploads the tagged file as a new
    version of the manifest in the `release_validation` Synapse
    folder (`syn53461903`); this replaces the manual upload. `--upload` is
