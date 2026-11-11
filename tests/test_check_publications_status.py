@@ -74,3 +74,38 @@ def test_pending_annotations_accepts_legacy_manifest(tmp_path):
     assert {"Assay", "GrantView Key"} <= set(df.columns)
     renamed = df.rename(columns=header_maps.display_to_portal("PublicationView"))
     assert {"assay", "grantNumber", "pubMedId"} <= set(renamed.columns)
+
+
+def test_status_check_lists_each_row_once_when_a_doi_repeats(monkeypatch):
+    mod = _load("utils/check_publications_status.py", "check_publications_status_dupes")
+    rows = pd.concat([_portal_row()] * 3, ignore_index=True)
+    rows["doi"] = ["d1", "d1", "d2"]
+    rows["grantNumber"] = [["CA1"], ["CA2"], ["CA1"]]
+
+    class FakeTable:
+        def __init__(self, id):
+            pass
+
+        def query(self, **kwargs):
+            return rows.copy()
+
+    class FakeResponse:
+        content = b'{"is_oa": true}'
+
+        def raise_for_status(self):
+            pass
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url):
+            return FakeResponse()
+
+    monkeypatch.setattr(mod, "Table", FakeTable)
+    monkeypatch.setattr(mod.requests, "Session", FakeSession)
+    out = mod.status_check(None, "syn1", "SELECT", "doi", "x@y")
+    assert len(out) == 3  # was 5: each d1 row was appended once per d1 occurrence
