@@ -77,7 +77,10 @@ def prepare_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
     manifest = utils.fill_blank(manifest)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     # iconTags is an enrichment column that comes with the manifest.
-    return model_contract.normalize_headers(manifest, to="keys", passthrough=["iconTags"])
+    manifest = model_contract.normalize_headers(manifest, to="keys", passthrough=["iconTags"])
+    # A publication with several grants can appear once per grant, each copy
+    # carrying the merged grant list: identical apart from entityId. Keep one.
+    return manifest.drop_duplicates(subset=[c for c in manifest.columns if c != "entityId"]).reset_index(drop=True)
 
 
 def main():

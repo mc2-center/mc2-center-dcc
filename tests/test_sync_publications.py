@@ -85,6 +85,15 @@ def test_portal_shape(tmp_path):
     assert row["assay"] == ["RNA-seq"]
 
 
+def test_copies_differing_only_in_entity_id_are_kept_once(tmp_path):
+    m = manifest(NEW_HEADERS)
+    m = pd.concat([m, m.iloc[[0]].assign(entityId="syn9")])  # pub 1 again, from another grant's copy
+    path = tmp_path / "m.csv"
+    m.to_csv(path, index=False)
+    prepared = sp.prepare_manifest(pd.read_csv(path, dtype=str))
+    assert prepared["PubmedId"].tolist() == ["1", "2"]
+
+
 def test_blank_and_no_doi_listed_become_doi_not_available(tmp_path):
     m = manifest(NEW_HEADERS)
     m["Publication Doi"] = ["", "No DOI Listed"]
