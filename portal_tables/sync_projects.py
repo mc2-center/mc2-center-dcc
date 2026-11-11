@@ -35,6 +35,7 @@ def add_missing_info(
     for idx, row in projects.iterrows():
         grant_names = []
         themes = []
+        grant_consortia = []
         grant_type = ""
         for g in split_cell(row["GrantViewKey"]):
             if g != NO_GRANT:
@@ -43,10 +44,15 @@ def add_missing_info(
                 for t in match["theme"].values[0]:
                     if t not in themes:
                         themes.append(t)
+                for c in match["consortium"].values[0]:
+                    if c not in grant_consortia:
+                        grant_consortia.append(c)
                 grant_type = match["grantType"].values[0]
         projects.at[idx, "grantName"] = grant_names
         projects.at[idx, "theme"] = themes
         projects.at[idx, "grantType"] = grant_type
+        if not row["consortium"]:  # no ConsortiumKey: the consortia of the project's grants
+            projects.at[idx, "consortium"] = grant_consortia
     return projects
 
 

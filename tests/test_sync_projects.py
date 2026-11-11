@@ -114,3 +114,12 @@ def test_multiple_keys_dedupe_in_order():
     assert sp.resolve_consortium_keys(
         None, ["program.ps-on, CSBC,PS-ON"], known_names=KNOWN
     ) == [["PS-ON", "CSBC"]]
+
+
+def test_blank_consortium_key_falls_back_to_the_grants_consortia():
+    m = sp.prepare_manifest(_manifest(False, "name"))
+    m.loc[1, "ConsortiumKey"] = ""  # Proj B: grants CA1 (CSBC) and CA2 (PS-ON)
+    m.loc[2, "ConsortiumKey"] = ""  # Aff C: no grant
+    consortia = sp.resolve_consortium_keys(None, m["ConsortiumKey"], known_names=KNOWN)
+    out = sp.clean_table(sp.add_missing_info(m, GRANTS, consortia), LIVE)
+    assert out["consortium"].tolist() == [["CSBC"], ["CSBC", "PS-ON"], []]
