@@ -7,10 +7,14 @@ with their updated annotations after they have become 'Open Access'
 import argparse
 import importlib.util
 import os
-from synapseclient import Synapse
 from synapseclient.models import Table
 import pandas as pd
-from attribute_dictionary import PUBLICATION_DICT
+import sys
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
+import model_contract
 
 # portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
 _spec = importlib.util.spec_from_file_location(
@@ -20,15 +24,6 @@ _spec = importlib.util.spec_from_file_location(
 _portal_utils = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_portal_utils)
 strip_newlines = _portal_utils.strip_newlines
-
-
-def login():
-    """Login to Synapse"""
-
-    syn = Synapse()
-    syn.login()
-
-    return syn
 
 
 def get_args():
@@ -55,6 +50,8 @@ def get_args():
 def get_updated_df(manifest):
 
     updated_df = pd.read_csv(manifest, index_col=False).fillna("")
+    # Accept manifests that still use 13.1.0 headers.
+    updated_df = model_contract.rename_legacy_headers(updated_df, "PublicationView")
 
     return updated_df
 
@@ -81,13 +78,17 @@ def get_annotations(table_id, updated_df, syn):
 def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
 
     # annots_query is already a DataFrame (Table.query() returns one directly).
-    annots_df = annots_query.fillna("")
+    # Numeric columns are filled too (nullable dtypes can't take ""); the
+    # type-fixing loop below turns the "" in them back into nulls.
+    annots_df = _portal_utils.fill_blank(annots_query)
     # preserve original index
     index_rows = dict(zip(annots_df.pubMedId, annots_df.index))
 
     # rename updated_df columns to match annots_df column and set index to pubMedId
     updated_df = (
-        updated_df.rename(columns=PUBLICATION_DICT)
+        updated_df.rename(
+            columns=header_maps.display_to_portal("PublicationView")
+        )
         .drop(["Component"], axis=1)
         .set_index("pubMedId")
     )
@@ -152,7 +153,7 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
                 lambda v: (v.split(", ") if v else None) if isinstance(v, str) else v
             )
         elif col_type in (int, float):
-            # fillna("") left "" in numeric columns; convert it back to null.
+            # fill_blank() left "" in numeric columns; convert it back to null.
             final_df[column_name] = pd.to_numeric(
                 final_df[column_name].where(final_df[column_name] != "", pd.NA)
             )
@@ -188,7 +189,7 @@ def main():
     )
     if choice == "y":
 
-        syn = login()
+        syn = _portal_utils.syn_login()
         args = get_args()
         update_df = get_updated_df(args.manifest_path)
         annots_results = get_annotations(args.table_id, update_df, syn)

@@ -9,12 +9,23 @@ python synapse_json_schema_bind.py [options]
 author: orion.banks
 """
 
-from synapseclient import Synapse
 from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import JSONSchema, SchemaOrganization
 import argparse
 import requests
 import json
+
+import importlib.util
+import os
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -237,8 +248,7 @@ def get_register_bind_schema(syn, target: str, schema_org_name: str, org, path, 
 
 def synapse_json_schema_bind(target = None, url = None, path = None, org_name = None, includes_ar = None, no_bind = None, version = None):
 
-    syn = Synapse()
-    syn.login()
+    syn = syn_login()
 
     if path is None:
         args = get_args()

@@ -12,11 +12,14 @@ author: orion.banks
 """
 
 import argparse
+import csv
+import logging
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import re
 from synapseclient import Synapse
 from synapseclient.models import File
 
@@ -28,6 +31,14 @@ from geo_synapse.synapse_ops import (
 )
 from geo_synapse.pipeline import run_one
 
+import os
+import sys
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import utils
+
+logger = logging.getLogger(__name__)
+
 # Central public project where GEO Dataset entities and link folders are created.
 # Must have PUBLIC: READ + DOWNLOAD so files are accessible without touching PI projects.
 _CENTRAL_PROJECT_SYNID = "syn76986881"   # CCKP Indexed Datasets
@@ -35,7 +46,7 @@ _COLLECTION_SYNID = "syn77025587"        # DatasetCollection in _CENTRAL_PROJECT
 _DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders
 
 
-def get_args():
+def get_args(argv=None):
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -71,7 +82,80 @@ def get_args():
         type=str,
         help="The path to a csv containing metadata of the type indicated.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--created-ids",
+        type=str,
+        default=None,
+        help="CSV that records each created entity ID as it is made (row key -> synID). "
+        "Rows already listed are skipped on a re-run, so an interrupted run can be resumed. "
+        "Opt-in: without this flag no resume file is kept.",
+    )
+    return parser.parse_args(argv)
+
+
+def clean_link_name(name: str) -> str:
+    return name.translate(str.maketrans("", "", "[]:/!@#$<>"))
+
+
+def row_key(path, name, link) -> str:
+    """Stable key for a manifest row: split-file name, alias and link (not the row
+    position, which shifts when other rows are removed between runs)."""
+    return f"{Path(str(path)).name}|{name}|{link}"
+
+
+def load_created_ids(path) -> dict[str, str]:
+    if not path or not Path(path).exists():
+        return {}
+    with open(path, newline="") as fh:
+        return {r["key"]: r["synapse_id"] for r in csv.DictReader(fh)}
+
+
+def record_created_id(path, key: str, synapse_id: str) -> None:
+    """Append one row and flush, so a mid-run failure loses nothing already created."""
+    if not path:
+        return
+    new = not Path(path).exists()
+    with open(path, "a", newline="") as fh:
+        w = csv.writer(fh)
+        if new:
+            w.writerow(["key", "synapse_id"])
+        w.writerow([key, synapse_id])
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+FILE_ENTITY_TYPE = "org.sagebionetworks.repo.model.FileEntity"
+
+
+def store_link(syn, name: str, link: str, parent_id: str) -> str:
+    """Create the plain File link, or reuse a same-named File under the parent.
+
+    A same-named entity is reused only if it is a File (concreteType FileEntity)
+    whose external URL equals ``link``. A File with another URL gets its URL
+    updated (a new version pointing at ``link``); an entity that is not a File
+    raises ValueError so the row fails with a clear message instead of an
+    unrelated entity's ID going into the manifest.
+
+    Uses the synapseclient.models File: ``File(id=..., download_file=False).get()``
+    loads the file handle (``external_url``); setting ``external_url`` with
+    ``synapse_store=False`` and calling ``store()`` swaps in a new
+    ExternalFileHandle when the URL changed.
+    """
+    existing = syn.findEntityId(name, parent=parent_id)
+    if not existing:
+        return File(external_url=link, name=name, parent_id=parent_id, synapse_store=False).store(synapse_client=syn).id
+    concrete = syn.restGET(f"/entity/{existing}").get("concreteType")
+    if concrete != FILE_ENTITY_TYPE:
+        raise ValueError(
+            f"Cannot link {name!r}: {existing} under {parent_id} already exists and is not a File ({concrete})"
+        )
+    file = File(id=existing, download_file=False).get(synapse_client=syn)
+    if file.external_url != link:
+        logger.info("Updating external URL of %s (%s): %s -> %s", existing, name, file.external_url, link)
+        file.external_url = link
+        file.synapse_store = False
+        file = file.store(synapse_client=syn)
+    return existing
 
 
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
@@ -79,13 +163,13 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
     path_name_link_target = []
 
     if manifest is not None:
-        paths_sheet = pd.read_csv(manifest)
+        paths_sheet = pd.read_csv(manifest, dtype=str, keep_default_na=False)
         paths = paths_sheet["File Paths"].tolist()
         targets = paths_sheet[f"{target}"].tolist()
-        df_path_target_list = [(pd.read_csv(p), p, t) for p, t in zip(paths, targets)]
+        df_path_target_list = [(pd.read_csv(p, dtype=str, keep_default_na=False), p, t) for p, t in zip(paths, targets)]
 
     elif data is not None:
-        df_path_target_list = [(pd.read_csv(data), data, target)]
+        df_path_target_list = [(pd.read_csv(data, dtype=str, keep_default_na=False), data, target)]
 
     for df, path, target in df_path_target_list:
         names = df[f"{name_column}"].tolist()
@@ -95,20 +179,24 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
     return path_name_link_target
 
 
-def create_links(syn, path_name_link_target: list[tuple[str, str, str, str]]) -> list[tuple[str, str, str]]:
+def create_links(
+    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None
+) -> list[tuple[str, str, str]]:
 
-    paths, names, links, targets = zip(*path_name_link_target)
-
+    done = load_created_ids(created_ids_path)
     path_name_id = []
 
-    for p, n, l, t in zip(paths, names, links, targets):
+    for p, n, l, t in path_name_link_target:
 
-        n = n.translate(str.maketrans("", "", "[]:/!@#$<>"))
+        key = row_key(p, n, l)
+        n = clean_link_name(n)
+        if key in done:
+            path_name_id.append((p, n, done[key]))
+            continue
 
-        entity = File(external_url=l, name=n, parent_id=t, synapse_store=False).store(synapse_client=syn)
-        id = entity.id
-        info = (p, n, id)
-        path_name_id.append(info)
+        id = store_link(syn, n, l, t)
+        record_created_id(created_ids_path, key, id)
+        path_name_id.append((p, n, id))
 
     return path_name_id
 
@@ -171,6 +259,12 @@ def _index_geo_dataset(
         return None, str(e)
 
 
+def _file_grant(path: str) -> str:
+    """Grant number a split file is named for (``CA123456_dataset.csv``), or ""."""
+    match = re.match(r"(CA\d{6})_", os.path.basename(str(path)))
+    return match.group(1) if match else ""
+
+
 def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
     """Build a (manifest_path, dataset_alias) → grant_number lookup from split manifests."""
     lookup = {}
@@ -181,7 +275,8 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
             df = pd.read_csv(path, dtype=str).fillna("")
             for _, mrow in df.iterrows():
                 alias = mrow.get("Dataset Alias", "")
-                grant = mrow.get("GrantView Key", "")
+                # The split file is per grant; GrantView Key can list several.
+                grant = _file_grant(path) or mrow.get("GrantView Key", "").split(",")[0].strip()
                 if alias:
                     lookup[(path, alias)] = grant
         except Exception:
@@ -189,14 +284,14 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
     return lookup
 
 
-def main():
+def main(argv=None):
 
-    syn = Synapse()
-    syn.login()
+    syn = utils.syn_login()
 
-    args = get_args()
+    args = get_args(argv)
 
     manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p,
+    created_ids_path = args.created_ids
 
     if data_type == "DatasetView":
 
@@ -226,7 +321,7 @@ def main():
         pnt = get_names(name_column, target_column, link_column, data=data)
 
     else:
-        pnt = list((None, name, link, target))
+        pnt = [(None, name, link, target)]
 
     # For DatasetView, GEO/SRA accessions get a full Dataset entity with FTP file
     # links instead of a plain File link entity.
@@ -235,8 +330,15 @@ def main():
         grant_lookup = _build_grant_lookup(manifest)
         geo_outdir = Path(tempfile.mkdtemp()) / "geo_indexing"
 
+        done = load_created_ids(created_ids_path)
         path_name_id = []
         for p, n, l, t in pnt:
+            key = row_key(p, n, l)
+            if key in done:
+                print(f"  Already created ({done[key]}): {n}")
+                path_name_id.append((p, n, done[key]))
+                continue
+
             accession = parse_accession(f"[{n}]({l})")
             if accession:
                 grant_number = grant_lookup.get((p, n), "")
@@ -244,19 +346,20 @@ def main():
                 dataset_synid, err = _index_geo_dataset(syn, accession, grant_number, geo_outdir)
                 if dataset_synid:
                     print(f"    → {dataset_synid}")
+                    record_created_id(created_ids_path, key, dataset_synid)
                     path_name_id.append((p, n, dataset_synid))
                     continue
                 else:
                     print(f"    Indexing failed ({err}), falling back to File link")
 
-            # Non-GEO or failed GEO: create plain File link entity
-            n_clean = n.translate(str.maketrans("", "", "[]:/!@#$<>"))
-            entity = File(external_url=l, name=n_clean, parent_id=t, synapse_store=False).store(synapse_client=syn)
-            path_name_id.append((p, n, entity.id))
+            # Non-GEO or failed GEO: create plain File link entity (or reuse the same-named one)
+            entity_id = store_link(syn, clean_link_name(n), l, t)
+            record_created_id(created_ids_path, key, entity_id)
+            path_name_id.append((p, n, entity_id))
 
     else:
         print("Generating Synapse Link Entities for each set of " + data_type + " entries...")
-        path_name_id = create_links(syn, pnt)
+        path_name_id = create_links(syn, pnt, created_ids_path)
 
     print(f"The following link entities were created:\n{[i for p,n,i in path_name_id]}")
 

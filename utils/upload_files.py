@@ -13,9 +13,20 @@ python upload_files.py -m <path to TSV manifest>
 author: orion.banks
 """
 
-from synapseclient import Synapse
 import synapseutils
 import argparse
+
+import importlib.util
+import os
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 
 def get_args():
@@ -31,8 +42,7 @@ def get_args():
 
 def main():
 
-    syn = Synapse()
-    syn.login()
+    syn = syn_login()
 
     args = get_args()
 

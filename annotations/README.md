@@ -1,5 +1,27 @@
 # Manifest Processing and Upload Workflow
 
+## Recommended: `upload_workflow.py`
+
+`upload_workflow.py` replaces `upload-workflow.sh` (broken; the step-by-step
+description below is kept for reference). It chains, for one component:
+`split` -> `paths` -> `reshape` -> `links` (DatasetView/ToolView only) -> `upload`.
+
+```bash
+python annotations/upload_workflow.py --manifest publication.csv --type PublicationView \
+    --out-dir runs/2026-10 --write-log-table synXXXX            # dry run (default)
+python annotations/upload_workflow.py ... --execute              # write to Synapse
+python annotations/upload_workflow.py ... --from-stage reshape   # resume
+```
+
+- `--target recordset` (default) calls `upload_recordsets.py` (needs `--write-log-table`);
+  `--target schematic-table` runs `upload-manifests.py` as a subprocess (needs `--schematic-config`
+  with `--execute`; it has no dry-run mode, so a dry run only prints the command).
+- Each stage writes `<out-dir>/<NN>_<stage>/`; `<out-dir>/run.json` records stages, outputs and timestamps.
+- `links` creates Synapse entities, so it only runs with `--execute`. Before it, rows with an empty
+  link column are dropped (`04_links/dropped_rows.csv`) and GEO/SRA accessions that already have a
+  Dataset entity in the central project are reused instead of recreated (`04_links/reused_entities.csv`).
+- `SYNAPSE_AUTH_TOKEN`, when set, is passed to subprocesses (never logged).
+
 This repository contains a workflow to process and upload manifests into synapse using a shell script named `upload-workflow.sh`. The workflow involves several steps, each with specific input files, processes, and outputs. Below is a detailed description of each step:
 
 ## Step 0: Activate Conda Environment

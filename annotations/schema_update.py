@@ -10,13 +10,18 @@ author: orion.banks
 """
 
 import asyncio
-from synapseclient import Synapse
 from synapseclient.core.exceptions import SynapseHTTPError, SynapseFileNotFoundError
 from synapseclient.models import Table
 from synapseclient.api import get_children
 import pandas as pd
+import os
 import sys
 
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
+import model_contract
+import utils
 from column_sizing import reset_for_new_type
 
 
@@ -31,8 +36,7 @@ def _get_children(parent, include_types=None, *, synapse_client=None):
     return asyncio.run(_collect())
 
 
-syn = Synapse()
-syn.login()
+syn = utils.syn_login()
 
 if len(sys.argv) != 3:
     print("Usage: python script_name.py input_file.csv entity_type")
@@ -146,6 +150,17 @@ columns_to_modify = [
     f"entityId"
 ]
 
+# Manifest tables may carry 13.1.0 headers (before the 14.0.0 migration, infra
+# step I5) or the 14.0.0 ones (after it). Size both: a 14.0.0 column takes the
+# type of the 13.1.0 column it replaces, per RENAMES_13_TO_14.
+renames = model_contract.RENAMES_13_TO_14.get(
+    header_maps.component_for_entity_type(entity_type), {}
+)
+new_to_old = {new: old for old, new in renames.items()}
+columns_to_modify = columns_to_modify + [
+    new for old, new in renames.items() if old in columns_to_modify
+]
+
 # Initialize counter
 successful_table_modifications_count = 0
 
@@ -169,9 +184,11 @@ for my_table_synid in table_ids_list:
             # it applies, maximum_size are set below (as when a fresh Column
             # was built), not the old type's size, enum values, etc.
             reset_for_new_type(column_to_modify)
+            # Size by the 13.1.0 name when this is a renamed column.
+            sizing_name = new_to_old.get(column_name, column_name)
 
             # Set columnType and maximumSize accordingly
-            if column_name in [
+            if sizing_name in [
                 f"{entity_type} Abstract",
                 f"{entity_type} Authors",
                 f"{entity_type} Description",
@@ -183,7 +200,7 @@ for my_table_synid in table_ids_list:
                 f"{entity_type} Investigator"
             ]:
                 column_to_modify.column_type = "LARGETEXT"
-            elif column_name in [
+            elif sizing_name in [
                 f"{entity_type} Keywords",
                 f"{entity_type} Title",
                 f"{entity_type} Assay",
@@ -193,7 +210,7 @@ for my_table_synid in table_ids_list:
             ]:
                 column_to_modify.column_type = "MEDIUMTEXT"
 
-            elif column_name in [
+            elif sizing_name in [
                 f"{entity_type} Name",
                 f"{entity_type} Alias",
                 f"{entity_type} Species",
@@ -223,11 +240,11 @@ for my_table_synid in table_ids_list:
                 column_to_modify.column_type = "STRING"
                 column_to_modify.maximum_size = 500
 
-            elif column_name == f"Id":
+            elif sizing_name == f"Id":
                 column_to_modify.column_type = "STRING"
                 column_to_modify.maximum_size = 64
 
-            elif column_name == f"entityId":
+            elif sizing_name == f"entityId":
                 column_to_modify.column_type = "STRING"
                 column_to_modify.maximum_size = 30
 

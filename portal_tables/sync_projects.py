@@ -6,60 +6,53 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 from synapseclient.models import Table
+
+import crosswalk
+import model_contract
 import utils
+from utils import resolve_consortium_keys, split_cell
+
+COMPONENT = "ProjectView"
+NO_GRANT = "Affiliated/Non-Grant Associated"
+
+
+def prepare_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
+    """Rename manifest headers to class-label keys (14.0.0 or legacy input)."""
+    manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
+    return model_contract.normalize_headers(
+        manifest, to="keys", legacy_component=COMPONENT
+    )
 
 
 def add_missing_info(
-    projects: pd.DataFrame, grants: pd.DataFrame
+    projects: pd.DataFrame, grants: pd.DataFrame, consortia: list[list[str]]
 ) -> pd.DataFrame:
     """Add missing information into table before syncing."""
-    new_cols = ["grantName", "themes", "consortia", "grantType"]
+    projects = projects.copy()
+    new_cols = ["grantName", "theme", "consortium", "grantType"]
     projects[new_cols] = ""
-    for _, row in projects.iterrows():
+    projects["consortium"] = pd.Series(consortia, index=projects.index, dtype=object)
+    for idx, row in projects.iterrows():
         grant_names = []
-        themes = set()
-        consortia = set()
+        themes = []
         grant_type = ""
-        for g in row["ProjectGrantNumber"].split(","):
-            if g != "Affiliated/Non-Grant Associated":
-                grant_names.append(
-                    grants[grants.grantNumber == g]["grantName"].values[0]
-                )
-                themes.update(grants[grants.grantNumber == g]["theme"].values[0])
-                consortia.update(
-                    grants[grants.grantNumber == g]["consortium"].values[0]
-                )
-                grant_type = grants[grants.grantNumber == g]["grantType"].values[0]
-        projects.at[_, "grantName"] = grant_names
-        projects.at[_, "themes"] = list(themes)
-        projects.at[_, "consortia"] = list(consortia)
-        projects.at[_, "grantType"] = grant_type
+        for g in split_cell(row["GrantViewKey"]):
+            if g != NO_GRANT:
+                match = grants[grants.grantNumber == g]
+                grant_names.append(match["grantName"].values[0])
+                for t in match["theme"].values[0]:
+                    if t not in themes:
+                        themes.append(t)
+                grant_type = match["grantType"].values[0]
+        projects.at[idx, "grantName"] = grant_names
+        projects.at[idx, "theme"] = themes
+        projects.at[idx, "grantType"] = grant_type
     return projects
 
 
-def clean_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean up the table one final time."""
-
-    # Convert string columns to string-list.
-    for col in [
-        "ProjectGrantNumber",
-        "grantType"
-    ]:
-        df[col] = utils.convert_to_stringlist(df[col])
-
-    # Reorder columns to match the table order.
-    col_order = [
-        "ProjectName",
-        "ProjectType",
-        "ProjectDescription",
-        "ProjectInvestigator",
-        "themes",
-        "consortia",
-        "ProjectGrantNumber",
-        "grantName",
-        "grantType"
-    ]
-    return df[col_order]
+def clean_table(df: pd.DataFrame, live_types: dict[str, str]) -> pd.DataFrame:
+    """Order and convert the table to the portal table's shape."""
+    return crosswalk.to_portal(df, COMPONENT, live_types)
 
 
 def main():
@@ -70,10 +63,8 @@ def main():
     if args.dryrun:
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
-    manifest = Table(id=args.manifest_id).query(
-        query=f"SELECT * FROM {args.manifest_id}", synapse_client=syn
-    ).fillna("")
-    manifest.columns = manifest.columns.str.replace(" ", "")
+    manifest = utils.fill_blank(model_contract.read_manifest(syn, args.manifest_id))
+    manifest = prepare_manifest(manifest)
     if args.verbose:
         print("🔍 Preview of manifest CSV:\n" + "=" * 72)
         print(manifest)
@@ -85,15 +76,19 @@ def main():
         synapse_client=syn,
     )
 
-    database = add_missing_info(manifest, grants)
-    final_database = clean_table(database)
+    live_types = crosswalk.check_crosswalk(syn, args.portal_table_id, COMPONENT)
+    consortia = resolve_consortium_keys(syn, manifest["ConsortiumKey"])
+    database = add_missing_info(manifest, grants, consortia)
+    final_database = clean_table(database, live_types)
     if args.verbose:
         print("\n🔍 Grant(s) to be synced:\n" + "=" * 72)
         print(final_database)
         print()
 
     if not args.dryrun:
-        utils.update_table(syn, args.portal_table_id, final_database)
+        utils.update_table(
+            syn, args.portal_table_id, final_database, component=COMPONENT
+        )
         print()
 
     if not args.noprint:

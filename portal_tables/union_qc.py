@@ -82,7 +82,8 @@ def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tu
             query=f"SELECT * FROM {tableId}",
             include_row_id_and_row_version=False,
             synapse_client=syn,
-        ).fillna("")
+        )
+        table = utils.fill_blank(table)
         name = table["Component"].iat[1]  # grab name of data type from table (second row, as before)
         manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
         manifestPath.parent.mkdir(parents=True, exist_ok=True)  # create folder to store CSVs
@@ -304,8 +305,7 @@ def trim_tables(args: list[tuple[str, Path, str]]) -> list[Path]:
 def main():
 
     args = get_args()
-    syn = Synapse()
-    syn.login()
+    syn = utils.syn_login()
 
     inputList, config, attributeMap, trimList, inputManifest, merge, trim, strict, debug = (
         args.l,
@@ -375,7 +375,7 @@ def main():
     if trimList is not None:
         if inputManifest is not None:
             names, outs, paths = [], [], []
-            name = re.search("\/(\w*)(_trim_config)", str(trimList))
+            name = re.search(r"/(\w*)(_trim_config)", str(trimList))
             if name is None:
                 print("\nPlease provide a trim config that uses the expected naming convention.")
                 exit
