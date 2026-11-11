@@ -94,7 +94,7 @@ def test_deprecated_sop_flags_are_accepted_but_ignored(caplog):
 
 def test_headers_are_display_names_in_template_order(tmp_path, mapping_csv):
     _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
-    assert list(manifest.columns) == model_contract.template_headers("DatasetView")
+    assert list(manifest.columns) == model_contract.template_headers("DatasetView") + ["iconTags"]
     assert "Dataset Data Use Codes" in manifest.columns and "DatasetViewId" not in manifest.columns
 
 
@@ -168,12 +168,14 @@ def test_mangled_publication_key_is_corrected(tmp_path, mapping_csv):
     assert status == {"syn1,syn1": "applied", "syn9": "not_found", "syn2": "already_correct", "syn3": "cell_differs"}
 
 
-def test_icontags_carried_by_alias_from_the_reference(tmp_path, mapping_csv):
+def test_icontags_are_computed_from_assay_not_carried(tmp_path, mapping_csv):
     ref = tmp_path / "ref.csv"
-    pd.DataFrame({"DatasetAlias": ["A"], "iconTags": ["expressionProfiling"]}).to_csv(ref, index=False)
-    grants = {"CA100001": [_row("syn1", "A"), _row("syn2", "B")]}
+    pd.DataFrame({"DatasetAlias": ["A"], "iconTags": ["stale"]}).to_csv(ref, index=False)
+    grants = {"CA100001": [_row("syn1", "A"), _row("syn2", "B", Assay='["Western Blotting"]')]}
     _, manifest, _ = _regenerate(tmp_path, mapping_csv, grants, carry=["iconTags"], extra=["--reference-csv", str(ref)])
-    assert manifest["iconTags"].tolist() == ["expressionProfiling", ""]
+    terms = pd.read_csv(model_contract.fetch(uq.ICON_TAG_MAP)).set_index("term")["label"]
+    expected_a = ", ".join(dict.fromkeys(terms[t] for t in ["RNA Sequencing", "ATAC-Seq"] if t in terms))
+    assert manifest["iconTags"].tolist() == [expected_a, "bioChemicalPhysical"]  # every row, not the stale carry
 
 
 def test_upload_is_refused_with_a_local_input_dir(tmp_path, mapping_csv):
@@ -203,6 +205,7 @@ def test_upload_stores_a_new_version_of_the_manifest_file():
         out = uq.upload_manifest(mock.MagicMock(), "DatasetView", "/tmp/x.csv", "why")
     assert file_cls.call_args.kwargs["id"] == "syn53478774"
     assert entity.path == "/tmp/x.csv" and entity.version_comment == "why"
+    assert entity.data_file_handle_id is None and entity.content_md5 is None  # cache fix: a new handle is uploaded
     assert out == "syn53478774 version 9"
 
 

@@ -1285,10 +1285,15 @@ def store_new_version(syn, rs_id: str, csv_path) -> int:
     new one and only that handle is cached.
     """
     entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)
-    for field in ("file_handle", "data_file_handle_id", "content_md5", "content_size"):
-        setattr(entity, field, None)
+    clear_file_handle(entity)
     entity.path = str(csv_path)
     return entity.store(synapse_client=syn).version_number
+
+
+def clear_file_handle(entity) -> None:
+    """Clear a fetched file entity's handle fields before storing a new file (see ``store_new_version``)."""
+    for field in ("file_handle", "data_file_handle_id", "content_md5", "content_size"):
+        setattr(entity, field, None)
 
 
 def _grid_session(

@@ -44,6 +44,7 @@ import os
 import pandas as pd
 from pathlib import Path
 import re
+import build_tag_lists
 import comma_terms
 import manifest_cleanup
 import merge_tables
@@ -63,6 +64,9 @@ RESOURCE = {
 }
 DEFAULT_PMID_KEYS = "output/worklists/i8_1_pmid_keys.csv"
 DEFAULT_CARRY = ("iconTags",)
+# Components whose iconTags are computed from their Assay terms (data-models term -> icon label map).
+ICON_TAGGED = ("PublicationView", "DatasetView")
+ICON_TAG_MAP = "modules/shared/mc2_iconTag_map_3-4-25.csv"
 # The live publication and dataset manifests hold one row per alias (grants merged);
 # the live tool manifest repeats a tool name once per grant, so tools stay unmerged.
 DEFAULT_MERGE = ("PublicationView", "DatasetView")
@@ -514,6 +518,11 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     carried = {}
     if reference is not None and carry and merge_stats["alias"]:
         manifest, carried = carry_columns(manifest, reference, merge_stats["alias"], carry)
+    tagged = "not computed"
+    if component in ICON_TAGGED and len(manifest):  # replaces carried tags, as build_tag_lists.py did
+        terms = pd.read_csv(model_contract.fetch(ICON_TAG_MAP, ref=ref))
+        manifest["iconTags"] = build_tag_lists.icon_tags(manifest, terms, ["Assay"])
+        tagged = f"{int((manifest['iconTags'] != '').sum())} of {len(manifest)} rows tagged"
     validation = validate_manifest(manifest, component, ref)
     path = out_dir / f"{component}_merged_manifest.csv"
     manifest.to_csv(path, index=False, lineterminator="\n")
@@ -530,6 +539,7 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
         + (f", see {out_dir / 'id_conflicts.csv'}" if len(conflicts) else ""),
         f"key corrections: {corrections['status'].value_counts().to_dict() if len(corrections) else 'none'}",
         f"carried columns, rows left blank: {carried or 'none'}",
+        f"iconTags from Assay: {tagged}",
         f"manifest: {path}",
     ]
     (out_dir / "report.txt").write_text("\n".join(lines) + "\n")
@@ -541,6 +551,7 @@ def upload_manifest(syn, component: str, path, comment: str) -> str:
     """LIVE WRITE: store ``path`` as a new version of the component's current manifest file."""
     manifest_id = utils.CONFIG[RESOURCE[component]]["manifest"]
     entity = File(id=manifest_id, download_file=False).get(synapse_client=syn)
+    recordsets.clear_file_handle(entity)  # else the cache maps the previous version to the new file
     entity.path = str(path)
     entity.version_comment = comment
     entity = entity.store(synapse_client=syn)
