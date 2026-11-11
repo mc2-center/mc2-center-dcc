@@ -39,23 +39,20 @@ ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "P
 # Where the grant, project and people syncs read their manifest: "table" (the
 # legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above).
 # Keep "table" until annotations/migrate_admin_manifests_14.py --execute has
-# run AND plan D-1 has landed (the Consortium table syn36345930 gets
-# `consortiumId` and the NCI, HTAN and Sage Bionetworks rows). Until then
-# resolve_consortium_keys raises for people and grants in those consortia with
-# either source. Then change the default here (or pass --manifest-source recordset).
+# run, then change the default here (or pass --manifest-source recordset).
 MANIFEST_SOURCE = "table"
 MANIFEST_SOURCES = ("table", "recordset")
 
 
-def load_consortium_keys() -> dict[str, str]:
-    """``{display name: consortiumId}`` from ``consortium_keys.csv`` (``#`` lines are comments).
-
-    Mirrors the Consortium table's ``consortiumId`` (plan D-1); replace it with a read of that table once it exists.
-    """
-    path = os.path.join(os.path.dirname(__file__), "consortium_keys.csv")
-    with open(path, newline="", encoding="utf-8") as f:
-        rows = csv.DictReader(line for line in f if not line.startswith("#"))
-        return {r["display_name"]: r["consortium_id"] for r in rows}
+def load_consortium_keys(syn: Synapse) -> dict[str, str]:
+    """``{display name: consortiumId}`` from the Consortium table (read-only)."""
+    table_id = CONFIG["consortium"]["table"]
+    rows = Table(id=table_id).query(
+        query=f"SELECT consortiumDisplayName, consortiumId FROM {table_id}",
+        include_row_id_and_row_version=False,
+        synapse_client=syn,
+    )
+    return dict(zip(rows["consortiumDisplayName"], rows["consortiumId"]))
 
 
 def admin_recordset_name(component: str) -> str:
@@ -229,8 +226,7 @@ def get_args(resource: str) -> argparse.Namespace:
             default=MANIFEST_SOURCE,
             help=(
                 "Read the legacy manifest table or the admin RecordSet "
-                f"(default: {MANIFEST_SOURCE}). Use recordset only after the admin migration has run "
-                "and plan D-1 (Consortium consortiumId + NCI, HTAN, Sage Bionetworks rows) has landed. "
+                f"(default: {MANIFEST_SOURCE}). Use recordset only after the admin migration has run. "
                 "-m overrides both."
             ),
         )

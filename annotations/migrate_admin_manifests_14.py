@@ -28,9 +28,8 @@ Conversion, per component:
 * list cells (PersonView is a table of list columns) of columns that the schema
   types as a string are joined with ``", "`` (``list_to_string``); ``ConsortiumKey``
   and ``GrantViewKey`` hold one or more keys, split and rejoined per item;
-* ``ConsortiumKey`` names map to ``program.*`` IDs through ``portal_tables/consortium_keys.csv``
-  (``consortium_key``; matched case-insensitively, per item; it mirrors the Consortium table's
-  ``consortiumId``, plan D-1). A name outside the map and a ``program.*`` ID outside it are kept
+* ``ConsortiumKey`` names map to ``program.*`` IDs through the Consortium table (``consortiumId``)
+  (``consortium_key``; matched case-insensitively, per item). A name outside the map and a ``program.*`` ID outside it are kept
   and reported as unmapped; ``--overrides`` (column, current_value, proposed_value) is applied first;
 * dates of ``format: date`` columns become ``YYYY-MM-DD`` (``date_iso``, ``value_maps``); an
   unparseable one is kept and reported as unmapped;
@@ -186,7 +185,8 @@ def _joined(items) -> str:
     return ", ".join(str(i) for i in items)
 
 
-def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", ref=None):
+def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value_maps.Normalizer", ref=None,
+                        consortium_keys: dict | None = None):
     """``(converted, changes, unmapped, dropped, duplicates, key_missing)`` for one admin table.
 
     ``converted`` has the schema columns the source holds (keys stripped; blank when the source has no
@@ -251,7 +251,7 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     changes += norm_changes.to_dict("records")
     unmapped += norm_unmapped.to_dict("records")
 
-    consortia = utils.load_consortium_keys()
+    consortia = consortium_keys or {}  # {display name: program.* ID}, from utils.load_consortium_keys
     by_name = {name.strip().casefold(): cid for name, cid in consortia.items()}  # case and outer spaces ignored
     known_ids = set(consortia.values())
     for column in keyed:  # one or more keys, rejoined; a ConsortiumKey name becomes its program.* ID
@@ -325,7 +325,7 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     normalizer.used_row_overrides.clear()
     try:
         converted, changes, unmapped, dropped, duplicates, key_missing = convert_admin_table(
-            source, component, normalizer, args.model_ref)
+            source, component, normalizer, args.model_ref, args.consortium_keys)
     except grants.ConversionError as err:
         summary.update(status="failed", message=str(err))
         return summary, None, source_keys or []
@@ -383,7 +383,7 @@ def options_hash(args) -> str:
         "component": args.component, "source": args.source, "schema_version": args.schema_version,
         "overrides": Path(args.overrides).read_bytes().hex() if args.overrides else "",
         "model_ref": getattr(args, "model_ref", None) or model_contract.MODEL_REF,
-        "consortium_keys": utils.load_consortium_keys(),
+        "consortium_keys": args.consortium_keys,
         "rules": CONVERSION_RULES,
         "source_etag": getattr(args, "source_etag", ""),  # the source table changed: convert again
     }
@@ -423,6 +423,7 @@ def main(argv=None, syn=None):
     overrides = value_maps.load_overrides(args.overrides) if args.overrides else None
     args.model_ref = grants.resolve_model_ref(args)
     args.source_etag = source_etag(syn, args.source)
+    args.consortium_keys = utils.load_consortium_keys(syn)
     normalizer = build_normalizer(component, overrides, args.model_ref)
     out_dir = Path(args.out_dir)
     run_dir = out_dir / args.run_id

@@ -10,11 +10,28 @@ import pytest
 import recordsets as rs
 import utils
 
+REAL_LOAD = utils.load_consortium_keys  # before the autouse fixture replaces it
+
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("migrate_admin_manifests_14", ROOT / "annotations" / "migrate_admin_manifests_14.py")
 adm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(adm)
 grants = adm.grants
+
+# The Consortium table's {consortiumDisplayName: consortiumId} (syn36345930, read 2026-11-11).
+CONSORTIUM_KEYS = {
+    "CSBC": "program.csbc", "PS-ON": "program.ps-on", "TEC": "program.tec", "ICBP": "program.icbp",
+    "NCI Clinical and Translational Exploratory/Developmental Studies":
+        "program.nci-clinical-and-translational-exploratory-developmental-studies",
+    "CCBIR": "program.ccbir", "MetNet": "program.metnet", "PDMC": "program.pdmc", "NCI": "program.nci",
+    "HTAN": "program.htan", "Sage Bionetworks": "program.sage-bionetworks",
+}
+
+
+@pytest.fixture(autouse=True)
+def consortium_table(monkeypatch):
+    monkeypatch.setattr(utils, "load_consortium_keys", lambda syn: dict(CONSORTIUM_KEYS))
+
 
 GRANT_HEADERS = ["Component", "GrantView_id", "Grant Name", "Grant Number", "Grant Abstract", "Grant Type",
                  "Grant Theme Name", "Grant Institution Name", "Grant Institution Alias", "Grant Investigator",
@@ -179,7 +196,8 @@ def test_unknown_component_is_refused():
 
 
 def convert(source, component):
-    return adm.convert_admin_table(source, component, adm.build_normalizer(component))
+    return adm.convert_admin_table(source, component, adm.build_normalizer(component),
+                                   consortium_keys=CONSORTIUM_KEYS)
 
 
 def test_grant_conversion_renames_headers_splits_lists_and_drops_non_schema_columns():
@@ -203,8 +221,13 @@ def test_consortium_names_become_program_ids_by_the_vendored_map():
     assert unmapped.empty
 
 
-def test_the_consortium_map_file_covers_the_approved_names():
-    keys = utils.load_consortium_keys()
+def test_consortium_keys_are_read_from_the_consortium_table():
+    table = mock.MagicMock()
+    table.query.return_value = pd.DataFrame({"consortiumDisplayName": list(CONSORTIUM_KEYS),
+                                             "consortiumId": list(CONSORTIUM_KEYS.values())})
+    with mock.patch.object(utils, "Table", return_value=table) as table_cls:
+        keys = REAL_LOAD(None)
+    assert table_cls.call_args.kwargs["id"] == utils.CONFIG["consortium"]["table"]
     assert keys["CSBC"] == "program.csbc" and keys["PS-ON"] == "program.ps-on" and keys["MetNet"] == "program.metnet"
     assert keys["NCI"] == "program.nci" and keys["HTAN"] == "program.htan"
     assert keys["Sage Bionetworks"] == "program.sage-bionetworks" and len(keys) == 11
@@ -241,7 +264,7 @@ def test_an_override_maps_a_name_before_the_consortium_map(tmp_path):
     path = tmp_path / "o.csv"
     path.write_text("column,current_value,proposed_value\nConsortiumKey,CSBC,program.other\n")
     norm = adm.build_normalizer("GrantView", adm.value_maps.load_overrides(path))
-    converted, changes, *_ = adm.convert_admin_table(grant_table(), "GrantView", norm)
+    converted, changes, *_ = adm.convert_admin_table(grant_table(), "GrantView", norm, consortium_keys=CONSORTIUM_KEYS)
     assert converted["ConsortiumKey"].tolist()[0] == "program.other"
     assert changes[changes["rule"] == "override"]["to"].tolist() == ["program.other"]
 
@@ -316,7 +339,7 @@ def test_a_key_override_sets_the_key_and_is_noted(tmp_path):
     path = tmp_path / "o.csv"
     path.write_text("column,current_value,proposed_value\nPersonViewId,Bob,person.robert-b\n")
     norm = adm.build_normalizer("PersonView", adm.value_maps.load_overrides(path))
-    converted, changes, *_ = adm.convert_admin_table(person_table(), "PersonView", norm)
+    converted, changes, *_ = adm.convert_admin_table(person_table(), "PersonView", norm, consortium_keys=CONSORTIUM_KEYS)
     assert converted["PersonViewId"].tolist() == ["person.ada", "person.robert-b"]
     minted = changes[changes["rule"] == "minted_key"]
     assert minted[["key", "from"]].values.tolist() == [["person.ada", ""], ["person.robert-b", "(override for Name 'Bob')"]]
@@ -327,7 +350,7 @@ def test_a_keyed_override_of_the_key_column_sets_the_key(tmp_path, row_key):
     path = tmp_path / "o.csv"
     path.write_text("key,column,current_value,proposed_value\n" f"{row_key},PersonViewId,Bob,person.robert-b\n")
     norm = adm.build_normalizer("PersonView", adm.value_maps.load_overrides(path))
-    converted, changes, *_ = adm.convert_admin_table(person_table(), "PersonView", norm)
+    converted, changes, *_ = adm.convert_admin_table(person_table(), "PersonView", norm, consortium_keys=CONSORTIUM_KEYS)
     assert converted["PersonViewId"].tolist() == ["person.ada", "person.robert-b"]
     minted = changes[changes["rule"] == "minted_key"]
     assert minted[["key", "from"]].values.tolist() == [["person.ada", ""], ["person.robert-b", "(override for Name 'Bob')"]]
