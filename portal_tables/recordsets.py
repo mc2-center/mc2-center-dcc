@@ -963,9 +963,13 @@ def _is_blank(value) -> bool:
 
 
 def _is_pending(value) -> bool:
-    """The ``Pending Annotation`` placeholder (case and surrounding space ignored)."""
+    """The ``Pending Annotation`` placeholder (case and surrounding space ignored).
+
+    A list cell counts only if every item is the placeholder.
+    """
     n = _norm(value)
-    return isinstance(n, str) and n.strip().casefold() == "pending annotation"
+    items = n if isinstance(n, tuple) else (n,)
+    return all(isinstance(i, str) and i.strip().casefold() == "pending annotation" for i in items)
 
 
 def _session_base(cf, diffs, fingerprints, v) -> int:

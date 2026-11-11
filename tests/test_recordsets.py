@@ -315,6 +315,14 @@ def test_pending_annotation_in_a_new_contributor_row_is_pipeline_owned():
     assert conflicts["column"].tolist() == ["Title"]  # only the contributor's real value conflicts
 
 
+def test_pending_annotation_list_cell_in_a_new_contributor_row_is_pipeline_owned():
+    v1 = df(["a", "T", ""])
+    v2 = df(["a", "T", ""], ["r", "Mine", ["Pending Annotation"]], ["s", "Mine", ["Pending Annotation", "RNA-seq"]])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    # only a list holding nothing but the placeholder is the pipeline's to fill
+    assert owned == {("r", "Title"), ("s", "Title"), ("s", "Assay")}
+
+
 def test_deleted_contributor_row_is_restored():
     v1 = df(["a", "T", ""])
     v2 = df(["a", "T", ""], ["r", "Mine", ""])
