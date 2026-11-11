@@ -28,7 +28,7 @@ C contributor) and ``set_at`` (version):
   and ``v - 1`` has ``u``'s value in ``v`` (rows added or deleted since ``u``
   count cell by cell), something changed since ``u``, and ``v`` is not an
   exact copy of an older version. Then the session was stale and its snapshot
-  is the newest such ``u`` (:func:`_session_base`, computed incrementally from
+  is the oldest such ``u`` (:func:`_session_base`, computed incrementally from
   per-step diffs). Ambiguous cases go to the contributor [owner decision]: a
   partial reversion, or an exact copy of an older version, is a deliberate
   undo, snapshot ``v - 1``. Note a fresh session that reverts *everything* the
@@ -970,7 +970,7 @@ def _session_base(cf, diffs, fingerprints, v) -> int:
     (``u <= v - 2``), is recognised only by a *complete reversion*: every cell
     that differs between ``u`` and ``v - 1`` (a row missing from one side
     counts as differing, cell by cell) has ``u``'s value in ``v``, so the
-    session undid everything changed since ``u``. The newest such ``u`` wins;
+    session undid everything changed since ``u``. The oldest such ``u`` wins;
     a ``u`` with nothing changed since is skipped. Anything weaker (a partial
     reversion) is a contributor's undo and gets snapshot ``v - 1``, as does an
     exact copy of an older version [owner decisions: ambiguous cases go to the
@@ -996,6 +996,7 @@ def _session_base(cf, diffs, fingerprints, v) -> int:
 
     changed: dict[tuple, object] = {}  # cell -> its value in u, for cells differing from v - 1
     reverted = 0  # how many of them v sets back to u's value
+    best = v - 1
     for u in range(v - 2, 0, -1):
         for cell, old in diffs[u + 1].items():
             k, i = cell
@@ -1005,8 +1006,8 @@ def _session_base(cf, diffs, fingerprints, v) -> int:
                 changed[cell] = old
                 reverted += old == in_v(k, i)
         if changed and reverted == len(changed):
-            return u
-    return v - 1
+            best = u
+    return best
 
 
 def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()):
