@@ -51,9 +51,16 @@ def env(monkeypatch):
     monkeypatch.setitem(sys.modules, "geo_synapse", pkg)
     monkeypatch.setitem(sys.modules, "geo_synapse.mc2_table", mod)
 
-    rec = types.SimpleNamespace(main=lambda argv: calls["upload"].append(argv) or 0)
-    links = types.SimpleNamespace(main=lambda argv: calls["links"].append(argv))
     real_load = uw._load
+    real_upload_get_args = real_load("upload_recordsets.py").get_args
+
+    def fake_upload_main(argv):
+        real_upload_get_args(argv)  # a bad argv fails here, as it would in production
+        calls["upload"].append(argv)
+        return 0
+
+    rec = types.SimpleNamespace(main=fake_upload_main)
+    links = types.SimpleNamespace(main=lambda argv: calls["links"].append(argv))
     monkeypatch.setattr(uw, "_load", lambda f: {"upload_recordsets.py": rec,
                                                 "create_entity_links.py": links}.get(f) or real_load(f))
     return calls
@@ -532,6 +539,12 @@ def test_alias_accession_is_reused_before_empty_link_drop(tmp_path, env):
 
 
 # --- run id -------------------------------------------------------------------------
+
+
+def test_removals_table_is_passed_to_upload_recordsets(tmp_path, env):
+    run(tmp_path, "ToolView", "--execute")
+    argv = env["upload"][-1]
+    assert argv[argv.index("--removals-table") + 1] == "syn78404342"
 
 
 def test_run_id_is_passed_to_upload_recordsets(tmp_path, env):

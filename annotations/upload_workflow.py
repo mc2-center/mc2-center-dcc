@@ -492,6 +492,7 @@ def stage_upload(run, args):
                 "--run-id", args.run_id]
         argv += (["--write-log-table", args.write_log_table] if args.write_log_table
                  else ["--write-log-csv", args.write_log_csv])
+        argv += ["--removals-table", args.removals_table]
         if args.execute:
             argv.append("--execute")
         code = call_main(_load("upload_recordsets.py").main, argv)
@@ -529,6 +530,8 @@ def get_args(argv=None):
     p.add_argument("--target", choices=["recordset", "schematic-table"], default="recordset")
     p.add_argument("--write-log-table", help="Synapse ID of the write-log table (recordset target)")
     p.add_argument("--write-log-csv", help="local CSV write log instead of a table (tests, dry runs)")
+    p.add_argument("--removals-table", default="syn78404342",
+                   help="Synapse ID of the RecordSet removals table (recordset target; default: production)")
     p.add_argument("--schematic-config", help="schematic config file (schematic-table target)")
     p.add_argument("--cv-file", help="all_valid_values.csv path/URL for split (default: pinned release)")
     p.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
