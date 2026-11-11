@@ -16,7 +16,7 @@ author: orion.banks
 """
 
 from synapseclient import operations
-from synapseclient.models import MaterializedView, RecordSet, SchemaStorageStrategy, Table
+from synapseclient.models import MaterializedView, Table
 import argparse
 import glob
 from datetime import datetime
@@ -101,34 +101,6 @@ def get_table_ids(syn, source_id, table_type, column_name):
 def build_query(table_ids):
     
     return " UNION ".join([f"SELECT * FROM {id}" for id in table_ids])
-
-
-def get_record_sets(syn, record_type, folder_name, source = "syn21918972", org = "MC2Center"):
-
-    project_ids = Table(id=source).query(query=f"SELECT grantId FROM {source}", synapse_client=syn)
-
-    record_df = pd.DataFrame(project_ids)
-    record_df["recordId"] = ""
-    record_name = "_".join([org, record_type])
-
-    # TODO(D12): mirror tables below still feed the UNION; see plan before removing.
-    for _,row in record_df.iterrows():
-        folder_id = operations.find_entity_id(name=folder_name, parent=row["grantId"], synapse_client=syn)
-        if folder_id is None:
-            logger.warning("Skipping %s: folder '%s' not found", row["grantId"], folder_name)
-            continue
-        record_id = operations.find_entity_id(name=record_name, parent=folder_id, synapse_client=syn)
-        if record_id is None:
-            logger.warning("Skipping %s: RecordSet '%s' not found in folder %s", row["grantId"], record_name, folder_id)
-            continue
-        record_set = RecordSet(id=record_id).get(synapse_client=syn)
-        record_set_df = pd.read_csv(record_set.path, header=0)  # apply sorting, column naming, extraction, etc. as needed
-        record_set_table = Table(name=f"{record_name}_table", parent_id=row["grantId"]).store(synapse_client=syn)
-        record_set_table.store_rows(values=record_set_df, schema_storage_strategy=SchemaStorageStrategy.INFER_FROM_DATA, synapse_client=syn)
-        record_df.at[_,"recordId"] = record_set_table.id
-
-    # grants that were skipped have no recordId; keep them out of the UNION query
-    return record_df[record_df["recordId"] != ""].reset_index(drop=True)
 
 
 def list_grant_projects(syn, source=GRANTS_TABLE):
@@ -337,14 +309,7 @@ def main():
         run_recordset_mode(syn, args.n, args.output_dir, args.grant_projects, args.t, args.publish,
                            args.allow_empty)
         return
-    source, target, table_type, record_sets = args.s, args.t, args.n, args.target_record_set
-
-    folder_map = {
-        "PublicationView" : "publications",
-        "DatasetView" : "datasets",
-        "ToolView" : "tools",
-        "EducationalResource" : "education"
-    }
+    source, target, table_type = args.s, args.t, args.n
 
     if table_type in [
         "PublicationView",
@@ -355,19 +320,13 @@ def main():
 
         label = f"{table_type}_UNION"
         view_type = f"{table_type.lower()}_synapse_storage_manifest_table"
-        record_type =  f"{table_type}_RecordSet"
-        folder_name = folder_map[table_type]
 
     else:
         print(
             f"{table_type} is not a valid table type. Please select a different component."
         )
     
-    if record_sets is not None:
-        record_df = get_record_sets(syn, record_type, folder_name)
-        table_ids_from_view = record_df["recordId"].to_list()
-    else:
-        table_ids_from_view = get_table_ids(syn, source, view_type, "id")
+    table_ids_from_view = get_table_ids(syn, source, view_type, "id")
     
     print(table_ids_from_view)
 
