@@ -176,6 +176,7 @@ def test_icontags_are_computed_from_assay_not_carried(tmp_path, mapping_csv):
     terms = pd.read_csv(model_contract.fetch(uq.ICON_TAG_MAP)).set_index("term")["label"]
     expected_a = ", ".join(dict.fromkeys(terms[t] for t in ["RNA Sequencing", "ATAC-Seq"] if t in terms))
     assert manifest["iconTags"].tolist() == [expected_a, "bioChemicalPhysical"]  # every row, not the stale carry
+    assert "carried columns, rows left blank: none" in (tmp_path / "out" / "DatasetView" / "report.txt").read_text()
 
 
 def test_upload_is_refused_with_a_local_input_dir(tmp_path, mapping_csv):

@@ -516,6 +516,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     if fill:  # as utils/merge_and_correct_manifests.py does: fill empty cells, then trim whitespace
         manifest = manifest_cleanup.trim_whitespace(manifest_cleanup.fill_empty_cells(manifest.copy(), component))
     carried = {}
+    if component in ICON_TAGGED:  # computed below, so not carried
+        carry = tuple(c for c in carry if c != "iconTags")
     if reference is not None and carry and merge_stats["alias"]:
         manifest, carried = carry_columns(manifest, reference, merge_stats["alias"], carry)
     tagged = "not computed"
