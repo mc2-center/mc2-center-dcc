@@ -267,6 +267,62 @@ def test_contributor_row_blank_cells_stay_pipeline_owned():
     assert cell(merged, "r", "Title") == "Mine" and len(conflicts) == 1
 
 
+def test_stale_session_spanning_two_pipeline_writes_on_disjoint_cells_restores_both():
+    # P9: session opened on v1; pipeline v2 sets a, pipeline v3 sets b; the session
+    # exports v4 = v1 + an edit to c. v4 completely reverts v2 as well as v1, so the
+    # oldest base (v1) must win: both pipeline writes are restored, only c is an edit.
+    v1 = df(["a", "a0", ""], ["b", "b0", ""], ["c", "c0", ""])
+    v2 = df(["a", "PA", ""], ["b", "b0", ""], ["c", "c0", ""])
+    v3 = df(["a", "PA", ""], ["b", "PB", ""], ["c", "c0", ""])
+    v4 = df(["a", "a0", ""], ["b", "b0", ""], ["c", "S", ""])
+    state, owned, d = rep(v1, v2, v3, v4, log={1: 0, 2: 1, 3: 2})
+    assert cell(state, "a", "Title") == "PA" and cell(state, "b", "Title") == "PB"
+    assert cell(state, "c", "Title") == "S"
+    assert dec(d) == {
+        (4, "a", "Title", "restored_revert"),
+        (4, "b", "Title", "restored_revert"),
+        (4, "c", "Title", "kept_edit"),
+    }
+    assert owned == {("c", "Title")}
+
+
+def test_stale_session_spanning_pipeline_write_and_other_contributors_edit():
+    # P1: v2 pipeline sets a; v3 is another contributor's fresh edit to b (base v2);
+    # v4 is a session opened on v1 that reverts a and b and edits c.
+    v1 = df(["a", "a0", ""], ["b", "b0", ""], ["c", "c0", ""])
+    v2 = df(["a", "PIPE", ""], ["b", "b0", ""], ["c", "c0", ""])
+    v3 = df(["a", "PIPE", ""], ["b", "B-EDIT", ""], ["c", "c0", ""])
+    v4 = df(["a", "a0", ""], ["b", "b0", ""], ["c", "S", ""])
+    state, owned, d = rep(v1, v2, v3, v4, log={1: 0, 2: 1})
+    assert cell(state, "a", "Title") == "PIPE" and ("a", "Title") not in owned
+    assert cell(state, "c", "Title") == "S"
+    # D-Q37: the session opened on v1 never saw B's edit, so its b=b0 is the untouched
+    # snapshot value, not a deliberate undo; B's edit is restored (and stays B's).
+    assert cell(state, "b", "Title") == "B-EDIT"
+    assert (4, "a", "Title", "restored_revert") in dec(d)
+    assert (4, "b", "Title", "restored_revert") in dec(d)
+    assert (4, "c", "Title", "kept_edit") in dec(d)
+    assert ("b", "Title") in owned  # B's own edit (v3) remains contributor-owned
+
+
+def test_pending_annotation_in_a_new_contributor_row_is_pipeline_owned():
+    v1 = df(["a", "T", ""])
+    v2 = df(["a", "T", ""], ["r", "Mine", "Pending Annotation"])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    assert owned == {("r", "Title")}
+    merged, conflicts = rs.merge_upload(state, df(["r", "Upload", ["x"]]), K, owned)
+    assert cell(merged, "r", "Assay") == ["x"]  # filled without a conflict
+    assert conflicts["column"].tolist() == ["Title"]  # only the contributor's real value conflicts
+
+
+def test_pending_annotation_list_cell_in_a_new_contributor_row_is_pipeline_owned():
+    v1 = df(["a", "T", ""])
+    v2 = df(["a", "T", ""], ["r", "Mine", ["Pending Annotation"]], ["s", "Mine", ["Pending Annotation", "RNA-seq"]])
+    state, owned, d = rep(v1, v2, log={1: 0})
+    # only a list holding nothing but the placeholder is the pipeline's to fill
+    assert owned == {("r", "Title"), ("s", "Title"), ("s", "Assay")}
+
+
 def test_deleted_contributor_row_is_restored():
     v1 = df(["a", "T", ""])
     v2 = df(["a", "T", ""], ["r", "Mine", ""])
@@ -641,7 +697,7 @@ def test_rows_added_after_the_stale_base_count_as_reverted_when_missing():
 
 
 def _reference_base(frames, v, non_key):
-    """Brute force of the rule: newest u <= v-2 with a complete reversion, not exact, else v-1."""
+    """Brute force of the rule: oldest u <= v-2 with a complete reversion, not exact, else v-1."""
     from_v = frames[v]
 
     def val(frame, k, c):
@@ -649,12 +705,13 @@ def _reference_base(frames, v, non_key):
 
     if any(frames[u] == from_v for u in range(1, v - 1)):
         return v - 1
+    best = v - 1
     for u in range(v - 2, 0, -1):
         cells = {(k, c) for k in set(frames[u]) | set(frames[v - 1]) for c in non_key
                  if val(frames[u], k, c) != val(frames[v - 1], k, c)}
         if cells and all(val(frames[u], k, c) == val(from_v, k, c) for k, c in cells):
-            return u
-    return v - 1
+            best = u
+    return best
 
 
 def test_incremental_session_base_matches_the_brute_force_rule():
