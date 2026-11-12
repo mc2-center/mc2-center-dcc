@@ -139,7 +139,7 @@ def get_args(argv=None):
     parser.add_argument("--grants", nargs="+", help="grant numbers to migrate (default: every grant)")
     parser.add_argument("--limit", type=int, help="stop after N grants")
     parser.add_argument(
-        "--schema-version", default="14.1.0",
+        "--schema-version", default="14.1.1",
         help="registered MC2Center-<Component>-<version> schema to bind (default: %(default)s)",
     )
     parser.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")

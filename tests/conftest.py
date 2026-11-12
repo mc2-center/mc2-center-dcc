@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "portal_tables"))
 sys.path.insert(0, str(ROOT / "annotations"))
 
-# Never hit the network: model files come from the vendored v14.1.0 fixtures.
+# Never hit the network: model files come from the vendored v14.1.1 fixtures.
 os.environ["MC2_MODEL_DIR"] = str(Path(__file__).parent / "fixtures")
 
 
