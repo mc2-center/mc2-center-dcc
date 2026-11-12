@@ -20,6 +20,8 @@ cells; list columns are split into Python lists) and records every change as
 * ``doi_placeholder``: ``No DOI Listed`` / ``DOI Not Available`` blanked (D-Q22).
 * ``date_iso``: ``m/d/yy`` or ``m/d/yyyy`` in a ``format: date`` column rewritten to
   ``YYYY-MM-DD`` (two-digit years are ``20yy``); ISO dates are kept, anything else is unmapped.
+* ``umlaut``: a BibTeX-style umlaut in an author name (``M"ockl L``) rewritten to the letter
+  (``Möckl L``). A ``"`` in a list item breaks Grid's export, and these are the only ones in the data.
 
 An exact valid value is kept and not recorded. A value no rule can map is left
 unchanged and reported as unmapped (except licenses, which are blanked).
@@ -55,6 +57,8 @@ DOI_PLACEHOLDERS = frozenset({"no doi listed", "doi not available"})
 TRUNCATED_SUFFIX = "(Read more on Pubmed)"
 DOI_PREFIX = "https://doi.org/"
 _DUO_VALID = re.compile(r"^(DUO:\d{7,8}|DUOPlus\d+|Pending Annotation)$")
+_BIBTEX_UMLAUT = re.compile(r'"([aouAOU])')
+_UMLAUTS = {"a": "ä", "o": "ö", "u": "ü", "A": "Ä", "O": "Ö", "U": "Ü"}
 
 
 def fold(value: str) -> str:
@@ -360,6 +364,8 @@ class Normalizer:
             return self.overrides[(column, value)], "override"
         if value.endswith(TRUNCATED_SUFFIX) and (column in self.enum_maps or column in self.list_cols):
             return value, "truncated"
+        if column == "PublicationAuthors" and _BIBTEX_UMLAUT.search(value):
+            return _BIBTEX_UMLAUT.sub(lambda m: _UMLAUTS[m.group(1)], value), "umlaut"
         if column.endswith("Doi"):
             return normalize_doi(value)
         if column in self.date_cols:

@@ -103,7 +103,7 @@ REFERENCE_RESOURCE = {"PublicationView": "publication", "DatasetView": "dataset"
                       "EducationalResource": "education"}
 RESOLUTION_COLUMNS = ["key", "kept_row", "dropped_row", "reason"]
 # Bump when a conversion rule changes what a grant converts to: a done dry run is then redone (options_hash).
-CONVERSION_RULES = "6-manifest-reconcile-date-iso-pivot"
+CONVERSION_RULES = "7-manifest-reconcile-date-iso-pivot-umlaut"
 # Components whose entity id (the upsert key) is taken from the curated manifest, matched by this column.
 # Columns that follow the entity (downloadSynId, version) are derived portal columns: not in the grant
 # tables, the manifest or the RecordSet schema, so only the key is replaced.
