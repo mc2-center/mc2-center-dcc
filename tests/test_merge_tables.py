@@ -63,3 +63,10 @@ def test_skipped_grants_excluded_from_union_but_found_kept():
     rs.assert_called_once_with(id="synR")
     assert list(df["grantId"]) == ["syn20"]
     assert "" not in df["recordId"].tolist()
+
+
+def test_grant_projects_include_the_affiliate_project():
+    table = mock.MagicMock()
+    table.query.return_value = pd.DataFrame({"grantId": ["syn1", "", "syn2"]})
+    with mock.patch.object(mt, "Table", return_value=table):
+        assert mt.list_grant_projects(mock.MagicMock()) == ["syn1", "syn2", "syn52963211"]

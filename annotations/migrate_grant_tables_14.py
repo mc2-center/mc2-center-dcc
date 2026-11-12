@@ -93,8 +93,7 @@ logger = logging.getLogger(__name__)
 
 VIEW_ID = "syn52750482"  # MC2_All_Project_Tables
 UNION_PARENT = "syn28742843"  # CCKP - MC2 Admin: holds the legacy <Component>_UNION MaterializedViews
-# Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
-UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
+UNLISTED_LABELS = merge_tables.UNLISTED_LABELS  # projects outside the Grants table (Affiliate Resources)
 COMPONENTS = ["PublicationView", "DatasetView", "ToolView", "EducationalResource"]
 # The admin components (migrate_admin_manifests_14.py reuses this module's functions) have keys too.
 KEYS = {c: f"{c}Id" for c in COMPONENTS + list(utils.ADMIN_COMPONENTS.values())}  # class-label upsert key of each component
