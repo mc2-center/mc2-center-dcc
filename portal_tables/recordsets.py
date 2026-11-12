@@ -130,6 +130,8 @@ CLOCK_TOLERANCE = pd.Timedelta(minutes=10)
 _NUMERIC = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
 _NUMBER_START = frozenset("-0123456789")
 _ABSENT = ("<absent>",)  # a cell of a row that a version does not have
+# Grid's export stores General Punctuation (U+2000-U+206F) inside list items as literal \uXXXX text.
+_GRID_ESCAPE = re.compile(r"\\u(20[0-6][0-9a-fA-F])")
 
 
 # --- cells -------------------------------------------------------------------
@@ -149,8 +151,17 @@ def parse_cell(value):
         except ValueError:
             return text
         if isinstance(parsed, list):
-            return [str(v) for v in parsed]
+            return [grid_unescape(str(v)) for v in parsed]
     return text
+
+
+def grid_unescape(item: str) -> str:
+    """A list item with Grid's literal ``\\u2000``-``\\u206f`` escapes turned back into the characters.
+
+    Workaround for a Grid export bug: list items lose General Punctuation (``–``, ``’``, ``†`` ...)
+    to literal ``\\uXXXX`` text, on every export. Other characters and plain text columns are unaffected.
+    """
+    return _GRID_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), item)
 
 
 def cell_to_csv(value) -> str:

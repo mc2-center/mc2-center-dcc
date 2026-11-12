@@ -120,6 +120,13 @@ def test_read_manifest_recordset_parses_list_columns(monkeypatch, tmp_path):
     assert pd.isna(out["Chair Roles"].tolist()[2])
 
 
+def test_read_manifest_recordset_undoes_grid_list_item_escapes(monkeypatch, tmp_path):
+    syn = _recordset(monkeypatch, tmp_path, 'ProjectViewId,Investigator\n'
+                     r'p1,"[""Ann O\\u2019Neil"",""Bo\\u201a Li""]"' '\n')  # as Grid stores them
+    out = mc.read_manifest(syn, "synRS", component="ProjectView")
+    assert out["Investigator"].tolist() == [["Ann O’Neil", "Bo‚ Li"]]
+
+
 def test_read_manifest_recordset_without_component_is_unchanged(monkeypatch, tmp_path):
     syn = _recordset(monkeypatch, tmp_path, "PersonViewId,Name\np1,Ada\n")
     assert list(mc.read_manifest(syn, "synRS").columns) == ["PersonViewId", "Name"]
