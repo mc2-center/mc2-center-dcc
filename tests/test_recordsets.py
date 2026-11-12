@@ -65,6 +65,15 @@ def test_parse_cell_and_csv_round_trip(tmp_path):
     assert back.loc[0, "Assay"] == ["x", "y"] and back.loc[1, "Assay"] == ""
 
 
+def test_parse_cell_undoes_grid_list_item_escapes():
+    # As Grid's export stores them: General Punctuation in a list item becomes literal \uXXXX text.
+    stored = r'["High\\u2010grade","O\\u2019Neil\\u2020","x\\u206fy"]'
+    assert rs.parse_cell(stored) == ["High‐grade", "O’Neil†", "x⁯y"]
+    # Only U+2000-U+206F: Grid never escapes anything else, so other \u text is the item's own text.
+    assert rs.parse_cell(r'["Ko\\u0144","a\\u2070b","\\u1fffz"]') == ["Ko\\u0144", "a\\u2070b", "\\u1fffz"]
+    assert rs.parse_cell(r"High‐grade") == r"High‐grade"  # plain text cells are not touched
+
+
 def test_parse_upload_splits_list_columns():
     up = pd.DataFrame({K: ["a"], "Assay": ["RNA Sequencing, Mass Spectrometry"], "Title": ["x, y"]})
     out = rs.parse_upload(up, {"Assay"})

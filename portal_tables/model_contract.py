@@ -315,7 +315,9 @@ def _parse_json_list(value):
             except ValueError:
                 return value
             if isinstance(parsed, list):
-                return [str(v) for v in parsed]
+                import recordsets  # here, not at the top: recordsets imports this module
+
+                return [recordsets.grid_unescape(str(v)) for v in parsed]
     return value
 
 
