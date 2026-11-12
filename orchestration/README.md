@@ -1,21 +1,21 @@
 # Pipeline Orchestration Plan
 
-**Status: planning only — nothing in this directory is implemented yet.** The
-scripts referenced below are expected to change soon, so this document
+**Status: the orchestrator itself is not built yet, but its Phase 2 stage is:
+`annotations/upload_workflow.py` (D15) exists.** The rest of this document
 describes the *stages and checkpoints* the eventual orchestrator needs to
 cover, not a pinned implementation against today's exact script names/args.
 
 **Relationship to the 14.0.0 cutover plans.** `plans/impl_ai_curation_pipeline_14.md`,
 `plans/impl_dcc_14_alignment.md` and `plans/impl_synapse_14_infrastructure.md`
-describe code and Synapse changes landing concurrently with this plan, several
+describe code and Synapse changes made alongside this plan, several
 of which replace scripts named below. The notes in each phase point at the
 specific task; the biggest structural one is task **D15**, which replaces the
 ~15-script manual Phase 2 with a single parameterized driver
-(`annotations/upload_workflow.py`) — once it lands, that driver *is* the
+(`annotations/upload_workflow.py`) — that driver *is* the
 orchestrator's Phase 2 stage, not something this plan re-wraps script-by-script.
 Phase 2's upload target (per-grant Synapse table vs. RecordSet) and Phase 3's
-validation method both depend on decision gate **G1** (infrastructure task I3),
-which is still open as of this writing.
+validation method depended on decision gate **G1** (infrastructure task I3),
+which was decided as RecordSets (D-Q29), so `--target recordset` is the default.
 
 ## Goal
 
@@ -55,7 +55,7 @@ still driven by the broken `upload-workflow.sh`. D15 collapses them into one
 command, `annotations/upload_workflow.py --manifest … --type … --out-dir …
 --target {recordset,schematic-table}`, which runs split → gen-mp-csv →
 processing-splits → create_entity_links → upload as a single call. The
-orchestrator's Phase 2 stage should shell out to that driver once it lands,
+orchestrator's Phase 2 stage should shell out to that driver,
 rather than calling each script individually.
 
 1. `split_manifest_grants.py` — split the manifest by grant number into
@@ -87,13 +87,26 @@ rather than calling each script individually.
      each split file against the model via `schematic`, then submits
      (upserts) valid ones into the per-grant table. Kept until the
      RecordSet migration is complete, with a deprecation notice.
-   - **`recordset`** (new, task D11; gated on decision **G1** from the
-     infrastructure RecordSet spike, I3): `annotations/upload_recordsets.py`
+   - **`recordset`** (the default; task D11, decision **G1** = RecordSets,
+     D-Q29): `annotations/upload_recordsets.py`
      normalizes headers, upserts by primary key into the grant's
      `MC2Center_<Component>_RecordSet`, stores a new version, and polls
      Synapse's own `validation_summary` / `get_detailed_validation_results`
-     instead of shelling out to `schematic`. Defaults to `--dryrun`; a live
-     run needs `--execute`.
+     instead of shelling out to `schematic`. It has no `--dryrun` flag: a dry
+     run is the default, and a live run needs `--execute`, with
+     `--write-log-table syn78404341` and `--removals-table syn78404342`.
+
+Two related steps sit outside the per-run driver:
+
+- **Row removals** (D-Q49): `annotations/remove_recordset_rows.py` removes the
+  rows listed in the `MC2Center_RecordSet_Removals` table (`syn78404342`) from
+  the RecordSets. It is the one RecordSet write outside a Grid session, takes
+  the write-log lock, and defaults to a dry run (`--execute` to write).
+- **Admin and grant-table migrations** (D-Q50): `annotations/migrate_grant_tables_14.py`
+  (per component, the grant-level tables into RecordSets) and
+  `annotations/migrate_admin_manifests_14.py` (the Grant / Project / PersonView
+  admin manifests). Both default to a dry run; `--execute` needs
+  `--write-log-table`. One-off cutover steps, run before the first sync.
 
 ### Phase 3 — union-table sync (`mc2-center-dcc/portal_tables/` + `utils/`)
 
@@ -106,22 +119,30 @@ tables**. Run once per component:
    grant's RecordSet CSV, normalized back to display-name headers) alongside
    the legacy table mode, and removes the legacy mode's per-grant mirror
    tables, which were duplicating rows every run.
-2. `union_qc.py --regenerate` (I6) — builds the union (RecordSets, or local
+2. `union_qc.py --regenerate` (I6) — builds the union (RecordSets, including
+   the Affiliate project `syn52963211`, or local
    `converted.csv` files with `--input-dir`), merges rows by alias key, applies
-   the curated key corrections, fills empty cells, validates with `jsonschema`
+   the curated key corrections, fills empty cells, computes the `iconTags` for
+   PublicationView and DatasetView from `Assay` using the data-models
+   `modules/shared/mc2_iconTag_map_3-4-25.csv`, validates with `jsonschema`
    against the 14.x JSON Schemas (`--schema-version`) and writes
-   `<Component>_merged_manifest.csv` (14.x headers) plus `validation.csv`. It
+   `<Component>_merged_manifest.csv` (14.x headers, tagged) plus `validation.csv`. It
    is a dry run unless `--upload`. No `schematic`, and invalid rows are kept
    and reported, never trimmed. (The legacy `-l/-m/-s/-db` compare mode still
-   exists and now validates with `jsonschema` too.)
+   exists and now validates with `jsonschema` too.) `build_tag_lists.py` is no
+   longer a separate step in this flow.
 3. **Human review and correction** of the validation report.
-4. `merge_and_correct_manifests.py` — folds `_updated.csv` into
-   `<component>_merged.csv`, producing `<component>_merged_corrected.csv`.
-5. `build_tag_lists.py` — PublicationView and DatasetView only. Adds content
-   tags for the CCKP's card-icon feature.
-6. Upload the tagged/corrected CSV to the `release_validation` Synapse
-   folder (`syn53461903`), replacing the existing file for that component.
-7. `run_sync.sh` — syncs `release_validation` into the live portal tables.
+4. Hand corrections. **Preferred: make them in Curator**, on the grant's
+   RecordSet; the next `--regenerate` picks them up. Alternatively,
+   `merge_and_correct_manifests.py` folds `_updated.csv` into
+   `<component>_merged.csv`, producing `<component>_merged_corrected.csv`;
+   that file is not what step 5 uploads, so upload it by hand instead.
+5. `union_qc.py --regenerate --upload` — uploads the tagged file as a new
+   version of the manifest in the `release_validation` Synapse
+   folder (`syn53461903`); this replaces the manual upload. `--upload` is
+   refused together with `--grant-projects`, and while any `id_conflicts` exist.
+6. `run_sync.sh` — syncs `release_validation` into the live portal tables
+   (publications, datasets, tools and educational resources).
 
 ## Required manual checkpoints
 
@@ -136,7 +157,7 @@ failing:
    whether a flagged `Pan-cancer` value is a genuine cap-collapse or an
    actual gap, or whether a term needs backpopulating vs. remapping to an
    existing vocab entry.
-3. **Before Phase 3 step 6** (upload to `release_validation`): this is
+3. **Before Phase 3 step 5** (`--upload` to `release_validation`): this is
    effectively "publish" — final human sign-off before the next
    `run_sync.sh` makes it live.
 
@@ -163,7 +184,8 @@ Found while running this manually end-to-end on 2026-10-05:
   environment), not rely on ambient login state. The RecordSet path replaces
   this with Synapse's own `validation_summary` / `get_detailed_validation_results`
   polling, run in-process with the same credentials as everything else.
-- **Empty link columns crash entity creation**: `create_entity_links.py`'s
+- **Empty link columns crash entity creation** (*handled by `upload_workflow.py`:
+  empty-link rows go to `04_links/dropped_rows.csv`*): `create_entity_links.py`'s
   plain-link path (`create_links()`) has no handling for an empty
   `Tool Homepage` / link column — it will try to create a
   `File(path="", ...)` entity, which is unlikely to behave well and isn't
@@ -173,7 +195,8 @@ Found while running this manually end-to-end on 2026-10-05:
   entirely rather than left as a header-only CSV (`schematic` is known to
   crash on empty manifests).
 - **GEO dataset entities are not idempotent by content, only by name within
-  a run**: `geo_synapse.create_synapse_dataset()` always creates a new
+  a run** (*handled by `upload_workflow.py`: accessions that already have a
+  Dataset entity are reused, listed in `04_links/reused_entities.csv`*): `geo_synapse.create_synapse_dataset()` always creates a new
   Dataset entity; it doesn't check Synapse for an existing one with the same
   accession first. Synapse's own `Dataset.store()` appears to dedupe
   same-named entities created *within the same script invocation* (verified:
@@ -196,7 +219,7 @@ Found while running this manually end-to-end on 2026-10-05:
   of known corrections actually persisted (the way this was manually
   verified on 2026-10-05) rather than trusting a clean exit code alone.
 
-## Suggested shape (not yet built)
+## Suggested shape (orchestrator not yet built)
 
 A stage-based driver, not a monolithic script — each phase/step is a named,
 independently callable unit (subprocess call or function) so individual
@@ -207,9 +230,9 @@ independently inspectable and a failed run can resume from the last
 completed stage rather than starting over.
 
 Task D15's `annotations/upload_workflow.py` is the first concrete piece of
-this shape to land — treat it as the Phase 2 stage once it's merged, rather
+this shape to land — treat it as the Phase 2 stage, rather
 than re-implementing a wrapper around the individual split/gen-mp-csv/
 processing-splits/create_entity_links/upload scripts it already chains. Its
-`--target` flag is also where this orchestrator should branch on decision
-gate G1 (RecordSets vs. in-place table migration) rather than carrying its
-own copy of that decision.
+`--target` flag carries decision gate G1 (decided: RecordSets, so
+`recordset` is the default; `schematic-table` is the legacy path), so this
+orchestrator shouldn't carry its own copy of that decision.

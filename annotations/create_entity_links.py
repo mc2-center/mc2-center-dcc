@@ -8,6 +8,10 @@ For DatasetView entries whose Dataset Url contains a GEO or SRA accession, a ful
 Synapse Dataset entity with GEO FTP file links is created instead of a plain File
 link, using the geo-synapse pipeline (https://github.com/sagebio-ada/geo_dataset_creation).
 
+Run it through annotations/upload_workflow.py (its links stage), not on its own: this script
+only writes the new IDs into the local manifest CSVs, and the workflow's upload stage is
+what puts them in the grant's RecordSet.
+
 author: orion.banks
 """
 
