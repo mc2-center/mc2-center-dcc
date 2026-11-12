@@ -34,7 +34,7 @@ def _format_checker() -> jsonschema.FormatChecker:
 
 
 def _instance(row: dict, properties: dict) -> dict:
-    """A row as the JSON object Synapse validates: blank cells absent, numbers numeric."""
+    """A row as the JSON object Synapse validates: blank cells absent, numbers numeric, ``true``/``false`` boolean."""
     out = {}
     for column, value in row.items():
         if value == "" or value == []:
@@ -45,6 +45,8 @@ def _instance(row: dict, properties: dict) -> dict:
                 value = float(value) if kind == "number" else int(value)
             except ValueError:
                 pass  # left as text: the type error is the finding
+        if kind == "boolean" and value in ("true", "false"):
+            value = value == "true"
         out[column] = value
     return out
 

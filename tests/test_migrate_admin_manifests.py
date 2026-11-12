@@ -301,7 +301,8 @@ def test_person_conversion_joins_list_cells_of_string_columns_and_fixes_enum_cas
     assert converted["ConsortiumKey"].tolist() == ["program.csbc, program.htan", "program.ps-on"]
     assert converted["AlternativeNames"].tolist() == [[], ["Robert"]]
     assert converted["ChairRoles"].tolist() == [["Working Group", "Annual Meeting"], []]
-    assert converted["PortalDisplay"].tolist() == ["TRUE", "FALSE"]
+    assert converted["PortalDisplay"].tolist() == ["true", "false"]
+    assert "PortalDisplay" not in set(grants.validate_frame(converted, "PersonView")["field"])
     assert converted["LastKnownInstitution"].tolist()[0] == "Columbia University"
     assert set(changes["rule"]) == {"list_to_string", "enum_case", "minted_key", "consortium_key"}
     assert changes[changes["rule"] == "minted_key"][["key", "column", "from", "to"]].values.tolist() == [
@@ -471,7 +472,7 @@ def test_execute_creates_the_admin_folder_and_recordset_loads_through_grid_and_l
     assert kw["create_grid"] is False and kw["bind_schema_to_record_set"] is True
     assert kw["record_set_name"] == "MC2Center_GrantView_RecordSet"
     assert kw["project_id"] == "syn28742843" and kw["folder_id"] == fake.folders[("syn28742843", "admin_recordsets")]
-    assert kw["upsert_keys"] == ["GrantViewId"] and kw["schema_uri"] == "MC2Center-GrantView-14.1.0"
+    assert kw["upsert_keys"] == ["GrantViewId"] and kw["schema_uri"] == "MC2Center-GrantView-14.1.1"
     assert "admin manifest" in kw["record_set_description"] and "syn53259587" in kw["record_set_description"]
     rs_id = next(iter(fake.rs))
     assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
