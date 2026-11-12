@@ -88,7 +88,7 @@ def status_check(syn, table_id, query, colname, email):
     doi_list = df[~df[colname].isnull()]["doi"]
     ready_for_review = []
     with requests.Session() as session:
-        for doi in doi_list:
+        for doi in doi_list.unique():  # each DOI once: its rows are all collected below
             unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
             try:
                 check_oa_status = session.get(unpaywall_url)
