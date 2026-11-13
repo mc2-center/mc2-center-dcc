@@ -123,7 +123,6 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         logger.info("%s: not stored in the RecordSet, dropped: %s", report_dir.name, extra)
         upload = upload.drop(columns=extra)
     upload = recordsets.parse_upload(upload, list_cols)
-    summary["new_comma_terms"] = len(recordsets.learn_comma_terms(upload, component))
     # Grid cannot open a RecordSet whose list cell holds an item with a quote or backslash.
     unsafe = pd.Series(
         [any(isinstance(v, list) and any('"' in i or "\\" in i for i in v) for v in r)
@@ -238,6 +237,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
     version = created[-1]
     summary["version"] = version
+    summary["new_comma_terms"] = len(recordsets.learn_comma_terms(upload, component))
 
     written = read(version)
     problems = recordsets.differences(merged, _only(written, stored), key, set_like)

@@ -432,3 +432,12 @@ def test_rows_with_a_quote_or_backslash_in_a_list_item_are_dropped_and_reported(
     assert sorted(unsafe[KEY]) == ["p0", "p1"]
     assert "unsafe_rows=2" in (rep / "syn100" / "summary.txt").read_text()
     assert "unsafe_list_items.csv" in caplog.text
+
+
+def test_comma_terms_are_learned_only_after_an_executed_write(tmp_path):
+    with mock.patch.object(ur.recordsets, "learn_comma_terms", return_value=["a, b"]) as learn:
+        run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), execute=False)
+        learn.assert_not_called()
+        code, rep = run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), run_id="r2")
+        learn.assert_called_once()
+    assert code == 0 and "new_comma_terms" in pd.read_csv(rep.parent / "r2" / "summary.csv").columns
