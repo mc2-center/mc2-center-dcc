@@ -66,12 +66,12 @@ def test_parse_cell_and_csv_round_trip(tmp_path):
 
 
 def test_parse_cell_undoes_grid_list_item_escapes():
-    # As Grid's export stores them: General Punctuation in a list item becomes literal \uXXXX text.
-    stored = r'["High\\u2010grade","O\\u2019Neil\\u2020","x\\u206fy"]'
-    assert rs.parse_cell(stored) == ["High‐grade", "O’Neil†", "x⁯y"]
-    # Only U+2000-U+206F: Grid never escapes anything else, so other \u text is the item's own text.
-    assert rs.parse_cell(r'["Ko\\u0144","a\\u2070b","\\u1fffz"]') == ["Ko\\u0144", "a\\u2070b", "\\u1fffz"]
-    assert rs.parse_cell(r"High‐grade") == r"High‐grade"  # plain text cells are not touched
+    # As Grid's export stores them: U+0080-U+009F and U+2000-U+20FF in a list item become literal \uXXXX text.
+    stored = r'["High\\u2010grade","O\\u2019Neil\\u2020","x\\u206fy","5\\u20ac","\\u00c3\\u0081lvaro","\\u0080\\u009F"]'
+    assert rs.parse_cell(stored) == ["High\u2010grade", "O\u2019Neil\u2020", "x\u206fy", "5\u20ac", "\\u00c3\x81lvaro", "\x80\x9f"]
+    # Nothing else: Grid never escapes other characters, so other \u text is the item's own text.
+    assert rs.parse_cell(r'["Ko\\u0144","a\\u2100b","\\u1fffz","\\u007f"]') == ["Ko\\u0144", "a\\u2100b", "\\u1fffz", "\\u007f"]
+    assert rs.parse_cell(r"High\u2010grade") == r"High\u2010grade"  # plain text cells are not touched
 
 
 def test_parse_upload_splits_list_columns():

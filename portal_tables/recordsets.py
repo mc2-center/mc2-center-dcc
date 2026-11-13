@@ -130,8 +130,8 @@ CLOCK_TOLERANCE = pd.Timedelta(minutes=10)
 _NUMERIC = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
 _NUMBER_START = frozenset("-0123456789")
 _ABSENT = ("<absent>",)  # a cell of a row that a version does not have
-# Grid's export stores General Punctuation (U+2000-U+206F) inside list items as literal \uXXXX text.
-_GRID_ESCAPE = re.compile(r"\\u(20[0-6][0-9a-fA-F])")
+# Grid's export stores U+0080-U+009F and U+2000-U+20FF inside list items as literal \uXXXX text.
+_GRID_ESCAPE = re.compile(r"\\u(00[89][0-9a-fA-F]|20[0-9a-fA-F]{2})")
 
 
 # --- cells -------------------------------------------------------------------
@@ -156,10 +156,13 @@ def parse_cell(value):
 
 
 def grid_unescape(item: str) -> str:
-    """A list item with Grid's literal ``\\u2000``-``\\u206f`` escapes turned back into the characters.
+    """A list item with Grid's literal ``\\u0080``-``\\u009f`` and ``\\u2000``-``\\u20ff`` escapes turned back
+    into the characters.
 
-    Workaround for a Grid export bug: list items lose General Punctuation (``–``, ``’``, ``†`` ...)
-    to literal ``\\uXXXX`` text, on every export. Other characters and plain text columns are unaffected.
+    Workaround for a Grid export bug: list items lose C1 controls and U+2000-U+20FF (``–``, ``’``, ``†``,
+    ``€`` ...) to literal ``\\uXXXX`` text, on every export. Other characters and plain text columns are
+    unaffected. (Grid also drops the backslash of U+0001-U+001F, which cannot be undone, and cannot open a
+    RecordSet whose list item holds ``"`` or ``\\``; no list item in the data has either.)
     """
     return _GRID_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), item)
 
