@@ -1,5 +1,28 @@
 # Manifest Processing and Upload Workflow
 
+## Recommended: `upload_workflow.py`
+
+`upload_workflow.py` replaces `upload-workflow.sh` (broken; the step-by-step
+description below is kept for reference). It chains, for one component:
+`split` -> `paths` -> `reshape` -> `links` (DatasetView/ToolView only) -> `upload`.
+
+```bash
+python annotations/upload_workflow.py --manifest publication.csv --type PublicationView \
+    --out-dir runs/2026-10 --write-log-table syn78404341            # dry run (default)
+python annotations/upload_workflow.py ... --execute              # write to Synapse
+python annotations/upload_workflow.py ... --from-stage reshape   # resume
+```
+
+- `--target recordset` (default) calls `upload_recordsets.py` (`--write-log-table`, or `--write-log-csv` for dry runs; `--execute` needs the table;
+  `--removals-table` defaults to `syn78404342`, the production `MC2Center_RecordSet_Removals`, and is always passed on);
+  `--target schematic-table` runs `upload-manifests.py` as a subprocess (needs `--schematic-config`
+  with `--execute`; it has no dry-run mode, so a dry run only prints the command).
+- Each stage writes `<out-dir>/<NN>_<stage>/`; `<out-dir>/run.json` records stages, outputs and timestamps.
+- `links` creates Synapse entities, so it only runs with `--execute`. Before it, rows with an empty
+  link column are dropped (`04_links/dropped_rows.csv`) and GEO/SRA accessions that already have a
+  Dataset entity in the central project are reused instead of recreated (`04_links/reused_entities.csv`).
+- `SYNAPSE_AUTH_TOKEN`, when set, is passed to subprocesses (never logged).
+
 This repository contains a workflow to process and upload manifests into synapse using a shell script named `upload-workflow.sh`. The workflow involves several steps, each with specific input files, processes, and outputs. Below is a detailed description of each step:
 
 ## Step 0: Activate Conda Environment
@@ -25,10 +48,9 @@ Creates split manifest files in the `./output/output_month` directory in CSV for
 
 ### Input Files:
 - Split manifest files in `./output/output_month`
-- `CCKP_backpopulation_id_validation.csv`
 
 ### Process:
-Runs the Python script `gen-mp-csv.py` to generate file paths based on split manifests.
+Runs the Python script `gen-mp-csv.py <folder> <output_csv> <data_type>` to generate file paths based on split manifests. It queries `syn21918972` and `syn27210848` (read-only); `CCKP_backpopulation_id_validation.csv` is not used by the code.
 
 ### Output:
 Creates `month_filepaths.csv` in present directory
@@ -39,7 +61,7 @@ Creates `month_filepaths.csv` in present directory
 - File path information in `./output/output_month`
 
 ### Process:
-Runs the Python script `processing-splits.py` to process split files from the specified output folder. Adds missing columns required to match the schema, truncates any columns with 400+ words, and adds "Read more on Pubmed."
+Runs the Python script `processing-splits.py` to process split files from the specified output folder. Adds missing columns required to match the schema, truncates free-text cells over 500 characters to 400 (enum, list, pattern and format columns are never cut), and appends "(Read more on Pubmed)".
 
 ### Output:
 Performs processing on split files.
@@ -50,7 +72,7 @@ Performs processing on split files.
 - `month_filepaths.csv`
 
 ### Process:
-Runs the Python script `schema_update.py` to update the schema based on file paths and specified parameters.
+Runs the Python script `schema_update.py` to update the schema based on file paths and specified parameters. It isn't needed with `--target recordset`.
 
 ### Output:
 Updates the schema on synpase.

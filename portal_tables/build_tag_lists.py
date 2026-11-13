@@ -28,32 +28,35 @@ def get_args():
     return parser.parse_args()
 
 
+def icon_tags(database_df, term_df, attributes):
+    """The iconTags cell for each row: labels of the terms in the attribute columns, ", "-joined.
+
+    An attribute column is found under its 14.x name (``Assay``) or its legacy
+    prefixed name (``Publication Assay``).
+    """
+    component = str(database_df["Component"].iat[0])
+    tag_columns = [a if a in database_df.columns else " ".join([component[:-4], a]) for a in attributes]
+    label_of = {}
+    for term, label in zip(term_df["term"], term_df["label"]):
+        if pd.notna(label) and term not in label_of:
+            label_of[term] = str(label)
+
+    tags = []
+    for _, row in database_df.iterrows():
+        annotations = [a for column in tag_columns for a in str(row[column]).split(", ")]
+        labels = dict.fromkeys(label_of[a] for a in annotations if a in label_of)
+        tags.append(", ".join(labels))
+    return pd.Series(tags, index=database_df.index)
+
+
 def collect_labels(database, terms, attributes):
 
     database_df = pd.read_csv(database, header=0, na_values=None, keep_default_na=False)
-    component = str(database_df.iat[1,1])
-    data_type_prefix = component[:-4]
-    tag_columns = [" ".join([data_type_prefix, a]) for a in attributes]
-
+    component = str(database_df["Component"].iat[0])
     term_df = pd.read_csv(terms, header=0)
-    term_tuples = [(term, label) for term, label in zip(term_df["term"].to_list(), term_df["label"].to_list())]
+    database_df["iconTags"] = icon_tags(database_df, term_df, attributes)
+    print(f"\nTags collected for attribute(s) {attributes} and stored in database")
 
-    database_df["iconTags"] = ""
-    
-    for _, row in database_df.iterrows():
-        annotations = []
-        for column in tag_columns:
-            print(f"Accessing annotations for column {column}")
-            annotations = annotations + row[column].split(", ")
-        print(f"Collected annotations: {annotations}")
-        labels = set([str(label) for term, label in term_tuples for annot in annotations if annot == term])
-        label_str = ", ".join(labels)
-        labels_str_trimmed = ", ".join(labels - {"nan"})
-        print(f"Labels associated with resource: {labels_str_trimmed}\n\n")
-        if label_str != "nan":
-            database_df.at[_, "iconTags"] = labels_str_trimmed
-    print(f"\nTags collected for attribute(s) {tag_columns} and stored in database")
-    
     return database_df, component
 
 

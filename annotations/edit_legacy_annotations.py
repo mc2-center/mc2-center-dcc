@@ -1,24 +1,15 @@
 import argparse
-from getpass import getpass
+import os
+import sys
 
 import pandas as pd
-import synapseclient
-from attribute_dictionary import ATTRIBUTE_DICT
+from synapseclient.models import Table
 
-
-def login() -> synapseclient.Synapse:
-    """Log into Synapse. If env variables not found, prompt user."""
-    try:
-        syn = synapseclient.login(silent=True)
-    except synapseclient.core.exceptions.SynapseNoCredentialsError:
-        print(
-            ".synapseConfig not found; please manually provide your",
-            "Synapse Personal Access Token (PAT). You can generate"
-            "one at https://www.synapse.org/#!PersonalAccessTokens:0",
-        )
-        pat = getpass("Your Synapse PAT: ")
-        syn = synapseclient.login(authToken=pat, silent=True)
-    return syn
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import header_maps
+import model_contract
+import utils
 
 
 def get_args() -> argparse.Namespace:
@@ -35,7 +26,7 @@ def get_args() -> argparse.Namespace:
         "-cv",
         "--cv_list",
         type=str,
-        default="https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv",
+        default=model_contract.ALL_VALID_VALUES_URL,
         help="CSV of controlled terms and their non-preferred terms",
     )
     parser.add_argument("--dryrun", action="store_true")
@@ -78,11 +69,11 @@ def update_nonpreferred_terms(
     """Update legacy annotations found to current standard terms."""
 
     # Manifest may use colnames that are variations of what is listed
-    # in the dictionary, e.g. "Publication Assay" instead of "assay".
-    # Re-map colnames to match with dictionary, keeping record of the
-    # original manifest colnames.
+    # in the CV, e.g. "Assay" or its 13.1.0 per-entity name instead of
+    # "assay". Re-map colnames to CV categories (derived from the crosswalk),
+    # keeping record of the original manifest colnames.
     og_colnames = table.columns
-    table = table.rename(columns=ATTRIBUTE_DICT)
+    table = table.rename(columns=header_maps.cv_category_columns())
     for category in cv_dict.index:
         if category in table.columns:
             print(f"\tChecking {category}...")
@@ -104,29 +95,33 @@ def update_manifest_tables(syn, scope_ids: list, cv_dict: dict, dryrun: bool):
     """Update each parent table found in union table."""
     for table_id in scope_ids:
         print(f"Updating annotations found in table ID: {table_id}")
-        table = syn.tableQuery(f"SELECT * FROM {table_id}")
-        updated_table = update_nonpreferred_terms(
-            table.asDataFrame().fillna(""),
-            cv_dict
+        table = Table(id=table_id)
+        # Stored back by store_rows(): fill text columns only, so nulls in
+        # numeric columns stay null instead of becoming "".
+        current = utils.fill_blank(
+            table.query(query=f"SELECT * FROM {table_id}", synapse_client=syn),
+            numeric=False,
         )
+        updated_table = update_nonpreferred_terms(current, cv_dict)
         if dryrun:
             updated_table.to_csv(table_id + "-updated.csv", index=False)
         else:
-            syn.store(synapseclient.Table(
-                table_id,
-                updated_table,
-                etag=table.etag
-            ))
+            # Embedded newlines turn rows into blank rows in Synapse's bulk
+            # CSV ingestion; see portal_tables/utils.strip_newlines.
+            table.store_rows(
+                values=utils.strip_newlines(updated_table),
+                synapse_client=syn,
+            )
 
 
 def main():
     """Main function."""
-    syn = login()
+    syn = utils.syn_login()
     args = get_args()
 
     union_table_scope_ids = (
-        syn.tableQuery(f"SELECT entityId FROM {args.union_table_id}")
-        .asDataFrame()["entityId"]
+        Table(id=args.union_table_id)
+        .query(query=f"SELECT entityId FROM {args.union_table_id}", synapse_client=syn)["entityId"]
         .unique()
     )
     cv_dict = map_legacy_terms_to_standard(args.cv_list)

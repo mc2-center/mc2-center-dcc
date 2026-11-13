@@ -4,10 +4,22 @@ This script will get a count of themes across the grants and
 consortiums in the CCKP. (Based on James' `nbs/portal_summary.Rmd`)
 """
 
+import argparse
 import os
 
-import synapseclient
+from synapseclient.models import Table
 import pandas as pd
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
 
 # Source table IDs
 GRANTS = "syn21918972"
@@ -39,8 +51,8 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
     if clause:
         query += " WHERE portalDisplay = true"
     return (
-        syn.tableQuery(query)
-        .asDataFrame()
+        Table(id=table_id)
+        .query(query=query, include_row_id_and_row_version=False, synapse_client=syn)
         .explode("theme")
         .groupby("theme")
         .count()
@@ -50,6 +62,7 @@ def _tally_portal_table(syn, table_id, colname, clause=False):
 
 def tally_by_consortium(grants):
     """Portal - Consortium Counts (syn21641485)"""
+    # An empty list joins to "", so grants without a consortium are counted under "".
     grants["consortium"] = grants["consortium"].str.join(", ")
     return (
         grants[["grantId", "consortium"]]
@@ -114,39 +127,66 @@ def tally_by_group(syn, themes):
     return res[~res["theme"].isin(["Computational Resource"])]
 
 
-def update_table(syn, table_id, updated_table):
-    """Truncate table then add new rows."""
-    current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
-    syn.delete(current_rows)
-    updated_table.to_csv("rows.csv")
-    updated_rows = synapseclient.Table(table_id, "rows.csv")
-    syn.store(updated_rows)
-    os.remove("rows.csv")
+def get_args():
+    """Set up command-line interface and get arguments."""
+    parser = argparse.ArgumentParser(description="Tally themes in portal tables.")
+    parser.add_argument(
+        "--dryrun",
+        action="store_true",
+        help="Compute and print the tallies and write local CSVs, but make no "
+        "Synapse writes (the three destination tables are not truncated or updated).",
+    )
+    parser.add_argument(
+        "--outdir",
+        default=".",
+        help="Directory for the local CSVs written by --dryrun. (Default: .)",
+    )
+    return parser.parse_args()
 
 
 def main():
     """Main function."""
-    syn = synapseclient.Synapse()
-    syn.login(silent=True)
+    args = get_args()
+    syn = syn_login()
 
     # Table of theme names and their descriptions.
     themes = (
-        syn.tableQuery(f"SELECT displayName, description FROM {THEMES}")
-        .asDataFrame()
+        Table(id=THEMES)
+        .query(
+            query=f"SELECT displayName, description FROM {THEMES}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        )
         .rename(columns={"displayName": "theme", "description": "themeDescription"})
         .set_index("theme")
     )
-    grants = syn.tableQuery(
-        f"SELECT grantId, grantNumber, consortium, theme FROM {GRANTS}"
-    ).asDataFrame()
+    grants = Table(id=GRANTS).query(
+        query=f"SELECT grantId, grantNumber, consortium, theme FROM {GRANTS}",
+        include_row_id_and_row_version=False,
+        synapse_client=syn,
+    )
 
     consortium_counts = tally_by_consortium(grants)
     theme_consortium_counts = tally_by_theme_consortium(grants, themes)
     theme_counts = tally_by_group(syn, themes)
 
-    update_table(syn, CONSORTIUM_CTS, consortium_counts)
-    update_table(syn, CON_THEME_CTS, theme_consortium_counts)
-    update_table(syn, THEME_CTS, theme_counts)
+    results = {
+        CONSORTIUM_CTS: ("consortium_counts", consortium_counts),
+        CON_THEME_CTS: ("theme_consortium_counts", theme_consortium_counts),
+        THEME_CTS: ("theme_counts", theme_counts),
+    }
+
+    if args.dryrun:
+        os.makedirs(args.outdir, exist_ok=True)
+        for table_id, (name, df) in results.items():
+            path = os.path.join(args.outdir, f"{name}.csv")
+            df.to_csv(path, index=False)
+            print(f"[dryrun] {name}: {len(df)} rows for {table_id} -> {path}")
+        print("[dryrun] No Synapse tables were updated.")
+        return
+
+    for table_id, (_, df) in results.items():
+        _portal_utils.update_table(syn, table_id, df)
 
 
 if __name__ == "__main__":

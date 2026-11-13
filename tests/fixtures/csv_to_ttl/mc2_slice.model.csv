@@ -1,0 +1,8 @@
+Attribute,Description,Valid Values,DependsOn,Required,Properties,Validation Rules,columnType,Format,Pattern,Minimum,Maximum,IsTemplate,Source
+Biospecimen,Metadata attributes for describing a tissue or tumor sample,,"Biospecimen_id, Biospecimen Type Category, Biospecimen Tumor Status, File Batch Identifier, DUO:0000026",,,,,,,,,True,
+Biospecimen_id,Unique row identifier  used as a primary key for record updates. This should ter,,,True,"CDE:15100774, primary_key",,string,,"B\d{1,9}$",,,,
+Biospecimen Type Category,The general category of material that forms the biospecimen sample  per NCI caDS,"Ascites, Blood, Bone Marrow, Cells, Body Fluid or Substance, Cell Line, Central Nervous System, Mouth Rinse, Saliva, Skin, Sputum, Stool, Tissue, Urine, RNA, DNA, Xenograft, Not Reported, Unknown",,True,CRDC_CDE:12445832,,string,,,,,,
+Biospecimen Tumor Status,Normal or Tumor Sample Pathology Indicator,"Tumor, Normal, Not Reported, Peritumoral, Unknown",,True,"CDE:14688604, CRDC_CDE:14688604",,string,,,,,,
+File Batch Identifier,An identifier for the batch or group of files processed together (e.g. an extrac,,,,MIXS:0001382,,string,,,,,,
+DUO:0000026,This data use modifier indicates that use is limited to use by approved users.,,userSpecificRestriction,,DUO:0000026,,string,,,,,,
+userSpecificRestriction,The user-specific restrictions associated with the access requirement.,,,,,,string,,,,,,

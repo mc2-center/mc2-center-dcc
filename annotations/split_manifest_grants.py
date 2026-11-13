@@ -7,15 +7,27 @@ author: orion.banks
 """
 
 import os
+import sys
 import argparse
+import logging
 
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font
 
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
+import utils
 
-def get_args():
+logger = logging.getLogger(__name__)
+
+# Sheet names accepted when the input manifest is an Excel workbook, in order.
+MANIFEST_SHEETS = ("manifest", "Sheet1")
+
+
+def get_args(argv=None):
     """Set up command-line interface and get arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest", type=str, help="path of manifest to be split")
@@ -34,11 +46,40 @@ def get_args():
         help="If this flag is provided, manifests will be output as CSV files with no CV sheet",
     )
     parser.add_argument(
+        "--cv-file",
+        type=str,
+        default=model_contract.ALL_VALID_VALUES_URL,
+        help="path or URL of all_valid_values.csv (default: the pinned data-models release)",
+    )
+    parser.add_argument(
         "-db",
         action="store_true",
         help="If this flag is provided, the input manifest will be processed as a backpopulation database",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def read_manifest(path):
+    """Read a manifest from CSV, or from the `manifest` / `Sheet1` sheet of an xlsx."""
+    if str(path).lower().endswith((".xlsx", ".xlsm")):
+        sheets = pd.ExcelFile(path).sheet_names
+        for name in MANIFEST_SHEETS:
+            if name in sheets:
+                return pd.read_excel(path, sheet_name=name)
+        raise ValueError(
+            f"{path} has no sheet named one of {MANIFEST_SHEETS} (found {sheets})"
+        )
+    return pd.read_csv(path)
+
+
+def load_cv_terms(manifest_type, cv_file=model_contract.ALL_VALID_VALUES_URL):
+    """Return the valid values relevant to the manifest type."""
+    annots = ["assay", "tissue", "tumorType"]
+    cv_terms = pd.read_csv(cv_file)
+    return cv_terms.loc[
+        cv_terms["category"].str.contains(manifest_type)
+        | cv_terms["category"].isin(annots)
+    ]
 
 
 def generate_manifest_as_excel(df, cv_terms, output):
@@ -68,10 +109,14 @@ def generate_manifest_as_excel(df, cv_terms, output):
 def split_manifest(df, manifest_type, database):
     """Split manifest into multiple manifests by grant number."""
     if manifest_type != "grant":
-        if manifest_type == "publication":
-            colname = "Publication Grant Number"
-        else:
-            colname = "GrantView Key"
+        colname = "GrantView Key"
+        if manifest_type == "publication" and colname not in df.columns:
+            if "Publication Grant Number" in df.columns:
+                logger.warning(
+                    "Deprecated: splitting on legacy 'Publication Grant Number'; "
+                    "the manifest should use 'GrantView Key'."
+                )
+                colname = "Publication Grant Number"
     else:
         colname = "Grant Number"
 
@@ -82,15 +127,13 @@ def split_manifest(df, manifest_type, database):
         idColumn = "EducationalResource_id"
 
     if database:
-        sep = ","
         cols = [colname, idColumn]
-        df[idColumn] = df[idColumn].str.split(sep)
-    
+        df[idColumn] = df[idColumn].map(utils.split_cell)
+
     else:
-        sep = ", "
         cols = [colname]
 
-    df[colname] = df[colname].str.split(sep)
+    df[colname] = df[colname].map(utils.split_cell)
 
     df = df.drop(["entityId", "Id"], axis=1, errors="ignore")
 
@@ -99,10 +142,10 @@ def split_manifest(df, manifest_type, database):
     return grouped
 
 
-def main():
+def main(argv=None):
     """Main function."""
 
-    args = get_args()
+    args = get_args(argv)
 
     # Create output directory if it does not already exist.
     output_dir = args.folder
@@ -112,21 +155,14 @@ def main():
     # Get latest CV terms to save as "standard_terms" - only keeping
     # the terms relevant to the manifest type.
     manifest_type = args.manifest_type
-    annots = ["assay", "tissue", "tumorType"]
+    cv_terms = load_cv_terms(manifest_type, args.cv_file)
 
-    cv_file = "https://raw.githubusercontent.com/mc2-center/data-models/main/all_valid_values.csv"
-    cv_terms = pd.read_csv(cv_file)
-    cv_terms = cv_terms.loc[
-        cv_terms["category"].str.contains(manifest_type)
-        | cv_terms["category"].isin(annots)
-    ]
-    
     if manifest_type == "resource":
         manifest_type = "education"
 
     # Read in manifest then split by grant number.  For each grant, generate a new
     # manifest as an Excel file.
-    manifest = pd.read_csv(args.manifest)
+    manifest = read_manifest(args.manifest)
     database = args.db
     split_manifests = split_manifest(manifest, manifest_type, database)
 
@@ -143,4 +179,5 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     main()

@@ -4,13 +4,14 @@ upload-manifests.py
 This script accepts a CSV file containing manifest file paths and their corresponding Synapse IDs for target folders. 
 It then performs a parallel validation check, after which it parallel uploads the manifests to Synapse
 
+DEPRECATED for components that have moved to RecordSets: use upload_recordsets.py instead.
+
 author: aditi.gopalan
 author: orion.banks
 
 """
 
 import pandas as pd
-import synapseclient
 import multiprocessing
 import subprocess
 import sys
@@ -20,7 +21,9 @@ from functools import partial
 
 def get_args():
     """Set up command-line interface and get arguments."""
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="DEPRECATED for components that have moved to RecordSets: use upload_recordsets.py instead."
+    )
     parser.add_argument(
         "-m",
         type=str,
@@ -45,13 +48,6 @@ def get_args():
         help="Boolean; if this flag is provided, validation will be skipped. Only use if your manifests have been previously validated.",
     )
     return parser.parse_args()
-
-
-def login():
-    """Login to Synapse"""
-    syn = synapseclient.Synapse()
-    syn.login()
-    return syn
 
 
 def validate_entry_worker(args, cf, mt, valid_only):
@@ -117,7 +113,6 @@ def submit_entry_worker(args, cf):
 
 def main():
 
-    # syn = login()
     args = get_args()
     csv_file = args.m if args.m else "input.csv"
     config_file = args.c
