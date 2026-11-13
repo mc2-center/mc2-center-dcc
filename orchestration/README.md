@@ -1,238 +1,171 @@
-# Pipeline Orchestration Plan
+# CCKP DCC pipeline runbook
 
-**Status: the orchestrator itself is not built yet, but its Phase 2 stage is:
-`annotations/upload_workflow.py` (D15) exists.** The rest of this document
-describes the *stages and checkpoints* the eventual orchestrator needs to
-cover, not a pinned implementation against today's exact script names/args.
+One cycle: the AI curation pipeline produces manifests -> `upload_workflow.py` loads them into per-grant RecordSets
+(`MC2Center_<Component>_RecordSet`) -> curators edit them in Synapse Curator -> `union_qc.py --regenerate` rebuilds the
+merged manifests -> the sync scripts write the live portal tables. Every script that writes to Synapse is a dry run
+unless you pass `--execute` (`--upload` for `union_qc.py`). Run everything from the repo root.
 
-**Relationship to the 14.0.0 cutover plans.** `plans/impl_ai_curation_pipeline_14.md`,
-`plans/impl_dcc_14_alignment.md` and `plans/impl_synapse_14_infrastructure.md`
-describe code and Synapse changes made alongside this plan, several
-of which replace scripts named below. The notes in each phase point at the
-specific task; the biggest structural one is task **D15**, which replaces the
-~15-script manual Phase 2 with a single parameterized driver
-(`annotations/upload_workflow.py`) — that driver *is* the
-orchestrator's Phase 2 stage, not something this plan re-wraps script-by-script.
-Phase 2's upload target (per-grant Synapse table vs. RecordSet) and Phase 3's
-validation method depended on decision gate **G1** (infrastructure task I3),
-which was decided as RecordSets (D-Q29), so `--target recordset` is the default.
+## Before you start
 
-## Goal
+- Python 3.11 (what CI uses) in an environment of your choice, e.g. a conda env: `pip install -r requirements.txt`
+  (`requirements.txt` includes `requirements-ci.txt`; `requirements-dev.txt` adds pytest). `geo-synapse`, a private
+  repo, is only needed by `annotations/create_entity_links.py` (the `links` stage).
+- Synapse login: `export SYNAPSE_AUTH_TOKEN=<personal access token>` (or a `.synapseConfig`). Without either,
+  `utils.syn_login()` prompts for a token. The token needs write access to the grant projects, the CCKP - MC2 Admin
+  project, the log tables, and the portal tables for the steps that write.
 
-Today, getting a new batch of publications/datasets/tools from
-[`ai-curation-pipeline`](https://github.com/mc2-center/ai-curation-pipeline)
-all the way onto the live CCKP portal is a three-phase, multi-repo, entirely
-manual process, run by hand across ~15 scripts with no single entry point and
-no automatic record of what ran, when, or with what output. This plan is for
-a single-command orchestrator that chains all three phases together, saves
-every stage's output locally as it runs, and pauses at the points that
-genuinely need a human.
+## The cycle
 
-## The three phases
+**1. AI curation pipeline (separate repo, `ai-curation-pipeline`).** Run `run-publication-pipeline`, then QC the output
+with its `review_app.py`. The result is one manifest CSV per component (`PublicationView`, `DatasetView`, `ToolView`,
+`EducationalResource`). Checkpoint: QC sign-off before step 2.
 
-### Phase 1 — `ai-curation-pipeline` (no changes needed)
+**2. Load into the grant RecordSets** (`annotations/upload_workflow.py`, once per component and manifest):
 
-Already a self-contained CLI (`run-publication-pipeline`). Produces, per run,
-in `output/<date>/`:
+```bash
+python annotations/upload_workflow.py --manifest publication.csv --type PublicationView \
+    --out-dir runs/2026-11-publications --write-log-table syn78404341           # dry run
+python annotations/upload_workflow.py --manifest publication.csv --type PublicationView \
+    --out-dir runs/2026-11-publications --write-log-table syn78404341 --execute  # write
+```
 
-- `publication_metadata.csv`
-- `datasets_publication_metadata.csv`
-- `tools_publication_metadata.xlsx`
+Stages `split` -> `paths` -> `reshape` -> `links` (DatasetView/ToolView only; creates Synapse entities, so only with
+`--execute`) -> `upload`; each writes `<out-dir>/<NN>_<stage>/` and `<out-dir>/run.json`. `--removals-table` defaults
+to `syn78404342`. Resume a failed run with `--from-stage <stage>`; a different manifest or type in a used `--out-dir`
+needs `--force-new` (wipes the stage folders). Per-grant results are in
+`<out-dir>/05_upload/<run-id>/<grant>/` (`summary.txt`, `decisions.csv`, `conflicts.csv`, `removal_skipped.csv`,
+`merged.csv`, and `validation.csv` with `--execute`); `summary.csv` lists every grant.
+Check: no grant in `summary.csv` is `failed`, `missing_recordset`, `locked`, `retry` or `verification_mismatch`;
+read `conflicts.csv` (cells a curator owns are never overwritten by the upload) and `validation.csv`; in a dry run
+read `decisions.csv` and `merged.csv`. Run the dry run first and proceed to `--execute` only once it is clean.
+Also check `04_links/dropped_rows.csv` and `04_links/reused_entities.csv`.
+The upload can also be run alone: `annotations/upload_recordsets.py` (`--paths-csv`, `--component`, `--report-dir`,
+`--write-log-table`, `--removals-table`, `--execute`).
 
-Manual QC against these (the `review_app.py` Streamlit tool) happens here,
-before Phase 2 starts. This is itself a checkpoint, just one that already has
-tooling built for it.
+**3. Curation in Curator.** Grant metadata is curated in each grant project's `MC2Center_<Component>_RecordSet`
+(in its data-type folder), through the curation tasks / Grid. Admin metadata (grants, projects, people) is curated
+in its own RecordSets (`MC2Center_GrantView_RecordSet`, `MC2Center_ProjectView_RecordSet`,
+`MC2Center_PersonView_RecordSet`, folder `admin_recordsets` of CCKP - MC2 Admin, `syn28742843`), never through the
+per-run upload.
 
-### Phase 2 — upload-workflow (`mc2-center-dcc/annotations/`)
+**4. Row removals.** A Grid import cannot delete rows, so removals go through the removals table `syn78404342`:
 
-Gets new rows from Phase 1's output into Synapse's **per-grant source
-tables**. Run once per component (PublicationView / DatasetView / ToolView).
+```bash
+python annotations/remove_recordset_rows.py request --removals-table syn78404342 \
+    --recordset syn... --key <value per upsert key column> [--key ...] --reason "..." [--execute]
+python annotations/remove_recordset_rows.py --removals-table syn78404342 --write-log-table syn78404341 \
+    --report-dir runs/removals [--recordset syn...]                                  # dry run
+python annotations/remove_recordset_rows.py ... --execute                             # write
+```
 
-**Replaced by task D15 (`annotations/upload_workflow.py`, now implemented; see `annotations/README.md`).** The driver runs stages `split`, `paths`, `reshape`, `links`, `upload` into `<out-dir>/<NN>_<stage>/` with a `run.json` and `--from-stage` resume, defaults to a dry run, and builds in the empty-link, duplicate-GEO-dataset and `SYNAPSE_AUTH_TOKEN` gaps below. The numbered steps are what it chains.
+`request` appends `requested` rows (dry run unless `--execute`); give one value per upsert key column, in key order,
+and repeat `--key` per row. The run (default `--run-id` is `dcc-removal-<timestamp>`) stores a new RecordSet version
+without those rows, re-validates through Grid, and logs `removed` in `syn78404341` and the removals table. Later
+uploads skip removed keys; set a key's status to `restored` in the removals table to lift a removal. Check: the dry
+run lists the expected keys and no `not_found`; the summary shows no `failed`, `locked`, `blocked` or `retry`
+RecordSet (`blocked` = a Grid session is open on the RecordSet; nothing was written).
 
-*Original description:* The scripts below are today's manual steps,
-still driven by the broken `upload-workflow.sh`. D15 collapses them into one
-command, `annotations/upload_workflow.py --manifest … --type … --out-dir …
---target {recordset,schematic-table}`, which runs split → gen-mp-csv →
-processing-splits → create_entity_links → upload as a single call. The
-orchestrator's Phase 2 stage should shell out to that driver,
-rather than calling each script individually.
+**5. Regenerate the merged manifests** (`portal_tables/union_qc.py`):
 
-1. `split_manifest_grants.py` — split the manifest by grant number into
-   per-grant CSVs. Splits on `GrantView Key` going forward, with a
-   deprecation-warning fallback to the legacy `Publication Grant Number`
-   (task D8). Also accepts the pipeline's `.xlsx` tool output directly.
-2. `gen-mp-csv.py` — read-only Synapse query; resolves each grant number to
-   its target folder/project Synapse ID, produces a paths CSV.
-3. `processing-splits.py` — reformat each split file to match the target
-   table's column order/names. Column order now comes from
-   `model_contract.template_headers(component)` instead of 4 hardcoded
-   lists, legacy 13.1.0 headers are renamed through `RENAMES_13_TO_14` with a
-   warning, and every dropped column is logged rather than silently dropped
-   (task D8).
-4. *(`schema_update.py` is **not** part of the default flow — it only
-   standardizes column types/sizes on already-existing columns in a
-   per-grant table, writes directly to shared table schemas, and its own
-   docs say it doesn't need to run every time. Only invoke it if a later
-   step reports a schema-type mismatch. It's also the tool the one-time
-   14.0.0 table migration uses, if that migration path is chosen — see
-   `--target schematic-table` below.)*
-5. `create_entity_links.py` — creates real Synapse entities (for
-   DatasetView, full GEO/SRA Dataset entities via the `geo_synapse`
-   pipeline; for ToolView, plain File link entities) and writes the
-   resulting entity IDs back into each split file's primary-key column.
-   Required for DatasetView/ToolView; not needed for PublicationView.
-6. **Upload target (two paths, selected by `--target`):**
-   - **`schematic-table`** (today's path): `upload-manifests.py` validates
-     each split file against the model via `schematic`, then submits
-     (upserts) valid ones into the per-grant table. Kept until the
-     RecordSet migration is complete, with a deprecation notice.
-   - **`recordset`** (the default; task D11, decision **G1** = RecordSets,
-     D-Q29): `annotations/upload_recordsets.py`
-     normalizes headers, upserts by primary key into the grant's
-     `MC2Center_<Component>_RecordSet`, stores a new version, and polls
-     Synapse's own `validation_summary` / `get_detailed_validation_results`
-     instead of shelling out to `schematic`. It has no `--dryrun` flag: a dry
-     run is the default, and a live run needs `--execute`, with
-     `--write-log-table syn78404341` and `--removals-table syn78404342`.
+```bash
+python portal_tables/union_qc.py --regenerate --output-dir output/i6                # dry run
+python portal_tables/union_qc.py --regenerate --output-dir output/i6 --upload       # LIVE WRITE
+```
 
-Two related steps sit outside the per-run driver:
+Builds each component's union from the grants' RecordSets (grants from the Grants table), merges rows by alias key,
+fills empty cells, computes `iconTags`, validates against the 14.x JSON Schemas, and writes
+`<output-dir>/<Component>/<Component>_merged_manifest.csv`, `validation.csv`, `validation_counts.csv`,
+`key_corrections.csv`, `id_conflicts.csv`, `report.txt`, plus `<output-dir>/summary.txt`. `--components` limits it.
+`--upload` stores each manifest as a new version of the current manifest file (publications `syn53478776`, datasets
+`syn53478774`, tools `syn53479671`, education `syn53651540`); it is refused with `--input-dir` or `--grant-projects`,
+and while any alias has different ids in different grants (`id_conflicts.csv`: fix in the grant RecordSets and
+regenerate). Invalid rows are kept and reported, never dropped. Checkpoint: review the validation report
+(`validation_counts.csv`, `report.txt`, `id_conflicts.csv`) before `--upload`; `--upload` needs sign-off.
 
-- **Row removals** (D-Q49): `annotations/remove_recordset_rows.py` removes the
-  rows listed in the `MC2Center_RecordSet_Removals` table (`syn78404342`) from
-  the RecordSets. It is the one RecordSet write outside a Grid session, takes
-  the write-log lock, and defaults to a dry run (`--execute` to write).
-- **Admin and grant-table migrations** (D-Q50): `annotations/migrate_grant_tables_14.py`
-  (per component, the grant-level tables into RecordSets) and
-  `annotations/migrate_admin_manifests_14.py` (the Grant / Project / PersonView
-  admin manifests). Both default to a dry run; `--execute` needs
-  `--write-log-table`. One-off cutover steps, run before the first sync.
+**6. Sync to the live portal tables.** `run_sync.sh` runs the publication, dataset, tool and education syncs, reading
+the merged manifests above (the same script runs in the `Sync manifests to portal tables` GitHub workflow, which is
+`workflow_dispatch` only):
 
-### Phase 3 — union-table sync (`mc2-center-dcc/portal_tables/` + `utils/`)
+```bash
+bash run_sync.sh --dryrun     # extra arguments go to every script
+bash run_sync.sh              # write the portal tables
+```
 
-Gets data from the per-grant source tables (as updated by Phase 2, or
-anything else that landed there independently) into the **live portal
-tables**. Run once per component:
+Each script also takes `--output_csv` (default `./final_<resource>_table.csv`; `run_sync.sh` passes `--noprint`, so
+none is written), `-v`, `-m/--manifest_id` and `-t/--portal_table_id`; to compare a dry run to the live table, run
+one directly: `python portal_tables/sync_publications.py --dryrun -o final_publication_table.csv`. The grant, project
+and people syncs are not in `run_sync.sh`; run them directly when the admin RecordSets change:
+`python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun] [--manifest-source recordset]`.
+Portal tables: publications `syn21868591`, datasets `syn21897968`, tools `syn26127427`, education `syn51497305`,
+grants `syn21918972`, projects `syn21868602`, people `syn28073190`.
 
-1. `merge_tables.py` — merges per-grant source tables into the component's
-   UNION table. Task D12 adds a RecordSet-based union mode (concatenates each
-   grant's RecordSet CSV, normalized back to display-name headers) alongside
-   the legacy table mode, and removes the legacy mode's per-grant mirror
-   tables, which were duplicating rows every run.
-2. `union_qc.py --regenerate` (I6) — builds the union (RecordSets, including
-   the Affiliate project `syn52963211`, or local
-   `converted.csv` files with `--input-dir`), merges rows by alias key, applies
-   the curated key corrections, fills empty cells, computes the `iconTags` for
-   PublicationView and DatasetView from `Assay` using the data-models
-   `modules/shared/mc2_iconTag_map_3-4-25.csv`, validates with `jsonschema`
-   against the 14.x JSON Schemas (`--schema-version`) and writes
-   `<Component>_merged_manifest.csv` (14.x headers, tagged) plus `validation.csv`. It
-   is a dry run unless `--upload`. No `schematic`, and invalid rows are kept
-   and reported, never trimmed. (The legacy `-l/-m/-s/-db` compare mode still
-   exists and now validates with `jsonschema` too.) `build_tag_lists.py` is no
-   longer a separate step in this flow.
-3. **Human review and correction** of the validation report.
-4. Hand corrections. **Preferred: make them in Curator**, on the grant's
-   RecordSet; the next `--regenerate` picks them up. Alternatively,
-   `merge_and_correct_manifests.py` folds `_updated.csv` into
-   `<component>_merged.csv`, producing `<component>_merged_corrected.csv`;
-   that file is not what step 5 uploads, so upload it by hand instead.
-5. `union_qc.py --regenerate --upload` — uploads the tagged file as a new
-   version of the manifest in the `release_validation` Synapse
-   folder (`syn53461903`); this replaces the manual upload. `--upload` is
-   refused together with `--grant-projects`, and while any `id_conflicts` exist.
-6. `run_sync.sh` — syncs `release_validation` into the live portal tables
-   (publications, datasets, tools and educational resources).
+## Manual checkpoints
 
-## Required manual checkpoints
+1. After step 1: QC the AI pipeline output in `review_app.py`.
+2. After the step 2 dry run: read the reports, then `--execute`.
+3. After step 5 dry run: review the validation report and `id_conflicts.csv`; sign off before `--upload`.
+4. After step 6 dry run: compare with `--output_csv` against the live table before the real sync.
 
-These can't be automated away; the orchestrator should pause and print
-exactly what to look at, rather than silently continuing or silently
-failing:
+## Write log and locks
 
-1. **After Phase 1**: curator QC via `review_app.py`, before any Synapse
-   upload happens at all.
-2. **After Phase 3 step 2** (`union_qc.py`): review `_updated.csv` +
-   validation log, apply fixes. This is real judgment work — e.g. deciding
-   whether a flagged `Pan-cancer` value is a genuine cap-collapse or an
-   actual gap, or whether a term needs backpopulating vs. remapping to an
-   existing vocab entry.
-3. **Before Phase 3 step 5** (`--upload` to `release_validation`): this is
-   effectively "publish" — final human sign-off before the next
-   `run_sync.sh` makes it live.
+`syn78404341` records every pipeline write per RecordSet: `recordSetId`, `version`, `baseVersion`, `runId`,
+`principalId`, `status`, `writtenOn`, `rowsWritten`. Statuses: `pending` (a write is starting; this is the lock),
+`written` (a version made by a Grid export), `removed` (a DCC removal's direct store), `recovered` (a version
+found and logged after a crashed run), `created` (the RecordSet's creation version, migration), `verified` (a
+version read back and matched, migration), `done` (all exports of a write logged; closes `pending`), `aborted`
+(the run created nothing; closes `pending`). Versions not logged as `written`, `removed` or `recovered` count as
+curator edits and are replayed cell by cell; a cell a curator owns is never overwritten by an upload.
 
-## Known gaps to design around
+Lock: a `pending` row with no `done`/`recovered`/`aborted` closer and younger than 2 hours blocks other writes to
+that RecordSet; the run skips the grant with status `locked` (exit 1). If two runs start together, the earlier
+`pending` row wins. A `locked` result means another run is writing: wait for it. If none is running (a crash), the
+lock expires after 2 hours; the next run of `upload_recordsets.py` or `remove_recordset_rows.py` then recovers the
+orphaned version (`recovered`) or closes the row (`aborted`). `retry` means the RecordSet changed during the run;
+nothing was written, rerun.
 
-Found while running this manually end-to-end on 2026-10-05:
+## Grid and list-cell caveats
 
-- **Environment (transitional — `schematic-table` target only)**: scripts
-  that shell out to `schematic` (e.g. `upload-manifests.py`) need it on
-  `PATH`. Invoking a venv's `python` by absolute path does *not* put the
-  venv's `bin/` on `PATH` for subprocesses — only `source venv/bin/activate`
-  does. The orchestrator must guarantee this for every subprocess it spawns,
-  not just the top-level process, for as long as that target is in use.
-  Infrastructure task I6 removes `union_qc.py`'s `schematic` call outright,
-  and D11/G1 may remove `upload-manifests.py`'s as well once the RecordSet
-  migration is complete — at that point this gap no longer applies.
-- **Credentials for cross-manifest validation (transitional — same target)**:
-  `schematic model validate` needs real Synapse credentials to check
-  cross-manifest references (e.g. a DatasetView row's `PublicationView Key`
-  actually existing). An interactive `synapseclient.login()` in one process
-  does not reliably propagate to a `subprocess.run(["schematic", ...])` call
-  in another. Until I6/D11 land, the orchestrator needs to pass credentials
-  through explicitly (e.g. `SYNAPSE_AUTH_TOKEN` in the subprocess
-  environment), not rely on ambient login state. The RecordSet path replaces
-  this with Synapse's own `validation_summary` / `get_detailed_validation_results`
-  polling, run in-process with the same credentials as everything else.
-- **Empty link columns crash entity creation** (*handled by `upload_workflow.py`:
-  empty-link rows go to `04_links/dropped_rows.csv`*): `create_entity_links.py`'s
-  plain-link path (`create_links()`) has no handling for an empty
-  `Tool Homepage` / link column — it will try to create a
-  `File(path="", ...)` entity, which is unlikely to behave well and isn't
-  wrapped in error handling, risking a partial-batch failure. Rows with an
-  empty link column need to be filtered out before this step, and any
-  per-grant split file that becomes empty as a result needs to be dropped
-  entirely rather than left as a header-only CSV (`schematic` is known to
-  crash on empty manifests).
-- **GEO dataset entities are not idempotent by content, only by name within
-  a run** (*handled by `upload_workflow.py`: accessions that already have a
-  Dataset entity are reused, listed in `04_links/reused_entities.csv`*): `geo_synapse.create_synapse_dataset()` always creates a new
-  Dataset entity; it doesn't check Synapse for an existing one with the same
-  accession first. Synapse's own `Dataset.store()` appears to dedupe
-  same-named entities created *within the same script invocation* (verified:
-  a GEO accession linked to two different grants in the same run correctly
-  reused one entity), but there's no check against entities from a *prior*
-  run. Confirmed this wasn't an issue for the 2026-10-05 batch (checked all
-  45 target accessions against the existing `datasets` folder in the central
-  project before running — zero overlap), but the orchestrator should make
-  this check automatic rather than manual.
-- **`merge_and_correct_manifests.py` had two correctness bugs** (fixed in
-  [mc2-center/mc2-center-dcc#168](https://github.com/mc2-center/mc2-center-dcc/pull/168)):
-  it was keeping the stale `Database`-sourced row over the corrected
-  `Updated`-sourced row whenever both existed for a key, and reading the
-  base database CSV without `dtype=str` caused `DataFrame.update()` to never
-  align on a numeric-vs-string primary key. Together, these meant **every**
-  correction made to an existing publication/dataset/tool's row was silently
-  discarded on every run, for as long as both bugs were present. The
-  orchestrator's Phase 3 step 4 must run against a version of this script
-  with both fixes merged, and should ideally assert afterward that a sample
-  of known corrections actually persisted (the way this was manually
-  verified on 2026-10-05) rather than trusting a clean exit code alone.
+- In list columns (JSON arrays) Grid's export stores U+0080-009F, U+2000-20FF and `/` as literal `\uXXXX` / `\/`.
+  The readers undo this (`recordsets.grid_unescape`).
+- A `"` or `\` inside a list item makes Grid unable to open the RecordSet (500 errors). Fix it by storing a
+  corrected CSV directly as a new version, without a Grid session: `recordsets.store_new_version(syn, rs_id, csv_path)`
+  (the function `remove_recordset_rows.py` uses; there is no script for it).
+- Control characters (tab, newline) inside list items lose their backslash on export and cannot be recovered.
 
-## Suggested shape (orchestrator not yet built)
+## Exit codes
 
-A stage-based driver, not a monolithic script — each phase/step is a named,
-independently callable unit (subprocess call or function) so individual
-scripts can be swapped out as they change without rewriting the orchestration
-glue. Each stage writes its output to a dated local folder (mirroring
-`ai-curation-pipeline`'s own `output/<date>/` convention) so every run is
-independently inspectable and a failed run can resume from the last
-completed stage rather than starting over.
+| Script | 0 | 1 | 2 |
+|---|---|---|---|
+| `upload_workflow.py` | all stages done, nothing dropped | a stage failed (including any grant needing attention in the upload) | done, but rows dropped or files excluded (see `run.json`) |
+| `upload_recordsets.py` | all grants ok | a grant `failed`, `missing_recordset`, `locked`, `retry` or `verification_mismatch` | - |
+| `remove_recordset_rows.py` | ok | a RecordSet `failed`, `locked`, `blocked` or `retry` | - |
+| `union_qc.py --regenerate` | no validation failures | - | validation failures, or a component skipped (empty union) |
 
-Task D15's `annotations/upload_workflow.py` is the first concrete piece of
-this shape to land — treat it as the Phase 2 stage, rather
-than re-implementing a wrapper around the individual split/gen-mp-csv/
-processing-splits/create_entity_links/upload scripts it already chains. Its
-`--target` flag carries decision gate G1 (decided: RecordSets, so
-`recordset` is the default; `schematic-table` is the legacy path), so this
-orchestrator shouldn't carry its own copy of that decision.
+`missing_recordset`: the grant has no `MC2Center_<Component>_RecordSet` in its data-type folder; the upload does not
+create it.
+`migrate_grant_tables_14.py` and `migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle) use
+0 ok, 1 a grant failed or the comparison differs, 2 unmapped values or validation failures.
+
+## Synapse IDs
+
+| ID | What |
+|---|---|
+| `syn78404341` | write log table |
+| `syn78404342` | `MC2Center_RecordSet_Removals` table |
+| `syn28742843` | CCKP - MC2 Admin project (admin RecordSets in `admin_recordsets`) |
+| `syn53478776` / `syn53478774` / `syn53479671` / `syn53651540` | merged manifests: publications / datasets / tools / education |
+| `syn53259587` / `syn59074382` / `syn38301033` | legacy admin manifests: grants / projects / people |
+| `syn21868591` / `syn21897968` / `syn26127427` / `syn51497305` | portal tables: publications / datasets / tools / education |
+| `syn21918972` / `syn21868602` / `syn28073190` | portal tables: grants / projects / people |
+| `syn76986881` / `syn77025587` | central project / DatasetCollection used by the dataset `links` stage |
+| `syn53461903` | `release_validation` (not referenced in the code; `union_qc.py --upload` writes only the merged manifest files above) |
+
+## Not yet run for real
+
+Remove this section after the first full cycle.
+
+- The admin RecordSet conversion (`migrate_admin_manifests_14.py --execute`) and the switch of
+  `utils.MANIFEST_SOURCE` from `"table"` to `"recordset"` (until then the grant, project and people syncs read the
+  legacy manifest tables unless you pass `--manifest-source recordset`).
+- `union_qc.py --regenerate --upload` from the RecordSets.
+- The first curator cycle through Curator.
