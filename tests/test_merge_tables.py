@@ -28,6 +28,13 @@ def test_grant_projects_include_the_affiliate_project():
         assert mt.list_grant_projects(mock.MagicMock()) == ["syn1", "syn2", "syn52963211"]
 
 
+def test_grant_projects_skip_nan_and_blank_ids():
+    table = mock.MagicMock()
+    table.query.return_value = pd.DataFrame({"grantId": ["syn1", float("nan"), None, "  ", "syn2"]})
+    with mock.patch.object(mt, "Table", return_value=table):
+        assert mt.list_grant_projects(mock.MagicMock()) == ["syn1", "syn2", "syn52963211"]
+
+
 def test_publish_is_refused_with_a_grant_subset():
     argv = ["merge_tables.py", "--target_record_set", "-n", "ToolView", "-t", "syn9",
             "--publish", "--grant-projects", "syn1", "syn2"]

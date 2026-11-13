@@ -106,7 +106,7 @@ def build_query(table_ids):
 def list_grant_projects(syn, source=GRANTS_TABLE):
     """Every project that holds resource RecordSets: the Grants table's projects plus ``UNLISTED_LABELS``."""
     df = Table(id=source).query(query=f"SELECT grantId FROM {source}", synapse_client=syn)
-    grants = [g for g in df["grantId"].tolist() if g]
+    grants = [g for g in df["grantId"].tolist() if isinstance(g, str) and g.strip()]
     return grants + [p for p in UNLISTED_LABELS if p not in grants]
 
 
