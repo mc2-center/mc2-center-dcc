@@ -123,3 +123,12 @@ def test_joined_grant_cell_with_comma_space_resolves_every_grant():
     m = sp.prepare_manifest(df.astype(str))
     out = sp.add_missing_info(m, GRANTS, ["grantName"])
     assert out.at[0, "grantName"] == ["Grant One", "Grant Two"]
+
+
+def test_list_valued_columns_are_deduplicated_without_error():
+    m = manifest(NEW_HEADERS)
+    m["Assay"] = [["RNA-seq", "ATAC-seq"], ["WES"]]
+    m = pd.concat([m, m.iloc[[0]].assign(entityId="syn9")])
+    prepared = sp.prepare_manifest(m)
+    assert prepared["PubmedId"].tolist() == [1, 2]
+    assert prepared["Assay"].iloc[0] == ["RNA-seq", "ATAC-seq"]
