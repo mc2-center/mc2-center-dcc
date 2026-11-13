@@ -231,7 +231,7 @@ def test_existing_project_and_team_are_reused():
     with patch.object(cgp, "find_entity_id", return_value="syn123") as find, \
             patch.object(cgp, "find_team_id", return_value="999"):
         out = cgp.create_grant_projects(syn, _grant_row())
-    assert out == {"NEW1": ("syn123", "999")}
+    assert out == {"N1": ("syn123", "999")}
     find.assert_called_once_with(name="New grant", parent=None, synapse_client=syn)
     stored = [type(c.args[0]).__name__ for c in syn.store.call_args_list]
     assert "Project" not in stored and "Team" not in stored and "Wiki" not in stored
@@ -242,7 +242,7 @@ def test_new_project_is_created_when_not_found():
     with patch.object(cgp, "find_entity_id", return_value=None), \
             patch.object(cgp, "find_team_id", return_value=None):
         out = cgp.create_grant_projects(syn, _grant_row())
-    assert out == {"NEW1": ("syn7", "55")}
+    assert out == {"N1": ("syn7", "55")}
 
 
 def test_creation_failure_maps_to_none_pair():
@@ -250,7 +250,7 @@ def test_creation_failure_maps_to_none_pair():
     err = cgp.synapseclient.core.exceptions.SynapseHTTPError("boom", response=MagicMock(status_code=500))
     with patch.object(cgp, "find_entity_id", side_effect=err):
         out = cgp.create_grant_projects(syn, _grant_row())
-    assert out == {"NEW1": ("None", "None")}
+    assert out == {"N1": ("None", "None")}
 
 
 def test_nan_abstract_and_none_investigator_are_safe():
@@ -307,3 +307,13 @@ def test_main_checks_live_grant_ids_before_creating_anything(dryrun):
             sync_grants.main()
     process.assert_not_called()
     assert "FROM t" in table.return_value.query.call_args.kwargs["query"]
+
+
+@pytest.mark.parametrize("view_id", ["DIFFERENT", ""])
+def test_existing_grant_with_another_view_id_is_deduplicated_by_grant_number(view_id):
+    manifest = _manifest(False)
+    manifest.loc[0, "GrantView_id"] = view_id  # OLD1 on the portal has grantViewId "OLD1"
+    out, create = _run(manifest, dryrun=False, live_types=_live_types())
+    assert list(out.grantNumber) == ["OLD1", "NEW1"]
+    assert out.iloc[0].grantId == "syn1"  # the portal row wins
+    assert list(create.call_args.args[1].GrantNumber) == ["NEW1"]
