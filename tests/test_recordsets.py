@@ -69,6 +69,7 @@ def test_parse_cell_undoes_grid_list_item_escapes():
     # As Grid's export stores them: U+0080-U+009F and U+2000-U+20FF in a list item become literal \uXXXX text.
     stored = r'["High\\u2010grade","O\\u2019Neil\\u2020","x\\u206fy","5\\u20ac","\\u00c3\\u0081lvaro","\\u0080\\u009F"]'
     assert rs.parse_cell(stored) == ["High\u2010grade", "O\u2019Neil\u2020", "x\u206fy", "5\u20ac", "\\u00c3\x81lvaro", "\x80\x9f"]
+    assert rs.parse_cell(r'["<I>pik3ca<\\/i>","PI3K\\/AKT"]') == ["<I>pik3ca</i>", "PI3K/AKT"]  # "/" as Grid stores it
     # Nothing else: Grid never escapes other characters, so other \u text is the item's own text.
     assert rs.parse_cell(r'["Ko\\u0144","a\\u2100b","\\u1fffz","\\u007f"]') == ["Ko\\u0144", "a\\u2100b", "\\u1fffz", "\\u007f"]
     assert rs.parse_cell(r"High\u2010grade") == r"High\u2010grade"  # plain text cells are not touched
