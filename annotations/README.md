@@ -2,8 +2,7 @@
 
 ## Recommended: `upload_workflow.py`
 
-`upload_workflow.py` replaces `upload-workflow.sh` (broken; the step-by-step
-description below is kept for reference). It chains, for one component:
+`upload_workflow.py` replaces `upload-workflow.sh` (broken). It chains, for one component:
 `split` -> `paths` -> `reshape` -> `links` (DatasetView/ToolView only) -> `upload`.
 
 ```bash

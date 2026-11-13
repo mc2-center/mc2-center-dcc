@@ -158,7 +158,6 @@ create it.
 | `syn21868591` / `syn21897968` / `syn26127427` / `syn51497305` | portal tables: publications / datasets / tools / education |
 | `syn21918972` / `syn21868602` / `syn28073190` | portal tables: grants / projects / people |
 | `syn76986881` / `syn77025587` | central project / DatasetCollection used by the dataset `links` stage |
-| `syn53461903` | `release_validation` (not referenced in the code; `union_qc.py --upload` writes only the merged manifest files above) |
 
 ## Not yet run for real
 
