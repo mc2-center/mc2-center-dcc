@@ -109,3 +109,41 @@ def test_status_check_lists_each_row_once_when_a_doi_repeats(monkeypatch):
     monkeypatch.setattr(mod.requests, "Session", FakeSession)
     out = mod.status_check(None, "syn1", "SELECT", "doi", "x@y")
     assert len(out) == 3  # was 5: each d1 row was appended once per d1 occurrence
+
+
+def test_status_check_uses_colname_for_the_doi_list(monkeypatch):
+    mod = _load("utils/check_publications_status.py", "check_publications_status_colname")
+    rows = pd.concat([_portal_row()] * 2, ignore_index=True)
+    rows["doi"] = ["wrong1", "wrong2"]
+    rows["altDoi"] = ["d1", "d2"]
+    requested = []
+
+    class FakeTable:
+        def __init__(self, id):
+            pass
+
+        def query(self, **kwargs):
+            return rows.copy()
+
+    class FakeResponse:
+        content = b'{"is_oa": true}'
+
+        def raise_for_status(self):
+            pass
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def get(self, url):
+            requested.append(url)
+            return FakeResponse()
+
+    monkeypatch.setattr(mod, "Table", FakeTable)
+    monkeypatch.setattr(mod.requests, "Session", FakeSession)
+    out = mod.status_check(None, "syn1", "SELECT", "altDoi", "x@y")
+    assert [u.split("/v2/")[1].split("?")[0] for u in requested] == ["d1", "d2"]
+    assert len(out) == 2

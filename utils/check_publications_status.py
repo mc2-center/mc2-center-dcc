@@ -85,7 +85,7 @@ def status_check(syn, table_id, query, colname, email):
     df = Table(id=table_id).query(
         query=query, include_row_id_and_row_version=False, synapse_client=syn
     )
-    doi_list = df[~df[colname].isnull()]["doi"]
+    doi_list = df[~df[colname].isnull()][colname]
     ready_for_review = []
     with requests.Session() as session:
         for doi in doi_list.unique():  # each DOI once: its rows are all collected below
