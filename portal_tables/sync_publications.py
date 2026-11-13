@@ -80,7 +80,9 @@ def prepare_manifest(manifest: pd.DataFrame) -> pd.DataFrame:
     manifest = model_contract.normalize_headers(manifest, to="keys", passthrough=["iconTags"])
     # A publication with several grants can appear once per grant, each copy
     # carrying the merged grant list: identical apart from entityId. Keep one.
-    return manifest.drop_duplicates(subset=[c for c in manifest.columns if c != "entityId"]).reset_index(drop=True)
+    # Compare on a stringified copy: list-valued columns are unhashable.
+    same = manifest.drop(columns="entityId", errors="ignore").astype(str).duplicated()
+    return manifest[~same].reset_index(drop=True)
 
 
 def main():

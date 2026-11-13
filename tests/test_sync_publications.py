@@ -107,3 +107,12 @@ def test_blank_and_no_doi_listed_become_doi_not_available(tmp_path):
     assert out["doi"].to_dict() == {
         1: "DOI Not Available", 2: "DOI Not Available", 3: "10.1/x", 4: "DOI Not Available",
     }
+
+
+def test_list_valued_columns_are_deduplicated_without_error():
+    m = manifest(NEW_HEADERS)
+    m["Assay"] = [["RNA-seq", "ATAC-seq"], ["WES"]]
+    m = pd.concat([m, m.iloc[[0]].assign(entityId="syn9")])
+    prepared = sp.prepare_manifest(m)
+    assert prepared["PubmedId"].tolist() == [1, 2]
+    assert prepared["Assay"].iloc[0] == ["RNA-seq", "ATAC-seq"]
