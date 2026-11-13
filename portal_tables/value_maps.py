@@ -57,7 +57,8 @@ DOI_PLACEHOLDERS = frozenset({"no doi listed", "doi not available"})
 TRUNCATED_SUFFIX = "(Read more on Pubmed)"
 DOI_PREFIX = "https://doi.org/"
 _DUO_VALID = re.compile(r"^(DUO:\d{7,8}|DUOPlus\d+|Pending Annotation)$")
-_BIBTEX_UMLAUT = re.compile(r'"([aouAOU])')
+# ``"o``, ``\"o``, ``\"{o}``, ``{\"o}`` and ``{\"{o}}``: the backslash and braces go with the quote
+_BIBTEX_UMLAUT = re.compile(r'\{\\?"\{?([aouAOU])\}?\}|\\?"\{([aouAOU])\}|\\?"([aouAOU])')
 _UMLAUTS = {"a": "ä", "o": "ö", "u": "ü", "A": "Ä", "O": "Ö", "U": "Ü"}
 
 
@@ -365,7 +366,9 @@ class Normalizer:
         if value.endswith(TRUNCATED_SUFFIX) and (column in self.enum_maps or column in self.list_cols):
             return value, "truncated"
         if column == "PublicationAuthors" and _BIBTEX_UMLAUT.search(value):
-            return _BIBTEX_UMLAUT.sub(lambda m: _UMLAUTS[m.group(1)], value), "umlaut"
+            fixed = _BIBTEX_UMLAUT.sub(lambda m: _UMLAUTS[next(g for g in m.groups() if g)], value)
+            if '"' not in fixed:  # another quote stays, and the unsafe-item guard catches it
+                return fixed, "umlaut"
         if column.endswith("Doi"):
             return normalize_doi(value)
         if column in self.date_cols:

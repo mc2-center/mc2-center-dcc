@@ -58,7 +58,7 @@ class FakeSynapse:
 
     def write(self, syn, rs_id, csv_path, on_version=None, **kw):
         self.calls.append("write")
-        written = rs._load_csv(csv_path, {"Assay"})
+        written = rs._load_csv(csv_path, {"Assay", "PublicationAuthors"})
         self.writes.append(written)
         if self.midwrite is not None:
             self.versions.append(self.midwrite)
@@ -410,3 +410,25 @@ def test_recordset_moving_before_the_write_aborts_with_retry(tmp_path):
     assert status_of(rep) == "retry" and fake.writes == []
     log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
+
+
+def authors_inputs(tmp_path, authors):
+    f = tmp_path / "syn100_publication.csv"
+    pd.DataFrame([["PublicationView", f"p{i}", "T", a] for i, a in enumerate(authors)],
+                 columns=["Component", "PublicationView_id", "Publication Title", "Publication Authors"]).to_csv(f, index=False)
+    paths = tmp_path / "paths.csv"
+    pd.DataFrame([[str(f), "syn1009", "syn100"]], columns=["File Paths", "folderIdPublication", "grantId"]).to_csv(paths, index=False)
+    return paths
+
+
+def test_rows_with_a_quote_or_backslash_in_a_list_item_are_dropped_and_reported(tmp_path, caplog):
+    fake = FakeSynapse([stored(["p9", "Other", ""])])
+    paths = authors_inputs(tmp_path, ['Lo"ic B, Kuo JC', "Back\\slash A", "Kuo JC, Lee K"])
+    code, rep = run(tmp_path, fake, paths=paths)
+    assert code == 0 and status_of(rep) == "written"
+    written = fake.writes[0].set_index(KEY)
+    assert sorted(written.index) == ["p2", "p9"]  # p0 (quote) and p1 (backslash) are not written
+    unsafe = pd.read_csv(rep / "syn100" / "unsafe_list_items.csv", dtype=str)
+    assert sorted(unsafe[KEY]) == ["p0", "p1"]
+    assert "unsafe_rows=2" in (rep / "syn100" / "summary.txt").read_text()
+    assert "unsafe_list_items.csv" in caplog.text

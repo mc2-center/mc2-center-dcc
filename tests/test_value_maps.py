@@ -326,6 +326,18 @@ def test_bibtex_umlauts_in_author_names_become_the_letters():
     assert unmapped.empty
 
 
+def test_backslash_and_brace_bibtex_umlauts_are_consumed():
+    row, changes, _ = run(normalizer(), PublicationAuthors=['M\\"ockl L', '{\\"o}z K', 'K\\"{u}hn P', 'L{\\"{a}}ng Q'])
+    assert row["PublicationAuthors"] == ["Möckl L", "öz K", "Kühn P", "Läng Q"]
+    assert set(changes["rule"]) == {"umlaut"}
+
+
+def test_author_with_a_quote_that_is_not_an_umlaut_is_left_alone():
+    row, changes, _ = run(normalizer(), PublicationAuthors=['Smith "Andy" J', 'M"ockl "Andy" L'])
+    assert row["PublicationAuthors"] == ['Smith "Andy" J', 'M"ockl "Andy" L']
+    assert "umlaut" not in changes["rule"].tolist()
+
+
 def test_override_beats_truncated():
     norm = normalizer({("Assay", "Sin(Read more on Pubmed)"): "RNA Sequencing"})
     row, changes, _ = run(norm, Assay="Sin(Read more on Pubmed)")
