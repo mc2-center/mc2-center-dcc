@@ -364,3 +364,16 @@ def test_update_table_without_component_refuses_live_names_missing_a_column(monk
     with pytest.raises(ValueError, match="refusing to truncate"):
         utils.update_table(None, "synX", pd.DataFrame({"totalCount": [3], "theme": ["t"]}))
     table.snapshot.assert_not_called()
+
+
+def test_blank_consortium_rows_are_dropped_and_the_table_is_read_once(monkeypatch, caplog):
+    table = _consortium_rows(monkeypatch, {
+        "consortiumDisplayName": ["CSBC", "PS-ON", None, "Ghost", ""],
+        "consortiumId": ["program.csbc", float("nan"), "program.none", "", "program.blank"],
+    })
+    with caplog.at_level("WARNING"):
+        assert utils.load_consortium_keys(None) == {"CSBC": "program.csbc"}
+    assert utils.known_consortium_names(None) == {"CSBC"}
+    assert utils.consortium_display_names(None, ["program.csbc"]) == ["CSBC"]
+    assert table.query.call_count == 1
+    assert "PS-ON" in caplog.text and "Ghost" in caplog.text
