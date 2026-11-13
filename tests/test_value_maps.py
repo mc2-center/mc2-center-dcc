@@ -316,6 +316,16 @@ def test_truncated_suffix_in_a_free_text_column_is_ignored():
     assert changes.empty
 
 
+def test_bibtex_umlauts_in_author_names_become_the_letters():
+    row, changes, unmapped = run(normalizer(), PublicationAuthors=['M"ockl L', 'R"o"osli M', 'Langel "U', "Kuo JC"],
+                                 PublicationTitle='A "quoted" title')
+    assert row["PublicationAuthors"] == ["Möckl L", "Röösli M", "Langel Ü", "Kuo JC"]
+    assert row["PublicationTitle"] == 'A "quoted" title'  # authors only
+    assert changes[["from", "to", "rule"]].values.tolist() == [
+        ['M"ockl L', "Möckl L", "umlaut"], ['R"o"osli M', "Röösli M", "umlaut"], ['Langel "U', "Langel Ü", "umlaut"]]
+    assert unmapped.empty
+
+
 def test_override_beats_truncated():
     norm = normalizer({("Assay", "Sin(Read more on Pubmed)"): "RNA Sequencing"})
     row, changes, _ = run(norm, Assay="Sin(Read more on Pubmed)")
