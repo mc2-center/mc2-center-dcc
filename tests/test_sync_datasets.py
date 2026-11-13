@@ -173,6 +173,20 @@ def test_entry_with_no_mapped_code_gets_no_access_text():
     assert row["accessInformation"] == [sync_datasets.NO_ACCESS_TEXT]
 
 
+def test_blank_data_use_codes_are_skipped_without_warning(caplog):
+    for codes in ["", "  ", "DUO:0000042,,DUO:0000029"]:
+        rows = [dict(MANIFEST_14[1], **{"Dataset Data Use Codes": codes})]
+        with caplog.at_level(logging.WARNING):
+            row = run(rows).iloc[0]
+        assert "''" not in caplog.text
+        if not codes.strip():
+            assert row["accessInformation"] == [sync_datasets.NO_ACCESS_TEXT]
+        else:
+            assert sorted(row["accessInformation"]) == sorted(
+                [utils.DUO_DICT["DUO:0000042"], utils.DUO_DICT["DUO:0000029"]]
+            )
+
+
 def test_unknown_code_warns_and_row_is_still_processed(caplog):
     with caplog.at_level(logging.WARNING):
         out = run(MANIFEST_14)

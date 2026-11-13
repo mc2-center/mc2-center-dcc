@@ -204,7 +204,7 @@ def add_missing_info(
             datasets.at[_, "DatasetDoi"] = usable[0].strip() if usable else utils.DOI_NOT_AVAILABLE
         if str(datasets.at[_, "DatasetDoi"]).strip() == utils.NO_DOI_LISTED:
             datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
-        d = [t for code in row["DatasetDataUseCodes"].split(",") if (t := translate_access(code, code_to_id))]
+        d = [t for code in row["DatasetDataUseCodes"].split(",") if code.strip() and (t := translate_access(code, code_to_id))]
         d = d or [NO_ACCESS_TEXT]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         # Keep the texts as a list: several contain commas, so joining them
