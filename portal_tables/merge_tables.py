@@ -302,6 +302,8 @@ def main():
     args = get_args()
     if args.publish and not (args.target_record_set and args.t):
         raise SystemExit("--publish requires --target_record_set and -t")
+    if args.publish and args.grant_projects:
+        raise SystemExit("--publish is refused with --grant-projects: a subset of grants would replace the whole table")
     if args.target_record_set and not args.n:
         raise SystemExit("--target_record_set requires -n")
     syn = utils.syn_login()
