@@ -317,3 +317,49 @@ def test_existing_grant_with_another_view_id_is_deduplicated_by_grant_number(vie
     assert list(out.grantNumber) == ["OLD1", "NEW1"]
     assert out.iloc[0].grantId == "syn1"  # the portal row wins
     assert list(create.call_args.args[1].GrantNumber) == ["NEW1"]
+
+
+def _run_expecting_error(manifest, match, dryrun=False):
+    factory = _table_factory(manifest)
+    with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
+            patch.object(cgp.model_contract, "read_manifest",
+                         lambda syn, entity_id, component=None: manifest.copy()), \
+            patch.object(cgp, "create_grant_projects") as create:
+        with pytest.raises(ValueError, match=match) as err:
+            cgp.process_new_grants("syn53259587", "syn21918972", dryrun, MagicMock(),
+                                   live_types=_live_types())
+    create.assert_not_called()
+    return str(err.value)
+
+
+@pytest.mark.parametrize("dryrun", [False, True])
+def test_changed_grant_number_for_existing_view_id_is_refused(dryrun):
+    manifest = _manifest(False)
+    manifest.loc[0, "Grant Number"] = "OLD1-CORRECTED"  # GrantView_id still "OLD1"
+    message = _run_expecting_error(manifest, "grant number changed", dryrun)
+    assert "OLD1-CORRECTED" in message and "Old grant" in message
+    assert "NEW1" not in message
+
+
+def test_view_id_match_ignores_whitespace_and_blank_view_ids():
+    manifest = _manifest(False)
+    manifest.loc[0, "Grant Number"] = "OLD1-CORRECTED"
+    manifest.loc[0, "GrantView_id"] = " OLD1 "
+    _run_expecting_error(manifest, "grant number changed")
+    manifest.loc[0, "GrantView_id"] = ""
+    out, _ = _run(manifest)  # blank view ids never count as a match
+    assert len(out) == 3
+
+
+@pytest.mark.parametrize("number", ["", "  ", float("nan"), None])
+def test_blank_grant_number_is_refused(number):
+    manifest = _manifest(False)
+    manifest["Grant Number"] = manifest["Grant Number"].astype(object)
+    manifest.loc[1, "Grant Number"] = number
+    message = _run_expecting_error(manifest, "GrantNumber is required")
+    assert "NEW1" in message and "New grant" in message
+
+
+def test_ordinary_new_and_unchanged_existing_grants_still_pass():
+    out, _ = _run(_manifest(False), live_types=_live_types())
+    assert list(out.grantNumber) == ["OLD1", "NEW1"]

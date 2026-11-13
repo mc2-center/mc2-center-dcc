@@ -330,6 +330,40 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     )
     is_new = ~manifest["GrantNumber"].isin(curr_portal.grantNumber.to_list())
 
+    # A new-looking grant that cannot be told apart from an existing one, or
+    # that has no number, would get a duplicate project or a bare KeyError.
+    # Fail before anything is created (also on a dry run).
+    def _text(value):
+        return "" if pd.isna(value) else str(value).strip()
+
+    def _describe(row):
+        name = _text(row["GrantName"]) if "GrantName" in row.index else ""
+        return (f"GrantViewId={_text(row['GrantViewId'])!r}, "
+                f"GrantNumber={_text(row['GrantNumber'])!r}"
+                + (f", GrantName={name!r}" if name else ""))
+
+    new_rows = manifest[is_new]
+    blank = new_rows[new_rows["GrantNumber"].map(_text) == ""]
+    portal_views = {_text(v) for v in curr_portal.grantViewId} - {""}
+    renumbered = new_rows[
+        (new_rows["GrantNumber"].map(_text) != "")
+        & new_rows["GrantViewId"].map(_text).isin(portal_views)
+    ]
+    problems = []
+    if not blank.empty:
+        problems.append(
+            "GrantNumber is required; fill it in for: "
+            + "; ".join(_describe(r) for _, r in blank.iterrows())
+        )
+    if not renumbered.empty:
+        problems.append(
+            "the grant number changed for an existing grant (its GrantViewId is already "
+            "in the portal table); reconcile the manifest or the portal table by hand for: "
+            + "; ".join(_describe(r) for _, r in renumbered.iterrows())
+        )
+    if problems:
+        raise ValueError(" | ".join(problems))
+
     # Grants already on the portal keep their portal values, so an unknown
     # consortium there is only worth a warning. New grants must resolve.
     manifest["consortium"] = ""
