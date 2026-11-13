@@ -127,9 +127,16 @@ nothing was written, rerun.
 
 - In list columns (JSON arrays) Grid's export stores U+0080-009F, U+2000-20FF and `/` as literal `\uXXXX` / `\/`.
   The readers undo this (`recordsets.grid_unescape`).
-- A `"` or `\` inside a list item makes Grid unable to open the RecordSet (500 errors). Fix it by storing a
-  corrected CSV directly as a new version, without a Grid session: `recordsets.store_new_version(syn, rs_id, csv_path)`
-  (the function `remove_recordset_rows.py` uses; there is no script for it).
+- A `"` or `\` inside a list item makes Grid unable to open the RecordSet (500 errors). `upload_recordsets.py`
+  keeps such rows out of an upload (`unsafe_list_items.csv`). To repair a RecordSet that already has one, run
+  `annotations/repair_recordset.py`: it lists the invalid list cells (`broken_cells.csv`), applies a fixes CSV
+  (`key`, `column`, `value` = the corrected cell as a JSON array), stores the result directly as a new version,
+  logs it in the write log and re-validates through one Grid export (dry run unless `--execute`):
+
+  ```bash
+  python annotations/repair_recordset.py --recordset syn... --component PublicationView --fixes fixes.csv \
+      --write-log-table syn78404341 --report-dir runs/repair [--execute]
+  ```
 - Control characters (tab, newline) inside list items lose their backslash on export and cannot be recovered.
 
 ## Exit codes
