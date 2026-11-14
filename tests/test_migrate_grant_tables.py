@@ -49,7 +49,8 @@ class FakeSynapse:
         self.pubmed_authors = {}      # PMID -> author list PubMed returns
         self.pubmed_calls = []
         self.pubmed_failed = set()    # PMIDs whose request fails
-        self.bound = {}               # recordset id -> bound schema URI (default: the current one)
+        self.bound = {}               # recordset id -> bound schema URI (default: the current one; None = unbound)
+        self.bound_on = {}            # recordset id -> binding creation time (default: long ago)
         self.binds = []               # (recordset id, URI) of every bind_schema call
         self.exports = 0
         self.export_fails = False
@@ -141,6 +142,14 @@ class FakeSynapse:
     def bind(self, syn, rs_id, uri):
         self.binds.append((rs_id, uri))
         self.bound[rs_id] = uri
+        self.bound_on[rs_id] = pd.Timestamp.now(tz="UTC")  # versions read later (fake.meta) are newer
+
+    def binding(self, syn, rs_id, component="PublicationView"):
+        uri = self.bound.get(rs_id, f"MC2Center-{component}-14.1.2")
+        return uri, (self.bound_on.get(rs_id, pd.Timestamp("2000-01-01", tz="UTC")) if uri else pd.NaT)
+
+    def meta(self, syn, rs_id, version):
+        return "42", pd.Timestamp.now(tz="UTC")
 
     def validation(self, syn, rs_id, version, loc, keys):
         return pd.DataFrame({"key": keys, "row_index": range(len(keys)), "is_valid": [True] * len(keys),
@@ -168,8 +177,8 @@ def run(tmp_path, fake, *extra, execute=False, log=None, run_id="r1", component=
          mock.patch.object(mig.recordsets, "read_recordset", fake.read), \
          mock.patch.object(mig.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(mig.recordsets, "get_validation", fake.validation), \
-         mock.patch.object(mig.recordsets, "bound_schema_uri",
-                           lambda syn, rs_id: fake.bound.get(rs_id, f"MC2Center-{component}-14.1.2")), \
+         mock.patch.multiple(mig.recordsets, recordset_version_meta=fake.meta,
+                             schema_binding=lambda syn, rs_id: fake.binding(syn, rs_id, component)), \
          mock.patch.object(mig.recordsets, "bind_schema", fake.bind), \
          mock.patch.object(mig.recordsets, "export_via_grid", fake.export), \
          mock.patch.object(mig.recordsets, "SynapseTableWriteLog", lambda syn, tid: rs.CsvWriteLog(log)), \
@@ -623,6 +632,80 @@ def test_dry_run_reports_a_rebind_and_writes_nothing(tmp_path):
     text = (rep / "CA1" / "summary.txt").read_text()
     assert status_of(rep) == "dryrun" and f"would re-bind {rs_id} from {OLD_URI} to {NEW_URI}" in text
     assert fake.binds == [] and fake.exports == 0
+
+
+def bound_after_the_last_version(tmp_path, fake, verified=True):
+    """Migrated and bound to the target, but the binding is newer than v2 (a run killed after the bind)."""
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, verified)
+    fake.bound[rs_id] = NEW_URI
+    fake.bound_on[rs_id] = pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1)
+    return rs_id
+
+
+def test_a_binding_newer_than_the_verified_version_is_re_exported_without_a_rebind(tmp_path):
+    fake = FakeSynapse()
+    rs_id = bound_after_the_last_version(tmp_path, fake)
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "migrated" and fake.binds == [] and fake.exports == 1
+    assert f"re-exported as v3 to re-validate against {NEW_URI} (bound after v2)" in (rep / "CA1" / "summary.txt").read_text()
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    assert log.pipeline_map(rs_id) == {2: 1, 3: 2} and 3 in log.verified_versions(rs_id)
+
+
+def test_a_failed_export_after_a_bound_but_unvalidated_state_does_not_touch_the_binding(tmp_path):
+    fake = FakeSynapse()
+    bound_after_the_last_version(tmp_path, fake)
+    fake.export_fails = True
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "failed" and fake.binds == []
+
+
+def test_a_verified_version_newer_than_the_binding_is_already_migrated(tmp_path):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake)
+    fake.bound[rs_id] = NEW_URI
+    fake.bound_on[rs_id] = pd.Timestamp("2000-01-01", tz="UTC")
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "already_migrated" and fake.binds == [] and fake.exports == 0 and len(fake.writes) == 1
+
+
+def test_an_unbound_recordset_is_bound_and_re_exported(tmp_path):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake)
+    fake.bound[rs_id] = None
+    code, rep = run(tmp_path, fake, "--write-log-table", "synLOG", out="out2", run_id="r2")  # dry run
+    text = (rep / "CA1" / "summary.txt").read_text()
+    assert status_of(rep) == "dryrun" and f"would bind {rs_id} (no schema bound) to {NEW_URI}" in text
+    assert fake.binds == [] and fake.exports == 0
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")
+    assert status_of(rep) == "migrated" and fake.binds == [(rs_id, NEW_URI)] and fake.exports == 1
+
+
+def test_dry_run_reports_a_binding_newer_than_the_last_version(tmp_path):
+    fake = FakeSynapse()
+    rs_id = bound_after_the_last_version(tmp_path, fake)
+    code, rep = run(tmp_path, fake, "--write-log-table", "synLOG", out="out2", run_id="r2")
+    assert f"would re-export {rs_id} to re-validate against {NEW_URI}" in (rep / "CA1" / "summary.txt").read_text()
+    assert fake.exports == 0
+
+
+def _http_error(status):
+    err = rs.SynapseHTTPError("x")
+    err.response = SimpleNamespace(status_code=status)
+    return err
+
+
+def test_schema_binding_is_none_for_an_unbound_recordset_and_reraises_other_errors():
+    def raising(status):
+        def get_schema(self, synapse_client=None):
+            raise _http_error(status)
+        return mock.patch.object(rs.RecordSet, "get_schema", get_schema)
+
+    with raising(404):
+        uri, on = rs.schema_binding(object(), "synR")
+        assert uri is None and pd.isna(on) and rs.bound_schema_uri(object(), "synR") is None
+    with raising(403), pytest.raises(rs.SynapseHTTPError):
+        rs.schema_binding(object(), "synR")
 
 
 def test_verified_and_created_rows_are_neither_versions_nor_pending_closers(tmp_path):
