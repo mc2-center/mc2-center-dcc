@@ -9,7 +9,6 @@ import json
 import sys
 import types
 from pathlib import Path
-from unittest import mock
 
 import pandas as pd
 import pytest
@@ -694,24 +693,3 @@ def test_fresh_upload_stage_still_starts_empty(tmp_path, env):
     old.mkdir()
     run(tmp_path, "ToolView", "--from-stage", "links", "--run-id", "run-1")
     assert not old.exists()
-
-
-def test_gen_mp_csv_folder_query_matches_the_override_folder_for_the_overridden_project():
-    genmp = uw._load("gen-mp-csv.py")
-    queries = []
-
-    class FakeTable:
-        def __init__(self, id):
-            pass
-
-        def query(self, query, **kw):
-            queries.append(query)
-            return pd.DataFrame({"grantNumber": [], "grantId": []})
-
-    with mock.patch.object(genmp, "Table", FakeTable), mock.patch.object(genmp.utils, "syn_login"), \
-         mock.patch.object(pd.DataFrame, "to_csv"):
-        genmp.query_synapse_for_folder_info("ref.csv", "tools", "folderIdTools", "grantId")
-        genmp.query_synapse_for_folder_info("ref.csv", "datasets", "folderIdDatasets", "grantId")
-    tools, datasets = queries[1], queries[3]
-    assert "name='tool_curation' AND projectId='syn9772917'" in tools and "name='tools' AND projectId<>'syn9772917'" in tools
-    assert "WHERE name='datasets' AND parentId=projectId" in datasets

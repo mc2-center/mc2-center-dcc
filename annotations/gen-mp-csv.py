@@ -25,11 +25,6 @@ from datetime import datetime
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import utils
-import merge_tables
-
-# folder names used here -> the component whose folder they are
-DATA_TYPE_COMPONENTS = {"publications": "PublicationView", "datasets": "DatasetView",
-                        "tools": "ToolView", "education": "EducationalResource"}
 
 
 def query_synapse_for_folder_info(
@@ -48,18 +43,10 @@ def query_synapse_for_folder_info(
         .fillna("")
     )
 
-    # a project whose folder for this data type is named differently (merge_tables.FOLDER_OVERRIDES)
-    component = DATA_TYPE_COMPONENTS.get(data_type)
-    name_test = f"name='{data_type}'"
-    for project_id, comp in merge_tables.FOLDER_OVERRIDES:
-        if comp == component:
-            name_test = (f"((name='{data_type}' AND projectId<>'{project_id}') OR "
-                         f"(name='{merge_tables.folder_name(project_id, comp)}' AND projectId='{project_id}'))")
-
     folder_table = (
         Table(id="syn27210848")
         .query(
-            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE {name_test} AND parentId=projectId",
+            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId",
             include_row_id_and_row_version=False,
             synapse_client=syn,
         )
