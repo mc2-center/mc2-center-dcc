@@ -101,6 +101,7 @@ from pathlib import Path
 import pandas as pd
 from synapseclient import operations
 from synapseclient.core import utils as synapse_utils
+from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
 import comma_terms
@@ -404,11 +405,24 @@ def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
     return entity.version_number, list(entity.upsert_keys or [])
 
 
+def schema_binding(syn, rs_id: str) -> tuple[str | None, pd.Timestamp]:
+    """``(bound schema URI, when the binding was created)``; ``(None, NaT)`` for an unbound RecordSet.
+
+    Synapse answers ``GET /entity/{id}/schema/binding`` with a 404 (``SynapseHTTPError``) when nothing is bound.
+    """
+    try:
+        binding = RecordSet(id=rs_id).get_schema(synapse_client=syn)
+    except SynapseHTTPError as err:
+        if getattr(getattr(err, "response", None), "status_code", None) == 404:
+            return None, pd.NaT
+        raise
+    info = getattr(binding, "json_schema_version_info", None)
+    return getattr(info, "id", None), _to_dt(getattr(binding, "created_on", None))
+
+
 def bound_schema_uri(syn, rs_id: str) -> str | None:
     """The JSON schema URI bound to the RecordSet (``MC2Center-<component>-<version>``), or None."""
-    binding = RecordSet(id=rs_id).get_schema(synapse_client=syn)
-    info = getattr(binding, "json_schema_version_info", None)
-    return getattr(info, "id", None)
+    return schema_binding(syn, rs_id)[0]
 
 
 def bind_schema(syn, rs_id: str, uri: str) -> None:

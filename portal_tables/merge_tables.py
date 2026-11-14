@@ -36,6 +36,13 @@ FOLDER_MAP = {
     "ToolView": "tools",
     "EducationalResource": "education",
 }
+FOLDER_OVERRIDES = {("syn9772917", "ToolView"): "tool_curation"}  # CA184898 keeps tool metadata in tool_curation
+
+
+def folder_name(project_id, component):
+    """Name of the data-type folder for ``component`` under a grant project."""
+    return FOLDER_OVERRIDES.get((project_id, component)) or FOLDER_MAP[component]
+
 
 logger = logging.getLogger(__name__)
 
@@ -135,12 +142,12 @@ def build_union(syn, component, grant_ids):
     ``frame`` has display-name headers in template order; list cells are
     ", "-joined. ``stats`` holds grants scanned/found/missing, rows and duplicate keys.
     """
-    folder_name = FOLDER_MAP[component]
     frames, missing = [], []
     for grant in grant_ids:
-        folder_id = operations.find_entity_id(name=folder_name, parent=grant, synapse_client=syn)
+        name = folder_name(grant, component)
+        folder_id = operations.find_entity_id(name=name, parent=grant, synapse_client=syn)
         if folder_id is None:
-            logger.warning("Skipping %s: folder '%s' not found", grant, folder_name)
+            logger.warning("Skipping %s: folder '%s' not found", grant, name)
             missing.append(grant)
             continue
         rs_id = recordsets.find_recordset(syn, folder_id, component)
