@@ -444,7 +444,7 @@ def test_execute_creates_folder_and_recordset_loads_through_grid_and_logs(tmp_pa
     kw = fake.created[0]
     assert kw["create_grid"] is False and kw["bind_schema_to_record_set"] is True
     assert kw["record_set_name"] == "MC2Center_PublicationView_RecordSet"
-    assert kw["upsert_keys"] == [KEY] and kw["schema_uri"] == "MC2Center-PublicationView-14.1.1"
+    assert kw["upsert_keys"] == [KEY] and kw["schema_uri"] == "MC2Center-PublicationView-14.1.2"
     assert kw["project_id"] == "synP1" and kw["folder_id"] == fake.folders[("synP1", "publications")]
     rs_id = next(iter(fake.rs))
     assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
