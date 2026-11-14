@@ -137,10 +137,10 @@ def to_labels(source: pd.DataFrame, component: str) -> pd.DataFrame:
 
 def build_normalizer(component: str, overrides=None, ref=None) -> "value_maps.Normalizer":
     """The grant migration's normalizer plus a case-insensitive map for each schema enum that has no
-    ``all_valid_values.csv`` category, and for each boolean (``PortalDisplay``: ``TRUE`` -> ``true``)."""
+    ``all_valid_values.csv`` category."""
     normalizer = value_maps.Normalizer.for_component(component, overrides, ref=ref)
     for column, prop in grants.load_schema(component, ref)["properties"].items():
-        enum = ["false", "true"] if prop.get("type") == "boolean" else prop.get("enum") or prop.get("items", {}).get("enum")
+        enum = prop.get("enum") or prop.get("items", {}).get("enum")
         if enum and column not in normalizer.enum_maps:
             normalizer.enum_maps[column] = value_maps.EnumMap(enum)
     return normalizer

@@ -456,3 +456,19 @@ def test_two_accepted_rows_for_one_target_with_different_values_raise(tmp_path):
                                                  ["PublicationTitle", "p1", "", "A", "CA1", "yes"],
                                                  ["PublicationTitle", "p1", "", "B", "CA1", ""]], columns=columns)
     assert vm.load_overrides(same) == {("PublicationTitle", "p1", vm.ROW, "CA1"): "A"}
+
+
+def test_for_component_maps_a_boolean_property_to_lowercase_and_it_validates_locally():
+    import pandas as pd
+    import schema_validation
+
+    norm = vm.Normalizer.for_component("ToolView")
+    frame = pd.DataFrame({"ToolViewId": ["a", "b", "c", "d"],
+                          "ToolPackageDependenciesPresent": ["True", "TRUE", "false", ""]})
+    out, changes, unmapped = norm.normalize_frame(frame, "ToolViewId")[:3]
+    assert out["ToolPackageDependenciesPresent"].tolist() == ["true", "true", "false", ""]
+    assert unmapped.empty
+    failures = schema_validation.validate_frame(out.iloc[:3], "ToolView", key="ToolViewId")
+    assert "ToolPackageDependenciesPresent" not in set(failures["field"])
+    wrong = schema_validation.validate_frame(frame.iloc[[0]], "ToolView", key="ToolViewId")
+    assert "ToolPackageDependenciesPresent" in set(wrong["field"])  # "True" is not a JSON boolean
