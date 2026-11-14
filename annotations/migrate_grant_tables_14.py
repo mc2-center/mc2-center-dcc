@@ -956,7 +956,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     """
     component, key = args.component, KEYS[args.component]
     stored = recordsets.schema_columns(component) | {key}
-    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or FOLDER_MAP[component])
+    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or merge_tables.folder_name(entry["project"], component))
     rs_id = recordsets.find_recordset(syn, folder_id, component)
     principal = recordsets.principal_id(syn)
     recovered = {}
@@ -1072,7 +1072,7 @@ def _noted(summary: dict, absent: list) -> dict:
 
 def _would_rebind(syn, entry, args):
     """``(RecordSet ID, bound schema URI)`` when the grant's existing RecordSet is bound to another schema version, else None."""
-    folder_id = operations.find_entity_id(name=entry.get("folder_name") or FOLDER_MAP[args.component],
+    folder_id = operations.find_entity_id(name=entry.get("folder_name") or merge_tables.folder_name(entry["project"], args.component),
                                           parent=entry["project"], synapse_client=syn)
     rs_id = recordsets.find_recordset(syn, folder_id, args.component) if folder_id else None
     if rs_id is None:

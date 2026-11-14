@@ -1818,3 +1818,35 @@ def test_an_unmatched_key_override_is_reported_with_the_unused_row_overrides(tmp
     assert converted[MS_KEY].tolist() == ["syn_chosen", "syn_same"]
     text = (rep / "run_summary.txt").read_text()
     assert "row overrides that matched no row: 1" in text and f"{MS_KEY} / syn_typo" in text
+
+
+# --- per-project folder name (merge_tables.FOLDER_OVERRIDES) -------------------------
+
+
+class _Stop(Exception):
+    pass
+
+
+@pytest.mark.parametrize("entry, expected", [
+    ({"project": "syn9772917"}, "tool_curation"),
+    ({"project": "syn9772917", "folder_name": "admin_choice"}, "admin_choice"),  # admin name wins
+    ({"project": "synP1"}, "tools"),
+])
+def test_migration_resolves_the_folder_name_per_project(entry, expected):
+    args = SimpleNamespace(component="ToolView", schema_version="14.1.2", run_id="r")
+    seen = []
+
+    def stop(syn, project, name):
+        seen.append(name)
+        raise _Stop
+
+    with mock.patch.object(mig, "find_or_create_folder", stop), pytest.raises(_Stop):
+        mig.migrate_recordset(object(), entry, args, None, None, None, None, {}, set(), set())
+    finds = []
+
+    def find(name, parent, synapse_client=None):
+        finds.append(name)
+
+    with mock.patch.object(mig.operations, "find_entity_id", find):
+        assert mig._would_rebind(object(), entry, args) is None
+    assert seen == [expected] and finds == [expected]
