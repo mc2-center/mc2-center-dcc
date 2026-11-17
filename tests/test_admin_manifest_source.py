@@ -28,26 +28,16 @@ def test_constants_name_one_folder_and_one_recordset_per_component():
         "MC2Center_GrantView_RecordSet", "MC2Center_ProjectView_RecordSet", "MC2Center_PersonView_RecordSet"]
 
 
-def test_the_source_defaults_to_the_legacy_tables():
-    assert utils.MANIFEST_SOURCE == "table"
-
-
-def test_the_flip_is_documented_as_waiting_for_the_admin_migration(monkeypatch, capsys):
-    source = inspect.getsource(utils).split("MANIFEST_SOURCE = ")[0].rsplit("# Where the grant", 1)[1]
-    assert "migrate_admin_manifests_14.py --execute" in source
-    monkeypatch.setattr("sys.argv", ["prog", "--help"])
-    with pytest.raises(SystemExit):
-        utils.get_args("project")
-    help_text = " ".join(capsys.readouterr().out.split())
-    assert "only after the admin migration" in help_text
+def test_the_source_defaults_to_the_admin_recordsets():
+    assert utils.MANIFEST_SOURCE == "recordset"
 
 
 @pytest.mark.parametrize("resource", ["grant", "project", "people"])
-def test_get_args_defaults_to_table_and_accepts_recordset(resource, monkeypatch):
+def test_get_args_defaults_to_recordset_and_accepts_table(resource, monkeypatch):
     monkeypatch.setattr("sys.argv", ["prog"])
-    assert utils.get_args(resource).manifest_source == "table"
-    monkeypatch.setattr("sys.argv", ["prog", "--manifest-source", "recordset"])
     assert utils.get_args(resource).manifest_source == "recordset"
+    monkeypatch.setattr("sys.argv", ["prog", "--manifest-source", "table"])
+    assert utils.get_args(resource).manifest_source == "table"
 
 
 def test_other_resources_have_no_source_switch(monkeypatch):
