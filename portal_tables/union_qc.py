@@ -67,9 +67,9 @@ DEFAULT_CARRY = ("iconTags",)
 # Components whose iconTags are computed from their Assay terms (data-models term -> icon label map).
 ICON_TAGGED = ("PublicationView", "DatasetView")
 ICON_TAG_MAP = "modules/shared/mc2_iconTag_map_3-4-25.csv"
-# The live publication and dataset manifests hold one row per alias (grants merged);
-# the live tool manifest repeats a tool name once per grant, so tools stay unmerged.
-DEFAULT_MERGE = ("PublicationView", "DatasetView")
+# The live publication, dataset and tool manifests hold one row per alias (grants merged;
+# a tool is merged by Tool Name, each tool having one shared entity).
+DEFAULT_MERGE = ("PublicationView", "DatasetView", "ToolView")
 # Manifest columns that are not schema properties (not validated).
 NON_SCHEMA = ("Component", "entityId", "iconTags")
 ID_CONFLICT_COLUMNS = ["alias", "ids", "grants", "rows"]
@@ -134,7 +134,7 @@ def get_args(argv=None):
         nargs="*",
         choices=COMPONENTS,
         default=list(DEFAULT_MERGE),
-        help="Regenerate mode: components whose rows are merged by alias key (default: publications and datasets).",
+        help="Regenerate mode: components whose rows are merged by alias key (default: publications, datasets and tools).",
     )
     parser.add_argument(
         "--no-fill",

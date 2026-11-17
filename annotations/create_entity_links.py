@@ -2,6 +2,8 @@
 
 Uses link in a resource manifest to generate a Synapse Link Entity
 Links are created in the MC2 Center reference folders, also used to store metadata
+(ToolView: one shared entity per tool, in the central project's "tools" folder; a tool
+without a homepage gets an empty Folder)
 Returns the entity ID and adds it to the primary key column of the input manifest
 
 For DatasetView entries whose Dataset Url contains a GEO or SRA accession, a full
@@ -25,7 +27,7 @@ import numpy as np
 import pandas as pd
 import re
 from synapseclient import Synapse
-from synapseclient.models import File
+from synapseclient.models import File, Folder
 
 from geo_synapse.mc2_table import parse_accession, find_project_for_grant
 from geo_synapse.synapse_ops import (
@@ -48,6 +50,7 @@ logger = logging.getLogger(__name__)
 _CENTRAL_PROJECT_SYNID = "syn76986881"   # CCKP Indexed Datasets
 _COLLECTION_SYNID = "syn77025587"        # DatasetCollection in _CENTRAL_PROJECT_SYNID
 _DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders
+_TOOLS_FOLDER = "tools"                  # subfolder holding one shared entity per tool
 
 
 def get_args(argv=None):
@@ -129,6 +132,7 @@ def record_created_id(path, key: str, synapse_id: str) -> None:
 
 
 FILE_ENTITY_TYPE = "org.sagebionetworks.repo.model.FileEntity"
+FOLDER_ENTITY_TYPE = "org.sagebionetworks.repo.model.Folder"
 
 
 def store_link(syn, name: str, link: str, parent_id: str) -> str:
@@ -162,6 +166,45 @@ def store_link(syn, name: str, link: str, parent_id: str) -> str:
     return existing
 
 
+class ToolConflict(ValueError):
+    """A same-named entity in the tools folder that cannot be reused for this tool row."""
+
+    def __init__(self, message, name, homepage, existing_id, existing_type, existing_url):
+        super().__init__(message)
+        self.record = {"name": name, "homepage": homepage, "existing_id": existing_id,
+                       "existing_type": existing_type, "existing_url": existing_url, "message": message}
+
+
+def store_tool_entity(syn, name: str, link: str, parent_id: str) -> str:
+    """Create or reuse the one shared entity for a tool in the central tools folder.
+
+    With a homepage the entity is a link File; without one it is an empty Folder.
+    A same-named entity is reused only if it is the same kind (and, for a File, has
+    the same external URL). Anything else raises ToolConflict (a ValueError) naming the
+    tool, the existing ID and both URLs; nothing is overwritten.
+    """
+    link = (link or "").strip()
+    existing = syn.findEntityId(name, parent=parent_id)
+    if not existing:
+        if link:
+            return File(external_url=link, name=name, parent_id=parent_id, synapse_store=False).store(synapse_client=syn).id
+        return Folder(name=name, parent_id=parent_id).store(synapse_client=syn).id
+    concrete = syn.restGET(f"/entity/{existing}").get("concreteType")
+    if concrete == FILE_ENTITY_TYPE:
+        url = File(id=existing, download_file=False).get(synapse_client=syn).external_url
+        if link and url == link:
+            return existing
+    elif concrete == FOLDER_ENTITY_TYPE and not link:
+        return existing
+    else:
+        url = None
+    raise ToolConflict(
+        f"Cannot create tool {name!r}: {existing} ({concrete}) already exists in {parent_id} "
+        f"with URL {url!r}, but this row has homepage {link!r}",
+        name, link, existing, concrete, url,
+    )
+
+
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
 
     path_name_link_target = []
@@ -184,8 +227,12 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
 
 
 def create_links(
-    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None
+    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None, store=store_link,
+    conflicts=None,
 ) -> list[tuple[str, str, str]]:
+    """Store each row's link entity. With a ``conflicts`` list, a ToolConflict skips
+    that row (warning, appended to the list, blank ID, not recorded in created_ids so
+    a rerun retries it); any other error still stops the run."""
 
     done = load_created_ids(created_ids_path)
     path_name_id = []
@@ -198,7 +245,15 @@ def create_links(
             path_name_id.append((p, n, done[key]))
             continue
 
-        id = store_link(syn, n, l, t)
+        try:
+            id = store(syn, n, l, t)
+        except ToolConflict as e:
+            if conflicts is None:
+                raise
+            logger.warning("%s", e)
+            conflicts.append({"file": p, **e.record})
+            path_name_id.append((p, n, ""))  # blank, so later rows keep their position
+            continue
         record_created_id(created_ids_path, key, id)
         path_name_id.append((p, n, id))
 
@@ -289,6 +344,7 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
 
 
 def main(argv=None):
+    """Returns the ToolView rows skipped for a ToolConflict (blank ID in their manifest)."""
 
     syn = utils.syn_login()
 
@@ -296,6 +352,7 @@ def main(argv=None):
 
     manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p,
     created_ids_path = args.created_ids
+    conflicts = []
 
     if data_type == "DatasetView":
 
@@ -363,14 +420,24 @@ def main(argv=None):
 
     else:
         print("Generating Synapse Link Entities for each set of " + data_type + " entries...")
-        path_name_id = create_links(syn, pnt, created_ids_path)
+        store = store_link
+        if data_type == "ToolView":
+            # One shared entity per tool in the central tools folder, not the grant's folder.
+            tools_folder = find_or_create_folder(syn, _TOOLS_FOLDER, _CENTRAL_PROJECT_SYNID)
+            pnt = [(p, n, l, tools_folder) for p, n, l, _ in pnt]
+            store = store_tool_entity
+        path_name_id = create_links(syn, pnt, created_ids_path, store=store,
+                                conflicts=conflicts if data_type == "ToolView" else None)
 
+    for c in conflicts:
+        print(f"Skipped tool row: {c['message']}")
     print(f"The following link entities were created:\n{[i for p,n,i in path_name_id]}")
 
     if manifest is not None or data is not None:
         print(f"Adding Synapse IDs to {primary_key} column of {data_type} manifests")
         add_ids_to_manifests(path_name_id, name_column, primary_key)
         print("Manifest(s) have been populated with Synapse IDs for link entities!")
+    return conflicts
 
 if __name__ == "__main__":
     main()

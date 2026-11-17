@@ -154,24 +154,36 @@ def test_resume_execute_after_dry_run_must_redo_links(tmp_path, env):
     assert code == 1 and state["stages"]["upload"]["status"] == "failed"
 
 
-def test_empty_link_rows_dropped_and_empty_files_removed(tmp_path, env):
+def test_tool_rows_with_empty_homepage_are_kept(tmp_path, env):
+    # Was test_empty_link_rows_dropped_and_empty_files_removed: tools without a homepage
+    # now get a Folder in the shared tools folder, so nothing is dropped.
     df = pd.read_excel(FIXTURES / "p1" / "tool.xlsx", sheet_name="manifest")
-    # tool0 is one of two CA209997 rows; tool1 is CA209923's only row (and also in CA184898)
     df.loc[df["Tool Name"].isin(["tool0", "tool1"]), "Tool Homepage"] = None
     manifest = tmp_path / "tools.csv"
     df.to_csv(manifest, index=False)
     code, state = run(tmp_path, "ToolView", manifest=manifest)
-    assert code == 2  # rows were dropped: distinct from failure (1)
-    assert len(state["dropped_rows"]) == 3 and "reason" in state["dropped_rows"][0]
+    assert code == 0 and state["dropped_rows"] == []
     links = tmp_path / "out" / "04_links"
-    dropped = pd.read_csv(links / "dropped_rows.csv")
-    assert len(dropped) == 3  # tool0 once, tool1 in two grant files
-    assert "Tool Homepage" in dropped["reason"].iloc[0]
+    assert len(pd.read_csv(links / "dropped_rows.csv")) == 0
     final = sorted((links / "final").glob("*.csv"))
-    assert final and all(len(pd.read_csv(f)) > 0 for f in final)
-    assert not any("CA209923" in f.name for f in final)
+    assert any("CA209923" in f.name for f in final)
     uploaded = pd.read_csv(state["stages"]["upload"]["outputs"]["paths_csv"])
-    assert not any("CA209923" in p for p in uploaded["File Paths"])
+    assert any("CA209923" in p for p in uploaded["File Paths"])
+
+
+def test_drop_empty_link_rows_keeps_tools_but_drops_datasets(tmp_path):
+    for link_col, name_col, pk in [("Tool Homepage", "Tool Name", "ToolView_id"),
+                                   ("Dataset Url", "Dataset Alias", "DatasetView_id")]:
+        f = tmp_path / f"CA1_{pk}.csv"
+        pd.DataFrame({name_col: ["a", "b"], link_col: ["http://x", " "]}).to_csv(f, index=False)
+        paths = pd.DataFrame({"File Paths": [str(f)]})
+        report = []
+        out = uw.drop_empty_link_rows(paths, link_col, report)
+        kept = len(pd.read_csv(f))
+        if link_col == "Tool Homepage":
+            assert kept == 2 and report == [] and len(out) == 1
+        else:
+            assert kept == 1 and len(report) == 1 and len(out) == 1
 
 
 def test_existing_geo_accession_is_reused(tmp_path, env):
@@ -271,8 +283,9 @@ def test_create_entity_links_main_takes_argv(monkeypatch):
         monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
     sys.modules["geo_synapse.mc2_table"].parse_accession = lambda s: None
     sys.modules["geo_synapse.mc2_table"].find_project_for_grant = lambda *a: None
-    for n in ["find_or_create_folder", "create_synapse_dataset", "add_to_dataset_collection"]:
+    for n in ["create_synapse_dataset", "add_to_dataset_collection"]:
         setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
+    sys.modules["geo_synapse.synapse_ops"].find_or_create_folder = lambda syn, name, parent: TOOLS_FOLDER
     sys.modules["geo_synapse.pipeline"].run_one = None
     spec2 = importlib.util.spec_from_file_location("cel", ANNOTATIONS / "create_entity_links.py")
     mod = importlib.util.module_from_spec(spec2)
@@ -291,8 +304,9 @@ def load_cel(monkeypatch):
         monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
     sys.modules["geo_synapse.mc2_table"].parse_accession = lambda s: None
     sys.modules["geo_synapse.mc2_table"].find_project_for_grant = lambda *a: None
-    for n in ["find_or_create_folder", "create_synapse_dataset", "add_to_dataset_collection"]:
+    for n in ["create_synapse_dataset", "add_to_dataset_collection"]:
         setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
+    sys.modules["geo_synapse.synapse_ops"].find_or_create_folder = lambda syn, name, parent: TOOLS_FOLDER
     sys.modules["geo_synapse.pipeline"].run_one = None
     spec2 = importlib.util.spec_from_file_location("cel_resume", ANNOTATIONS / "create_entity_links.py")
     mod = importlib.util.module_from_spec(spec2)
@@ -300,12 +314,15 @@ def load_cel(monkeypatch):
     return mod
 
 
+TOOLS_FOLDER = "syn900"  # the central tools folder, as the faked find_or_create_folder returns it
+
+
 class LinkSyn:
     """Fake client: findEntityId looks in `existing`; File.store records and can fail."""
 
     def __init__(self, existing=None, fail_on=None):
         self.existing, self.stored, self.fail_on = dict(existing or {}), [], fail_on
-        self.updated = []
+        self.updated, self.folders = [], []
         self.concrete, self.urls = {}, {}  # entity id -> concreteType / current external URL
 
     def findEntityId(self, name, parent=None):
@@ -344,7 +361,17 @@ def patch_file(mod, monkeypatch, syn):
             self.id = f"syn{1000 + len(syn.stored)}"
             return self
 
+    class FakeFolder:
+        def __init__(self, name=None, parent_id=None):
+            self.name, self.parent_id = name, parent_id
+
+        def store(self, synapse_client):
+            syn.folders.append((self.name, self.parent_id))
+            self.id = f"syn{2000 + len(syn.folders)}"
+            return self
+
     monkeypatch.setattr(mod, "File", FakeFile)
+    monkeypatch.setattr(mod, "Folder", FakeFolder)
     monkeypatch.setattr(mod.utils, "syn_login", lambda: syn)
 
 
@@ -372,7 +399,7 @@ def test_links_resume_skips_rows_already_created(tmp_path, monkeypatch):
 def test_links_reuse_existing_entity_by_name_under_parent(tmp_path, monkeypatch):
     mod = load_cel(monkeypatch)
     split, pending = link_manifest(tmp_path, ["a", "b"])
-    syn = LinkSyn(existing={("syn100", "a"): "syn555"})
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"})
     syn.urls["syn555"] = "https://x/a"
     patch_file(mod, monkeypatch, syn)
     mod.main(["-m", str(pending), "-t", "ToolView"])  # no --created-ids: no resume file
@@ -662,6 +689,128 @@ def test_store_link_non_file_entity_fails_the_row(monkeypatch):
     with pytest.raises(ValueError, match=r"syn555.*not a File.*Folder"):
         mod.store_link(syn, "a", "https://x/a", "syn100")
     assert syn.updated == [] and syn.stored == []
+
+
+def tool_link_run(tmp_path, monkeypatch, syn, rows):
+    mod = load_cel(monkeypatch)
+    split = tmp_path / "CA1_tool.csv"
+    pd.DataFrame(rows, columns=["Tool Name", "Tool Homepage"]).assign(ToolView_id="").to_csv(split, index=False)
+    pending = tmp_path / "pending_paths.csv"
+    pd.DataFrame({"File Paths": [str(split)], "folderIdTools": ["syn100"]}).to_csv(pending, index=False)
+    patch_file(mod, monkeypatch, syn)
+    return mod, split, pending
+
+
+def test_tool_with_homepage_creates_file_in_central_tools_folder(tmp_path, monkeypatch):
+    syn = LinkSyn()
+    mod, split, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", "https://x/a")])
+    mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert syn.stored == ["a"] and syn.folders == []
+    assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist() == ["syn1001"]
+
+
+def test_tool_file_is_created_under_tools_folder_not_grant_folder(tmp_path, monkeypatch):
+    syn = LinkSyn()
+    mod, _, _ = tool_link_run(tmp_path, monkeypatch, syn, [("a", "https://x/a")])
+    seen = []
+    real = mod.File
+
+    def spy(**kw):
+        seen.append(kw.get("parent_id"))
+        return real(**kw)
+
+    monkeypatch.setattr(mod, "File", spy)
+    mod.store_tool_entity(syn, "a", "https://x/a", TOOLS_FOLDER)
+    assert seen == [TOOLS_FOLDER]
+
+
+def test_tool_same_name_and_url_is_reused(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"})
+    syn.urls["syn555"] = "https://x/a"
+    mod, split, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", "https://x/a")])
+    mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert syn.stored == [] and syn.updated == []
+    assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist() == ["syn555"]
+
+
+def test_tool_same_name_other_url_is_flagged_not_overwritten(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"})
+    syn.urls["syn555"] = "https://old/a"
+    mod, split, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", "https://x/a")])
+    with pytest.raises(mod.ToolConflict, match=r"'a'.*syn555.*https://old/a.*https://x/a"):
+        mod.store_tool_entity(syn, "a", "https://x/a", TOOLS_FOLDER)
+    assert syn.stored == [] and syn.updated == []
+
+
+def test_tool_conflict_skips_only_that_row(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "b"): "syn555"})
+    syn.urls["syn555"] = "https://old/b"
+    mod, split, pending = tool_link_run(
+        tmp_path, monkeypatch, syn, [("a", "https://x/a"), ("b", "https://x/b"), ("c", "https://x/c")])
+    ids = tmp_path / "created_ids.csv"
+    conflicts = mod.main(["-m", str(pending), "-t", "ToolView", "--created-ids", str(ids)])
+    assert syn.stored == ["a", "c"] and syn.updated == []
+    # the skipped row stays blank and does not shift the IDs of the rows after it
+    assert pd.read_csv(split, dtype=str, keep_default_na=False)["ToolView_id"].tolist() == ["syn1001", "", "syn1002"]
+    assert len(pd.read_csv(ids)) == 2  # not recorded, so a rerun retries it
+    assert [(c["name"], c["existing_id"], c["existing_url"], c["homepage"]) for c in conflicts] == \
+        [("b", "syn555", "https://old/b", "https://x/b")]
+    assert conflicts[0]["file"] == str(split) and "https://old/b" in conflicts[0]["message"]
+
+
+def test_non_conflict_error_still_stops_after_a_conflict(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"}, fail_on="c")
+    syn.urls["syn555"] = "https://old/a"
+    mod, split, pending = tool_link_run(
+        tmp_path, monkeypatch, syn, [("a", "https://x/a"), ("b", "https://x/b"), ("c", "https://x/c")])
+    with pytest.raises(RuntimeError, match="boom"):
+        mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert syn.stored == ["b"]
+
+
+def test_workflow_keeps_conflicting_tool_rows_out_of_the_upload(tmp_path, env, monkeypatch):
+    real = uw._load
+    seen = {}
+
+    def fake_links(argv):
+        pending = pd.read_csv(argv[argv.index("-m") + 1])
+        for path in pending["File Paths"]:
+            df = pd.read_csv(path, dtype=str, keep_default_na=False)
+            df["ToolView_id"] = [f"syn{i + 1}" for i in range(len(df))]
+            df.loc[df["Tool Name"] == "tool0", "ToolView_id"] = ""  # skipped: conflict
+            df.to_csv(path, index=False)
+        return [{"file": pending["File Paths"][0], "name": "tool0", "homepage": "http://x", "existing_id": "syn9",
+                 "existing_type": "Folder", "existing_url": None, "message": "conflict"}]
+
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=fake_links)
+                        if f == "create_entity_links.py" else real(f))
+    code, state = run(tmp_path, "ToolView", "--execute")
+    assert code == 2  # finished with dropped rows
+    assert [r["name"] for r in state["dropped_rows"]] == ["tool0"]
+    assert state["dropped_rows"][0]["reason"] == "tool conflict"
+    links = tmp_path / "out" / "04_links"
+    assert pd.read_csv(links / "tool_conflicts.csv")["existing_id"].tolist() == ["syn9"]
+    uploaded = pd.concat(pd.read_csv(p, dtype=str, keep_default_na=False)
+                         for p in pd.read_csv(state["stages"]["links"]["outputs"]["paths_csv"])["File Paths"])
+    assert "tool0" not in uploaded["Tool Name"].tolist() and (uploaded["ToolView_id"] != "").all()
+
+
+def test_tool_without_homepage_gets_a_folder_or_reuses_one(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "b"): "syn556"})
+    syn.concrete["syn556"] = "org.sagebionetworks.repo.model.Folder"
+    mod, split, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", " "), ("b", "")])
+    mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert syn.folders == [("a", TOOLS_FOLDER)] and syn.stored == []
+    assert pd.read_csv(split, dtype=str)["ToolView_id"].tolist() == ["syn2001", "syn556"]
+
+
+def test_tool_without_homepage_but_existing_file_is_flagged(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"})
+    syn.urls["syn555"] = "https://x/a"
+    mod, _, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", "")])
+    conflicts = mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert [c["existing_id"] for c in conflicts] == ["syn555"]
+    assert syn.folders == []
 
 
 def test_get_names_reads_text_literally(tmp_path, monkeypatch):
