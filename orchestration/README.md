@@ -95,8 +95,9 @@ bash run_sync.sh              # write the portal tables
 Each script also takes `--output_csv` (default `./final_<resource>_table.csv`; `run_sync.sh` passes `--noprint`, so
 none is written), `-v`, `-m/--manifest_id` and `-t/--portal_table_id`; to compare a dry run to the live table, run
 one directly: `python portal_tables/sync_publications.py --dryrun -o final_publication_table.csv`. The grant, project
-and people syncs are not in `run_sync.sh`; run them directly when the admin RecordSets change:
-`python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun] [--manifest-source recordset]`.
+and people syncs are not in `run_sync.sh`; run them directly when the admin RecordSets change (they read the admin
+RecordSets; `--manifest-source table` reads the legacy manifest tables instead):
+`python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun]`.
 Portal tables: publications `syn21868591`, datasets `syn21897968`, tools `syn26127427`, education `syn51497305`,
 grants `syn21918972`, projects `syn21868602`, people `syn28073190`.
 
@@ -171,8 +172,6 @@ create it.
 
 Remove this section after the first full cycle.
 
-- The admin RecordSet conversion (`migrate_admin_manifests_14.py --execute`) and the switch of
-  `utils.MANIFEST_SOURCE` from `"table"` to `"recordset"` (until then the grant, project and people syncs read the
-  legacy manifest tables unless you pass `--manifest-source recordset`).
+- A real grant, project or people sync from the admin RecordSets.
 - `union_qc.py --regenerate --upload` from the RecordSets.
 - The first curator cycle through Curator.
