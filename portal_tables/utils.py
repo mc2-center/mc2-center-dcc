@@ -275,8 +275,8 @@ def get_args(resource: str) -> argparse.Namespace:
 
 # TODO: check if we still need this function?
 def convert_to_stringlist(col: pd.Series) -> pd.Series:
-    """Convert a string column to a list."""
-    return col.str.replace(", ", ",").str.split(",")
+    """Convert a string column to a list; an empty cell becomes ``[]``, not ``[""]``."""
+    return col.str.replace(", ", ",").str.split(",").map(lambda v: [] if v == [""] else v)
 
 
 # Live portal-table columns that sync scripts intentionally don't populate.
