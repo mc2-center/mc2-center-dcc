@@ -272,11 +272,24 @@ def test_upload_is_refused_while_an_unmerged_manifest_holds_a_key_twice(tmp_path
             mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
             mock.patch.object(utils, "syn_login", return_value=mock.MagicMock()), \
             mock.patch.object(uq, "upload_manifest") as upload:
-        with pytest.raises(SystemExit, match="a key on more than one row"):
+        with pytest.raises(SystemExit, match="an id twice in one grant"):
             uq.regenerate_main(args)
     upload.assert_not_called()
     report = (tmp_path / "out" / "DatasetView" / "report.txt").read_text()
-    assert "duplicate keys (unmerged; --upload is refused while any): 1, e.g. ['syn1']" in report
+    assert "--upload is refused while any): 1" in report
+    conflicts = pd.read_csv(tmp_path / "out" / "DatasetView" / "key_conflicts.csv", dtype=str)
+    assert conflicts[["key", "reason"]].to_dict("records") == [{"key": "syn1", "reason": "same grant twice"}]
+
+
+def test_an_id_in_two_grants_is_a_conflict_only_on_different_names():
+    def frame(names):
+        return pd.DataFrame({"ToolView_id": ["t1", "t1", "t2"], "GrantView Key": ["CA1", "CA2", "CA1"],
+                             "Tool Name": names})
+
+    assert uq.key_conflicts(frame(["A", "A", "B"]), "ToolView", "Tool Name").empty  # one tool under two grants
+    conflicts = uq.key_conflicts(frame(["A", "Z", "B"]), "ToolView", "Tool Name")
+    assert conflicts.to_dict("records") == [
+        {"key": "t1", "grants": "CA1,CA2", "names": "A | Z", "rows": "2", "reason": "different names"}]
 
 
 def test_merge_keeps_comma_terms_whole_and_joins_with_comma_space():
