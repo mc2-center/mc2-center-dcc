@@ -145,7 +145,8 @@ def get_args(argv=None):
         "--upload",
         action="store_true",
         help="Regenerate mode: LIVE WRITE. Store each manifest as a new version of the current manifest file. "
-        "Refused while any merged alias holds different ids in different grants (id_conflicts.csv).",
+        "Refused while any merged alias holds different ids in different grants (id_conflicts.csv), "
+        "or while an unmerged manifest holds a key twice.",
     )
     # legacy mode
     parser.add_argument("-l", nargs="+", help="Legacy mode: Synapse table IDs to query.")
@@ -532,6 +533,10 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     corrections.to_csv(out_dir / "key_corrections.csv", index=False)
     conflicts = pd.DataFrame(merge_stats["id_conflicts"], columns=ID_CONFLICT_COLUMNS)
     conflicts.to_csv(out_dir / "id_conflicts.csv", index=False)
+    # merging collapses repeated keys; an unmerged manifest must not hold one twice (it would reach the portal twice)
+    key = f"{component}_id"
+    keys = manifest[key][manifest[key] != ""] if key in manifest.columns else pd.Series(dtype=str)
+    duplicates = sorted(set(keys[keys.duplicated()])) if not merge else []
     lines = [
         f"{component}: union rows={merge_stats['rows_in']}, manifest rows={merge_stats['rows_out']} "
         f"(alias {merge_stats['alias']!r}, {'merged' if merge else 'not merged'}: {merge_stats['merged_groups']} merged groups, {merge_stats['blank_alias']} blank-alias rows kept)",
@@ -539,6 +544,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
         f"{validation['key'].nunique()} rows; all rows kept (D-Q39)",
         f"id conflicts (same alias, different ids; --upload is refused while any): {len(conflicts)}"
         + (f", see {out_dir / 'id_conflicts.csv'}" if len(conflicts) else ""),
+        f"duplicate keys (unmerged; --upload is refused while any): {len(duplicates)}"
+        + (f", e.g. {duplicates[:5]}" if duplicates else ""),
         f"key corrections: {corrections['status'].value_counts().to_dict() if len(corrections) else 'none'}",
         f"carried columns, rows left blank: {carried or 'none'}",
         f"iconTags from Assay: {tagged}",
@@ -546,7 +553,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     ]
     (out_dir / "report.txt").write_text("\n".join(lines) + "\n")
     return {"component": component, "path": path, "manifest": manifest, "validation": validation,
-            "corrections": corrections, "id_conflicts": conflicts, "lines": lines, "union_stats": union_stats}
+            "corrections": corrections, "id_conflicts": conflicts, "duplicate_keys": duplicates, "lines": lines,
+            "union_stats": union_stats}
 
 
 def upload_manifest(syn, component: str, path, comment: str) -> str:
@@ -599,6 +607,10 @@ def regenerate_main(args, syn=None) -> int:
     if args.upload and conflicted:
         raise SystemExit(f"--upload refused: {', '.join(conflicted)} has rows with the same alias but different ids "
                          f"(id_conflicts.csv under {args.output_dir}); resolve them in the grant tables and regenerate")
+    duplicated = [r["component"] for r in results if r["duplicate_keys"]]
+    if args.upload and duplicated:
+        raise SystemExit(f"--upload refused: {', '.join(duplicated)} has a key on more than one row "
+                         f"(report.txt under {args.output_dir}); fix the grant RecordSets and regenerate")
     for result in results:
         if args.upload:
             syn = syn or utils.syn_login()

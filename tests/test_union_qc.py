@@ -261,6 +261,24 @@ def test_upload_is_refused_while_id_conflicts_exist(tmp_path, mapping_csv):
     upload.assert_not_called()
 
 
+def test_upload_is_refused_while_an_unmerged_manifest_holds_a_key_twice(tmp_path, mapping_csv):
+    import merge_tables
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")], "CA100002": [_row("syn1", "A")]})
+    union, stats = merge_tables.build_union_from_dir("DatasetView", str(root))
+    args = uq.get_args(["--regenerate", "--components", "DatasetView", "--merge-components",
+                        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--upload"])
+    args.carry_columns = []
+    with mock.patch.object(merge_tables, "list_grant_projects", return_value=["syn1"]), \
+            mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
+            mock.patch.object(utils, "syn_login", return_value=mock.MagicMock()), \
+            mock.patch.object(uq, "upload_manifest") as upload:
+        with pytest.raises(SystemExit, match="a key on more than one row"):
+            uq.regenerate_main(args)
+    upload.assert_not_called()
+    report = (tmp_path / "out" / "DatasetView" / "report.txt").read_text()
+    assert "duplicate keys (unmerged; --upload is refused while any): 1, e.g. ['syn1']" in report
+
+
 def test_merge_keeps_comma_terms_whole_and_joins_with_comma_space():
     mapping = pd.DataFrame([
         ("PublicationView", "Publication Alias", "first", "aliasColumn"),
