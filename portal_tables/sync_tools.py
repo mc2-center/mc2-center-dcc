@@ -50,6 +50,13 @@ def clean_table(df: pd.DataFrame, live_types: dict[str, str]) -> pd.DataFrame:
     if "iconTags" not in df.columns:
         df["iconTags"] = ""
 
+    # The manifest holds a JSON boolean (true/false); the portal column is a string showing True/False.
+    present = "ToolPackageDependenciesPresent"
+    if present in df.columns:
+        df[present] = df[present].map(
+            lambda v: str(v).capitalize() if str(v).lower() in ("true", "false") else v
+        )
+
     portal = crosswalk.to_portal(df, "ToolView", live_types)
 
     # Drop repeated values within each list cell, keeping first-seen order.

@@ -92,7 +92,7 @@ def get_args(argv=None):
     parser = argparse.ArgumentParser(description="Migrate an admin manifest (Grant, Project, PersonView) to a RecordSet")
     parser.add_argument("--component", required=True, choices=COMPONENTS)
     parser.add_argument("--source", help="Synapse ID of the source table (default: utils.CONFIG manifest of the component)")
-    parser.add_argument("--schema-version", default="14.1.1",
+    parser.add_argument("--schema-version", default="14.1.2",
                         help="registered MC2Center-<Component>-<version> schema to bind (default: %(default)s)")
     parser.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
     parser.add_argument("--out-dir", help="default: output/migration_14/admin/<component>")
@@ -137,10 +137,10 @@ def to_labels(source: pd.DataFrame, component: str) -> pd.DataFrame:
 
 def build_normalizer(component: str, overrides=None, ref=None) -> "value_maps.Normalizer":
     """The grant migration's normalizer plus a case-insensitive map for each schema enum that has no
-    ``all_valid_values.csv`` category, and for each boolean (``PortalDisplay``: ``TRUE`` -> ``true``)."""
+    ``all_valid_values.csv`` category."""
     normalizer = value_maps.Normalizer.for_component(component, overrides, ref=ref)
     for column, prop in grants.load_schema(component, ref)["properties"].items():
-        enum = ["false", "true"] if prop.get("type") == "boolean" else prop.get("enum") or prop.get("items", {}).get("enum")
+        enum = prop.get("enum") or prop.get("items", {}).get("enum")
         if enum and column not in normalizer.enum_maps:
             normalizer.enum_maps[column] = value_maps.EnumMap(enum)
     return normalizer

@@ -133,3 +133,11 @@ def test_education_14_and_13_give_same_output():
 def test_education_license_list_when_live_is_list():
     live = _live("EducationalResource", publicationId="STRING", license="STRING_LIST")
     assert _edu_out(_edu_14(), live).iloc[0]["license"] == ["CC-BY-4.0"]
+
+
+@pytest.mark.parametrize("cell,expected", [("true", "True"), ("FALSE", "False"), ("True", "True"), ("", "")])
+def test_tool_package_dependencies_present_shows_True_False_on_the_portal(cell, expected):
+    df = _tool_14()
+    df["Tool Package Dependencies Present"] = cell
+    out = _tool_out(df, _live("ToolView"))
+    assert out["toolPackageDependenciesPresent"].tolist() == [expected]

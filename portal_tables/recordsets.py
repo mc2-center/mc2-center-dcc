@@ -404,6 +404,18 @@ def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
     return entity.version_number, list(entity.upsert_keys or [])
 
 
+def bound_schema_uri(syn, rs_id: str) -> str | None:
+    """The JSON schema URI bound to the RecordSet (``MC2Center-<component>-<version>``), or None."""
+    binding = RecordSet(id=rs_id).get_schema(synapse_client=syn)
+    info = getattr(binding, "json_schema_version_info", None)
+    return getattr(info, "id", None)
+
+
+def bind_schema(syn, rs_id: str, uri: str) -> None:
+    """Bind ``uri`` to the RecordSet. It does not re-validate the stored version; a Grid export does."""
+    RecordSet(id=rs_id).bind_schema(json_schema_uri=uri, enable_derived_annotations=False, synapse_client=syn)
+
+
 def find_recordset(syn, folder_id: str, component: str) -> str | None:
     """ID of ``MC2Center_<component>_RecordSet`` among the folder's children, or None."""
     return operations.find_entity_id(
@@ -1392,6 +1404,7 @@ def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, r
                  retry_note: str = "the next run replays it") -> list[int]:
     """Write ``csv_path`` through a Grid session behind a write-log ``pending`` row.
 
+    With no ``csv_path`` the session only exports (:func:`export_via_grid`, a re-validation).
     ``base`` is the RecordSet version the content was computed against. Logs
     ``start``, one ``written`` row per exported version, then ``done``, and
     returns the versions created. Raises :class:`WriteRefused` (nothing
@@ -1423,7 +1436,10 @@ def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, r
             raise WriteRefused("retry", (
                 f"{rs_id} moved from v{base} to v{now_latest} before the write; nothing written, "
                 f"{retry_note}"))
-        write_via_grid(syn, rs_id, csv_path, on_version=on_version)
+        if csv_path is None:
+            export_via_grid(syn, rs_id, on_version=on_version)
+        else:
+            write_via_grid(syn, rs_id, csv_path, on_version=on_version)
         write_log.finish(rs_id, base, run_id, principal)
     except WriteRefused:
         raise

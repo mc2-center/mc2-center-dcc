@@ -168,6 +168,9 @@ def load_enum_maps(component: str, rejected: list | None = None, ref: str | None
         properties = json.load(fh)["properties"]
     maps = {}
     for column, prop in properties.items():
+        if prop.get("type") == "boolean":  # a JSON boolean: ``TRUE`` -> ``true``
+            maps[column] = EnumMap(["false", "true"])
+            continue
         enum = prop.get("enum") or prop.get("items", {}).get("enum")
         if not enum:
             continue

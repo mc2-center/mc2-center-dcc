@@ -27,7 +27,7 @@ from synapseclient.models import File, Table
 
 logger = logging.getLogger(__name__)
 
-MODEL_REF = "v14.1.1"
+MODEL_REF = "v14.1.2"
 RAW = f"https://raw.githubusercontent.com/mc2-center/data-models/{MODEL_REF}"
 ALL_VALID_VALUES_URL = f"{RAW}/all_valid_values.csv"
 

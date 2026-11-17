@@ -16,8 +16,8 @@ def _header(path):
 
 
 def test_model_ref_pinned():
-    assert mc.MODEL_REF == "v14.1.1"
-    assert mc.RAW.endswith("/v14.1.1")
+    assert mc.MODEL_REF == "v14.1.2"
+    assert mc.RAW.endswith("/v14.1.2")
 
 
 def test_fixture_set_is_all_33_templates():

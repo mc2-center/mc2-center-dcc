@@ -49,6 +49,10 @@ class FakeSynapse:
         self.pubmed_authors = {}      # PMID -> author list PubMed returns
         self.pubmed_calls = []
         self.pubmed_failed = set()    # PMIDs whose request fails
+        self.bound = {}               # recordset id -> bound schema URI (default: the current one)
+        self.binds = []               # (recordset id, URI) of every bind_schema call
+        self.exports = 0
+        self.export_fails = False
 
     def fetch_authors(self, pmids, cache_dir=None, failed=None, **kw):
         self.pubmed_calls.append((list(pmids), cache_dir))
@@ -125,6 +129,19 @@ class FakeSynapse:
             on_version(len(self.rs[rs_id]))
         return [len(self.rs[rs_id])]
 
+    def export(self, syn, rs_id, on_version=None, **kw):
+        if self.export_fails:
+            raise RuntimeError("grid down")
+        self.exports += 1
+        self.rs[rs_id].append(self.rs[rs_id][-1].copy())  # a re-validating export: same data, new version
+        if on_version:
+            on_version(len(self.rs[rs_id]))
+        return [len(self.rs[rs_id])]
+
+    def bind(self, syn, rs_id, uri):
+        self.binds.append((rs_id, uri))
+        self.bound[rs_id] = uri
+
     def validation(self, syn, rs_id, version, loc, keys):
         return pd.DataFrame({"key": keys, "row_index": range(len(keys)), "is_valid": [True] * len(keys),
                              "validation_error_message": [""] * len(keys), "all_validation_messages": [""] * len(keys)})
@@ -151,6 +168,10 @@ def run(tmp_path, fake, *extra, execute=False, log=None, run_id="r1", component=
          mock.patch.object(mig.recordsets, "read_recordset", fake.read), \
          mock.patch.object(mig.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(mig.recordsets, "get_validation", fake.validation), \
+         mock.patch.object(mig.recordsets, "bound_schema_uri",
+                           lambda syn, rs_id: fake.bound.get(rs_id, f"MC2Center-{component}-14.1.2")), \
+         mock.patch.object(mig.recordsets, "bind_schema", fake.bind), \
+         mock.patch.object(mig.recordsets, "export_via_grid", fake.export), \
          mock.patch.object(mig.recordsets, "SynapseTableWriteLog", lambda syn, tid: rs.CsvWriteLog(log)), \
          mock.patch.object(mig.recordsets, "principal_id", lambda syn: "42"), \
          mock.patch.object(mig.merge_tables, "build_union", lambda syn, comp, grants: fake.union(grants)):
@@ -444,7 +465,7 @@ def test_execute_creates_folder_and_recordset_loads_through_grid_and_logs(tmp_pa
     kw = fake.created[0]
     assert kw["create_grid"] is False and kw["bind_schema_to_record_set"] is True
     assert kw["record_set_name"] == "MC2Center_PublicationView_RecordSet"
-    assert kw["upsert_keys"] == [KEY] and kw["schema_uri"] == "MC2Center-PublicationView-14.1.1"
+    assert kw["upsert_keys"] == [KEY] and kw["schema_uri"] == "MC2Center-PublicationView-14.1.2"
     assert kw["project_id"] == "synP1" and kw["folder_id"] == fake.folders[("synP1", "publications")]
     rs_id = next(iter(fake.rs))
     assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
@@ -543,6 +564,65 @@ def test_a_run_that_failed_after_the_export_is_verified_not_skipped_on_rerun(tmp
     assert log.verified_versions(rs_id) == {2}
     code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")
     assert status_of(rep) == "already_migrated"
+
+
+OLD_URI, NEW_URI = "MC2Center-PublicationView-14.1.1", "MC2Center-PublicationView-14.1.2"
+
+
+def migrated_but_bound_to_the_old_schema(tmp_path, fake, verified=True):
+    run(tmp_path, fake, execute=True, run_id="r1")
+    rs_id = next(iter(fake.rs))
+    if not verified:  # as after a run that died before logging ``verified``
+        log_path = tmp_path / "log.csv"
+        lines = log_path.read_text().splitlines(keepends=True)
+        log_path.write_text("".join(line for i, line in enumerate(lines) if i == 0 or "verified" not in line))
+    fake.bound[rs_id] = OLD_URI
+    return rs_id
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_execute_rebinds_and_re_exports_a_recordset_bound_to_another_schema_version(tmp_path, verified):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, verified)
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "migrated"
+    assert fake.binds == [(rs_id, NEW_URI)] and fake.exports == 1 and len(fake.writes) == 1
+    assert f"re-bound from {OLD_URI} to {NEW_URI}, re-exported as v3" in (rep / "CA1" / "summary.txt").read_text()
+    log = rs.CsvWriteLog(tmp_path / "log.csv")
+    assert log.pipeline_map(rs_id) == {2: 1, 3: 2} and 3 in log.verified_versions(rs_id)
+    assert not log.unresolved_pending(rs_id)
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")  # now bound to the new version
+    assert status_of(rep) == "already_migrated" and fake.exports == 1
+
+
+def test_a_rebind_is_refused_when_the_recordset_was_edited_since_the_last_pipeline_version(tmp_path):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake)
+    fake.rs[rs_id].append(pd.DataFrame({KEY: ["someone else"]}))  # a contributor wrote v3
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "failed" and fake.binds == [] and fake.exports == 0
+    assert "v3 is newer than the last pipeline version v2" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def test_a_failed_re_export_restores_the_old_binding_so_a_rerun_rebinds(tmp_path):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake)
+    fake.export_fails = True
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "failed" and fake.binds == [(rs_id, NEW_URI), (rs_id, OLD_URI)]
+    assert not rs.CsvWriteLog(tmp_path / "log.csv").unresolved_pending(rs_id)
+    fake.export_fails = False
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")
+    assert status_of(rep) == "migrated" and fake.exports == 1 and fake.bound[rs_id] == NEW_URI
+
+
+def test_dry_run_reports_a_rebind_and_writes_nothing(tmp_path):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake)
+    code, rep = run(tmp_path, fake, out="out2", run_id="r2")
+    text = (rep / "CA1" / "summary.txt").read_text()
+    assert status_of(rep) == "dryrun" and f"would re-bind {rs_id} from {OLD_URI} to {NEW_URI}" in text
+    assert fake.binds == [] and fake.exports == 0
 
 
 def test_verified_and_created_rows_are_neither_versions_nor_pending_closers(tmp_path):
