@@ -118,7 +118,7 @@ def add_missing_info(
         grant_names = []
         themes = []
         consortia = []
-        for g in row["GrantViewKey"].split(","):
+        for g in utils.split_cell(row["GrantViewKey"]):
             if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
                     grants[grants.grantNumber == g]["grantName"].values[0]

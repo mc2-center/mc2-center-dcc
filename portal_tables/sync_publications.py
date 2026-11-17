@@ -44,7 +44,7 @@ def add_missing_info(
     for col in new_cols:
         pubs[col] = ""
         for i, row in pubs.iterrows():
-            n = row["GrantViewKey"].split(",")
+            n = utils.split_cell(row["GrantViewKey"])
             extracted = []
             for g in n:
                 if len(grants[grants.grantNumber == g][col].values) > 0:
