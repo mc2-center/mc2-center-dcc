@@ -28,6 +28,13 @@ def test_grant_projects_include_the_affiliate_project():
         assert mt.list_grant_projects(mock.MagicMock()) == ["syn1", "syn2", "syn52963211"]
 
 
+def test_a_project_shared_by_two_grants_is_listed_once():
+    table = mock.MagicMock()
+    table.query.return_value = pd.DataFrame({"grantId": ["syn1", "syn2", "syn1"]})  # a renewal keeps its project
+    with mock.patch.object(mt, "Table", return_value=table):
+        assert mt.list_grant_projects(mock.MagicMock()) == ["syn1", "syn2", "syn52963211"]
+
+
 def test_grant_projects_skip_nan_and_blank_ids():
     table = mock.MagicMock()
     table.query.return_value = pd.DataFrame({"grantId": ["syn1", float("nan"), None, "  ", "syn2"]})
