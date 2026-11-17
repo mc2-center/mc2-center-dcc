@@ -54,3 +54,11 @@ def load_script(relpath, name):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(autouse=True)
+def _clear_consortium_cache():
+    """utils reads the Consortium table once per process; tests mock it per test."""
+    import utils
+
+    utils._CONSORTIUM_ROWS.clear()

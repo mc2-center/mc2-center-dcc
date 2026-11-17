@@ -2,6 +2,7 @@
 
 import csv
 import json
+import logging
 import os
 import argparse
 from getpass import getpass
@@ -12,6 +13,8 @@ from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
+
+logger = logging.getLogger(__name__)
 
 
 # Manifest and portal table synIDs of each resource type.
@@ -44,14 +47,39 @@ MANIFEST_SOURCE = "table"
 MANIFEST_SOURCES = ("table", "recordset")
 
 
+_CONSORTIUM_ROWS: dict[str, pd.DataFrame] = {}  # table ID -> usable Consortium rows, one read per process
+
+
+def _blank(value) -> bool:
+    return not isinstance(value, str) or not value.strip()
+
+
+def _consortium_rows(syn: Synapse) -> pd.DataFrame:
+    """Usable rows of the Consortium table, read once per process (read-only).
+
+    Rows with a blank ``consortiumDisplayName`` (or, when the table has the
+    column, a blank ``consortiumId``) are dropped with a warning.
+    """
+    table_id = CONFIG["consortium"]["table"]
+    if table_id not in _CONSORTIUM_ROWS:
+        rows = Table(id=table_id).query(
+            query=f"SELECT * FROM {table_id}",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
+        )
+        required = [c for c in ("consortiumDisplayName", "consortiumId") if c in rows.columns]
+        bad = rows[required].map(_blank).any(axis=1)
+        for _, row in rows[bad].iterrows():
+            logger.warning(
+                "Dropping Consortium row with a blank name or ID: %s", row[required].to_dict()
+            )
+        _CONSORTIUM_ROWS[table_id] = rows[~bad].reset_index(drop=True)
+    return _CONSORTIUM_ROWS[table_id]
+
+
 def load_consortium_keys(syn: Synapse) -> dict[str, str]:
     """``{display name: consortiumId}`` from the Consortium table (read-only)."""
-    table_id = CONFIG["consortium"]["table"]
-    rows = Table(id=table_id).query(
-        query=f"SELECT consortiumDisplayName, consortiumId FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    rows = _consortium_rows(syn)
     return dict(zip(rows["consortiumDisplayName"], rows["consortiumId"]))
 
 
@@ -309,11 +337,7 @@ def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
     know raises ``ValueError``. Order follows ``ids``.
     """
     table_id = CONFIG["consortium"]["table"]
-    rows = Table(id=table_id).query(
-        query=f"SELECT * FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    rows = _consortium_rows(syn)
     if "consortiumId" in rows.columns:
         lookup = dict(zip(rows["consortiumId"], rows["consortiumDisplayName"]))
     else:
@@ -356,13 +380,7 @@ def split_cell(value) -> list[str]:
 
 def known_consortium_names(syn: Synapse) -> set[str]:
     """Display names in the Consortium table (read-only)."""
-    table_id = CONFIG["consortium"]["table"]
-    rows = Table(id=table_id).query(
-        query=f"SELECT consortiumDisplayName FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
-    return set(rows["consortiumDisplayName"])
+    return set(_consortium_rows(syn)["consortiumDisplayName"])
 
 
 def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[str]]:

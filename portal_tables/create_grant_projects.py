@@ -208,7 +208,7 @@ def create_grant_projects(syn, grants):
 
     A project that already exists under the grant's name (left by an earlier
     run that failed midway) is reused, and only the missing parts are added.
-    Returns ``{GrantViewId: (project_id, team_id)}``; grants that could not
+    Returns ``{GrantNumber: (project_id, team_id)}``; grants that could not
     be created map to ``("None", "None")``.
     """
 
@@ -234,11 +234,11 @@ def create_grant_projects(syn, grants):
                 raise synapseclient.core.exceptions.SynapseHTTPError(
                     f"No team for {name}"
                 )
-            grant_info_dict[row["GrantViewId"]] = (project_id, team_id)
+            grant_info_dict[row["GrantNumber"]] = (project_id, team_id)
         except synapseclient.core.exceptions.SynapseHTTPError as err:
             logger.error("Grant creation failed, skipping: %s (%s)", name, err)
             print(f"Skipping: {name}")
-            grant_info_dict[row["GrantViewId"]] = ("None", "None")
+            grant_info_dict[row["GrantNumber"]] = ("None", "None")
 
     return grant_info_dict
 
@@ -330,6 +330,40 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     )
     is_new = ~manifest["GrantNumber"].isin(curr_portal.grantNumber.to_list())
 
+    # A new-looking grant that cannot be told apart from an existing one, or
+    # that has no number, would get a duplicate project or a bare KeyError.
+    # Fail before anything is created (also on a dry run).
+    def _text(value):
+        return "" if pd.isna(value) else str(value).strip()
+
+    def _describe(row):
+        name = _text(row["GrantName"]) if "GrantName" in row.index else ""
+        return (f"GrantViewId={_text(row['GrantViewId'])!r}, "
+                f"GrantNumber={_text(row['GrantNumber'])!r}"
+                + (f", GrantName={name!r}" if name else ""))
+
+    new_rows = manifest[is_new]
+    blank = new_rows[new_rows["GrantNumber"].map(_text) == ""]
+    portal_views = {_text(v) for v in curr_portal.grantViewId} - {""}
+    renumbered = new_rows[
+        (new_rows["GrantNumber"].map(_text) != "")
+        & new_rows["GrantViewId"].map(_text).isin(portal_views)
+    ]
+    problems = []
+    if not blank.empty:
+        problems.append(
+            "GrantNumber is required; fill it in for: "
+            + "; ".join(_describe(r) for _, r in blank.iterrows())
+        )
+    if not renumbered.empty:
+        problems.append(
+            "the grant number changed for an existing grant (its GrantViewId is already "
+            "in the portal table); reconcile the manifest or the portal table by hand for: "
+            + "; ".join(_describe(r) for _, r in renumbered.iterrows())
+        )
+    if problems:
+        raise ValueError(" | ".join(problems))
+
     # Grants already on the portal keep their portal values, so an unknown
     # consortium there is only worth a warning. New grants must resolve.
     manifest["consortium"] = ""
@@ -347,7 +381,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     new_grants = manifest[is_new]
     failed_grants = []
     grant_info_dict = {
-        grant: ("None", "None") for grant in new_grants["GrantViewId"].to_list() if grant
+        grant: ("None", "None") for grant in new_grants["GrantNumber"].to_list() if grant
     }
 
     manifest["grantId"] = ""
@@ -360,7 +394,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         # Add new Grant info to the current portal rows (which win on conflict).
         frame = (
             pd.concat([curr, manifest])
-            .drop_duplicates(subset=["GrantViewId"])
+            .drop_duplicates(subset=["GrantNumber"])
             .reset_index(drop=True)
         )
         # Flatten list-like cells; add Project and Team info to new rows.
@@ -368,7 +402,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
             frame[col] = frame[col].map(_list_to_string)
         for idx, row in frame.iterrows():
             if row["grantId"] == "":  # If row was added via new manifest
-                grantId, teamId = info[row["GrantViewId"]]
+                grantId, teamId = info[row["GrantNumber"]]
                 frame.at[idx, "grantId"] = grantId
                 frame.at[idx, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
                 frame.at[idx, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
@@ -401,7 +435,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         # permanent "None" row and never be retried.
         for g in failed_grants:
             logger.error("Grant %s was not created; leaving it out of the table", g)
-        new_manifest = new_manifest[~new_manifest["GrantViewId"].isin(failed_grants)]
+        new_manifest = new_manifest[~new_manifest["GrantNumber"].isin(failed_grants)]
         new_manifest = new_manifest.reset_index(drop=True)
     new_manifest.attrs["failed_grants"] = failed_grants
 
