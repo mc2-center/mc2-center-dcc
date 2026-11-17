@@ -20,8 +20,9 @@ Before ``links`` the driver (a) excludes split files whose grant has no target
 folder (every type, logged), (b) for DatasetView, reuses Dataset entities that
 already exist in the central project for a row's GEO/SRA accession instead of
 creating a second one (only an indexed Dataset for the same grant; see
-``reuse_existing_datasets``), then (c) drops rows whose link column is empty
-(logged), dropping any split file left empty. The dropped rows and excluded
+``reuse_existing_datasets``), then (c) drops DatasetView rows whose link column
+is empty (logged), dropping any split file left empty; ToolView rows with an empty
+homepage are kept (they get a Folder in the shared tools folder). The dropped rows and excluded
 files are listed in run.json (``dropped_rows``, ``unresolved_folder_files``).
 
 Each stage starts with an empty directory (``--from-stage`` keeps the earlier
@@ -278,7 +279,10 @@ def grant_of(path):
 
 def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
     """Drop rows with an empty link column from each split file (rewritten in
-    place); drop files left empty from `paths`. Returns the filtered paths."""
+    place); drop files left empty from `paths`. Returns the filtered paths.
+    ToolView rows are kept: a tool without a homepage gets a Folder."""
+    if link_column == LINK_COLUMNS["ToolView"][0]:
+        return paths
     keep = []
     for _, prow in paths.iterrows():
         df = read_csv(prow["File Paths"])
