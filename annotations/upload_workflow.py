@@ -22,7 +22,9 @@ already exist in the central project for a row's GEO/SRA accession instead of
 creating a second one (only an indexed Dataset for the same grant; see
 ``reuse_existing_datasets``), then (c) drops DatasetView rows whose link column
 is empty (logged), dropping any split file left empty; ToolView rows with an empty
-homepage are kept (they get a Folder in the shared tools folder). The dropped rows and excluded
+homepage are kept (they get a Folder in the shared tools folder). A tool row whose name
+conflicts with a different entity in the shared tools folder is skipped by the links stage, listed
+in ``04_links/tool_conflicts.csv`` and dropped like an empty-link row. The dropped rows and excluded
 files are listed in run.json (``dropped_rows``, ``unresolved_folder_files``).
 
 Each stage starts with an empty directory (``--from-stage`` keeps the earlier
@@ -300,6 +302,31 @@ def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
     return pd.DataFrame(keep, columns=paths.columns)
 
 
+CONFLICT_COLUMNS = ["file", "name", "homepage", "existing_id", "existing_type", "existing_url", "message"]
+
+
+def drop_tool_conflict_rows(paths: pd.DataFrame, pk, conflicts: list, report: list):
+    """Drop the tool rows create_entity_links skipped for a conflict (they come back with
+    a blank ID) from each split file (rewritten in place), so they never reach the upload;
+    drop files left empty. Returns the filtered paths."""
+    if not conflicts:
+        return paths
+    keep = []
+    for _, prow in paths.iterrows():
+        df = read_csv(prow["File Paths"])
+        blank = df[pk].str.strip() == ""
+        for i in df.index[blank]:
+            label = df.iloc[i].get("Tool Name") or f"row {i}"
+            logger.warning("Dropping %s row %d (%s): tool conflict in the tools folder", Path(prow["File Paths"]).name, i, label)
+            report.append({"file": prow["File Paths"], "row": int(i), "name": label, "reason": "tool conflict"})
+        df = df[~blank]
+        if df.empty:
+            continue
+        df.to_csv(prow["File Paths"], index=False)
+        keep.append(prow)
+    return pd.DataFrame(keep, columns=paths.columns)
+
+
 def reuse_existing_datasets(syn, paths: pd.DataFrame, pk, link_column, dir_: Path, report: list):
     """Split each file into rows whose accession already has an indexed Dataset
     (IDs filled in, kept aside in dir_/reused/) and the rest (left in the file
@@ -466,10 +493,17 @@ def stage_links(run, args, syn=None):
         outputs["paths_csv"] = write_paths_csv(final, d / "paths.csv")
         return "skipped", outputs, "dry run: link entities not created (needs --execute)"
 
+    conflicts = []
     if len(paths):
         # created_ids.csv lets an interrupted run resume without re-storing finished rows
-        call_main(_load("create_entity_links.py").main,
-                  ["-m", pending, "-t", args.type, "--created-ids", str(d / "created_ids.csv")])
+        conflicts = call_main(_load("create_entity_links.py").main,
+                              ["-m", pending, "-t", args.type, "--created-ids", str(d / "created_ids.csv")]) or []
+    paths = drop_tool_conflict_rows(paths, pk, conflicts, dropped)
+    run.state["dropped_rows"] = dropped
+    pd.DataFrame(dropped, columns=["file", "row", "name", "reason"]).to_csv(d / "dropped_rows.csv", index=False)
+    pd.DataFrame(conflicts, columns=CONFLICT_COLUMNS).to_csv(d / "tool_conflicts.csv", index=False)
+    outputs["tool_conflicts"] = len(conflicts)
+    outputs["dropped"] = len(dropped)
     final = merge_reused(paths, original, d, d / "final")
     outputs["paths_csv"] = write_paths_csv(final, d / "paths.csv")
     return "done", outputs, None

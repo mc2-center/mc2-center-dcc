@@ -737,10 +737,62 @@ def test_tool_same_name_other_url_is_flagged_not_overwritten(tmp_path, monkeypat
     syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"})
     syn.urls["syn555"] = "https://old/a"
     mod, split, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", "https://x/a")])
-    with pytest.raises(ValueError, match=r"'a'.*syn555.*https://old/a.*https://x/a"):
-        mod.main(["-m", str(pending), "-t", "ToolView"])
+    with pytest.raises(mod.ToolConflict, match=r"'a'.*syn555.*https://old/a.*https://x/a"):
+        mod.store_tool_entity(syn, "a", "https://x/a", TOOLS_FOLDER)
     assert syn.stored == [] and syn.updated == []
-    assert pd.read_csv(split, dtype=str)["ToolView_id"].isna().all()
+
+
+def test_tool_conflict_skips_only_that_row(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "b"): "syn555"})
+    syn.urls["syn555"] = "https://old/b"
+    mod, split, pending = tool_link_run(
+        tmp_path, monkeypatch, syn, [("a", "https://x/a"), ("b", "https://x/b"), ("c", "https://x/c")])
+    ids = tmp_path / "created_ids.csv"
+    conflicts = mod.main(["-m", str(pending), "-t", "ToolView", "--created-ids", str(ids)])
+    assert syn.stored == ["a", "c"] and syn.updated == []
+    # the skipped row stays blank and does not shift the IDs of the rows after it
+    assert pd.read_csv(split, dtype=str, keep_default_na=False)["ToolView_id"].tolist() == ["syn1001", "", "syn1002"]
+    assert len(pd.read_csv(ids)) == 2  # not recorded, so a rerun retries it
+    assert [(c["name"], c["existing_id"], c["existing_url"], c["homepage"]) for c in conflicts] == \
+        [("b", "syn555", "https://old/b", "https://x/b")]
+    assert conflicts[0]["file"] == str(split) and "https://old/b" in conflicts[0]["message"]
+
+
+def test_non_conflict_error_still_stops_after_a_conflict(tmp_path, monkeypatch):
+    syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"}, fail_on="c")
+    syn.urls["syn555"] = "https://old/a"
+    mod, split, pending = tool_link_run(
+        tmp_path, monkeypatch, syn, [("a", "https://x/a"), ("b", "https://x/b"), ("c", "https://x/c")])
+    with pytest.raises(RuntimeError, match="boom"):
+        mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert syn.stored == ["b"]
+
+
+def test_workflow_keeps_conflicting_tool_rows_out_of_the_upload(tmp_path, env, monkeypatch):
+    real = uw._load
+    seen = {}
+
+    def fake_links(argv):
+        pending = pd.read_csv(argv[argv.index("-m") + 1])
+        for path in pending["File Paths"]:
+            df = pd.read_csv(path, dtype=str, keep_default_na=False)
+            df["ToolView_id"] = [f"syn{i + 1}" for i in range(len(df))]
+            df.loc[df["Tool Name"] == "tool0", "ToolView_id"] = ""  # skipped: conflict
+            df.to_csv(path, index=False)
+        return [{"file": pending["File Paths"][0], "name": "tool0", "homepage": "http://x", "existing_id": "syn9",
+                 "existing_type": "Folder", "existing_url": None, "message": "conflict"}]
+
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=fake_links)
+                        if f == "create_entity_links.py" else real(f))
+    code, state = run(tmp_path, "ToolView", "--execute")
+    assert code == 2  # finished with dropped rows
+    assert [r["name"] for r in state["dropped_rows"]] == ["tool0"]
+    assert state["dropped_rows"][0]["reason"] == "tool conflict"
+    links = tmp_path / "out" / "04_links"
+    assert pd.read_csv(links / "tool_conflicts.csv")["existing_id"].tolist() == ["syn9"]
+    uploaded = pd.concat(pd.read_csv(p, dtype=str, keep_default_na=False)
+                         for p in pd.read_csv(state["stages"]["links"]["outputs"]["paths_csv"])["File Paths"])
+    assert "tool0" not in uploaded["Tool Name"].tolist() and (uploaded["ToolView_id"] != "").all()
 
 
 def test_tool_without_homepage_gets_a_folder_or_reuses_one(tmp_path, monkeypatch):
@@ -756,8 +808,8 @@ def test_tool_without_homepage_but_existing_file_is_flagged(tmp_path, monkeypatc
     syn = LinkSyn(existing={(TOOLS_FOLDER, "a"): "syn555"})
     syn.urls["syn555"] = "https://x/a"
     mod, _, pending = tool_link_run(tmp_path, monkeypatch, syn, [("a", "")])
-    with pytest.raises(ValueError, match="syn555"):
-        mod.main(["-m", str(pending), "-t", "ToolView"])
+    conflicts = mod.main(["-m", str(pending), "-t", "ToolView"])
+    assert [c["existing_id"] for c in conflicts] == ["syn555"]
     assert syn.folders == []
 
 

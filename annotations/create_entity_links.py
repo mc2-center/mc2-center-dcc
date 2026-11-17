@@ -166,13 +166,22 @@ def store_link(syn, name: str, link: str, parent_id: str) -> str:
     return existing
 
 
+class ToolConflict(ValueError):
+    """A same-named entity in the tools folder that cannot be reused for this tool row."""
+
+    def __init__(self, message, name, homepage, existing_id, existing_type, existing_url):
+        super().__init__(message)
+        self.record = {"name": name, "homepage": homepage, "existing_id": existing_id,
+                       "existing_type": existing_type, "existing_url": existing_url, "message": message}
+
+
 def store_tool_entity(syn, name: str, link: str, parent_id: str) -> str:
     """Create or reuse the one shared entity for a tool in the central tools folder.
 
     With a homepage the entity is a link File; without one it is an empty Folder.
     A same-named entity is reused only if it is the same kind (and, for a File, has
-    the same external URL). Anything else raises ValueError naming the tool, the
-    existing ID and both URLs, so the row fails and nothing is overwritten.
+    the same external URL). Anything else raises ToolConflict (a ValueError) naming the
+    tool, the existing ID and both URLs; nothing is overwritten.
     """
     link = (link or "").strip()
     existing = syn.findEntityId(name, parent=parent_id)
@@ -189,9 +198,10 @@ def store_tool_entity(syn, name: str, link: str, parent_id: str) -> str:
         return existing
     else:
         url = None
-    raise ValueError(
+    raise ToolConflict(
         f"Cannot create tool {name!r}: {existing} ({concrete}) already exists in {parent_id} "
-        f"with URL {url!r}, but this row has homepage {link!r}"
+        f"with URL {url!r}, but this row has homepage {link!r}",
+        name, link, existing, concrete, url,
     )
 
 
@@ -217,8 +227,12 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
 
 
 def create_links(
-    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None, store=store_link
+    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None, store=store_link,
+    conflicts=None,
 ) -> list[tuple[str, str, str]]:
+    """Store each row's link entity. With a ``conflicts`` list, a ToolConflict skips
+    that row (warning, appended to the list, blank ID, not recorded in created_ids so
+    a rerun retries it); any other error still stops the run."""
 
     done = load_created_ids(created_ids_path)
     path_name_id = []
@@ -231,7 +245,15 @@ def create_links(
             path_name_id.append((p, n, done[key]))
             continue
 
-        id = store(syn, n, l, t)
+        try:
+            id = store(syn, n, l, t)
+        except ToolConflict as e:
+            if conflicts is None:
+                raise
+            logger.warning("%s", e)
+            conflicts.append({"file": p, **e.record})
+            path_name_id.append((p, n, ""))  # blank, so later rows keep their position
+            continue
         record_created_id(created_ids_path, key, id)
         path_name_id.append((p, n, id))
 
@@ -322,6 +344,7 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
 
 
 def main(argv=None):
+    """Returns the ToolView rows skipped for a ToolConflict (blank ID in their manifest)."""
 
     syn = utils.syn_login()
 
@@ -329,6 +352,7 @@ def main(argv=None):
 
     manifest, data, data_type, name, link, target = args.m, args.d, args.t, args.n, args.l, args.p,
     created_ids_path = args.created_ids
+    conflicts = []
 
     if data_type == "DatasetView":
 
@@ -402,14 +426,18 @@ def main(argv=None):
             tools_folder = find_or_create_folder(syn, _TOOLS_FOLDER, _CENTRAL_PROJECT_SYNID)
             pnt = [(p, n, l, tools_folder) for p, n, l, _ in pnt]
             store = store_tool_entity
-        path_name_id = create_links(syn, pnt, created_ids_path, store=store)
+        path_name_id = create_links(syn, pnt, created_ids_path, store=store,
+                                conflicts=conflicts if data_type == "ToolView" else None)
 
+    for c in conflicts:
+        print(f"Skipped tool row: {c['message']}")
     print(f"The following link entities were created:\n{[i for p,n,i in path_name_id]}")
 
     if manifest is not None or data is not None:
         print(f"Adding Synapse IDs to {primary_key} column of {data_type} manifests")
         add_ids_to_manifests(path_name_id, name_column, primary_key)
         print("Manifest(s) have been populated with Synapse IDs for link entities!")
+    return conflicts
 
 if __name__ == "__main__":
     main()
