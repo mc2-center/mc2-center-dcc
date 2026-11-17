@@ -72,7 +72,8 @@ python portal_tables/union_qc.py --regenerate --output-dir output/i6            
 python portal_tables/union_qc.py --regenerate --output-dir output/i6 --upload       # LIVE WRITE
 ```
 
-Builds each component's union from the grants' RecordSets (grants from the Grants table), merges rows by alias key,
+Builds each component's union from the grants' RecordSets (grants from the Grants table), merges rows by alias key
+(publications and datasets only; tools and education keep one row per grant unless `--merge-components` names them),
 fills empty cells, computes `iconTags`, validates against the 14.x JSON Schemas, and writes
 `<output-dir>/<Component>/<Component>_merged_manifest.csv`, `validation.csv`, `validation_counts.csv`,
 `key_corrections.csv`, `id_conflicts.csv`, `report.txt`, plus `<output-dir>/summary.txt`. `--components` limits it.
