@@ -173,3 +173,20 @@ def test_json_keyword_array_round_trips_to_the_portal_string():
     assert parsed.loc[0, "PublicationKeywords"] == items
     joined = mt._join_lists(parsed, "PublicationViewId")
     assert joined.loc[0, "PublicationKeywords"] == ", ".join(items)
+
+
+def test_folder_name_uses_the_per_project_override_else_the_component_folder():
+    assert mt.folder_name("syn9772917", "ToolView") == "tool_curation"
+    assert mt.folder_name("syn9772917", "DatasetView") == "datasets"
+    assert mt.folder_name("synOTHER", "ToolView") == "tools"
+
+
+def test_build_union_looks_for_the_override_folder_under_the_overridden_project():
+    names = []
+
+    def find(**kw):
+        names.append((kw["parent"], kw["name"]))
+
+    with mock.patch.object(mt.operations, "find_entity_id", side_effect=find):
+        mt.build_union(mock.MagicMock(), "ToolView", ["syn9772917", "synOTHER"])
+    assert names == [("syn9772917", "tool_curation"), ("synOTHER", "tools")]

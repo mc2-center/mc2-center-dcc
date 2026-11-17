@@ -932,17 +932,26 @@ def rebind_and_export(syn, rs_id, bound, schema_uri, args, write_log, principal,
     Binding alone does not re-validate the stored version. If the export does not run (or fails), the old
     binding is restored so that a rerun still sees the RecordSet as needing the re-bind.
     """
-    recordsets.bind_schema(syn, rs_id, schema_uri)
+    if bound != schema_uri:  # already bound (a run died before exporting): only the export is missing
+        recordsets.bind_schema(syn, rs_id, schema_uri)
     try:
         return recordsets.write_logged(syn, rs_id, None, write_log, args.run_id, principal, rows, latest,
                                        retry_note="rerun the migration")
     except BaseException:
-        if bound:
+        if bound and bound != schema_uri:
             try:
                 recordsets.bind_schema(syn, rs_id, bound)
             except Exception:
                 logger.exception("%s: could not restore the schema binding %s", rs_id, bound)
         raise
+
+
+def _bound_after_version(syn, rs_id, version, bound_on) -> bool:
+    """True when the schema binding was created after RecordSet ``version``, so nothing validated that version against it."""
+    if pd.isna(bound_on):
+        return False
+    _, modified_on = recordsets.recordset_version_meta(syn, rs_id, version)
+    return bool(pd.notna(modified_on) and modified_on <= bound_on)
 
 
 def migrate_recordset(syn, entry, args, write_log, converted, converted_path, report_dir, summary, list_cols, set_like):
@@ -956,7 +965,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     """
     component, key = args.component, KEYS[args.component]
     stored = recordsets.schema_columns(component) | {key}
-    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or FOLDER_MAP[component])
+    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or merge_tables.folder_name(entry["project"], component))
     rs_id = recordsets.find_recordset(syn, folder_id, component)
     principal = recordsets.principal_id(syn)
     recovered = {}
@@ -978,12 +987,17 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
             version = max(logged)
             base = logged[version]
             schema_uri = f"MC2Center-{component}-{args.schema_version}"
-            bound = recordsets.bound_schema_uri(syn, rs_id)
-            if bound != schema_uri:
+            bound, bound_on = recordsets.schema_binding(syn, rs_id)
+            # A hard kill between the bind and its export leaves the target bound with no version validated against it.
+            bound_after = bound == schema_uri and _bound_after_version(syn, rs_id, version, bound_on)
+            if bound != schema_uri or bound_after:
                 if latest != version:
                     summary.update(status="failed", message=(
                         f"{rs_id} is bound to {bound}, not {schema_uri}, but v{latest} is newer than the last "
-                        f"pipeline version v{version} (edited since); not re-bound, nothing written"))
+                        f"pipeline version v{version} (edited since); not re-bound, nothing written"
+                        if bound != schema_uri else
+                        f"{rs_id} was bound to {schema_uri} after v{version}, but v{latest} is newer than the last "
+                        f"pipeline version (edited since); not re-exported, nothing written"))
                     return
                 try:
                     exported = rebind_and_export(syn, rs_id, bound, schema_uri, args, write_log, principal, len(converted), latest)
@@ -993,9 +1007,11 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
                 if not exported:
                     summary.update(status="failed", message=f"{rs_id}: the re-validating export created no version; nothing to verify")
                     return
+                base_version = version
                 version, base = exported[-1], latest
                 summary["version"] = version
-                note = f"re-bound from {bound} to {schema_uri}, re-exported as v{version}"
+                note = (f"re-exported as v{version} to re-validate against {schema_uri} (bound after v{base_version})"
+                        if bound_after else f"re-bound from {bound} to {schema_uri}, re-exported as v{version}")
             elif version in write_log.verified_versions(rs_id):
                 summary.update(status="already_migrated", message=f"{rs_id} already migrated (v{version} verified)")
                 return
@@ -1070,15 +1086,24 @@ def _noted(summary: dict, absent: list) -> dict:
     return summary
 
 
-def _would_rebind(syn, entry, args):
-    """``(RecordSet ID, bound schema URI)`` when the grant's existing RecordSet is bound to another schema version, else None."""
-    folder_id = operations.find_entity_id(name=entry.get("folder_name") or FOLDER_MAP[args.component],
+def _would_rebind(syn, entry, args, write_log=None):
+    """``(RecordSet ID, bound schema URI or None, re-export only)`` when a dry run would re-bind or re-export the grant's RecordSet, else None.
+
+    ``re-export only`` is set when it is already bound to the target, but after its newest logged version
+    (needs the write log, which a dry run may not have).
+    """
+    folder_id = operations.find_entity_id(name=entry.get("folder_name") or merge_tables.folder_name(entry["project"], args.component),
                                           parent=entry["project"], synapse_client=syn)
     rs_id = recordsets.find_recordset(syn, folder_id, args.component) if folder_id else None
     if rs_id is None:
         return None
-    bound = recordsets.bound_schema_uri(syn, rs_id)
-    return (rs_id, bound) if bound != f"MC2Center-{args.component}-{args.schema_version}" else None
+    bound, bound_on = recordsets.schema_binding(syn, rs_id)
+    if bound != f"MC2Center-{args.component}-{args.schema_version}":
+        return rs_id, bound, False
+    logged = write_log.pipeline_map(rs_id) if write_log is not None else {}
+    if logged and _bound_after_version(syn, rs_id, max(logged), bound_on):
+        return rs_id, bound, True
+    return None
 
 
 def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None,
@@ -1145,9 +1170,14 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         return _noted(summary, absent), converted, source_keys
     if not args.execute:
         summary.update(status="dryrun", message="dry run: nothing written")
-        rebind = _would_rebind(syn, entry, args)
-        if rebind:
-            summary["message"] += f"; would re-bind {rebind[0]} from {rebind[1]} to MC2Center-{component}-{args.schema_version} and re-export it"
+        rebind = _would_rebind(syn, entry, args, write_log)
+        if rebind and rebind[2]:
+            summary["message"] += (f"; would re-export {rebind[0]} to re-validate against {rebind[1]} "
+                                   "(bound after its newest pipeline version)")
+        elif rebind:
+            summary["message"] += (f"; would re-bind {rebind[0]} from {rebind[1]} to MC2Center-{component}-{args.schema_version} and re-export it"
+                                   if rebind[1] else
+                                   f"; would bind {rebind[0]} (no schema bound) to MC2Center-{component}-{args.schema_version} and re-export it")
         return _noted(summary, absent), converted, source_keys
     migrate_recordset(syn, entry, args, write_log, converted, converted_path, report_dir, summary, list_cols, set_like)
     return _noted(summary, absent), converted, source_keys
