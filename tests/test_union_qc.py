@@ -76,6 +76,11 @@ def _regenerate(tmp_path, mapping_csv, grants, **kw):
     return code, manifest, tmp_path / "out" / "DatasetView"
 
 
+def test_tools_are_merged_by_default():
+    assert "ToolView" in uq.DEFAULT_MERGE
+    assert set(uq.get_args(["--regenerate"]).merge_components) >= {"PublicationView", "DatasetView", "ToolView"}
+
+
 def test_no_schematic_subprocess():
     assert not hasattr(uq, "subprocess")
     assert not hasattr(uq, "trim_tables") and not hasattr(uq, "parse_out")
