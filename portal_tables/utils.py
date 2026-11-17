@@ -40,10 +40,9 @@ ADMIN_RECORDSET_FOLDER = "admin_recordsets"
 ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "PersonView"}
 
 # Where the grant, project and people syncs read their manifest: "table" (the
-# legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above).
-# Keep "table" until annotations/migrate_admin_manifests_14.py --execute has
-# run, then change the default here (or pass --manifest-source recordset).
-MANIFEST_SOURCE = "table"
+# legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above,
+# filled by annotations/migrate_admin_manifests_14.py --execute).
+MANIFEST_SOURCE = "recordset"
 MANIFEST_SOURCES = ("table", "recordset")
 
 
@@ -254,7 +253,7 @@ def get_args(resource: str) -> argparse.Namespace:
             default=MANIFEST_SOURCE,
             help=(
                 "Read the legacy manifest table or the admin RecordSet "
-                f"(default: {MANIFEST_SOURCE}). Use recordset only after the admin migration has run. "
+                f"(default: {MANIFEST_SOURCE}). "
                 "-m overrides both."
             ),
         )
@@ -275,8 +274,8 @@ def get_args(resource: str) -> argparse.Namespace:
 
 # TODO: check if we still need this function?
 def convert_to_stringlist(col: pd.Series) -> pd.Series:
-    """Convert a string column to a list."""
-    return col.str.replace(", ", ",").str.split(",")
+    """Convert a string column to a list; an empty cell becomes ``[]``, not ``[""]``."""
+    return col.str.replace(", ", ",").str.split(",").map(lambda v: [] if v == [""] else v)
 
 
 # Live portal-table columns that sync scripts intentionally don't populate.
