@@ -123,7 +123,18 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         logger.info("%s: not stored in the RecordSet, dropped: %s", report_dir.name, extra)
         upload = upload.drop(columns=extra)
     upload = recordsets.parse_upload(upload, list_cols)
-    summary["new_comma_terms"] = len(recordsets.learn_comma_terms(upload, component))
+    # Grid cannot open a RecordSet whose list cell holds an item with a quote or backslash.
+    unsafe = pd.Series(
+        [any(isinstance(v, list) and any('"' in i or "\\" in i for i in v) for v in r)
+         for r in upload.itertuples(index=False)],
+        index=upload.index, dtype=bool)
+    if unsafe.any():
+        report_dir.mkdir(parents=True, exist_ok=True)
+        _write_report(report_dir / "unsafe_list_items.csv", upload[unsafe])
+        upload = upload[~unsafe]
+        summary["unsafe_rows"] = int(unsafe.sum())
+        logger.warning("%s: %d upload row(s) dropped, a list item holds a quote or backslash "
+                       "(unsafe_list_items.csv)", report_dir.name, summary["unsafe_rows"])
 
     folder_id = row[folder_column_name(row)]
     if folder_id in ("", "None", "nan"):
@@ -226,6 +237,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
     version = created[-1]
     summary["version"] = version
+    summary["new_comma_terms"] = len(recordsets.learn_comma_terms(upload, component))
 
     written = read(version)
     problems = recordsets.differences(merged, _only(written, stored), key, set_like)
@@ -283,7 +295,7 @@ def _write_report(path: Path, df: pd.DataFrame) -> None:
 
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped"):
+    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped", "unsafe_rows"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s["message"]:
