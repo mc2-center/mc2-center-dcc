@@ -2,6 +2,8 @@
 
 Uses link in a resource manifest to generate a Synapse Link Entity
 Links are created in the MC2 Center reference folders, also used to store metadata
+(ToolView: one shared entity per tool, in the central project's "tools" folder; a tool
+without a homepage gets an empty Folder)
 Returns the entity ID and adds it to the primary key column of the input manifest
 
 For DatasetView entries whose Dataset Url contains a GEO or SRA accession, a full
@@ -25,7 +27,7 @@ import numpy as np
 import pandas as pd
 import re
 from synapseclient import Synapse
-from synapseclient.models import File
+from synapseclient.models import File, Folder
 
 from geo_synapse.mc2_table import parse_accession, find_project_for_grant
 from geo_synapse.synapse_ops import (
@@ -48,6 +50,7 @@ logger = logging.getLogger(__name__)
 _CENTRAL_PROJECT_SYNID = "syn76986881"   # CCKP Indexed Datasets
 _COLLECTION_SYNID = "syn77025587"        # DatasetCollection in _CENTRAL_PROJECT_SYNID
 _DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders
+_TOOLS_FOLDER = "tools"                  # subfolder holding one shared entity per tool
 
 
 def get_args(argv=None):
@@ -129,6 +132,7 @@ def record_created_id(path, key: str, synapse_id: str) -> None:
 
 
 FILE_ENTITY_TYPE = "org.sagebionetworks.repo.model.FileEntity"
+FOLDER_ENTITY_TYPE = "org.sagebionetworks.repo.model.Folder"
 
 
 def store_link(syn, name: str, link: str, parent_id: str) -> str:
@@ -162,6 +166,35 @@ def store_link(syn, name: str, link: str, parent_id: str) -> str:
     return existing
 
 
+def store_tool_entity(syn, name: str, link: str, parent_id: str) -> str:
+    """Create or reuse the one shared entity for a tool in the central tools folder.
+
+    With a homepage the entity is a link File; without one it is an empty Folder.
+    A same-named entity is reused only if it is the same kind (and, for a File, has
+    the same external URL). Anything else raises ValueError naming the tool, the
+    existing ID and both URLs, so the row fails and nothing is overwritten.
+    """
+    link = (link or "").strip()
+    existing = syn.findEntityId(name, parent=parent_id)
+    if not existing:
+        if link:
+            return File(external_url=link, name=name, parent_id=parent_id, synapse_store=False).store(synapse_client=syn).id
+        return Folder(name=name, parent_id=parent_id).store(synapse_client=syn).id
+    concrete = syn.restGET(f"/entity/{existing}").get("concreteType")
+    if concrete == FILE_ENTITY_TYPE:
+        url = File(id=existing, download_file=False).get(synapse_client=syn).external_url
+        if link and url == link:
+            return existing
+    elif concrete == FOLDER_ENTITY_TYPE and not link:
+        return existing
+    else:
+        url = None
+    raise ValueError(
+        f"Cannot create tool {name!r}: {existing} ({concrete}) already exists in {parent_id} "
+        f"with URL {url!r}, but this row has homepage {link!r}"
+    )
+
+
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
 
     path_name_link_target = []
@@ -184,7 +217,7 @@ def get_names(name_column: str, target: str, link_column: str, manifest: str = N
 
 
 def create_links(
-    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None
+    syn, path_name_link_target: list[tuple[str, str, str, str]], created_ids_path=None, store=store_link
 ) -> list[tuple[str, str, str]]:
 
     done = load_created_ids(created_ids_path)
@@ -198,7 +231,7 @@ def create_links(
             path_name_id.append((p, n, done[key]))
             continue
 
-        id = store_link(syn, n, l, t)
+        id = store(syn, n, l, t)
         record_created_id(created_ids_path, key, id)
         path_name_id.append((p, n, id))
 
@@ -363,7 +396,13 @@ def main(argv=None):
 
     else:
         print("Generating Synapse Link Entities for each set of " + data_type + " entries...")
-        path_name_id = create_links(syn, pnt, created_ids_path)
+        store = store_link
+        if data_type == "ToolView":
+            # One shared entity per tool in the central tools folder, not the grant's folder.
+            tools_folder = find_or_create_folder(syn, _TOOLS_FOLDER, _CENTRAL_PROJECT_SYNID)
+            pnt = [(p, n, l, tools_folder) for p, n, l, _ in pnt]
+            store = store_tool_entity
+        path_name_id = create_links(syn, pnt, created_ids_path, store=store)
 
     print(f"The following link entities were created:\n{[i for p,n,i in path_name_id]}")
 
