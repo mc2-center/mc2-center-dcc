@@ -310,3 +310,19 @@ def test_blank_first_publication_doi_falls_through_to_first_non_blank():
 
 def test_all_blank_publication_dois_give_not_available():
     assert _doi_for([float("nan"), ""]) == utils.DOI_NOT_AVAILABLE
+
+
+def test_joined_grant_cell_with_comma_space_resolves_every_grant():
+    grants = pd.DataFrame(
+        {
+            "grantNumber": ["CA1", "CA2"],
+            "grantName": ["One", "Two"],
+            "theme": [["T1"], ["T2"]],
+            "consortium": [["C1"], ["C2"]],
+        }
+    )
+    row = dict(MANIFEST_14[1], **{"GrantView Key": "CA1, CA2, Affiliated/Non-Grant Associated"})
+    out = sync_datasets.add_missing_info(None, prepare([row], legacy=False), grants, PUBS)
+    assert out.at[0, "grantName"] == ["One", "Two"]
+    assert out.at[0, "theme"] == ["T1", "T2"]
+    assert out.at[0, "consortium"] == ["C1", "C2"]

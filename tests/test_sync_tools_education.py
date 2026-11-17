@@ -141,3 +141,28 @@ def test_tool_package_dependencies_present_shows_True_False_on_the_portal(cell, 
     df["Tool Package Dependencies Present"] = cell
     out = _tool_out(df, _live("ToolView"))
     assert out["toolPackageDependenciesPresent"].tolist() == [expected]
+
+
+def test_tool_joined_grant_cell_with_comma_space_resolves_every_grant():
+    grants = pd.DataFrame(
+        {
+            "grantId": ["g1", "g2"],
+            "grantNumber": ["CA1", "CA2"],
+            "grantName": ["One", "Two"],
+            "theme": [["T1"], ["T2"]],
+            "consortium": [["C1"], ["C2"]],
+        }
+    )
+    df = _manifest("ToolView", {"Tool Homepage": "https://example.org/t1", "GrantView Key": "CA1, CA2"})
+    out = sync_tools.add_missing_info(_load(df, "ToolView"), grants)
+    assert out.at[0, "theme"] == ["T1", "T2"]
+    assert out.at[0, "consortium"] == ["C1", "C2"]
+
+
+def test_education_joined_alias_cell_with_comma_space_keeps_every_alias():
+    df = _manifest(
+        "EducationalResource",
+        {"Resource Alias": "syn1234567, syn7654321", "Resource Link": "", "GrantView Key": "CA1"},
+    )
+    out = sync_education.add_missing_info(_load(df, "EducationalResource"))
+    assert out.at[0, "synapseLink"].count("https://www.synapse.org/Synapse:syn") == 2

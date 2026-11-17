@@ -21,9 +21,9 @@ def add_missing_info(
         education["iconTags"] = ""
     
     for _, row in education.iterrows():
-        alias_list = [alias for alias in row["ResourceAlias"].split(",") if alias_pattern.match(alias)]
+        alias_list = [alias for alias in utils.split_cell(row["ResourceAlias"]) if alias_pattern.match(alias)]
         if len(alias_list) < 1:
-            url_list = [url for url in row["ResourceLink"].split(",") if url_pattern.match(url)]
+            url_list = [url for url in utils.split_cell(row["ResourceLink"]) if url_pattern.match(url)]
             formatted_syn_link_list = ["".join(["[Link](", url, ")"]) for url in url_list]
         else:
             syn_link_tuples = [("".join(["https://www.synapse.org/Synapse:", alias]), alias) for alias in alias_list]

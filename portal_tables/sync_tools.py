@@ -23,7 +23,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     for _, row in tools.iterrows():
         themes = []
         consortium = []
-        for g in row["GrantViewKey"].split(","):
+        for g in utils.split_cell(row["GrantViewKey"]):
             if g not in ["", "Affiliated/Non-Grant Associated"]:
                 themes.extend(grants[grants.grantNumber == g]["theme"].values[0])
                 consortium.extend(
