@@ -2,8 +2,9 @@
 
 One cycle: the AI curation pipeline produces manifests -> `upload_workflow.py` loads them into per-grant RecordSets
 (`MC2Center_<Component>_RecordSet`) -> curators edit them in Synapse Curator -> `union_qc.py --regenerate` rebuilds the
-merged manifests -> the sync scripts write the live portal tables. Every script that writes to Synapse is a dry run
-unless you pass `--execute` (`--upload` for `union_qc.py`). Run everything from the repo root.
+merged manifests -> the sync scripts write the staging portal tables -> after validation, `promote_staging.py` copies
+the staging tables to the production portal tables. Every script that writes to Synapse is a dry run unless you pass
+`--execute` (`--upload` for `union_qc.py`). Run everything from the repo root.
 
 ## Before you start
 
@@ -12,7 +13,7 @@ unless you pass `--execute` (`--upload` for `union_qc.py`). Run everything from 
   repo, is only needed by `annotations/create_entity_links.py` (the `links` stage).
 - Synapse login: `export SYNAPSE_AUTH_TOKEN=<personal access token>` (or a `.synapseConfig`). Without either,
   `utils.syn_login()` prompts for a token. The token needs write access to the grant projects, the CCKP - MC2 Admin
-  project, the log tables, and the portal tables for the steps that write.
+  project (it holds the staging portal tables), the log tables, and, for step 7 only, the production portal tables.
 
 ## The cycle
 
@@ -72,7 +73,7 @@ python portal_tables/union_qc.py --regenerate --output-dir output/i6            
 python portal_tables/union_qc.py --regenerate --output-dir output/i6 --upload       # LIVE WRITE
 ```
 
-Builds each component's union from the grants' RecordSets (grants from the Grants table), merges rows by alias key
+Builds each component's union from the grants' RecordSets (grants from the staging Grants table), merges rows by alias key
 (publications and datasets only; tools and education keep one row per grant unless `--merge-components` names them),
 fills empty cells, computes `iconTags`, validates against the 14.x JSON Schemas, and writes
 `<output-dir>/<Component>/<Component>_merged_manifest.csv`, `validation.csv`, `validation_counts.csv`,
@@ -83,31 +84,53 @@ and while any alias has different ids in different grants (`id_conflicts.csv`: f
 regenerate). Invalid rows are kept and reported, never dropped. Checkpoint: review the validation report
 (`validation_counts.csv`, `report.txt`, `id_conflicts.csv`) before `--upload`; `--upload` needs sign-off.
 
-**6. Sync to the live portal tables.** `run_sync.sh` runs the publication, dataset, tool and education syncs, reading
-the merged manifests above (the same script runs in the `Sync manifests to portal tables` GitHub workflow, which is
-`workflow_dispatch` only). Sync publications before datasets: the dataset sync reads the publications portal table
-for each linked publication's title, year and DOI. `run_sync.sh` keeps this order.
+**6. Sync to the staging portal tables.** `run_sync.sh` runs the publication, dataset, tool and education syncs,
+reading the merged manifests above (the same script runs in the `Sync manifests to portal tables` GitHub workflow,
+which is `workflow_dispatch` only). Sync publications before datasets: the dataset sync reads the publications portal
+table for each linked publication's title, year and DOI. `run_sync.sh` keeps this order.
 
 ```bash
 bash run_sync.sh --dryrun     # extra arguments go to every script
-bash run_sync.sh              # write the portal tables
+bash run_sync.sh              # write the staging portal tables
 ```
 
-Each script also takes `--output_csv` (default `./final_<resource>_table.csv`; `run_sync.sh` passes `--noprint`, so
-none is written), `-v`, `-m/--manifest_id` and `-t/--portal_table_id`; to compare a dry run to the live table, run
-one directly: `python portal_tables/sync_publications.py --dryrun -o final_publication_table.csv`. The grant, project
-and people syncs are not in `run_sync.sh`; run them directly when the admin RecordSets change (they read the admin
-RecordSets; `--manifest-source table` reads the legacy manifest tables instead):
-`python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun]`.
-Portal tables: publications `syn21868591`, datasets `syn21897968`, tools `syn26127427`, education `syn51497305`,
-grants `syn21918972`, projects `syn21868602`, people `syn28073190`.
+The syncs read and write only the staging tables (folder `staging_portal_tables` of CCKP - MC2 Admin, `syn28742843`).
+They refuse a production table id. Each script also takes `--output_csv` (default `./final_<resource>_table.csv`;
+`run_sync.sh` passes `--noprint`, so none is written), `-v`, `-m/--manifest_id` and `-t/--portal_table_id`; to compare
+a dry run to the staging table, run one directly:
+`python portal_tables/sync_publications.py --dryrun -o final_publication_table.csv`. The grant, project and people
+syncs are not in `run_sync.sh`; run them directly when the admin RecordSets change (they read the admin RecordSets;
+`--manifest-source table` reads the legacy manifest tables instead):
+`python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun]`. Sync grants first: the other syncs
+read the staging Grants table. `utils/tally_themes.py` reads the staging tables and writes the staging theme count
+tables. `sync_grants.py` creates a Synapse project for each new grant (not a dry run).
+
+**7. Promote staging to production** (`portal_tables/promote_staging.py`). This is the only script that writes the
+production portal tables. A person starts it after the staging tables are validated; it is not in `run_sync.sh` or
+the GitHub workflow.
+
+```bash
+python portal_tables/promote_staging.py --run-id 2026-11-promote --report-dir runs/promote            # dry run
+python portal_tables/promote_staging.py --run-id 2026-11-promote --report-dir runs/promote --execute  # LIVE WRITE
+```
+
+It makes each production table an exact copy of its staging table (full replace; nothing is derived). `--tables`
+limits it to some tables. First it compares the columns of every selected table; if any table differs it writes
+`schema_diff.csv` and stops before it writes. Then it writes `<resource>_diff.csv` (rows added, removed and changed)
+and `summary.csv` to `<report-dir>/<run-id>/`. With `--execute`, for each table it snapshots the staging table,
+replaces the production rows (production is snapshotted first and restored if the store fails), reads production
+back and compares. It stops at the first failure; tables promoted before the failure stay promoted. If the process
+stops between the delete and the store, restore the production table from its snapshot by hand.
+Check: `summary.csv` shows `promoted` for each table.
 
 ## Manual checkpoints
 
 1. After step 1: QC the AI pipeline output in `review_app.py`.
 2. After the step 2 dry run: read the reports, then `--execute`.
 3. After step 5 dry run: review the validation report and `id_conflicts.csv`; sign off before `--upload`.
-4. After step 6 dry run: compare with `--output_csv` against the live table before the real sync.
+4. After step 6 dry run: compare with `--output_csv` against the staging table before the real sync.
+5. After step 6: validate the staging tables (by query in Synapse), then read the
+   step 7 dry run (`summary.csv`, `<resource>_diff.csv`). `--execute` needs explicit sign-off.
 
 ## Write log and locks
 
@@ -162,11 +185,15 @@ create it.
 |---|---|
 | `syn78404341` | write log table |
 | `syn78404342` | `MC2Center_RecordSet_Removals` table |
-| `syn28742843` | CCKP - MC2 Admin project (admin RecordSets in `admin_recordsets`) |
+| `syn28742843` | CCKP - MC2 Admin project (admin RecordSets in `admin_recordsets`, staging portal tables in `staging_portal_tables`) |
 | `syn53478776` / `syn53478774` / `syn53479671` / `syn53651540` | merged manifests: publications / datasets / tools / education |
 | `syn53259587` / `syn59074382` / `syn38301033` | legacy admin manifests: grants / projects / people |
-| `syn21868591` / `syn21897968` / `syn26127427` / `syn51497305` | portal tables: publications / datasets / tools / education |
-| `syn21918972` / `syn21868602` / `syn28073190` | portal tables: grants / projects / people |
+| `syn21868591` / `syn21897968` / `syn26127427` / `syn51497305` | production portal tables: publications / datasets / tools / education |
+| `syn21918972` / `syn21868602` / `syn28073190` | production portal tables: grants / projects / people |
+| `syn21641485` / `syn21649281` / `syn21639584` | production theme count tables: consortium / consortium-theme / theme |
+| `syn78748028` / `syn78748031` / `syn78748036` / `syn78748037` | staging portal tables: publications / datasets / tools / education |
+| `syn78748038` / `syn78748039` / `syn78748040` | staging portal tables: grants / projects / people |
+| `syn78754152` / `syn78754154` / `syn78754168` | staging theme count tables: consortium / consortium-theme / theme |
 | `syn76986881` / `syn77025587` | central project / DatasetCollection used by the dataset `links` stage |
 
 ## Not yet run for real
@@ -174,5 +201,6 @@ create it.
 Remove this section after the first full cycle.
 
 - A real grant, project or people sync from the admin RecordSets.
+- A real sync into the staging tables, and `promote_staging.py --execute`.
 - `union_qc.py --regenerate --upload` from the RecordSets.
 - The first curator cycle through Curator.
