@@ -25,6 +25,8 @@ def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataF
     ]
 
     current_cols_to_fill = [col for col in updated_database.columns if col in cols_to_fill]
+    if data_type == "EducationalResource":  # a resource's publication link stays empty rather than a placeholder
+        current_cols_to_fill = [col for col in current_cols_to_fill if col != "PublicationView Key"]
 
     for _,row in updated_database.iterrows():
         for col in current_cols_to_fill:

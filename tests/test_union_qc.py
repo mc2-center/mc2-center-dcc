@@ -221,6 +221,16 @@ def test_empty_curated_cells_are_filled_like_merge_and_correct(tmp_path, mapping
     assert manifest["PublicationView Key"].iat[0] == "Pending Annotation"
 
 
+def test_education_publication_key_is_not_filled():
+    import manifest_cleanup
+
+    frame = pd.DataFrame({"PublicationView Key": [""], "Assay": [""]})
+    edu = manifest_cleanup.fill_empty_cells(frame.copy(), "EducationalResource")
+    assert edu["PublicationView Key"].iat[0] == "" and edu["Assay"].iat[0] == "Pending Annotation"
+    tools = manifest_cleanup.fill_empty_cells(frame.copy(), "ToolView")
+    assert tools["PublicationView Key"].iat[0] == "Pending Annotation"
+
+
 def test_no_fill_keeps_empty_cells(tmp_path, mapping_csv):
     _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="")]}, extra=["--no-fill"])
     assert manifest["Tissue"].iat[0] == ""
