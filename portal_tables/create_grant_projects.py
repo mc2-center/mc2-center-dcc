@@ -76,11 +76,16 @@ def get_args():
         "-t",
         "--portal_table",
         type=str,
-        default="syn21918972",
-        help=("Add grants to this specified table. " "(Default: syn21918972)"),
+        default=None,
+        help=(
+            "Add grants to this specified table. (Default: the staging grants table)"
+        ),
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.portal_table in utils.PRODUCTION_TABLES:
+        parser.error(utils._production_message(args.portal_table))
+    return args
 
 
 def _text(value):
@@ -315,6 +320,8 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     # own CLI flags when this is used as a library function.
     if new is None or current is None or dryrun is None:
         args = get_args()
+        if args.portal_table is None:
+            args.portal_table = utils.portal_table("grant")
         manifest_id = new if new is not None else args.manifest
         portal_table = current if current is not None else args.portal_table
         dryrun = dryrun if dryrun is not None else args.dryrun
@@ -322,6 +329,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         manifest_id = new
         portal_table = current
 
+    utils.refuse_production(portal_table)
     manifest = read_manifest(syn, manifest_id)
     curr_portal = Table(id=portal_table).query(
         query=f"SELECT * FROM {portal_table}",

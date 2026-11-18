@@ -36,15 +36,20 @@ def get_args():
         "-t",
         "--table_id",
         type=str,
-        default="syn21868591",
+        default=None,
         help="Synapse table id where annotations will be updated. "
-        "Probably the Publications Merged table.",
+        "(Default: the staging Publications table)",
     )
     parser.add_argument(
         "-m", "--manifest_path", type=str, help="Path where updated manifest is stored."
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.table_id is None:
+        args.table_id = _portal_utils.portal_table("publication")
+    elif args.table_id in _portal_utils.PRODUCTION_TABLES:
+        parser.error(_portal_utils._production_message(args.table_id))
+    return args
 
 
 def get_updated_df(manifest):
@@ -174,6 +179,7 @@ def manifest_upload(syn, table_id, final_df):
     columns = final_df.columns
     print(columns)
 
+    _portal_utils.refuse_production(table_id)
     Table(id=table_id).store_rows(values=final_df, synapse_client=syn)
 
     print("\nAnnotations Updated")

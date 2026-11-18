@@ -19,17 +19,43 @@ logger = logging.getLogger(__name__)
 
 # Manifest and portal table synIDs of each resource type.
 CONFIG = {
-    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591"},
-    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968"},
-    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427"},
-    "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
-    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
-    "education": {"manifest": "syn53651540", "portal_table": "syn51497305"},
-    "project": {"manifest": "syn59074382", "portal_table": "syn21868602"},
+    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591", "staging_table": "syn78748028"},
+    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968", "staging_table": "syn78748031"},
+    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427", "staging_table": "syn78748036"},
+    "people": {"manifest": "syn38301033", "portal_table": "syn28073190", "staging_table": "syn78748040"},
+    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972", "staging_table": "syn78748038"},
+    "education": {"manifest": "syn53651540", "portal_table": "syn51497305", "staging_table": "syn78748037"},
+    "project": {"manifest": "syn59074382", "portal_table": "syn21868602", "staging_table": "syn78748039"},
     # Consortium table ("Consortium", in CCKP - MC2 Admin). Used by
     # consortium_display_names(); not a synced resource.
     "consortium": {"table": "syn36345930"},
+    # Theme count tables written by utils/tally_themes.py (no manifest).
+    "consortium_counts": {"portal_table": "syn21641485", "staging_table": "syn78754152"},
+    "consortium_theme_counts": {"portal_table": "syn21649281", "staging_table": "syn78754154"},
+    "theme_counts": {"portal_table": "syn21639584", "staging_table": "syn78754168"},
 }
+
+# Production portal tables. Only portal_tables/promote_staging.py writes them.
+PRODUCTION_TABLES = frozenset(c["portal_table"] for c in CONFIG.values() if "staging_table" in c)
+
+
+def _production_message(table_id: str) -> str:
+    return (
+        f"{table_id} is a production portal table; only promote_staging.py writes production. "
+        "Use the staging table."
+    )
+
+
+def refuse_production(table_id: str) -> None:
+    """Raise ``ValueError`` if ``table_id`` is a production portal table."""
+    if table_id in PRODUCTION_TABLES:
+        raise ValueError(_production_message(table_id))
+
+
+def portal_table(resource: str, production: bool = False) -> str:
+    """Synapse ID of the portal table of ``resource``: staging unless ``production``."""
+    return CONFIG[resource]["portal_table" if production else "staging_table"]
+
 
 # Admin manifests (Grant, Project, PersonView) live in CCKP - MC2 Admin. The
 # migration (annotations/migrate_admin_manifests_14.py) copies each table into a
@@ -232,11 +258,8 @@ def get_args(resource: str) -> argparse.Namespace:
         "-t",
         "--portal_table_id",
         type=str,
-        default=CONFIG.get(resource).get("portal_table"),
-        help=(
-            f"Sync to this specified table. (Default: "
-            f"{CONFIG.get(resource).get('portal_table')})"
-        ),
+        default=None,
+        help="Sync to this specified table. (Default: the staging table)",
     )
     parser.add_argument(
         "-o",
@@ -269,7 +292,12 @@ def get_args(resource: str) -> argparse.Namespace:
         action="store_true",
         help="Do not output CSV file.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.portal_table_id is None:
+        args.portal_table_id = portal_table(resource)
+    elif args.portal_table_id in PRODUCTION_TABLES:
+        parser.error(_production_message(args.portal_table_id))
+    return args
 
 
 # TODO: check if we still need this function?
@@ -465,9 +493,15 @@ def check_cell_sizes(table_id: str, columns: dict, df: pd.DataFrame) -> None:
 
 
 def update_table(
-    syn: Synapse, table_id: str, df: pd.DataFrame, component: str | None = None
+    syn: Synapse,
+    table_id: str,
+    df: pd.DataFrame,
+    component: str | None = None,
+    allow_production: bool = False,
 ) -> None:
     """Update the portal table.
+
+    A production table is refused unless ``allow_production`` (only promote_staging.py sets it).
 
     With ``component``, ``df`` must already be in portal shape (see
     ``crosswalk.to_portal``): the live table is checked against the
@@ -483,6 +517,8 @@ def update_table(
         - sync over rows from the latest manifest, restoring the previous
           rows if the upload fails
     """
+    if not allow_production:
+        refuse_production(table_id)
     # An empty frame would snapshot, delete every live row and store none,
     # without any error to trigger the restore.
     if df.empty:

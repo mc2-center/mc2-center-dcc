@@ -77,8 +77,8 @@ def main():
         print()
 
     print("Processing project staging database...")
-    grants = Table(id="syn21918972").query(
-        query="SELECT grantId, grantNumber, grantName, theme, consortium, grantType FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantId, grantNumber, grantName, theme, consortium, grantType FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
 

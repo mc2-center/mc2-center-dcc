@@ -18,18 +18,26 @@ def get_args():
         "-d",
         "--dataset_table",
         type=str,
-        default="syn21897968",
-        help=("Synapse ID to the datasets table. " "(Default: syn21897968"),
+        default=None,
+        help=("Synapse ID to the datasets table. (Default: the staging datasets table)"),
     )
     parser.add_argument(
         "-p",
         "--pubs_table",
         type=str,
-        default="syn21868591",
-        help=("Synapse ID to the publications table. " "(Default: syn21868591)"),
+        default=None,
+        help=("Synapse ID to the publications table. (Default: the staging publications table)"),
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.dataset_table is None:
+        args.dataset_table = utils.portal_table("dataset")
+    if args.pubs_table is None:
+        args.pubs_table = utils.portal_table("publication")
+    for table_id in (args.dataset_table, args.pubs_table):
+        if table_id in utils.PRODUCTION_TABLES:
+            parser.error(utils._production_message(table_id))
+    return args
 
 
 def sync_table(datasets, pubs):
@@ -73,6 +81,7 @@ def main():
     if args.dryrun:
         print(updated)
     else:
+        utils.refuse_production(args.pubs_table)
         Table(id=args.pubs_table).store_rows(values=utils.strip_newlines(updated), synapse_client=syn)
     print("DONE ✓")
 

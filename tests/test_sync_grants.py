@@ -68,7 +68,7 @@ def _live_types():
 
 def _table_factory(manifest):
     consortium = pd.DataFrame({"consortiumDisplayName": CONSORTIA})
-    frames = {"syn53259587": manifest, "syn21918972": _portal(), "syn36345930": consortium}
+    frames = {"syn53259587": manifest, "syn78748038": _portal(), "syn36345930": consortium}
 
     def table(id):
         m = MagicMock()
@@ -86,7 +86,7 @@ def _run(manifest, dryrun=True, create_result=None, live_types=None):
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = create_result or {"NEW1": ("syn99", "123")}
         staged = cgp.process_new_grants(
-            "syn53259587", "syn21918972", dryrun, MagicMock(), live_types=live_types
+            "syn53259587", "syn78748038", dryrun, MagicMock(), live_types=live_types
         )
     return cw.to_portal(staged, "GrantView", _live_types()), create
 
@@ -177,7 +177,7 @@ def test_conversion_error_creates_nothing():
             patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         with pytest.raises(ValueError, match="60 months"):
-            cgp.process_new_grants("syn53259587", "syn21918972", False, MagicMock(),
+            cgp.process_new_grants("syn53259587", "syn78748038", False, MagicMock(),
                                    live_types=_live_types())
     create.assert_not_called()
 
@@ -189,7 +189,7 @@ def test_failed_grant_is_left_out_and_reported():
             patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = {"NEW1": ("None", "None")}
-        staged = cgp.process_new_grants("syn53259587", "syn21918972", False, MagicMock(),
+        staged = cgp.process_new_grants("syn53259587", "syn78748038", False, MagicMock(),
                                         live_types=_live_types())
     assert list(staged.GrantViewId) == ["OLD1"]
     assert staged.attrs["failed_grants"] == ["NEW1"]
@@ -326,7 +326,7 @@ def _run_expecting_error(manifest, match, dryrun=False):
                          lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         with pytest.raises(ValueError, match=match) as err:
-            cgp.process_new_grants("syn53259587", "syn21918972", dryrun, MagicMock(),
+            cgp.process_new_grants("syn53259587", "syn78748038", dryrun, MagicMock(),
                                    live_types=_live_types())
     create.assert_not_called()
     return str(err.value)

@@ -103,8 +103,8 @@ def main():
         print()
 
     print("\nProcessing publications staging database...")
-    grants = Table(id="syn21918972").query(
-        query=f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantNumber, {','.join(new_cols)} FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
 

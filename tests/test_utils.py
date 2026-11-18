@@ -141,3 +141,70 @@ def test_manifest_csv_help_states_the_shape_and_that_manifest_source_is_ignored(
     help_text = " ".join(capsys.readouterr().out.split())
     assert "legacy manifest shape" in help_text and "display headers" in help_text
     assert "--manifest-source is ignored when it is given" in help_text
+
+
+STAGING_IDS = {
+    "publication": "syn78748028",
+    "dataset": "syn78748031",
+    "tool": "syn78748036",
+    "education": "syn78748037",
+    "grant": "syn78748038",
+    "project": "syn78748039",
+    "people": "syn78748040",
+}
+PRODUCTION_IDS = {
+    "publication": "syn21868591",
+    "dataset": "syn21897968",
+    "tool": "syn26127427",
+    "education": "syn51497305",
+    "grant": "syn21918972",
+    "project": "syn21868602",
+    "people": "syn28073190",
+}
+
+
+@pytest.mark.parametrize("resource", sorted(STAGING_IDS))
+def test_portal_table_is_staging_by_default_and_production_on_request(resource):
+    assert utils.portal_table(resource) == STAGING_IDS[resource]
+    assert utils.portal_table(resource, production=False) == STAGING_IDS[resource]
+    assert utils.portal_table(resource, production=True) == PRODUCTION_IDS[resource]
+
+
+def _table_id_from_args(argv, resource="dataset"):
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("sys.argv", ["sync.py", *argv])
+        return utils.get_args(resource).portal_table_id
+
+
+def test_get_args_uses_the_staging_table_by_default():
+    assert _table_id_from_args([]) == STAGING_IDS["dataset"]
+
+
+def test_get_args_has_no_production_flag():
+    with pytest.raises(SystemExit):
+        _table_id_from_args(["--production"])
+
+
+def test_get_args_portal_table_id_overrides_the_default():
+    assert _table_id_from_args(["-t", "syn1"]) == "syn1"
+
+
+@pytest.mark.parametrize("resource", sorted(PRODUCTION_IDS))
+def test_get_args_rejects_a_production_table_id(resource, capsys):
+    with pytest.raises(SystemExit):
+        _table_id_from_args(["-t", PRODUCTION_IDS[resource]])
+    assert "only promote_staging.py writes production" in capsys.readouterr().err
+
+
+def test_update_table_refuses_a_production_id_without_touching_synapse(monkeypatch):
+    table = MagicMock()
+    monkeypatch.setattr(utils, "Table", table)
+    with pytest.raises(ValueError, match="only promote_staging.py writes production"):
+        utils.update_table(MagicMock(), PRODUCTION_IDS["grant"], pd.DataFrame({"a": [1]}))
+    table.assert_not_called()
+
+
+def test_update_table_refuses_a_count_table_production_id():
+    for key in ("consortium_counts", "consortium_theme_counts", "theme_counts"):
+        with pytest.raises(ValueError):
+            utils.update_table(MagicMock(), utils.CONFIG[key]["portal_table"], pd.DataFrame())

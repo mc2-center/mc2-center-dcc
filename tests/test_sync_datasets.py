@@ -326,3 +326,41 @@ def test_joined_grant_cell_with_comma_space_resolves_every_grant():
     assert out.at[0, "grantName"] == ["One", "Two"]
     assert out.at[0, "theme"] == ["T1", "T2"]
     assert out.at[0, "consortium"] == ["C1", "C2"]
+
+
+def _run_main_collecting_table_reads(monkeypatch, argv):
+    """Run ``sync_datasets.main`` offline; return the (Table id, query) pairs it reads."""
+    from unittest import mock
+
+    reads = []
+
+    def fake_table(id):
+        table = mock.MagicMock()
+        table.query.side_effect = lambda query, **kw: reads.append((id, query))
+        return table
+
+    monkeypatch.setattr("sys.argv", ["sync_datasets.py", "--dryrun", "--noprint", *argv])
+    monkeypatch.setattr(sync_datasets, "Table", fake_table)
+    monkeypatch.setattr(utils, "syn_login", lambda: mock.MagicMock())
+    monkeypatch.setattr(utils, "read_sync_manifest", lambda syn, args: pd.DataFrame())
+    monkeypatch.setattr(utils, "fill_blank", lambda df: df)
+    monkeypatch.setattr(sync_datasets, "restore_display_names", lambda df: df)
+    monkeypatch.setattr(model_contract, "rename_legacy_headers", lambda df, c: df)
+    monkeypatch.setattr(model_contract, "normalize_headers", lambda df, **kw: df)
+    monkeypatch.setattr(sync_datasets, "add_missing_info", lambda *a: None)
+    monkeypatch.setattr(crosswalk, "check_crosswalk", lambda *a: None)
+    monkeypatch.setattr(sync_datasets, "clean_table", lambda *a: pd.DataFrame())
+    sync_datasets.main()
+    return reads
+
+
+def test_main_reads_staging_grants_and_publications_by_default(monkeypatch):
+    reads = _run_main_collecting_table_reads(monkeypatch, [])
+    assert [r[0] for r in reads] == ["syn78748038", "syn78748028"]
+    assert reads[0][1].endswith("FROM syn78748038")
+    assert reads[1][1].endswith("FROM syn78748028")
+
+
+def test_main_has_no_production_flag(monkeypatch):
+    with pytest.raises(SystemExit):
+        _run_main_collecting_table_reads(monkeypatch, ["--production"])
