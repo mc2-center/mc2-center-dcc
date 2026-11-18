@@ -96,7 +96,7 @@ bash run_sync.sh --dryrun     # extra arguments go to every script
 bash run_sync.sh              # write the staging portal tables
 ```
 
-The syncs read and write only the staging tables (folder `staging_portal_tables` of CCKP - MC2 Admin, `syn28742843`).
+The syncs read and write only the staging tables (the `STAGING ...` tables in CCKP - MC2 Admin, `syn28742843`).
 They refuse a production table id. Each script also takes `--output_csv` (default `./final_<resource>_table.csv`;
 `run_sync.sh` passes `--noprint`, so none is written), `-v`, `-m/--manifest_id` and `-t/--portal_table_id`; to compare
 a dry run to the staging table, run one directly:
@@ -206,7 +206,7 @@ create it.
 |---|---|
 | `syn78404341` | write log table |
 | `syn78404342` | `MC2Center_RecordSet_Removals` table |
-| `syn28742843` | CCKP - MC2 Admin project (admin RecordSets in `admin_recordsets`, staging portal tables in `staging_portal_tables`) |
+| `syn28742843` | CCKP - MC2 Admin project (admin RecordSets in `admin_recordsets`, `STAGING ...` portal tables) |
 | `syn53478776` / `syn53478774` / `syn53479671` / `syn53651540` | merged manifests: publications / datasets / tools / education |
 | `syn53259587` / `syn59074382` / `syn38301033` | legacy admin manifests: grants / projects / people |
 | `syn21868591` / `syn21897968` / `syn26127427` / `syn51497305` | production portal tables: publications / datasets / tools / education |
