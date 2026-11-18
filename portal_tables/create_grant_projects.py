@@ -76,8 +76,19 @@ def get_args():
         "-t",
         "--portal_table",
         type=str,
-        default="syn21918972",
-        help=("Add grants to this specified table. " "(Default: syn21918972)"),
+        default=None,
+        help=(
+            "Add grants to this specified table. Overrides the table chosen by "
+            "--production. (Default: the staging grants table)"
+        ),
+    )
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Add grants to the production grants table. Without it, the staging "
+            "table in CCKP - MC2 Admin is used."
+        ),
     )
     parser.add_argument("--dryrun", action="store_true")
     return parser.parse_args()
@@ -315,6 +326,8 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     # own CLI flags when this is used as a library function.
     if new is None or current is None or dryrun is None:
         args = get_args()
+        if args.portal_table is None:
+            args.portal_table = utils.portal_table("grant", args.production)
         manifest_id = new if new is not None else args.manifest
         portal_table = current if current is not None else args.portal_table
         dryrun = dryrun if dryrun is not None else args.dryrun

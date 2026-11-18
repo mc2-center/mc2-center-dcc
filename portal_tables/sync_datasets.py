@@ -320,12 +320,12 @@ def main():
         print()
 
     print("Processing dataset staging database...")
-    grants = Table(id="syn21918972").query(
-        query="SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant", args.production)).query(
+        query=f"SELECT grantId, grantNumber, grantName, theme, consortium FROM {utils.portal_table('grant', args.production)}",
         synapse_client=syn,
     )
-    pubs = Table(id="syn21868591").query(
-        query="SELECT doi, pubMedId, publicationTitle, publicationYear FROM syn21868591",
+    pubs = Table(id=utils.portal_table("publication", args.production)).query(
+        query=f"SELECT doi, pubMedId, publicationTitle, publicationYear FROM {utils.portal_table('publication', args.production)}",
         synapse_client=syn,
     )
 

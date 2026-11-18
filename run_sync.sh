@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sync the manifests to the portal tables. The single list of sync steps:
 # .github/workflows/sync-to-portal.yml calls this script.
+# The scripts write the staging portal tables unless --production is passed.
 # Extra arguments (e.g. --dryrun) are passed through to every script.
 set -euo pipefail
 cd "$(dirname "$0")"

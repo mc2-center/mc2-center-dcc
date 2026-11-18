@@ -18,18 +18,31 @@ def get_args():
         "-d",
         "--dataset_table",
         type=str,
-        default="syn21897968",
-        help=("Synapse ID to the datasets table. " "(Default: syn21897968"),
+        default=None,
+        help=("Synapse ID to the datasets table. (Default: the staging datasets table)"),
     )
     parser.add_argument(
         "-p",
         "--pubs_table",
         type=str,
-        default="syn21868591",
-        help=("Synapse ID to the publications table. " "(Default: syn21868591)"),
+        default=None,
+        help=("Synapse ID to the publications table. (Default: the staging publications table)"),
+    )
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "Use the production tables. Without it, the staging tables in "
+            "CCKP - MC2 Admin are used."
+        ),
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.dataset_table is None:
+        args.dataset_table = utils.portal_table("dataset", args.production)
+    if args.pubs_table is None:
+        args.pubs_table = utils.portal_table("publication", args.production)
+    return args
 
 
 def sync_table(datasets, pubs):

@@ -87,6 +87,14 @@ def get_args():
         help="RecordSet mode: let --publish replace the table with an empty union.",
     )
     parser.add_argument(
+        "--production",
+        action="store_true",
+        help=(
+            "RecordSet mode: read the production Grants table. Without it, the staging "
+            "Grants table in CCKP - MC2 Admin is read."
+        ),
+    )
+    parser.add_argument(
         "--grant-projects",
         nargs="+",
         default=None,
@@ -110,8 +118,13 @@ def build_query(table_ids):
     return " UNION ".join([f"SELECT * FROM {id}" for id in table_ids])
 
 
-def list_grant_projects(syn, source=GRANTS_TABLE):
-    """Every project that holds resource RecordSets: the Grants table's projects plus ``UNLISTED_LABELS``."""
+def list_grant_projects(syn, source=None):
+    """Every project that holds resource RecordSets: the Grants table's projects plus ``UNLISTED_LABELS``.
+
+    ``source`` defaults to the staging Grants table.
+    """
+    if source is None:
+        source = utils.portal_table("grant", production=False)
     df = Table(id=source).query(query=f"SELECT grantId FROM {source}", synapse_client=syn)
     # dict.fromkeys: a project shared by two grants (a renewal) is listed, and read, once
     grants = list(dict.fromkeys(g for g in df["grantId"].tolist() if isinstance(g, str) and g.strip()))
@@ -281,9 +294,9 @@ def publish_union(syn, component, union, target):
 
 
 def run_recordset_mode(syn, component, output_dir, grant_ids=None, target=None, publish=False,
-                       allow_empty=False):
+                       allow_empty=False, production=False):
     if grant_ids is None:
-        grant_ids = list_grant_projects(syn)
+        grant_ids = list_grant_projects(syn, utils.portal_table("grant", production))
     union, stats = build_union(syn, component, grant_ids)
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"{component}_UNION.csv")
@@ -317,7 +330,7 @@ def main():
     syn = utils.syn_login()
     if args.target_record_set:
         run_recordset_mode(syn, args.n, args.output_dir, args.grant_projects, args.t, args.publish,
-                           args.allow_empty)
+                           args.allow_empty, production=args.production)
         return
     source, target, table_type = args.s, args.t, args.n
 
