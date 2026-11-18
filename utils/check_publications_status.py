@@ -42,8 +42,8 @@ def get_args():
         "-p",
         "--portal_table",
         type=str,
-        default="syn21868591",
-        help="Synapse ID of the publications table. " "(Default: syn21868591)",
+        default=_portal_utils.portal_table("publication"),
+        help="Synapse ID of the publications table. (Default: the staging publications table)",
     )
     parser.add_argument(
         "-c",
