@@ -361,8 +361,6 @@ def test_main_reads_staging_grants_and_publications_by_default(monkeypatch):
     assert reads[1][1].endswith("FROM syn78748028")
 
 
-def test_main_reads_production_grants_and_publications_with_production(monkeypatch):
-    reads = _run_main_collecting_table_reads(monkeypatch, ["--production"])
-    assert [r[0] for r in reads] == ["syn21918972", "syn21868591"]
-    assert reads[0][1].endswith("FROM syn21918972")
-    assert reads[1][1].endswith("FROM syn21868591")
+def test_main_has_no_production_flag(monkeypatch):
+    with pytest.raises(SystemExit):
+        _run_main_collecting_table_reads(monkeypatch, ["--production"])

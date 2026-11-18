@@ -29,7 +29,27 @@ CONFIG = {
     # Consortium table ("Consortium", in CCKP - MC2 Admin). Used by
     # consortium_display_names(); not a synced resource.
     "consortium": {"table": "syn36345930"},
+    # Theme count tables written by utils/tally_themes.py (no manifest).
+    "consortium_counts": {"portal_table": "syn21641485", "staging_table": "syn78754152"},
+    "consortium_theme_counts": {"portal_table": "syn21649281", "staging_table": "syn78754154"},
+    "theme_counts": {"portal_table": "syn21639584", "staging_table": "syn78754168"},
 }
+
+# Production portal tables. Only portal_tables/promote_staging.py writes them.
+PRODUCTION_TABLES = frozenset(c["portal_table"] for c in CONFIG.values() if "staging_table" in c)
+
+
+def _production_message(table_id: str) -> str:
+    return (
+        f"{table_id} is a production portal table; only promote_staging.py writes production. "
+        "Use the staging table."
+    )
+
+
+def refuse_production(table_id: str) -> None:
+    """Raise ``ValueError`` if ``table_id`` is a production portal table."""
+    if table_id in PRODUCTION_TABLES:
+        raise ValueError(_production_message(table_id))
 
 
 def portal_table(resource: str, production: bool = False) -> str:
@@ -239,15 +259,7 @@ def get_args(resource: str) -> argparse.Namespace:
         "--portal_table_id",
         type=str,
         default=None,
-        help="Sync to this specified table. Overrides the table chosen by --production.",
-    )
-    parser.add_argument(
-        "--production",
-        action="store_true",
-        help=(
-            "Write to and read from the production portal tables. Without it, the "
-            "staging tables in CCKP - MC2 Admin are used."
-        ),
+        help="Sync to this specified table. (Default: the staging table)",
     )
     parser.add_argument(
         "-o",
@@ -282,7 +294,9 @@ def get_args(resource: str) -> argparse.Namespace:
     )
     args = parser.parse_args()
     if args.portal_table_id is None:
-        args.portal_table_id = portal_table(resource, args.production)
+        args.portal_table_id = portal_table(resource)
+    elif args.portal_table_id in PRODUCTION_TABLES:
+        parser.error(_production_message(args.portal_table_id))
     return args
 
 
@@ -479,9 +493,15 @@ def check_cell_sizes(table_id: str, columns: dict, df: pd.DataFrame) -> None:
 
 
 def update_table(
-    syn: Synapse, table_id: str, df: pd.DataFrame, component: str | None = None
+    syn: Synapse,
+    table_id: str,
+    df: pd.DataFrame,
+    component: str | None = None,
+    allow_production: bool = False,
 ) -> None:
     """Update the portal table.
+
+    A production table is refused unless ``allow_production`` (only promote_staging.py sets it).
 
     With ``component``, ``df`` must already be in portal shape (see
     ``crosswalk.to_portal``): the live table is checked against the
@@ -497,6 +517,8 @@ def update_table(
         - sync over rows from the latest manifest, restoring the previous
           rows if the upload fails
     """
+    if not allow_production:
+        refuse_production(table_id)
     # An empty frame would snapshot, delete every live row and store none,
     # without any error to trigger the restore.
     if df.empty:

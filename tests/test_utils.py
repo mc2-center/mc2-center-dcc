@@ -180,10 +180,31 @@ def test_get_args_uses_the_staging_table_by_default():
     assert _table_id_from_args([]) == STAGING_IDS["dataset"]
 
 
-def test_get_args_uses_the_production_table_with_production_flag():
-    assert _table_id_from_args(["--production"]) == PRODUCTION_IDS["dataset"]
+def test_get_args_has_no_production_flag():
+    with pytest.raises(SystemExit):
+        _table_id_from_args(["--production"])
 
 
-@pytest.mark.parametrize("extra", [[], ["--production"]])
-def test_get_args_portal_table_id_overrides_production_flag(extra):
-    assert _table_id_from_args(["-t", "syn1", *extra]) == "syn1"
+def test_get_args_portal_table_id_overrides_the_default():
+    assert _table_id_from_args(["-t", "syn1"]) == "syn1"
+
+
+@pytest.mark.parametrize("resource", sorted(PRODUCTION_IDS))
+def test_get_args_rejects_a_production_table_id(resource, capsys):
+    with pytest.raises(SystemExit):
+        _table_id_from_args(["-t", PRODUCTION_IDS[resource]])
+    assert "only promote_staging.py writes production" in capsys.readouterr().err
+
+
+def test_update_table_refuses_a_production_id_without_touching_synapse(monkeypatch):
+    table = MagicMock()
+    monkeypatch.setattr(utils, "Table", table)
+    with pytest.raises(ValueError, match="only promote_staging.py writes production"):
+        utils.update_table(MagicMock(), PRODUCTION_IDS["grant"], pd.DataFrame({"a": [1]}))
+    table.assert_not_called()
+
+
+def test_update_table_refuses_a_count_table_production_id():
+    for key in ("consortium_counts", "consortium_theme_counts", "theme_counts"):
+        with pytest.raises(ValueError):
+            utils.update_table(MagicMock(), utils.CONFIG[key]["portal_table"], pd.DataFrame())

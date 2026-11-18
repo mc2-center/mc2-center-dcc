@@ -143,7 +143,7 @@ def test_grant_recordset_and_table_give_the_same_portal_strings(monkeypatch, tmp
         with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
                 patch.object(cgp.model_contract, "read_manifest", reader), \
                 patch.object(cgp, "create_grant_projects", return_value={"NEW1": ("syn99", "123")}):
-            staged = cgp.process_new_grants("syn53259587", "syn21918972", True, MagicMock(), live_types=_live_types())
+            staged = cgp.process_new_grants("syn53259587", "syn78748038", True, MagicMock(), live_types=_live_types())
         return cw.to_portal(staged, "GrantView", _live_types())
 
     from_table, from_recordset = run("table"), run("recordset")

@@ -28,20 +28,15 @@ def get_args():
         default=None,
         help=("Synapse ID to the publications table. (Default: the staging publications table)"),
     )
-    parser.add_argument(
-        "--production",
-        action="store_true",
-        help=(
-            "Use the production tables. Without it, the staging tables in "
-            "CCKP - MC2 Admin are used."
-        ),
-    )
     parser.add_argument("--dryrun", action="store_true")
     args = parser.parse_args()
     if args.dataset_table is None:
-        args.dataset_table = utils.portal_table("dataset", args.production)
+        args.dataset_table = utils.portal_table("dataset")
     if args.pubs_table is None:
-        args.pubs_table = utils.portal_table("publication", args.production)
+        args.pubs_table = utils.portal_table("publication")
+    for table_id in (args.dataset_table, args.pubs_table):
+        if table_id in utils.PRODUCTION_TABLES:
+            parser.error(utils._production_message(table_id))
     return args
 
 
@@ -86,6 +81,7 @@ def main():
     if args.dryrun:
         print(updated)
     else:
+        utils.refuse_production(args.pubs_table)
         Table(id=args.pubs_table).store_rows(values=utils.strip_newlines(updated), synapse_client=syn)
     print("DONE ✓")
 

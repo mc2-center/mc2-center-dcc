@@ -78,20 +78,14 @@ def get_args():
         type=str,
         default=None,
         help=(
-            "Add grants to this specified table. Overrides the table chosen by "
-            "--production. (Default: the staging grants table)"
-        ),
-    )
-    parser.add_argument(
-        "--production",
-        action="store_true",
-        help=(
-            "Add grants to the production grants table. Without it, the staging "
-            "table in CCKP - MC2 Admin is used."
+            "Add grants to this specified table. (Default: the staging grants table)"
         ),
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.portal_table in utils.PRODUCTION_TABLES:
+        parser.error(utils._production_message(args.portal_table))
+    return args
 
 
 def _text(value):
@@ -327,7 +321,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     if new is None or current is None or dryrun is None:
         args = get_args()
         if args.portal_table is None:
-            args.portal_table = utils.portal_table("grant", args.production)
+            args.portal_table = utils.portal_table("grant")
         manifest_id = new if new is not None else args.manifest
         portal_table = current if current is not None else args.portal_table
         dryrun = dryrun if dryrun is not None else args.dryrun
@@ -335,6 +329,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         manifest_id = new
         portal_table = current
 
+    utils.refuse_production(portal_table)
     manifest = read_manifest(syn, manifest_id)
     curr_portal = Table(id=portal_table).query(
         query=f"SELECT * FROM {portal_table}",
