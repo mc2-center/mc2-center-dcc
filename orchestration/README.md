@@ -8,12 +8,14 @@ the staging tables to the production portal tables. Every script that writes to 
 
 ## Before you start
 
-- Python 3.11 (what CI uses) in an environment of your choice, e.g. a conda env: `pip install -r requirements.txt`
+- Python 3.11 (what CI uses) in the conda env `mc2-center-dcc`:
+  `conda create -n mc2-center-dcc python=3.11 && conda activate mc2-center-dcc && pip install -r requirements.txt`
   (`requirements.txt` includes `requirements-ci.txt`; `requirements-dev.txt` adds pytest). `geo-synapse`, a private
   repo, is only needed by `annotations/create_entity_links.py` (the `links` stage).
 - Synapse login: `export SYNAPSE_AUTH_TOKEN=<personal access token>` (or a `.synapseConfig`). Without either,
-  `utils.syn_login()` prompts for a token. The token needs write access to the grant projects, the CCKP - MC2 Admin
-  project (it holds the staging portal tables), the log tables, and, for step 7 only, the production portal tables.
+  `utils.syn_login()` prompts for a token. Give the token the view, download and modify scopes. The account must be
+  a member of the MC2 Admin team, which gives write access to the grant projects, the CCKP - MC2 Admin project (it
+  holds the staging portal tables), the log tables and the production portal tables (step 7 only).
 
 ## The cycle
 
@@ -148,6 +150,25 @@ that RecordSet; the run skips the grant with status `locked` (exit 1). If two ru
 lock expires after 2 hours; the next run of `upload_recordsets.py` or `remove_recordset_rows.py` then recovers the
 orphaned version (`recovered`) or closes the row (`aborted`). `retry` means the RecordSet changed during the run;
 nothing was written, rerun.
+
+To clear a stuck lock by hand (no run is writing to the RecordSet):
+1. Find the `pending` row in `syn78404341` for the RecordSet: note its `runId` and `baseVersion`.
+2. Compare the RecordSet's latest version with `baseVersion`.
+3. If they are the same (the run created no version), add a row to `syn78404341` with the same `recordSetId`,
+   `runId` and `baseVersion`, `status` = `aborted`, `writtenOn` = now and `version` empty. The lock is then clear.
+4. If the RecordSet has a newer version, do not clear the lock by hand. Wait until the lock expires (2 hours), then
+   run `upload_recordsets.py` or `remove_recordset_rows.py` (a dry run is enough): it logs the orphaned version as
+   `recovered`. A version that is not logged counts as a curator edit.
+
+## When the data model pin moves
+
+Each grant RecordSet is bound to one JSON Schema version (`MC2Center-<Component>-<version>`; now 14.1.2). After a new
+data-models release, re-bind the RecordSets to it, or Grid keeps validating against the old version. For the grant
+RecordSets, run `annotations/migrate_grant_tables_14.py --component <Component> --schema-version <version>` (dry run,
+then `--execute`): for each migrated RecordSet it binds the new schema and re-validates it with one logged Grid
+export; the data does not change. The admin RecordSets (grants, projects, people) have no re-bind step in
+`annotations/migrate_admin_manifests_14.py` yet. Also move the AI curation pipeline's `MODEL_REF` pin and
+`portal_tables/model_contract.MODEL_REF` (the default schema version of `union_qc.py`) to the same version.
 
 ## Grid and list-cell caveats
 
