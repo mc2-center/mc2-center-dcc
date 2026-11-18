@@ -5,6 +5,9 @@ replace). This is a dry run unless ``--execute`` is given: the dry run reads
 both tables and writes only local report files (schema check, row diff,
 summary). Nothing is written to Synapse.
 
+This script is the only one that writes the production portal tables; every
+other script writes the staging tables.
+
 Writing production tables needs explicit sign-off. Do not run ``--execute``
 without it.
 
@@ -14,7 +17,8 @@ Steps:
      ``schema_diff.csv`` and stop. No table is written.
   2. Diff the rows (``<resource>_diff.csv``) and write ``summary.csv``. The
      rows are matched on a key column per resource. If the key is missing or
-     not unique in either table, the whole row is compared instead.
+     not unique in either table, the whole row is compared instead. The count
+     tables have no key column: their whole rows are compared.
   3. With ``--execute``, for each table in order: snapshot the staging table,
      replace the production rows (``utils.update_table``; it snapshots
      production and restores it on failure), read production back and compare
@@ -43,7 +47,7 @@ RESOURCES = [r for r, c in utils.CONFIG.items() if "staging_table" in c]
 # Portal column used as the record key of each resource (from crosswalk.py).
 # Tool, education, project and people have no id column: use the column that
 # names the record (tool, project), or the one that identifies it (education
-# alias is a synID; people synapseProfileId).
+# alias is a synID; people synapseProfileId). The count tables have no key.
 KEY_COLUMNS = {
     "publication": "pubMedId",
     "dataset": "datasetId",
@@ -114,10 +118,10 @@ def _signature(row) -> tuple:
     return tuple(_cell(v) for v in row)
 
 
-def diff_rows(staging: pd.DataFrame, production: pd.DataFrame, key: str):
+def diff_rows(staging: pd.DataFrame, production: pd.DataFrame, key: str | None):
     """Return (diff rows, key used). Falls back to whole rows without a usable key."""
     out = []
-    if _usable_key(key, staging, production):
+    if key is not None and _usable_key(key, staging, production):
         s = {_cell(r[key]): r for _, r in staging.iterrows()}
         p = {_cell(r[key]): r for _, r in production.iterrows()}
         for k in s.keys() - p.keys():
@@ -152,7 +156,7 @@ def promote(syn, resource: str, run_id: str, staging_df: pd.DataFrame) -> str:
     Table(id=staging_id).snapshot(
         comment=f"promote {run_id} to {production_id}", synapse_client=syn
     )
-    utils.update_table(syn, production_id, staging_df)
+    utils.update_table(syn, production_id, staging_df, allow_production=True)
     back = read_table(syn, production_id)
     # update_table stores the rows with newlines replaced by spaces.
     return "promoted" if same_rows(utils.strip_newlines(staging_df), back) else "readback_mismatch"
@@ -191,7 +195,7 @@ def run(argv=None) -> int:
         staging_id, production_id = utils.portal_table(resource), utils.portal_table(resource, True)
         staging_df, production_df = read_table(syn, staging_id), read_table(syn, production_id)
         frames[resource] = staging_df
-        diff, key_used = diff_rows(staging_df, production_df, KEY_COLUMNS[resource])
+        diff, key_used = diff_rows(staging_df, production_df, KEY_COLUMNS.get(resource))
         pd.DataFrame(diff, columns=DIFF_COLUMNS).to_csv(out_dir / f"{resource}_diff.csv", index=False)
         counts = Counter(d["change"] for d in diff)
         # A changed row can list several columns: count rows, not cells.
@@ -223,7 +227,7 @@ def run(argv=None) -> int:
     summary_df.to_csv(out_dir / "summary.csv", index=False)
     print(summary_df.to_string(index=False))
     for row in summary:
-        if row["key_used"] == "whole row":
+        if row["key_used"] == "whole row" and row["resource"] in KEY_COLUMNS:
             print(f"{row['resource']}: key column missing or not unique; compared whole rows.")
     return code
 

@@ -62,13 +62,15 @@ def world(monkeypatch):
     monkeypatch.setattr(promote_staging, "Table", w.table_class())
     monkeypatch.setattr(utils, "syn_login", lambda: object())
 
-    def fake_update(syn, table_id, df, component=None):
+    def fake_update(syn, table_id, df, component=None, allow_production=False):
         w.calls.append(("update_table", table_id))
+        w.allow_production.append(allow_production)
         if table_id in w.corrupt:
             df = df.iloc[:-1]
         w.tables[table_id] = (w.tables[table_id][0], utils.strip_newlines(df).reset_index(drop=True))
 
     w.corrupt = set()
+    w.allow_production = []
     monkeypatch.setattr(utils, "update_table", fake_update)
     return w
 
@@ -122,6 +124,17 @@ def test_duplicate_key_falls_back_to_whole_row(world, tmp_path, capsys):
     assert "compared whole rows" in capsys.readouterr().out
 
 
+def test_count_table_without_key_diffs_whole_rows_without_warning(world, tmp_path, capsys):
+    cols = ["theme", "totalCount"]
+    world.add("theme_counts", False, [["T1", 2], ["T2", 3]], cols=cols)
+    world.add("theme_counts", True, [["T1", 2], ["T2", 1]], cols=cols)
+    assert _run(tmp_path, "--tables", "theme_counts") == 0
+    row = _summary(tmp_path).loc["theme_counts"]
+    assert row["key_used"] == "whole row"
+    assert (row["added"], row["removed"], row["changed"]) == (1, 1, 0)
+    assert "compared whole rows" not in capsys.readouterr().out
+
+
 def test_list_cells_compare_exactly(world, tmp_path):
     world.add("tool", False, [["T1", ["a", "b"]]])
     world.add("tool", True, [["T1", ["b", "a"]]])
@@ -144,6 +157,7 @@ def test_execute_snapshots_staging_then_updates_production(world, tmp_path):
     summary = _summary(tmp_path)
     assert list(summary["status"]) == ["promoted", "promoted"]
     assert len(world.tables[g_p][1]) == 2
+    assert world.allow_production == [True, True]
 
 
 def test_readback_mismatch_stops_later_tables(world, tmp_path):
