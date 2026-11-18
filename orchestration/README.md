@@ -85,7 +85,8 @@ regenerate). Invalid rows are kept and reported, never dropped. Checkpoint: revi
 
 **6. Sync to the live portal tables.** `run_sync.sh` runs the publication, dataset, tool and education syncs, reading
 the merged manifests above (the same script runs in the `Sync manifests to portal tables` GitHub workflow, which is
-`workflow_dispatch` only):
+`workflow_dispatch` only). Sync publications before datasets: the dataset sync reads the publications portal table
+for each linked publication's title, year and DOI. `run_sync.sh` keeps this order.
 
 ```bash
 bash run_sync.sh --dryrun     # extra arguments go to every script
