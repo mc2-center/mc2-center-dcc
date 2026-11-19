@@ -137,28 +137,52 @@ each one. After any fix, do [After a fix](#after-a-fix).
 
 ### Change cell values
 
-Use this when a cell has a wrong value (`annotations/upload_recordsets.py`).
+Use this when a cell of an existing row has a wrong value. The script is `annotations/fix_recordset_cells.py`.
 
-1. Make one upload CSV for each grant. Use display names as headers. Put in it the key column of the RecordSet
-   and only the columns to change.
-2. Copy the current value for each column you do not want to change. A blank cell clears the stored value.
-3. Write a list cell as comma-separated values.
-4. Make a paths CSV with the columns `File Paths`, `folderId<Component>` and `grantId`. The folder column is
-   `folderIdDatasets`, `folderIdPublication` (singular), `folderIdTools` or `folderIdEducation`.
-5. Do a dry run. `--component` is a component name, for example `DatasetView`:
+1. Make a changes CSV with the columns `component`, `grant`, `key`, `column` and `new_value`. Put one cell on
+   each line. One run takes one component.
+   - `component` is `PublicationView`, `DatasetView`, `ToolView` or `EducationalResource`.
+   - `grant` is the grant number, for example `CA209891`.
+   - `key` is the key value of the row: a PMID, or a Synapse ID for datasets and tools.
+   - `column` is the display name or the key name of the column.
+   - `new_value` is the full new cell value. Write a list cell as comma-separated values, or as a JSON array
+     (`["Smith, John", "Lee, Ann"]`) when an item has a comma.
+2. Do a dry run:
+
+```bash
+python annotations/fix_recordset_cells.py --changes changes.csv --report-dir runs/fix
+```
+
+3. Read `refused.csv` (if there is one) and `cells.csv` in `<report-dir>/<run-id>/fix_cells/`. `cells.csv` shows
+   the current and the new value of each cell.
+4. Add `--execute` and run the command again.
+
+The script finds the RecordSet of the grant. If that RecordSet has no row with the key, the script searches the
+RecordSets of all grants. When one RecordSet has the key, the script uses it (`cells.csv` shows `holding_grant`
+and `found_by_search`). When several have it, the line is refused: add one line for each grant.
+
+The script refuses a line when the key is not a row, the column is unknown or is the key column, two lines set one
+cell to different values, the value fails the schema, or a list item has a quote or a backslash. If the script
+refuses a line, it writes nothing for any grant. `refused.csv` lists the refused lines.
+
+The script can change a cell that a curator owns (a cell edited in Curator), but only the cells in the changes
+CSV. The old values are in `<report-dir>/<run-id>/<grant project ID>/overwritten.csv`. A standard upload never changes a cell that a curator owns.
+
+Check: each grant in `summary.csv` is `written`. The script reads the RecordSet back and compares it.
+
+A fix is stored as a pipeline version. A later standard upload that has the same key with the old value changes
+the cell back, and it does not report a conflict. Thus, also fix the source of the wrong value (for example the
+AI pipeline output file), and do not upload old rows again.
+
+To add a new row, use `annotations/upload_recordsets.py` with an upload CSV and a paths CSV (columns
+`File Paths`, `folderId<Component>` and `grantId`). A key that is not in the RecordSet adds a row:
 
 ```bash
 python annotations/upload_recordsets.py --paths-csv paths.csv --component DatasetView \
-    --write-log-table syn78404341 --removals-table syn78404342 --report-dir runs/fix [--run-id ...]
+    --write-log-table syn78404341 --removals-table syn78404342 --report-dir runs/add
 ```
 
-6. Read `decisions.csv`, `merged.csv` and `conflicts.csv` of each grant.
-7. Add `--execute` and run the command again.
-
-A key that is not in the RecordSet adds a new row. An upload never overwrites a cell that a curator owns (a cell
-edited in Curator). That cell is in `conflicts.csv` and keeps its value. Change it in Curator.
-
-Check: each grant in `summary.csv` is `written`. Read the RecordSet back and compare the changed cells.
+Read `decisions.csv`, `merged.csv` and `conflicts.csv` of each grant, then add `--execute`.
 
 On failure:
 - `written_with_invalid`: the version is stored. Some rows fail validation, also rows you did not change. Read
@@ -180,9 +204,10 @@ python annotations/rekey_recordset_rows.py --changes changes.csv --component Dat
     --write-log-table syn78404341 --report-dir runs/rekey
 ```
 
-3. Read `summary.csv`, `changes.csv` and `refused.csv` in `<report-dir>/<run-id>/`. The script refuses an
-   `old_key` that is not a row. It refuses a `new_key` that is empty, equal to the old key, or already a key of
-   the RecordSet. It refuses a `new_key` that the removals table lists as `removed`. It writes nothing to a
+3. Read `summary.csv` in `<report-dir>/<run-id>/`. Read `changes.csv` and `refused.csv` in
+   `<report-dir>/<run-id>/<recordset-id>/`. The script refuses an `old_key` that is not a row or that is in two
+   changes. It refuses a `new_key` that is empty, equal to the old key, in two changes, or already a key of the
+   RecordSet (unless that key is also an `old_key` in the same file). It refuses a `new_key` that the removals table lists as `removed`. It writes nothing to a
    RecordSet that has a refused change.
 4. Add `--execute` and run the command again.
 
@@ -199,21 +224,22 @@ On failure: fix the `refused.csv` rows and run again. For `locked` or `failed`, 
 Use this for a duplicate, and for a record that must not be in the portal (for example, a summary article of
 another publication). A Grid import cannot delete rows.
 
-1. File the request (a dry run until you add `--execute`):
+1. File the request. The request also needs `--execute`. Without it, the request is not written, and step 2
+   removes nothing:
 
 ```bash
 python annotations/remove_recordset_rows.py request --removals-table syn78404342 \
-    --recordset syn... --key <key value> --reason "..."
+    --recordset syn... --key <key value> --reason "..." --execute
 ```
 
-2. Do a dry run of the removal. Then add `--execute` and run it again:
+2. Do a dry run of the removal. Make sure that it lists the key. Then add `--execute` and run it again:
 
 ```bash
 python annotations/remove_recordset_rows.py --removals-table syn78404342 --write-log-table syn78404341 \
     --recordset syn... --report-dir runs/removals
 ```
 
-Check: the dry run lists the keys you expect and no `not_found`. After `--execute`, no RecordSet is `failed`,
+Check: the dry run lists the keys you expect after "would remove", and nothing after "not found". After `--execute`, no RecordSet is `failed`,
 `locked`, `blocked` or `retry`. `blocked` means a Grid session is open on the RecordSet: ask the curator to close
 it, then run again. See also step 4 of [The cycle](#the-cycle).
 
@@ -221,7 +247,9 @@ it, then run again. See also step 4 of [The cycle](#the-cycle).
 
 Use these rules to decide if a dataset or tool row is right.
 
-- Data stored in Synapse has only a representation in the grant project (a Folder or a Dataset).
+- Data stored in Synapse has only a representation in the grant project (a Folder or a Dataset). The row uses
+  the Synapse ID of that entity. When `Dataset Url` names a Synapse entity, the links stage uses its Synapse ID
+  and makes no new entity.
 - Data stored outside Synapse has an entity in the central project CCKP Indexed Datasets (`syn76986881`, folder
   `datasets`). It has a `{accession}_links` folder with indexed file links and a Dataset that shows them. If it
   cannot be indexed yet, it has an empty `{alias}_links` folder and no Dataset.
@@ -238,13 +266,12 @@ Use these rules to decide if a dataset or tool row is right.
 | `id_conflicts.csv` (`union_qc.py`) | One alias has different ids in different grants | Change a record id or remove a record in the grant RecordSets. Regenerate. |
 | `key_conflicts.csv` (`union_qc.py`) | An id twice in one grant, or on different names (unmerged components) | The same. |
 | `validation.csv`, `validation_counts.csv` | The row fails the schema. The row is kept. | Change the cell values. Or record the item for curation. |
-| `04_links/tool_conflicts.csv`, `dataset_conflicts.csv` | A name is already used by a different kind of entity. The row is skipped and dropped. | Change the name or the existing entity. Run again with `--from-stage links`. |
+| `04_links/tool_conflicts.csv`, `dataset_conflicts.csv` | A name is already used by a different kind of entity, a `_links` folder of that name is not empty, an alias has different `Dataset Url` values, or a Synapse URL has no Synapse ID. The row is skipped and dropped. | Change the name, the URL or the existing entity. Run again with `--from-stage links`. |
 
 `union_qc.py --upload` is refused while `id_conflicts.csv` or `key_conflicts.csv` has rows.
 
-No report shows these two mismatches. Check them by hand:
-- The same alias with different URLs in two grants (datasets): read the merged dataset manifest.
-- An alias and a URL that name different accessions: read the publication, then fix the wrong cell.
+No report shows this mismatch. Check it by hand: an alias and a URL that name different accessions. Read the
+publication, then fix the wrong cell.
 
 ### After a fix
 
