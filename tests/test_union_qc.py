@@ -231,6 +231,14 @@ def test_education_publication_key_is_not_filled():
     assert tools["PublicationView Key"].iat[0] == "Pending Annotation"
 
 
+def test_empty_species_is_filled_with_unknown():
+    import manifest_cleanup
+
+    frame = pd.DataFrame({"Species": [""], "Assay": [""]})
+    out = manifest_cleanup.fill_empty_cells(frame, "DatasetView")
+    assert out["Species"].iat[0] == "Unknown" and out["Assay"].iat[0] == "Pending Annotation"
+
+
 def test_no_fill_keeps_empty_cells(tmp_path, mapping_csv):
     _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="")]}, extra=["--no-fill"])
     assert manifest["Tissue"].iat[0] == ""

@@ -9,7 +9,7 @@ import pandas as pd
 
 
 def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataFrame:
-    """Fill empty cells in the updated database with 'Pending Annotation' or 'Not Applicable'."""
+    """Fill empty cells in the updated database with 'Pending Annotation' or 'Not Applicable' ('Unknown' for Species)."""
     
     cols_to_fill = [
         "Assay",
@@ -33,6 +33,8 @@ def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataF
             if pd.isna(row[col]) or row[col] == "" or re.match(r"^,+", row[col]):
                 if data_type == "PublicationView" and row["Publication Accessibility"] == "Open Access":
                     value = "Not Applicable"
+                elif col == "Species":  # the Species enum has no "Pending Annotation"
+                    value = "Unknown"
                 else:
                     value = "Pending Annotation"
                 updated_database.at[row.name, col] = value
