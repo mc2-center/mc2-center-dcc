@@ -46,7 +46,7 @@ The upload can also be run alone: `annotations/upload_recordsets.py` (`--paths-c
 `--write-log-table`, `--removals-table`, `--execute`).
 
 **3. Curation in Curator.** Grant metadata is curated in each grant project's `MC2Center_<Component>_RecordSet`
-(in its data-type folder), through the curation tasks / Grid. Admin metadata (grants, projects, people) is curated
+(in its data-type folder), through the curation tasks / Grid. To fix records, see [Fixing records](#fixing-records). Admin metadata (grants, projects, people) is curated
 in its own RecordSets (`MC2Center_GrantView_RecordSet`, `MC2Center_ProjectView_RecordSet`,
 `MC2Center_PersonView_RecordSet`, folder `admin_recordsets` of CCKP - MC2 Admin, `syn28742843`), never through the
 per-run upload.
@@ -124,6 +124,135 @@ replaces the production rows (production is snapshotted first and restored if th
 back and compares. It stops at the first failure; tables promoted before the failure stay promoted. If the process
 stops between the delete and the store, restore the production table from its snapshot by hand.
 Check: `summary.csv` shows `promoted` for each table.
+
+## Fixing records
+
+Fix a record in the grant RecordSets. Never fix it in the portal tables or in the merged manifests: the next
+cycle rebuilds them from the RecordSets and the fix is lost. Do the dry run first. Run `--execute` only after a
+person reads the dry-run report. Each write takes a lock: see [Write log and locks](#write-log-and-locks).
+
+The source of truth is each grant's `MC2Center_<Component>_RecordSet`, in the component folder of the grant
+project. A row whose `GrantView Key` lists several grants is in the RecordSet of each of those grants. Fix it in
+each one. After any fix, do [After a fix](#after-a-fix).
+
+### Change cell values
+
+Use this when a cell has a wrong value (`annotations/upload_recordsets.py`).
+
+1. Make one upload CSV for each grant. Use display names as headers. Put in it the key column of the RecordSet
+   and only the columns to change.
+2. Copy the current value for each column you do not want to change. A blank cell clears the stored value.
+3. Write a list cell as comma-separated values.
+4. Make a paths CSV with the columns `File Paths`, `folderId<Component>` and `grantId`. The folder column is
+   `folderIdDatasets`, `folderIdPublication` (singular), `folderIdTools` or `folderIdEducation`.
+5. Do a dry run. `--component` is a component name, for example `DatasetView`:
+
+```bash
+python annotations/upload_recordsets.py --paths-csv paths.csv --component DatasetView \
+    --write-log-table syn78404341 --removals-table syn78404342 --report-dir runs/fix [--run-id ...]
+```
+
+6. Read `decisions.csv`, `merged.csv` and `conflicts.csv` of each grant.
+7. Add `--execute` and run the command again.
+
+A key that is not in the RecordSet adds a new row. An upload never overwrites a cell that a curator owns (a cell
+edited in Curator). That cell is in `conflicts.csv` and keeps its value. Change it in Curator.
+
+Check: each grant in `summary.csv` is `written`. Read the RecordSet back and compare the changed cells.
+
+On failure:
+- `written_with_invalid`: the version is stored. Some rows fail validation, also rows you did not change. Read
+  `validation.csv` in the report directory and fix the cells.
+- `failed` with `SynapseTimeoutError`: Synapse did not answer. Run the command again for that grant only. If a
+  version was stored, the next run logs it as `recovered`. Read the RecordSet back to check.
+- `locked` or `retry`: see [Write log and locks](#write-log-and-locks).
+
+### Change a record id
+
+Use this when a `DatasetView_id` or a `ToolView_id` must point at another entity. An upload cannot do this: it
+adds the new id as a second row and keeps the old row. The script is `annotations/rekey_recordset_rows.py`.
+
+1. Make a changes CSV with the columns `recordset`, `old_key`, `new_key` and, if you want, `reason`.
+2. Do a dry run:
+
+```bash
+python annotations/rekey_recordset_rows.py --changes changes.csv --component DatasetView \
+    --write-log-table syn78404341 --report-dir runs/rekey
+```
+
+3. Read `summary.csv`, `changes.csv` and `refused.csv` in `<report-dir>/<run-id>/`. The script refuses an
+   `old_key` that is not a row. It refuses a `new_key` that is empty, equal to the old key, or already a key of
+   the RecordSet. It refuses a `new_key` that the removals table lists as `removed`. It writes nothing to a
+   RecordSet that has a refused change.
+4. Add `--execute` and run the command again.
+
+The script stores a new version and logs it as `removed`. It adds a `removed` row for each old key to the
+removals table, so later uploads drop the old key. Cells that a curator owned under the old key do not move to
+the new key.
+
+Check: `summary.csv` shows `rekeyed` for each RecordSet. The script reads the version back and compares it.
+On failure: fix the `refused.csv` rows and run again. For `locked` or `failed`, see
+[Write log and locks](#write-log-and-locks). For `readback_mismatch`, do not run again: read the RecordSet.
+
+### Remove a record
+
+Use this for a duplicate, and for a record that must not be in the portal (for example, a summary article of
+another publication). A Grid import cannot delete rows.
+
+1. File the request (a dry run until you add `--execute`):
+
+```bash
+python annotations/remove_recordset_rows.py request --removals-table syn78404342 \
+    --recordset syn... --key <key value> --reason "..."
+```
+
+2. Do a dry run of the removal. Then add `--execute` and run it again:
+
+```bash
+python annotations/remove_recordset_rows.py --removals-table syn78404342 --write-log-table syn78404341 \
+    --recordset syn... --report-dir runs/removals
+```
+
+Check: the dry run lists the keys you expect and no `not_found`. After `--execute`, no RecordSet is `failed`,
+`locked`, `blocked` or `retry`. `blocked` means a Grid session is open on the RecordSet: ask the curator to close
+it, then run again. See also step 4 of [The cycle](#the-cycle).
+
+### Dataset and tool entities
+
+Use these rules to decide if a dataset or tool row is right.
+
+- Data stored in Synapse has only a representation in the grant project (a Folder or a Dataset).
+- Data stored outside Synapse has an entity in the central project CCKP Indexed Datasets (`syn76986881`, folder
+  `datasets`). It has a `{accession}_links` folder with indexed file links and a Dataset that shows them. If it
+  cannot be indexed yet, it has an empty `{alias}_links` folder and no Dataset.
+- The repository URL stays in `Dataset Url` of the row.
+- One accession is one dataset row. Split a row that lists several accessions into one row for each accession.
+  For a non-GEO row, the Dataset Name is the title in the repository.
+- Each Tool Name has one shared entity in `syn76986881/tools`: a link File to the homepage, or an empty Folder
+  when there is no homepage.
+
+### Mismatches and conflicts
+
+| Report | Meaning | Fix |
+|---|---|---|
+| `id_conflicts.csv` (`union_qc.py`) | One alias has different ids in different grants | Change a record id or remove a record in the grant RecordSets. Regenerate. |
+| `key_conflicts.csv` (`union_qc.py`) | An id twice in one grant, or on different names (unmerged components) | The same. |
+| `validation.csv`, `validation_counts.csv` | The row fails the schema. The row is kept. | Change the cell values. Or record the item for curation. |
+| `04_links/tool_conflicts.csv`, `dataset_conflicts.csv` | A name is already used by a different kind of entity. The row is skipped and dropped. | Change the name or the existing entity. Run again with `--from-stage links`. |
+
+`union_qc.py --upload` is refused while `id_conflicts.csv` or `key_conflicts.csv` has rows.
+
+No report shows these two mismatches. Check them by hand:
+- The same alias with different URLs in two grants (datasets): read the merged dataset manifest.
+- An alias and a URL that name different accessions: read the publication, then fix the wrong cell.
+
+### After a fix
+
+1. Run `portal_tables/union_qc.py --regenerate` (dry run). Read `report.txt`, `validation_counts.csv` and the
+   conflict reports (step 5 of [The cycle](#the-cycle)).
+2. Run it with `--upload` after sign-off. This stores the merged manifests.
+3. Run the staging syncs (step 6).
+4. Promote to production (step 7) only with the explicit okay of the owner.
 
 ## Manual checkpoints
 
