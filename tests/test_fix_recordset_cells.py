@@ -27,17 +27,25 @@ def changes(tmp_path, *rows):
     return p
 
 
-def run(tmp_path, *rows, extra=(), cur=None, projects=None):
+def run(tmp_path, *rows, extra=(), cur=None, projects=None, by_rs=None, reads=None, folders=None):
     calls = []
     argv = ["--changes", str(changes(tmp_path, *rows)), "--report-dir", str(tmp_path / "rep"),
             "--run-id", "dcc-fixcells-t", *extra]
     cur = current() if cur is None else cur
     projects = {"CA1": "syn100", "CA2": "syn200"} if projects is None else projects
+    def read(syn, rs_id, list_cols=()):
+        if reads is not None:
+            reads.append(rs_id)
+        return (by_rs[rs_id] if by_rs is not None else cur).copy()
+
+    def folder(syn, project, component):
+        return None if folders is not None and project not in folders else "syn9" + project[3:]
+
     with mock.patch.object(fx, "grant_projects", lambda syn: projects), \
-         mock.patch.object(fx, "find_folder", lambda syn, project, component: "syn9" + project[3:]), \
+         mock.patch.object(fx, "find_folder", folder), \
          mock.patch.object(fx.recordsets, "find_recordset", lambda syn, folder, component: "synRS" + folder[-3:]), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
-         mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, list_cols=(): cur.copy()), \
+         mock.patch.object(fx.recordsets, "read_recordset", read), \
          mock.patch.object(fx, "run_upload", lambda a, syn: calls.append(a) or 0):
         code = fx.main(argv, syn=object())
     return code, calls, tmp_path / "rep" / "dcc-fixcells-t" / "fix_cells"
@@ -121,3 +129,57 @@ def test_only_the_changed_cells_are_allowed_to_overwrite(tmp_path):
     assert allow.to_dict("records") == [
         {"grantId": "syn100", "key": "syn1", "column": "DatasetUrl"},
         {"grantId": "syn100", "key": "syn2", "column": "Species"}]
+
+
+def other(key="syn7"):
+    return pd.DataFrame([[key, ["Cat"], "http://x", ""]], columns=[K, "Species", "DatasetUrl", "DatasetAlias"]).astype(object)
+
+
+def test_key_held_by_another_grant_is_found_by_search(tmp_path, capsys):
+    by_rs = {"synRS100": current(), "synRS200": other()}
+    code, calls, out = run(tmp_path, row(grant="CA1", key="syn7"), by_rs=by_rs)
+    assert code == 0
+    assert (out / "files" / "CA2.csv").exists() and not (out / "files" / "CA1.csv").exists()
+    cells = pd.read_csv(out / "cells.csv", dtype=str, keep_default_na=False)
+    assert cells.loc[0, "grant"] == "CA1" and cells.loc[0, "holding_grant"] == "CA2"
+    assert cells.loc[0, "recordset"] == "synRS200" and cells.loc[0, "found_by_search"] == "True"
+    assert list(pd.read_csv(out / "paths.csv", dtype=str)["grantId"]) == ["syn200"]
+    assert capsys.readouterr().out.count("found by search") == 1
+
+
+def test_grant_without_recordset_searches_other_grants(tmp_path):
+    by_rs = {"synRS100": current(), "synRS200": other()}
+    code, calls, out = run(tmp_path, row(grant="CA2", key="syn1"), by_rs=by_rs,
+                           projects={"CA1": "syn100", "CA2": "syn200"}, folders={"syn100"})
+    assert code == 0 and (out / "files" / "CA1.csv").exists()
+
+
+def test_key_held_by_several_grants_is_refused_with_the_list(tmp_path):
+    by_rs = {"synRS100": current(), "synRS200": current(), "synRS300": other()}
+    code, calls, out = run(tmp_path, row(grant="CA3", key="syn1"), by_rs=by_rs,
+                           projects={"CA1": "syn100", "CA2": "syn200", "CA3": "syn300"})
+    assert code == 1 and calls == []
+    reason = pd.read_csv(out / "refused.csv", dtype=str).loc[0, "reason"]
+    assert "CA1" in reason and "CA2" in reason and "CA3" not in reason
+    # a line for each holding grant resolves normally, without a search
+    code, calls, out = run(tmp_path, row(grant="CA1", key="syn1"), row(grant="CA2", key="syn1"), by_rs=by_rs,
+                           projects={"CA1": "syn100", "CA2": "syn200", "CA3": "syn300"})
+    assert code == 0
+
+
+def test_key_held_by_no_grant_is_refused(tmp_path):
+    by_rs = {"synRS100": current(), "synRS200": other()}
+    code, calls, out = run(tmp_path, row(grant="CA1", key="syn404"), by_rs=by_rs)
+    assert code == 1 and calls == []
+    assert "not a row of" in pd.read_csv(out / "refused.csv", dtype=str).loc[0, "reason"]
+
+
+def test_normal_path_does_not_search_and_reads_each_recordset_once(tmp_path):
+    reads = []
+    by_rs = {"synRS100": current(), "synRS200": other()}
+    code, calls, out = run(tmp_path, row(), row(key="syn2"), by_rs=by_rs, reads=reads)
+    assert code == 0 and reads == ["synRS100"]
+    assert list(pd.read_csv(out / "cells.csv").columns) == ["grant", "recordset", "key", "column", "current", "new"]
+    reads.clear()
+    run(tmp_path, row(key="syn7"), row(key="syn7", column="Species", value="Mouse"), by_rs=by_rs, reads=reads)
+    assert sorted(reads) == ["synRS100", "synRS200"]

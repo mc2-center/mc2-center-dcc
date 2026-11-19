@@ -27,7 +27,8 @@ python annotations/upload_workflow.py ... --from-stage reshape   # resume
 
 Use `fix_recordset_cells.py` to change cell values in grant RecordSets without code. Give it a CSV with the columns
 `component, grant, key, column, new_value`: one line for each cell, one grant number in each line (to fix a row that lists
-several grants, add one line for each grant). `key` is the row key (a PMID for PublicationView, a Synapse ID for DatasetView and ToolView).
+several grants, add one line for each grant). When the named grant does not hold the row, the script finds the RecordSet that holds it;
+if several RecordSets hold it, the script refuses the line and lists the grants. `key` is the row key (a PMID for PublicationView, a Synapse ID for DatasetView and ToolView).
 `column` is the display name or the key name. `new_value` is the whole new value; write a list as a comma separated list.
 
 ```bash

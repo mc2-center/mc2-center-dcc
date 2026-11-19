@@ -21,7 +21,11 @@ contributor-owned cells, read-back check).
   separated list. The script changes whole cells only.
 
 Steps: find the grant project in the staging Grants table, find its component
-folder and RecordSet, read the latest version. Check every line. A line is
+folder and RecordSet, read the latest version. When the grant has no RecordSet
+of the component, or its RecordSet has no row with the key, the script looks in the
+RecordSets of all grants. If exactly one holds the key, the script uses it
+(``cells.csv`` then has ``holding_grant`` and ``found_by_search``). If several hold it,
+the line is refused: add one line for each holding grant. Check every line. A line is
 refused when its grant, folder or RecordSet is not found, its key is not a row,
 its column is unknown, its column is the key column (use
 ``rekey_recordset_rows.py``), two lines set one cell to different values, or
@@ -154,55 +158,99 @@ def plan(syn, changes: pd.DataFrame, component: str):
     ``grants`` is ``{grant: {"project", "folder", "recordset", "key", "frame", "cells"}}``
     where ``frame`` is the upload frame (key column and changed columns, key names)
     and ``cells`` the report rows. ``refused`` is a list of changes with a ``reason``.
+    A line whose grant has no RecordSet, or whose RecordSet has no row with the key,
+    is looked up in the RecordSets of all grants (each is read once). The grant that
+    holds the key is then the grant of the cells; ``holding_grant`` and
+    ``found_by_search`` are in the cell report.
     """
-    refused, grants = [], {}
+    refused, state = [], {}
     list_cols = recordsets.list_columns(component)
     projects = grant_projects(syn)
+    loaded = {}  # grant -> dict, or a str with the reason why it has no usable RecordSet
 
     def refuse(row, why):
         refused.append({**row, "reason": why})
 
-    for grant, grp in changes.groupby("grant", sort=False):
-        rows = grp.to_dict("records")
-        project = projects.get(grant)
-        if project is None:
-            for r in rows:
-                refuse(r, "grant is not in the staging Grants table")
-            continue
-        folder = find_folder(syn, project, component)
-        rs_id = recordsets.find_recordset(syn, folder, component) if folder else None
-        if rs_id is None:
-            for r in rows:
-                refuse(r, f"no {component} folder or RecordSet in {project}")
-            continue
-        _, key_cols = recordsets.recordset_info(syn, rs_id)
-        if len(key_cols) != 1:
-            for r in rows:
-                refuse(r, f"{rs_id} upsert key is not exactly one column: {key_cols}")
-            continue
-        key_col = key_cols[0]
-        current = recordsets.read_recordset(syn, rs_id, list_cols=list_cols)
-        current = current.drop_duplicates(subset=key_col, keep="last").set_index(key_col)
-        edits, cells = {}, []
-        for r in rows:
-            column = resolve_column(r["column"], set(current.columns) | {key_col})
-            if column is None:
-                refuse(r, "unknown column")
-            elif column == key_col:
-                refuse(r, "key column; use rekey_recordset_rows.py")
-            elif r["key"] not in current.index:
-                refuse(r, "key is not a row of the RecordSet")
-            elif (r["key"], column) in edits and edits[(r["key"], column)] != r["new_value"]:
-                refuse(r, "the cell is set twice to different values")
-            elif (why := schema_problem(component, column, r["new_value"])):
-                refuse(r, f"value fails the schema: {why}")
+    def load(grant):
+        if grant not in loaded:
+            project = projects[grant]
+            folder = find_folder(syn, project, component)
+            rs_id = recordsets.find_recordset(syn, folder, component) if folder else None
+            if rs_id is None:
+                loaded[grant] = f"no {component} folder or RecordSet in {project}"
             else:
-                if (r["key"], column) not in edits:
-                    cells.append({"grant": grant, "recordset": rs_id, "key": r["key"], "column": column,
-                                  "current": join_list(current.at[r["key"], column]), "new": r["new_value"]})
-                edits[(r["key"], column)] = r["new_value"]
+                _, key_cols = recordsets.recordset_info(syn, rs_id)
+                if len(key_cols) != 1:
+                    loaded[grant] = f"{rs_id} upsert key is not exactly one column: {key_cols}"
+                else:
+                    current = recordsets.read_recordset(syn, rs_id, list_cols=list_cols)
+                    current = current.drop_duplicates(subset=key_cols[0], keep="last").set_index(key_cols[0])
+                    loaded[grant] = {"project": project, "folder": folder, "recordset": rs_id,
+                                     "key": key_cols[0], "current": current}
+        return loaded[grant]
+
+    def holders(key, skip):
+        """The grants other than ``skip`` whose RecordSet has a row ``key``."""
+        found = []
+        for g in projects:
+            info = load(g) if g != skip else None
+            if isinstance(info, dict) and key in info["current"].index:
+                found.append(g)
+        return found
+
+    for r in changes.to_dict("records"):
+        grant, found_by_search = r["grant"], False
+        if grant not in projects:
+            refuse(r, "grant is not in the staging Grants table")
+            continue
+        info = load(grant)
+        if isinstance(info, dict) and r["key"] in info["current"].index:
+            target = grant
+        else:
+            held = holders(r["key"], skip=grant)
+            if len(held) == 1:
+                target, found_by_search = held[0], True
+            elif held:
+                refuse(r, f"key is a row of the RecordSets of several grants: {', '.join(held)}; "
+                          "add one line for each grant")
+                continue
+            elif isinstance(info, str):
+                refuse(r, f"{info}, and the key is not a row of any {component} RecordSet")
+                continue
+            else:
+                refuse(r, f"key is not a row of the RecordSet, or of any other {component} RecordSet")
+                continue
+        info = load(target)
+        current, key_col = info["current"], info["key"]
+        column = resolve_column(r["column"], set(current.columns) | {key_col})
+        st = state.setdefault(target, {"edits": {}, "cells": []})
+        edits = st["edits"]
+        if column is None:
+            refuse(r, "unknown column")
+        elif column == key_col:
+            refuse(r, "key column; use rekey_recordset_rows.py")
+        elif (r["key"], column) in edits and edits[(r["key"], column)] != r["new_value"]:
+            refuse(r, "the cell is set twice to different values")
+        elif (why := schema_problem(component, column, r["new_value"])):
+            refuse(r, f"value fails the schema: {why}")
+        else:
+            if (r["key"], column) not in edits:
+                cell = {"grant": grant, "recordset": info["recordset"], "key": r["key"], "column": column,
+                        "current": join_list(current.at[r["key"], column]), "new": r["new_value"],
+                        "holding_grant": target, "found_by_search": found_by_search}
+                st["cells"].append(cell)
+                if found_by_search:
+                    print(f"found by search: key {r['key']} of grant {grant} is in the {component} "
+                          f"RecordSet {info['recordset']} of grant {target}")
+            edits[(r["key"], column)] = r["new_value"]
+
+    grants = {}
+    for target, st in state.items():
+        edits = st["edits"]
         if not edits:
             continue
+        info = load(target)
+        current = info["current"]
         columns = list(dict.fromkeys(c for _, c in edits))
         keys = list(dict.fromkeys(k for k, _ in edits))
         frame = current.loc[keys, columns].copy().astype(object)  # a blank upload cell would clear the stored value
@@ -210,8 +258,8 @@ def plan(syn, changes: pd.DataFrame, component: str):
             frame[c] = frame[c].map(join_list)
         for (k, c), v in edits.items():
             frame.at[k, c] = v
-        grants[grant] = {"project": project, "folder": folder, "recordset": rs_id, "key": key_col,
-                         "frame": frame.reset_index(), "cells": cells}
+        grants[target] = {"project": info["project"], "folder": info["folder"], "recordset": info["recordset"],
+                          "key": info["key"], "frame": frame.reset_index(), "cells": st["cells"]}
     return grants, refused
 
 
@@ -250,6 +298,8 @@ def main(argv=None, syn=None):
         cells += g["cells"]
     pd.DataFrame(paths).to_csv(out / "paths.csv", index=False)
     cells_df = pd.DataFrame(cells)
+    if "found_by_search" in cells_df and not cells_df["found_by_search"].any():  # the report is as before when no line needed a search
+        cells_df = cells_df.drop(columns=["holding_grant", "found_by_search"])
     cells_df.to_csv(out / "cells.csv", index=False)
     # Every line of the changes file is a deliberate overwrite, also of a curator-owned cell.
     pd.DataFrame([{"grantId": g["project"], "key": c["key"], "column": c["column"]}
