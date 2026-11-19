@@ -213,18 +213,23 @@ def store_tool_entity(syn, name: str, link: str, parent_id: str) -> str:
 def store_dataset_placeholder(syn, name: str, parent_id: str) -> str:
     """Create or reuse the placeholder Folder for a dataset that has no indexed files.
 
-    A same-named Folder is reused. A same-named entity of another type raises
-    ToolConflict (a ValueError); nothing is overwritten.
+    A same-named Folder is reused only when it is empty. A same-named Folder that has
+    children (for example a GEO links folder with indexed file links), or a same-named
+    entity of another type, raises ToolConflict (a ValueError); nothing is overwritten.
     """
     existing = syn.findEntityId(name, parent=parent_id)
     if not existing:
         return Folder(name=name, parent_id=parent_id).store(synapse_client=syn).id
     concrete = syn.restGET(f"/entity/{existing}").get("concreteType")
     if concrete == FOLDER_ENTITY_TYPE:
-        return existing
+        if next(iter(syn.getChildren(existing)), None) is None:
+            return existing
+        reason = "is a Folder that is not empty"
+    else:
+        reason = "is not a Folder"
     raise ToolConflict(
         f"Cannot create placeholder folder {name!r}: {existing} ({concrete}) already exists in {parent_id} "
-        "and is not a Folder",
+        f"and {reason}",
         name, "", existing, concrete, None,
     )
 
@@ -486,7 +491,7 @@ def main(argv=None):
                 entity_id = store_dataset_placeholder(syn, f"{clean_link_name(n)}_links", datasets_folder)
             except ToolConflict as e:
                 logger.warning("%s", e)
-                conflicts.append({"file": p, **e.record})
+                conflicts.append({"file": p, **e.record, "homepage": l})
                 path_name_id.append((p, n, ""))  # blank, so later rows keep their position
                 continue
             record_created_id(created_ids_path, key, entity_id)

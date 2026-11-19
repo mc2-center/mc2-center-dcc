@@ -324,9 +324,13 @@ class LinkSyn:
         self.existing, self.stored, self.fail_on = dict(existing or {}), [], fail_on
         self.updated, self.folders = [], []
         self.concrete, self.urls = {}, {}  # entity id -> concreteType / current external URL
+        self.children = {}  # entity id -> list of child entities
 
     def findEntityId(self, name, parent=None):
         return self.existing.get((parent, name))
+
+    def getChildren(self, parent):
+        return iter(self.children.get(parent, []))
 
     def restGET(self, url):
         return {"concreteType": self.concrete.get(url.rsplit("/", 1)[-1], "org.sagebionetworks.repo.model.FileEntity")}
@@ -731,6 +735,17 @@ def test_dataset_placeholder_same_name_folder_is_reused(monkeypatch):
     syn.concrete["syn555"] = FOLDER_TYPE
     patch_file(mod, monkeypatch, syn)
     assert mod.store_dataset_placeholder(syn, "a_links", DATASETS_FOLDER) == "syn555"
+    assert syn.folders == [] and syn.stored == [] and syn.updated == []
+
+
+def test_dataset_placeholder_non_empty_same_name_folder_is_a_conflict(monkeypatch):
+    mod = load_cel(monkeypatch)
+    syn = LinkSyn(existing={(DATASETS_FOLDER, "a_links"): "syn555"})
+    syn.concrete["syn555"] = FOLDER_TYPE
+    syn.children["syn555"] = [{"id": "syn777"}]
+    patch_file(mod, monkeypatch, syn)
+    with pytest.raises(mod.ToolConflict, match=r"'a_links'.*syn555.*not empty"):
+        mod.store_dataset_placeholder(syn, "a_links", DATASETS_FOLDER)
     assert syn.folders == [] and syn.stored == [] and syn.updated == []
 
 
