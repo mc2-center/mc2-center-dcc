@@ -9,6 +9,9 @@ Returns the entity ID and adds it to the primary key column of the input manifes
 For DatasetView entries whose Dataset Url contains a GEO or SRA accession, a full
 Synapse Dataset entity with GEO FTP file links is created instead of a plain File
 link, using the geo-synapse pipeline (https://github.com/sagebio-ada/geo_dataset_creation).
+Other DatasetView entries get an empty placeholder Folder named {alias}_links in the
+central project's "datasets" folder (the folder that also holds the {accession}_links
+folders). The entity holds no URL: the repository URL stays in the row's Dataset Url.
 
 Run it through annotations/upload_workflow.py (its links stage), not on its own: this script
 only writes the new IDs into the local manifest CSVs, and the workflow's upload stage is
@@ -49,7 +52,7 @@ logger = logging.getLogger(__name__)
 # Must have PUBLIC: READ + DOWNLOAD so files are accessible without touching PI projects.
 _CENTRAL_PROJECT_SYNID = "syn76986881"   # CCKP Indexed Datasets
 _COLLECTION_SYNID = "syn77025587"        # DatasetCollection in _CENTRAL_PROJECT_SYNID
-_DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders
+_DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders and non-GEO placeholder folders
 _TOOLS_FOLDER = "tools"                  # subfolder holding one shared entity per tool
 
 
@@ -205,6 +208,25 @@ def store_tool_entity(syn, name: str, link: str, parent_id: str) -> str:
     )
 
 
+def store_dataset_placeholder(syn, name: str, parent_id: str) -> str:
+    """Create or reuse the placeholder Folder for a dataset that has no indexed files.
+
+    A same-named Folder is reused. A same-named entity of another type raises
+    ToolConflict (a ValueError); nothing is overwritten.
+    """
+    existing = syn.findEntityId(name, parent=parent_id)
+    if not existing:
+        return Folder(name=name, parent_id=parent_id).store(synapse_client=syn).id
+    concrete = syn.restGET(f"/entity/{existing}").get("concreteType")
+    if concrete == FOLDER_ENTITY_TYPE:
+        return existing
+    raise ToolConflict(
+        f"Cannot create placeholder folder {name!r}: {existing} ({concrete}) already exists in {parent_id} "
+        "and is not a Folder",
+        name, "", existing, concrete, None,
+    )
+
+
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
 
     path_name_link_target = []
@@ -344,7 +366,7 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
 
 
 def main(argv=None):
-    """Returns the ToolView rows skipped for a ToolConflict (blank ID in their manifest)."""
+    """Returns the ToolView/DatasetView rows skipped for a ToolConflict (blank ID in their manifest)."""
 
     syn = utils.syn_login()
 
@@ -393,6 +415,7 @@ def main(argv=None):
 
         done = load_created_ids(created_ids_path)
         path_name_id = []
+        datasets_folder = None  # central datasets folder, looked up on first use
         for p, n, l, t in pnt:
             key = row_key(p, n, l)
             if key in done:
@@ -411,10 +434,18 @@ def main(argv=None):
                     path_name_id.append((p, n, dataset_synid))
                     continue
                 else:
-                    print(f"    Indexing failed ({err}), falling back to File link")
+                    print(f"    Indexing failed ({err}), using a placeholder folder")
 
-            # Non-GEO or failed GEO: create plain File link entity (or reuse the same-named one)
-            entity_id = store_link(syn, clean_link_name(n), l, t)
+            # Non-GEO or failed GEO: empty placeholder Folder in the central datasets folder
+            if datasets_folder is None:
+                datasets_folder = find_or_create_folder(syn, _DATASETS_FOLDER, _CENTRAL_PROJECT_SYNID)
+            try:
+                entity_id = store_dataset_placeholder(syn, f"{clean_link_name(n)}_links", datasets_folder)
+            except ToolConflict as e:
+                logger.warning("%s", e)
+                conflicts.append({"file": p, **e.record})
+                path_name_id.append((p, n, ""))  # blank, so later rows keep their position
+                continue
             record_created_id(created_ids_path, key, entity_id)
             path_name_id.append((p, n, entity_id))
 
@@ -430,7 +461,7 @@ def main(argv=None):
                                 conflicts=conflicts if data_type == "ToolView" else None)
 
     for c in conflicts:
-        print(f"Skipped tool row: {c['message']}")
+        print(f"Skipped {data_type} row: {c['message']}")
     print(f"The following link entities were created:\n{[i for p,n,i in path_name_id]}")
 
     if manifest is not None or data is not None:
