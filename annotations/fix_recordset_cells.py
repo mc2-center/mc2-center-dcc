@@ -18,7 +18,12 @@ contributor-owned cells, read-back check).
   a Synapse ID (DatasetView, ToolView).
 - ``column``: the display name or the RecordSet key name of the column.
 - ``new_value``: the full new cell value. Write a list cell as a comma
-  separated list. The script changes whole cells only.
+  separated list, or as a JSON array (``["A, B", "C"]``) when an item holds a
+  comma. The script changes whole cells only. The upload file holds each list
+  cell as a JSON array, so an unchanged item that holds a comma stays one item.
+  A line is refused when a list item (new, or unchanged in a row that the
+  script writes) holds a quote or a backslash: ``upload_recordsets.py`` would
+  drop the whole row.
 
 Steps: find the grant project in the staging Grants table, find its component
 folder and RecordSet, read the latest version. When the grant has no RecordSet
@@ -149,7 +154,18 @@ def schema_problem(component: str, column: str, value: str) -> str | None:
 
 
 def join_list(value):
+    """A list cell as text for the report."""
     return ", ".join(value) if isinstance(value, list) else value
+
+
+def upload_cell(column: str, value: str, list_cols) -> str:
+    """``value`` as the upload file holds it: a list column as a JSON array.
+
+    The text is read as ``parse_upload`` reads it (JSON array, or the comma split rules).
+    """
+    if column not in list_cols:
+        return value
+    return recordsets.cell_to_csv(recordsets.parse_upload(pd.DataFrame({column: [value]}), list_cols)[column].iloc[0])
 
 
 def plan(syn, changes: pd.DataFrame, component: str):
@@ -174,19 +190,22 @@ def plan(syn, changes: pd.DataFrame, component: str):
     def load(grant):
         if grant not in loaded:
             project = projects[grant]
-            folder = find_folder(syn, project, component)
-            rs_id = recordsets.find_recordset(syn, folder, component) if folder else None
-            if rs_id is None:
-                loaded[grant] = f"no {component} folder or RecordSet in {project}"
-            else:
-                _, key_cols = recordsets.recordset_info(syn, rs_id)
-                if len(key_cols) != 1:
-                    loaded[grant] = f"{rs_id} upsert key is not exactly one column: {key_cols}"
+            try:
+                folder = find_folder(syn, project, component)
+                rs_id = recordsets.find_recordset(syn, folder, component) if folder else None
+                if rs_id is None:
+                    loaded[grant] = f"no {component} folder or RecordSet in {project}"
                 else:
-                    current = recordsets.read_recordset(syn, rs_id, list_cols=list_cols)
-                    current = current.drop_duplicates(subset=key_cols[0], keep="last").set_index(key_cols[0])
-                    loaded[grant] = {"project": project, "folder": folder, "recordset": rs_id,
-                                     "key": key_cols[0], "current": current}
+                    _, key_cols = recordsets.recordset_info(syn, rs_id)
+                    if len(key_cols) != 1:
+                        loaded[grant] = f"{rs_id} upsert key is not exactly one column: {key_cols}"
+                    else:
+                        current = recordsets.read_recordset(syn, rs_id, list_cols=list_cols)
+                        current = current.drop_duplicates(subset=key_cols[0], keep="last").set_index(key_cols[0])
+                        loaded[grant] = {"project": project, "folder": folder, "recordset": rs_id,
+                                         "key": key_cols[0], "current": current}
+            except Exception as e:  # one unreadable grant must not stop the run with a traceback
+                loaded[grant] = f"grant {grant} ({project}) could not be read: {type(e).__name__}: {e}"
         return loaded[grant]
 
     def holders(key, skip):
@@ -223,17 +242,21 @@ def plan(syn, changes: pd.DataFrame, component: str):
         info = load(target)
         current, key_col = info["current"], info["key"]
         column = resolve_column(r["column"], set(current.columns) | {key_col})
-        st = state.setdefault(target, {"edits": {}, "cells": []})
+        st = state.setdefault(target, {"edits": {}, "cells": [], "lines": []})
         edits = st["edits"]
+        value = upload_cell(column, r["new_value"], list_cols) if column else r["new_value"]
         if column is None:
             refuse(r, "unknown column")
         elif column == key_col:
             refuse(r, "key column; use rekey_recordset_rows.py")
-        elif (r["key"], column) in edits and edits[(r["key"], column)] != r["new_value"]:
+        elif (r["key"], column) in edits and edits[(r["key"], column)] != value:
             refuse(r, "the cell is set twice to different values")
         elif (why := schema_problem(component, column, r["new_value"])):
             refuse(r, f"value fails the schema: {why}")
+        elif recordsets.has_unsafe_item(recordsets.parse_cell(value)) and column in list_cols:
+            refuse(r, "a list item holds a quote or a backslash; upload_recordsets.py would drop the row")
         else:
+            st["lines"].append(r)
             if (r["key"], column) not in edits:
                 cell = {"grant": grant, "recordset": info["recordset"], "key": r["key"], "column": column,
                         "current": join_list(current.at[r["key"], column]), "new": r["new_value"],
@@ -242,7 +265,7 @@ def plan(syn, changes: pd.DataFrame, component: str):
                 if found_by_search:
                     print(f"found by search: key {r['key']} of grant {grant} is in the {component} "
                           f"RecordSet {info['recordset']} of grant {target}")
-            edits[(r["key"], column)] = r["new_value"]
+            edits[(r["key"], column)] = value
 
     grants = {}
     for target, st in state.items():
@@ -255,9 +278,19 @@ def plan(syn, changes: pd.DataFrame, component: str):
         keys = list(dict.fromkeys(k for k, _ in edits))
         frame = current.loc[keys, columns].copy().astype(object)  # a blank upload cell would clear the stored value
         for c in columns:
-            frame[c] = frame[c].map(join_list)
+            frame[c] = frame[c].map(recordsets.cell_to_csv)  # a list cell as a JSON array keeps a comma item whole
         for (k, c), v in edits.items():
             frame.at[k, c] = v
+        unsafe_keys = {k for k in keys for c in columns if (k, c) not in edits
+                       and recordsets.has_unsafe_item(current.at[k, c])}
+        if unsafe_keys:
+            for line in st["lines"]:
+                if line["key"] in unsafe_keys:
+                    refuse(line, "a list item of an unchanged cell of this row holds a quote or a backslash; "
+                                 "upload_recordsets.py would drop the row")
+                else:  # listed, not left out silently: the grant's upload file is not written
+                    refuse(line, "another row of this grant was refused (unchanged cell with a quote or a backslash)")
+            continue
         grants[target] = {"project": info["project"], "folder": info["folder"], "recordset": info["recordset"],
                           "key": info["key"], "frame": frame.reset_index(), "cells": st["cells"]}
     return grants, refused

@@ -59,14 +59,14 @@ def test_upload_file_has_key_and_changed_columns_only(tmp_path):
     code, calls, out = run(tmp_path, row(column="Dataset Url"), row(column="Species", value="Mouse"))
     assert code == 0
     up = pd.read_csv(out / "files" / "CA1.csv", dtype=str, keep_default_na=False)
-    assert up.to_dict("records") == [{"DatasetView_id": "syn1", "Dataset Url": URL, "Species": "Mouse"}]
+    assert up.to_dict("records") == [{"DatasetView_id": "syn1", "Dataset Url": URL, "Species": '["Mouse"]'}]
 
 
 def test_unset_cells_keep_current_values_and_lists_are_joined(tmp_path):
     # syn1 gets a new Species; syn2 is in the file for Dataset Url only, so its Species must stay
     code, calls, out = run(tmp_path, row(column="Species", value="Cat"), row(key="syn2", column="Dataset Url"))
     up = pd.read_csv(out / "files" / "CA1.csv", dtype=str, keep_default_na=False).set_index("DatasetView_id")
-    assert up.loc["syn2", "Species"] == "Human" and up.loc["syn1", "Dataset Url"] == "http://old"
+    assert up.loc["syn2", "Species"] == '["Human"]' and up.loc["syn1", "Dataset Url"] == "http://old"
     cells = pd.read_csv(out / "cells.csv", dtype=str, keep_default_na=False)
     assert list(cells["current"]) == ["Mouse, Rat", "http://two"]
     assert list(cells.columns) == ["grant", "recordset", "key", "column", "current", "new"]
@@ -183,3 +183,100 @@ def test_normal_path_does_not_search_and_reads_each_recordset_once(tmp_path):
     reads.clear()
     run(tmp_path, row(key="syn7"), row(key="syn7", column="Species", value="Mouse"), by_rs=by_rs, reads=reads)
     assert sorted(reads) == ["synRS100", "synRS200"]
+
+
+TOOL_K = "ToolViewId"
+
+
+def tool_current():
+    return pd.DataFrame(
+        [["syn1", ["Lee, Ann", "Kim"], "x"], ["syn2", ["A"], "y"]],
+        columns=[TOOL_K, "ToolEntityName", "ToolHomepage"]).astype(object)
+
+
+def run_tool(tmp_path, *rows, cur=None):
+    cur = tool_current() if cur is None else cur
+    argv = ["--changes", str(changes(tmp_path, *rows)), "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-fixcells-t"]
+    with mock.patch.object(fx, "grant_projects", lambda syn: {"CA1": "syn100"}), \
+         mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9100"), \
+         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS100"), \
+         mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [TOOL_K])), \
+         mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, list_cols=(): cur.copy()), \
+         mock.patch.object(fx, "run_upload", lambda a, syn: 0):
+        code = fx.main(argv, syn=object())
+    return code, tmp_path / "rep" / "dcc-fixcells-t" / "fix_cells"
+
+
+def tool_row(key="syn1", column="Tool Homepage", value="https://example.org/z"):
+    return ["ToolView", "CA1", key, column, value]
+
+
+def parsed_upload(out, cols=("ToolEntityName",)):
+    up = pd.read_csv(out / "files" / "CA1.csv", dtype=str, keep_default_na=False)
+    up = fx.model_contract.normalize_headers(up, to="keys")
+    return fx.recordsets.parse_upload(up, set(cols)).set_index(TOOL_K)
+
+
+def test_copied_list_cell_with_a_comma_item_survives_the_upload_parse(tmp_path):
+    # the key and the list column are both in the file; only Homepage is changed, so the list is copied
+    cur = tool_current()
+    code, out = run_tool(tmp_path, tool_row(), tool_row(key="syn2", column="Tool Entity Name", value="B"), cur=cur)
+    assert code == 0
+    up = parsed_upload(out)
+    assert up.loc["syn1", "ToolEntityName"] == cur.set_index(TOOL_K).loc["syn1", "ToolEntityName"] == ["Lee, Ann", "Kim"]
+    assert up.loc["syn2", "ToolEntityName"] == ["B"]
+
+
+def test_copied_comma_item_in_a_second_list_column(tmp_path):
+    cur = tool_current()
+    cur["ToolPackageDependencies"] = [["Doe, Jo", "R"], ["P"]]
+    code, out = run_tool(tmp_path, tool_row(), tool_row(key="syn2", column="Tool Package Dependencies", value="P"), cur=cur)
+    assert code == 0
+    up = parsed_upload(out, ("ToolEntityName", "ToolPackageDependencies"))
+    assert up.loc["syn1", "ToolPackageDependencies"] == ["Doe, Jo", "R"]
+
+
+def test_json_array_new_value_with_a_comma_item(tmp_path):
+    code, out = run_tool(tmp_path, tool_row(column="Tool Entity Name", value='["A, B", "C"]'))
+    assert code == 0
+    assert parsed_upload(out).loc["syn1", "ToolEntityName"] == ["A, B", "C"]
+    cells = pd.read_csv(out / "cells.csv", dtype=str, keep_default_na=False)
+    assert cells.loc[0, "current"] == "Lee, Ann, Kim"
+
+
+def test_comma_text_new_value_still_splits(tmp_path):
+    code, out = run_tool(tmp_path, tool_row(column="Tool Entity Name", value="A, B, C"))
+    assert code == 0
+    assert parsed_upload(out).loc["syn1", "ToolEntityName"] == ["A", "B", "C"]
+
+
+@pytest.mark.parametrize("value", ['["a\\"b"]', '["a\\\\b"]'])
+def test_new_value_with_a_quote_or_backslash_item_is_refused(tmp_path, value):
+    code, out = run_tool(tmp_path, tool_row(column="Tool Entity Name", value=value))
+    assert code == 1 and not (out / "files").exists()
+    assert "quote or a backslash" in pd.read_csv(out / "refused.csv", dtype=str).loc[0, "reason"]
+
+
+def test_unsafe_copied_item_refuses_the_lines_of_that_row(tmp_path):
+    cur = tool_current()
+    cur.at[0, "ToolEntityName"] = ['say "hi"']
+    code, out = run_tool(tmp_path, tool_row(key="syn1"), tool_row(key="syn2", column="Tool Entity Name", value="B"), cur=cur)
+    assert code == 1 and not (out / "files").exists()
+    refused = pd.read_csv(out / "refused.csv", dtype=str)
+    assert list(refused["key"]) == ["syn1", "syn2"] and "unchanged" in refused.loc[0, "reason"]
+    assert "another row of this grant" in refused.loc[1, "reason"]
+
+
+def test_unreadable_recordset_is_a_refusal_naming_the_grant(tmp_path):
+    def boom(syn, rs_id, list_cols=()):
+        raise RuntimeError("403")
+    argv = ["--changes", str(changes(tmp_path, tool_row())), "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-fixcells-t"]
+    with mock.patch.object(fx, "grant_projects", lambda syn: {"CA1": "syn100"}), \
+         mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9100"), \
+         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS100"), \
+         mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [TOOL_K])), \
+         mock.patch.object(fx.recordsets, "read_recordset", boom):
+        code = fx.main(argv, syn=object())
+    assert code == 1
+    reason = pd.read_csv(tmp_path / "rep" / "dcc-fixcells-t" / "fix_cells" / "refused.csv", dtype=str).loc[0, "reason"]
+    assert "CA1" in reason and "403" in reason

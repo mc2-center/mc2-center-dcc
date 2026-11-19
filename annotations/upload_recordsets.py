@@ -142,7 +142,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     upload = recordsets.parse_upload(upload, list_cols)
     # Grid cannot open a RecordSet whose list cell holds an item with a quote or backslash.
     unsafe = pd.Series(
-        [any(isinstance(v, list) and any('"' in i or "\\" in i for i in v) for v in r)
+        [any(recordsets.has_unsafe_item(v) for v in r)
          for r in upload.itertuples(index=False)],
         index=upload.index, dtype=bool)
     if unsafe.any():

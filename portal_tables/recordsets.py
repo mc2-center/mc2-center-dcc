@@ -176,6 +176,14 @@ def cell_to_csv(value) -> str:
     return "" if value is None else str(value)
 
 
+def has_unsafe_item(value) -> bool:
+    """True when ``value`` is a list with an item that holds a quote or backslash.
+
+    Grid cannot open a RecordSet whose list cell holds such an item.
+    """
+    return isinstance(value, list) and any('"' in i or "\\" in i for i in value)
+
+
 def _norm(value, set_like: bool = False):
     """Comparable form of a cell (see the module docstring)."""
     if isinstance(value, list):
