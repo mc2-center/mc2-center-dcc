@@ -21,7 +21,7 @@ python annotations/upload_workflow.py ... --from-stage reshape   # resume
 - `links` creates Synapse entities, so it only runs with `--execute`. Before it, rows with an empty
   link column are dropped (`04_links/dropped_rows.csv`) and GEO/SRA accessions that already have a
   Dataset entity in the central project are reused instead of recreated (`04_links/reused_entities.csv`).
-  Other datasets get an empty placeholder Folder named `{alias}_links` in the central project's `datasets` folder. A same-named entity that is not a Folder is skipped, listed in `04_links/dataset_conflicts.csv` and dropped.
+  Other datasets get an empty placeholder Folder named `{alias}_links` in the central project's `datasets` folder. A Dataset Url that names a Synapse entity gives that Synapse ID, with no new entity. A row is skipped, listed in `04_links/dataset_conflicts.csv` and dropped if its folder name is taken by a non-Folder entity, if its alias has different Dataset Url values across files, or if its Synapse URL has no Synapse ID.
 - `SYNAPSE_AUTH_TOKEN`, when set, is passed to subprocesses (never logged).
 
 This repository contains a workflow to process and upload manifests into synapse using a shell script named `upload-workflow.sh`. The workflow involves several steps, each with specific input files, processes, and outputs. Below is a detailed description of each step:

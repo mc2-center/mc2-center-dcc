@@ -25,8 +25,9 @@ is empty (logged), dropping any split file left empty; ToolView rows with an emp
 homepage are kept (they get a Folder in the shared tools folder). A tool row whose name
 conflicts with a different entity in the shared tools folder is skipped by the links stage, listed
 in ``04_links/tool_conflicts.csv`` and dropped like an empty-link row. A DatasetView row whose
-placeholder folder name is taken by a non-Folder entity is handled the same way
-(``04_links/dataset_conflicts.csv``). The dropped rows and excluded
+placeholder folder name is taken by a non-Folder entity, whose alias has different Dataset Url values
+across files, or whose Dataset Url is a Synapse URL with no Synapse ID is handled the same way
+(``04_links/dataset_conflicts.csv``). A Dataset Url that names a Synapse entity gives that ID, with no new entity. The dropped rows and excluded
 files are listed in run.json (``dropped_rows``, ``unresolved_folder_files``).
 
 Each stage starts with an empty directory (``--from-stage`` keeps the earlier

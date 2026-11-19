@@ -12,6 +12,8 @@ link, using the geo-synapse pipeline (https://github.com/sagebio-ada/geo_dataset
 Other DatasetView entries get an empty placeholder Folder named {alias}_links in the
 central project's "datasets" folder (the folder that also holds the {accession}_links
 folders). The entity holds no URL: the repository URL stays in the row's Dataset Url.
+A row whose Dataset Url names a Synapse entity uses that Synapse ID and gets no new entity.
+An alias with different Dataset Url values across the split files is skipped in all its rows.
 
 Run it through annotations/upload_workflow.py (its links stage), not on its own: this script
 only writes the new IDs into the local manifest CSVs, and the workflow's upload stage is
@@ -227,6 +229,23 @@ def store_dataset_placeholder(syn, name: str, parent_id: str) -> str:
     )
 
 
+def synapse_id_of(url: str):
+    """None if url is not a synapse.org URL; else the first Synapse ID in it ("" if it has none)."""
+    if not re.search(r"https?://(?:[\w-]+\.)*synapse\.org\b", url or "", re.IGNORECASE):
+        return None
+    m = re.search(r"\bsyn\d+\b", url, re.IGNORECASE)
+    return m.group(0).lower() if m else ""
+
+
+def alias_url_mismatches(pnt) -> dict[str, list[tuple[str, str]]]:
+    """Aliases that have more than one Dataset Url (compared after strip) in a run:
+    alias -> [(file, url), ...] for each of its rows."""
+    seen = {}
+    for p, n, l, _ in pnt:
+        seen.setdefault(n.strip(), []).append((p, l.strip()))
+    return {a: rows for a, rows in seen.items() if len({u for _, u in rows}) > 1}
+
+
 def get_names(name_column: str, target: str, link_column: str, manifest: str = None, data: str = None,) -> list[tuple[str, str, str, str]]:
 
     path_name_link_target = []
@@ -416,11 +435,35 @@ def main(argv=None):
         done = load_created_ids(created_ids_path)
         path_name_id = []
         datasets_folder = None  # central datasets folder, looked up on first use
+        mismatched = alias_url_mismatches(pnt)
         for p, n, l, t in pnt:
+            if n.strip() in mismatched:
+                details = "; ".join(f"{Path(f).name}: {u!r}" for f, u in mismatched[n.strip()])
+                msg = f"Dataset Alias {n.strip()!r} has different Dataset Url values across files ({details})"
+                logger.warning("%s", msg)
+                conflicts.append({"file": p, "name": n, "homepage": l, "existing_id": "",
+                                  "existing_type": "", "existing_url": None, "message": msg})
+                path_name_id.append((p, n, ""))
+                continue
             key = row_key(p, n, l)
             if key in done:
                 print(f"  Already created ({done[key]}): {n}")
                 path_name_id.append((p, n, done[key]))
+                continue
+
+            # Data stored in Synapse: use that entity directly, no new entity
+            syn_id = synapse_id_of(l)
+            if syn_id is not None:
+                if not syn_id:
+                    msg = f"Dataset Url {l!r} of {n!r} is a Synapse URL with no Synapse ID"
+                    logger.warning("%s", msg)
+                    conflicts.append({"file": p, "name": n, "homepage": l, "existing_id": "",
+                                      "existing_type": "", "existing_url": None, "message": msg})
+                    path_name_id.append((p, n, ""))
+                    continue
+                print(f"  Synapse entity {syn_id}: {n}")
+                record_created_id(created_ids_path, key, syn_id)
+                path_name_id.append((p, n, syn_id))
                 continue
 
             accession = parse_accession(f"[{n}]({l})")

@@ -819,6 +819,67 @@ def test_workflow_keeps_conflicting_dataset_rows_out_of_the_upload(tmp_path, env
     assert not (links / "tool_conflicts.csv").exists()
 
 
+def test_dataset_view_synapse_url_uses_that_id_without_new_entity(tmp_path, monkeypatch):
+    syn = LinkSyn()
+    urls = ["https://www.synapse.org/Synapse:syn123", "https://www.synapse.org/#!Synapse:syn456",
+            "https://www.synapse.org/Synapse:syn789/datasets/"]
+    mod, split, pending, lookups = dataset_run(tmp_path, monkeypatch, syn, [(f"s{i}", u) for i, u in enumerate(urls)])
+    ids = tmp_path / "created_ids.csv"
+    assert mod.main(["-m", str(pending), "-t", "DatasetView", "--created-ids", str(ids)]) == []
+    assert syn.folders == [] and syn.stored == [] and lookups == []
+    assert pd.read_csv(split, dtype=str)["DatasetView_id"].tolist() == ["syn123", "syn456", "syn789"]
+    assert len(pd.read_csv(ids)) == 3
+
+
+def test_dataset_view_synapse_url_without_id_is_a_conflict(tmp_path, monkeypatch):
+    syn = LinkSyn()
+    mod, split, pending, _ = dataset_run(
+        tmp_path, monkeypatch, syn, [("a", "https://www.synapse.org/"), ("b", "https://x/b")])
+    conflicts = mod.main(["-m", str(pending), "-t", "DatasetView"])
+    assert [c["name"] for c in conflicts] == ["a"] and "no Synapse ID" in conflicts[0]["message"]
+    assert [f[0] for f in syn.folders] == ["b_links"]
+    assert pd.read_csv(split, dtype=str, keep_default_na=False)["DatasetView_id"].tolist() == ["", "syn2001"]
+
+
+def test_dataset_view_alias_with_different_urls_across_files_skips_all_its_rows(tmp_path, monkeypatch):
+    syn = LinkSyn()
+    mod, split1, pending, _ = dataset_run(tmp_path, monkeypatch, syn, [("a", "https://x/a1"), ("b", "https://x/b")])
+    split2 = tmp_path / "CA2_dataset.csv"
+    pd.DataFrame([("a", " https://x/a2 "), ("b", "https://x/b ")], columns=["Dataset Alias", "Dataset Url"]
+                 ).assign(DatasetView_id="").to_csv(split2, index=False)
+    pd.DataFrame({"File Paths": [str(split1), str(split2)], "folderIdDatasets": ["syn100", "syn101"]}
+                 ).to_csv(pending, index=False)
+    conflicts = mod.main(["-m", str(pending), "-t", "DatasetView"])
+    assert [f[0] for f in syn.folders] == ["b_links", "b_links"]  # b: equal after strip, so not a mismatch
+    assert len(conflicts) == 2 and {c["file"] for c in conflicts} == {str(split1), str(split2)}
+    for c in conflicts:
+        assert all(t in c["message"] for t in ["'a'", "CA1_dataset.csv", "CA2_dataset.csv", "https://x/a1",
+                                               "https://x/a2"])
+    ids = lambda f: pd.read_csv(f, dtype=str, keep_default_na=False)["DatasetView_id"].tolist()
+    assert ids(split1) == ["", "syn2001"] and ids(split2) == ["", "syn2002"]
+
+
+def test_workflow_drops_rows_of_a_mismatched_alias(tmp_path, env, monkeypatch):
+    real = uw._load
+
+    def fake_links(argv):
+        pending = pd.read_csv(argv[argv.index("-m") + 1])
+        for path in pending["File Paths"]:
+            df = pd.read_csv(path, dtype=str, keep_default_na=False)
+            df["DatasetView_id"] = [f"syn{i + 1}" for i in range(len(df))]
+            df.loc[df["Dataset Alias"] == df["Dataset Alias"].iloc[0], "DatasetView_id"] = ""  # skipped
+            df.to_csv(path, index=False)
+        return [{"file": pending["File Paths"][0], "name": "x", "homepage": "u", "existing_id": "",
+                 "existing_type": "", "existing_url": None, "message": "different Dataset Url values"}]
+
+    monkeypatch.setattr(uw, "_load", lambda f: types.SimpleNamespace(main=fake_links)
+                        if f == "create_entity_links.py" else real(f))
+    code, state = run(tmp_path, "DatasetView", "--execute")
+    assert code == 2 and state["dropped_rows"]
+    assert pd.read_csv(tmp_path / "out" / "04_links" / "dataset_conflicts.csv")["message"].tolist() == [
+        "different Dataset Url values"]
+
+
 def tool_link_run(tmp_path, monkeypatch, syn, rows):
     mod = load_cel(monkeypatch)
     split = tmp_path / "CA1_tool.csv"
