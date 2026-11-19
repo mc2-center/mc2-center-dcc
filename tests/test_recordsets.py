@@ -31,6 +31,19 @@ def test_merge_upload_updates_appends_and_reports_conflicts():
     ]
 
 
+def test_merge_upload_overwrite_allows_only_listed_cells():
+    reconciled = df(["a", "Edited", ["x"]])
+    upload = df(["a", "Pipeline", ["y"]])
+    owned = {("a", "Title"), ("a", "Assay")}
+    lost = []
+    merged, conflicts = rs.merge_upload(reconciled, upload, K, owned, overwrite={("a", "Title")}, overwritten=lost)
+    assert merged.loc[0, "Title"] == "Pipeline" and merged.loc[0, "Assay"] == ["x"]
+    assert list(conflicts["column"]) == ["Assay"]
+    assert lost == [{"key": "a", "column": "Title", "contributor_value": "Edited", "upload_value": "Pipeline"}]
+    merged, conflicts = rs.merge_upload(reconciled, upload, K, owned)  # default: the contributor wins
+    assert merged.loc[0, "Title"] == "Edited" and len(conflicts) == 2
+
+
 def test_merge_upload_edit_equal_to_upload_is_no_conflict():
     reconciled = df(["a", "Same", ""])
     merged, conflicts = rs.merge_upload(reconciled, df(["a", "Same", ""]), K, {("a", "Title")})

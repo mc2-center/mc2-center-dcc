@@ -1245,7 +1245,7 @@ def _version_diffs(cf, latest) -> dict[int, dict]:
     return diffs
 
 
-def merge_upload(reconciled, upload, key, edited, set_like=()):
+def merge_upload(reconciled, upload, key, edited, set_like=(), overwrite=frozenset(), overwritten=None):
     """Upsert ``upload`` rows into ``reconciled`` (a replayed state); contributors win.
 
     Existing keys are updated cell by cell, new keys appended, keys absent from
@@ -1253,6 +1253,11 @@ def merge_upload(reconciled, upload, key, edited, set_like=()):
     cells) where the upload value differs, the state value is kept
     and a conflict recorded. Returns ``(merged DataFrame, conflicts DataFrame)``
     with columns ``key, column, contributor_value, upload_value``.
+
+    ``overwrite`` is a set of ``(key, column)`` cells that may replace a
+    contributor-owned value (default: none, so the contributor always wins).
+    Each such replacement is appended to the ``overwritten`` list (same fields
+    as a conflict) when a list is given, and is not a conflict.
     """
     key_cols = key_columns(key)
     set_like = set(set_like)
@@ -1272,7 +1277,13 @@ def merge_upload(reconciled, upload, key, edited, set_like=()):
             new, old = up_row[column], row[column]
             if _cells_equal(new, old, column in set_like):
                 continue
-            if (k, column) in edited:
+            if (k, column) in edited and (k, column) in overwrite:
+                if overwritten is not None:
+                    overwritten.append(
+                        {"key": k, "column": column, "contributor_value": old, "upload_value": new}
+                    )
+                row[column] = new
+            elif (k, column) in edited:
                 conflicts.append(
                     {"key": k, "column": column, "contributor_value": old, "upload_value": new}
                 )

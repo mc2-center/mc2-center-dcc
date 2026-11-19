@@ -120,6 +120,7 @@ def test_dry_run_writes_stage_folders_and_run_json(tmp_path, env):
     assert state["execute"] is False
     assert len(list((out / "01_split").glob("*_publication.csv"))) == 3
     assert "--execute" not in env["upload"][0]
+    assert "--overwrite-csv" not in env["upload"][0]
     assert env["links"] == []
 
 

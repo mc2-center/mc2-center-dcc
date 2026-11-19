@@ -230,6 +230,39 @@ def test_contributor_value_survives_later_runs(tmp_path):
         assert list(conflicts["column"]) == ["PublicationTitle"], n
 
 
+def curator_edits(tmp_path):
+    v1 = stored(["p1", "Pipeline title", ["RNA Sequencing"]], ["p2", "Second", ""])
+    v2 = stored(["p1", "Contributor title", ["Imaging"]], ["p2", "Second", ""])
+    log = tmp_path / "log.csv"
+    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    return FakeSynapse([v1, v2]), log
+
+
+def test_overwrite_csv_replaces_only_the_listed_curator_cell(tmp_path):
+    fake, log = curator_edits(tmp_path)
+    allow = tmp_path / "overwrite.csv"
+    pd.DataFrame([["syn100", "p1", "PublicationTitle"]], columns=["grantId", "key", "column"]).to_csv(allow, index=False)
+    code, rep = run(tmp_path, fake, "--overwrite-csv", str(allow), log=log)
+    assert code == 0
+    row = fake.writes[-1].set_index(KEY).loc["p1"]
+    assert row["PublicationTitle"] == "Pipeline title"  # listed: overwritten
+    assert row["Assay"] == ["Imaging"]  # not listed: the curator still wins
+    ow = pd.read_csv(rep / "syn100" / "overwritten.csv", dtype=str, keep_default_na=False)
+    assert ow.to_dict("records") == [{"key": "p1", "column": "PublicationTitle",
+                                      "contributor_value": "Contributor title", "upload_value": "Pipeline title"}]
+    conflicts = pd.read_csv(rep / "syn100" / "conflicts.csv", dtype=str, keep_default_na=False)
+    assert list(conflicts["column"]) == ["Assay"]
+
+
+def test_overwrite_csv_of_another_grant_changes_nothing(tmp_path):
+    fake, log = curator_edits(tmp_path)
+    allow = tmp_path / "overwrite.csv"
+    pd.DataFrame([["syn555", "p1", "PublicationTitle"]], columns=["grantId", "key", "column"]).to_csv(allow, index=False)
+    code, rep = run(tmp_path, fake, "--overwrite-csv", str(allow), log=log)
+    assert fake.writes == []  # the curator wins everywhere: nothing to write
+    assert not (rep / "syn100" / "overwritten.csv").exists()
+
+
 def test_pipeline_originated_value_is_overwritten(tmp_path):
     log = tmp_path / "log.csv"
     rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
