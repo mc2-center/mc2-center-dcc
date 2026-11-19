@@ -833,3 +833,42 @@ def test_write_log_removed_status_is_a_pipeline_version(tmp_path):
     assert log.pipeline_map("syn1") == {5: 4, 6: 5}
     assert log.removal_versions("syn1") == {5} and log.removal_versions("syn2") == set()
     assert [r["runId"] for r in log.unresolved_pending("syn1")] == ["run1"]  # removed doesn't close the lock
+
+
+class _Resp:
+    def __init__(self, status, content=b"a,b\n"):
+        self.status_code, self.content = status, content
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def _download_syn(statuses):
+    syn = mock.MagicMock()
+    syn.restGET.side_effect = lambda uri: f"https://files.example/{len(syn.restGET.call_args_list)}"
+    syn._requests_session.get.side_effect = [_Resp(s) for s in statuses]
+    return syn
+
+
+def test_download_version_file_retries_a_403_with_a_fresh_url(tmp_path):
+    syn = _download_syn([403, 200])
+    out = rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
+    assert out.read_bytes() == b"a,b\n"
+    assert syn.restGET.call_count == 2  # a fresh pre-signed URL for the second try
+    urls = [c.args[0] for c in syn._requests_session.get.call_args_list]
+    assert urls[0] != urls[1]
+
+
+def test_download_version_file_gives_up_after_the_last_403(tmp_path):
+    syn = _download_syn([403] * rs.DOWNLOAD_TRIES)
+    with pytest.raises(RuntimeError, match="403"):
+        rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
+    assert syn._requests_session.get.call_count == rs.DOWNLOAD_TRIES
+
+
+def test_download_version_file_does_not_retry_other_errors(tmp_path):
+    syn = _download_syn([404])
+    with pytest.raises(RuntimeError, match="404"):
+        rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
+    assert syn._requests_session.get.call_count == 1

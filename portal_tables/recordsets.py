@@ -119,6 +119,7 @@ WRITE_LOG_COLUMNS = [
     "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
 ]
 LOCK_HOURS = 2
+DOWNLOAD_TRIES = 3  # _download_version_file: tries on a 403 from the file host
 REMOVAL_RUN_PREFIX = "dcc-removal-"  # runId of a DCC removal run (D-Q49); recover_pending keys on it
 # A removal run's re-validation (Grid export only, no direct store) opens its pending row under
 # ``<run id><suffix>``: the write log has no kind column, and the runId is what it can hold. recover_pending
@@ -350,9 +351,16 @@ def _cache_hit(cached: Path) -> bool:
 
 
 def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
-    """Download one version's file through its pre-signed URL, bypassing the client's file cache."""
-    url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
-    response = syn._requests_session.get(url, timeout=120)
+    """Download one version's file through its pre-signed URL, bypassing the client's file cache.
+
+    The file host sometimes answers 403 to a valid URL (seen on about 1 in 6 downloads); each try gets a fresh URL.
+    """
+    for attempt in range(DOWNLOAD_TRIES):
+        url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
+        response = syn._requests_session.get(url, timeout=120)
+        if response.status_code != 403 or attempt == DOWNLOAD_TRIES - 1:
+            break
+        logger.warning("%s v%s: download answered 403; retrying with a fresh URL", rs_id, version)
     response.raise_for_status()
     dest.write_bytes(response.content)
     return dest

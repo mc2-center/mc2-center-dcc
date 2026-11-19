@@ -89,7 +89,7 @@ class FakeSyn:
         return "https://s3.example/presigned"
 
     def _get(self, url, timeout=None):
-        return SimpleNamespace(content=self.content, raise_for_status=lambda: None)
+        return SimpleNamespace(status_code=200, content=self.content, raise_for_status=lambda: None)
 
 
 def test_read_recordset_downloads_again_when_the_cached_file_has_the_wrong_md5(tmp_path):
