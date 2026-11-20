@@ -58,7 +58,7 @@ def portal_table(resource: str, production: bool = False) -> str:
 
 
 # Admin manifests (Grant, Project, PersonView) live in CCKP - MC2 Admin. The
-# migration (annotations/migrate_admin_manifests_14.py) copies each table into a
+# migration (migration/migrate_admin_manifests_14.py) copies each table into a
 # shared RecordSet named MC2Center_<Component>_RecordSet in this folder of the
 # admin project, one per component.
 ADMIN_PROJECT = "syn28742843"
@@ -67,7 +67,7 @@ ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "P
 
 # Where the grant, project and people syncs read their manifest: "table" (the
 # legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above,
-# filled by annotations/migrate_admin_manifests_14.py --execute).
+# filled by migration/migrate_admin_manifests_14.py --execute).
 MANIFEST_SOURCE = "recordset"
 MANIFEST_SOURCES = ("table", "recordset")
 
@@ -130,7 +130,7 @@ def find_admin_recordset(syn, resource: str) -> str:
     if found is None:
         raise LookupError(
             f"{admin_recordset_name(component)} not found in {ADMIN_RECORDSET_FOLDER} of {ADMIN_PROJECT}; "
-            "run annotations/migrate_admin_manifests_14.py --execute first, or use --manifest-source table"
+            "run migration/migrate_admin_manifests_14.py --execute first, or use --manifest-source table"
         )
     return found
 

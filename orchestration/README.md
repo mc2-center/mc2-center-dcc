@@ -105,9 +105,9 @@ Two related steps sit outside the per-run driver:
   rows listed in the `MC2Center_RecordSet_Removals` table (`syn78404342`) from
   the RecordSets. It is the one RecordSet write outside a Grid session, takes
   the write-log lock, and defaults to a dry run (`--execute` to write).
-- **Admin and grant-table migrations** (D-Q50): `annotations/migrate_grant_tables_14.py`
+- **Admin and grant-table migrations** (D-Q50): `migration/migrate_grant_tables_14.py`
   (per component, the grant-level tables into RecordSets) and
-  `annotations/migrate_admin_manifests_14.py` (the Grant / Project / PersonView
+  `migration/migrate_admin_manifests_14.py` (the Grant / Project / PersonView
   admin manifests). Both default to a dry run; `--execute` needs
   `--write-log-table`. One-off cutover steps, run before the first sync.
 

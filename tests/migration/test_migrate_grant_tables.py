@@ -1,4 +1,4 @@
-"""annotations/migrate_grant_tables_14.py with every Synapse call mocked."""
+"""migration/migrate_grant_tables_14.py with every Synapse call mocked."""
 import importlib.util
 import json
 from pathlib import Path
@@ -10,8 +10,8 @@ import pytest
 
 import recordsets as rs
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("migrate_grant_tables_14", ROOT / "annotations" / "migrate_grant_tables_14.py")
+ROOT = Path(__file__).resolve().parent.parent.parent
+spec = importlib.util.spec_from_file_location("migrate_grant_tables_14", ROOT / "migration" / "migrate_grant_tables_14.py")
 mig = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mig)
 

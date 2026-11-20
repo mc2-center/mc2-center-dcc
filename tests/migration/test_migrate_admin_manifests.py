@@ -1,4 +1,4 @@
-"""annotations/migrate_admin_manifests_14.py with every Synapse call mocked."""
+"""migration/migrate_admin_manifests_14.py with every Synapse call mocked."""
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,8 +12,8 @@ import utils
 
 REAL_LOAD = utils.load_consortium_keys  # before the autouse fixture replaces it
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("migrate_admin_manifests_14", ROOT / "annotations" / "migrate_admin_manifests_14.py")
+ROOT = Path(__file__).resolve().parent.parent.parent
+spec = importlib.util.spec_from_file_location("migrate_admin_manifests_14", ROOT / "migration" / "migrate_admin_manifests_14.py")
 adm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(adm)
 grants = adm.grants

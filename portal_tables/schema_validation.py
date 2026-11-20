@@ -1,6 +1,6 @@
 """Local jsonschema validation against the 14.x data-model JSON Schemas.
 
-Shared by ``annotations/migrate_grant_tables_14.py`` (I5a dry runs) and
+Shared by ``migration/migrate_grant_tables_14.py`` (I5a dry runs) and
 ``portal_tables/union_qc.py`` (I6 merged manifests). The schemas come from
 ``model_contract.fetch`` at a data-models tag (``--schema-version``). Frames use
 class-label headers; list columns hold Python lists.
