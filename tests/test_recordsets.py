@@ -395,12 +395,25 @@ def test_composite_key_uses_unit_separator():
 # --- cells and keys ---
 
 
-def test_numeric_strings_compare_equal_but_not_leading_zeros():
-    assert rs._cells_equal("2020", "2020.0", False)
-    assert rs._cells_equal("-1.50", "-1.5", False)
-    assert not rs._cells_equal("007", "7", False)
-    assert not rs._cells_equal("2020", "2021", False)
-    assert not rs._cells_equal("abc", "ABC", False)
+BIG = "12345678901234567890"
+CELLS_EQUAL = [
+    ("2020", "2020.0", True),  # numeric strings compare as numbers ...
+    ("-1.50", "-1.5", True),
+    ("0.10", "0.1", True),
+    (" 2020", "2020.0", True),  # a leading space does not matter
+    ("007", "7", False),  # ... but not with leading zeros
+    ("2020", "2021", False),
+    ("abc", "ABC", False),
+    (BIG, "12345678901234567891", False),  # numbers compare exactly
+    (BIG, BIG, True),
+    ("0.1", "0.10000000000000000001", False),
+    ("1e3", "1000", False),  # not a plain number
+]
+
+
+@pytest.mark.parametrize("a,b,expected", CELLS_EQUAL)
+def test_cells_equal(a, b, expected):
+    assert rs._cells_equal(a, b, False) is expected
 
 
 def test_check_upload_keys_rejects_blank_and_duplicate_and_strips():
@@ -757,16 +770,6 @@ def test_incremental_session_base_matches_the_brute_force_rule():
             assert rs._session_base(cf, diffs, fps, v) == _reference_base(frames, v, list(W)), (trial, v)
 
 
-def test_numbers_compare_exactly():
-    a, b = "12345678901234567890", "12345678901234567891"
-    assert not rs._cells_equal(a, b, False)
-    assert rs._cells_equal(a, a, False)
-    assert rs._cells_equal("2020", "2020.0", False)
-    assert rs._cells_equal("0.10", "0.1", False)
-    assert not rs._cells_equal("0.1", "0.10000000000000000001", False)
-    assert not rs._cells_equal("1e3", "1000", False)  # not a plain number
-
-
 @pytest.mark.slow
 def test_replay_benchmark_200_versions_500_rows_18_columns():
     import random
@@ -819,10 +822,6 @@ def test_pre_start_recovery_leaves_a_young_live_row_alone(log):
     found = rs.recover_pending(None, "syn1", log, 5, meta=lambda v: ("42", pd.NaT),
                                skip_younger_than=rs.LOCK_HOURS)
     assert found == {} and [r["runId"] for r in log.unresolved_pending("syn1")] == ["B"]
-
-
-def test_leading_space_number_compares_as_number():
-    assert rs._cells_equal(" 2020", "2020.0", False)
 
 
 # --- D-Q49 removals ---

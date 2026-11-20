@@ -8,7 +8,7 @@ import pytest
 
 import recordsets as rs
 from conftest import load_script
-from fakes import FakeRS, removals_table, write_log
+from fakes import FakeRS, assert_nothing_written, removals_table, write_log
 
 cmd = load_script("annotations/remove_recordset_rows.py", "remove_recordset_rows")
 
@@ -49,8 +49,7 @@ def test_dry_run_reports_keys_and_writes_nothing(tmp_path, capsys):
     s = process(tmp_path, fake, log, removals, execute=False)
     assert s["status"] == "dryrun" and s["remove"] == 1 and s["not_found"] == 1
     assert "would remove ['b']; not found ['zzz']" in s["message"]
-    assert len(fake.versions) == 1 and fake.events == []
-    assert not (tmp_path / "log.csv").exists()
+    assert_nothing_written(fake, log)
     assert set(removals.requested("synRS")) == {"b", "zzz"}  # unchanged
 
 
@@ -103,7 +102,8 @@ def test_execute_stores_then_exports_then_logs_in_order(tmp_path):
 def test_open_grid_session_refuses_and_writes_nothing(tmp_path):
     fake, log, removals = setup(tmp_path, [V1], sessions=[SimpleNamespace(session_id="g1")])
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "blocked" and fake.events == [] and len(fake.versions) == 1
+    assert s["status"] == "blocked"
+    assert_nothing_written(fake)
     assert set(removals.requested("synRS")) == {"b"}
 
 
@@ -112,7 +112,8 @@ def test_session_opened_after_the_lock_aborts_the_pending_row(tmp_path):
     calls = iter([[], [SimpleNamespace(session_id="g2")]])
     fake.open_sessions = lambda syn, rs_id: next(calls)
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "blocked" and fake.events == []
+    assert s["status"] == "blocked"
+    assert_nothing_written(fake)
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
 
 
@@ -120,14 +121,16 @@ def test_another_runs_pending_row_locks_the_recordset(tmp_path):
     fake, log, removals = setup(tmp_path, [V1])
     log.start("synRS", 1, "other", "7")
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "locked" and fake.events == []
+    assert s["status"] == "locked"
+    assert_nothing_written(fake)
 
 
 def test_lock_race_loser_aborts(tmp_path):
     fake, log, removals = setup(tmp_path, [V1])
     with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "other"):
         s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "locked" and fake.events == []
+    assert s["status"] == "locked"
+    assert_nothing_written(fake)
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
 
 
@@ -136,13 +139,15 @@ def test_recordset_moving_after_the_read_retries(tmp_path):
     answers = iter([(1, [K]), (2, [K])])
     fake.info = lambda syn, rs_id: next(answers)
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "retry" and fake.events == []
+    assert s["status"] == "retry"
+    assert_nothing_written(fake)
 
 
 def test_keys_not_found_are_logged_and_the_pending_row_is_resolved(tmp_path):
     fake, log, removals = setup(tmp_path, [V1], requested=("nope",))
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "nothing_to_remove" and fake.events == []
+    assert s["status"] == "nothing_to_remove"
+    assert_nothing_written(fake)
     assert removals._latest("synRS").set_index("key").loc["nope", "status"] == "not_found"
     assert removals.requested("synRS") == {}
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
@@ -191,7 +196,7 @@ def test_crash_recovery_by_the_next_run_when_the_handler_could_not_run(tmp_path)
     assert s["status"] == "revalidated" and s["claimed"] == {"b": 2} and s["owed_export"] == [2]
     assert log.pipeline_map("synRS") == {2: 1, 3: 2}
     assert removals.removed("synRS") == {"b": 2}
-    assert [e[0] for e in fake.events] == ["export"]  # nothing stored again; the owed export is made
+    assert [e[0] for e in fake.events] == ["export"] and len(fake.versions) == 3  # nothing stored again; the owed export is made
 
 
 def test_removed_version_without_removals_rows_is_claimed(tmp_path):
@@ -263,7 +268,7 @@ def test_crash_after_the_removals_rows_but_before_the_export_owes_a_revalidation
     # a later run with nothing requested makes the export and logs it written, base = the removal version
     fake2 = FakeRS(fake.versions, [K], log=log)
     s = process(tmp_path, fake2, log, removals, run_id="dcc-removal-2")
-    assert s["status"] == "revalidated" and [e[0] for e in fake2.events] == ["export"]
+    assert s["status"] == "revalidated" and [e[0] for e in fake2.events] == ["export"] and len(fake2.versions) == 3
     assert log.unexported_removals("synRS") == [] and log.pipeline_map("synRS") == {2: 1, 3: 2}
     assert log.unresolved_pending("synRS") == []
     # and the next run finds nothing to do

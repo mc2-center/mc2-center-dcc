@@ -21,6 +21,13 @@ def removals_table(path):
     return rs.CsvRemovals(path)
 
 
+def assert_nothing_written(fake, log=None):
+    """The RecordSet is still at one version with no store or export; with ``log``, that log file was never made."""
+    assert len(fake.versions) == 1 and fake.events == []
+    if log is not None:
+        assert not log.path.exists()
+
+
 # --- RecordSets ---------------------------------------------------------------------------------------------------
 
 

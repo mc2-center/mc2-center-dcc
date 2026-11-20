@@ -7,7 +7,7 @@ import pytest
 
 import recordsets as rs
 from conftest import load_script
-from fakes import FakeRS, FakeSynapse
+from fakes import FakeRS, FakeSynapse, assert_nothing_written
 
 cmd = load_script("annotations/rekey_recordset_rows.py", "rekey_recordset_rows")
 
@@ -61,7 +61,7 @@ def test_dry_run_changes_only_key_cells_and_stores_nothing(tmp_path, log, capsys
     fake = FakeSynapse(log, synA=f)
     assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\nsynA,syn3,syn30\n", log=log) == 0
     assert "synA: dryrun" in capsys.readouterr().out
-    assert len(f.versions) == 1 and f.events == [] and not log.path.exists()
+    assert_nothing_written(f, log)
     rep = tmp_path / "rep" / "dcc-rekey-1" / "synA"
     rows = read_csv((rep / "rekeyed.csv").read_text(encoding="utf-8"))
     assert rows == [
@@ -122,7 +122,8 @@ def test_locked_recordset_is_reported_and_not_written(tmp_path, log):
     f = fake_rs(log=log)
     fake = FakeSynapse(log, synA=f)
     assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log, execute=True) == 1
-    assert summary(tmp_path)["synA"]["status"] == "locked" and f.events == []
+    assert summary(tmp_path)["synA"]["status"] == "locked"
+    assert_nothing_written(f)
 
 
 def test_execute_logs_start_store_record_export_finish_and_writes_removals(tmp_path, log, removals, capsys):

@@ -2,7 +2,7 @@
 from unittest import mock
 
 from conftest import load_script
-from fakes import FakeRS
+from fakes import FakeRS, assert_nothing_written
 
 cmd = load_script("annotations/repair_recordset.py", "repair_recordset")
 
@@ -58,7 +58,7 @@ def test_dry_run_writes_nothing_and_reports(tmp_path, log, capsys):
     fake = fake_rs(log)
     assert run(tmp_path, fake, log=log) == 0
     assert "dry run: 1 broken cells, 1 fixes; nothing written" in capsys.readouterr().out
-    assert len(fake.versions) == 1 and fake.events == [] and not log.path.exists()
+    assert_nothing_written(fake, log)
     rep = tmp_path / "rep"
     assert (rep / "broken_cells.csv").read_text().splitlines()[0] == "key,column,raw_value"
     assert "Möckl L" in (rep / "corrected.csv").read_text(encoding="utf-8")
@@ -97,7 +97,7 @@ def test_locked_recordset_is_refused(tmp_path, log, capsys):
     fake = fake_rs(log)
     assert run(tmp_path, fake, log=log, execute=True) == 1
     assert "dcc-removal-other" in capsys.readouterr().out
-    assert fake.events == [] and len(fake.versions) == 1
+    assert_nothing_written(fake)
 
 
 def test_execute_logs_start_store_record_export_finish_and_matches(tmp_path, log, capsys):
