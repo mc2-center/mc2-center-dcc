@@ -106,6 +106,16 @@ def test_first_write_is_plain_upsert_pending_then_written(tmp_path, log):
     assert pd.read_csv(rep / "syn100" / "decisions.csv").empty
 
 
+def test_dry_run_does_not_recover_an_aged_pending_row(tmp_path, log):
+    log.start("synRS", 1, "dead", "42")
+    log.rows[0]["writtenOn"] = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
+    before = list(log.rows)
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    code, rep = run(tmp_path, fake, execute=False)
+    assert code == 0 and status_of(rep) == "dryrun" and fake.writes == []
+    assert log.rows == before and len(fake.versions) == 1  # an execute run would log the row ``aborted``
+
+
 def test_dry_run_writes_nothing_but_reports(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     code, rep = run(tmp_path, fake, execute=False)

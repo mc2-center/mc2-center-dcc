@@ -56,7 +56,7 @@ read-back does not match.
 
 Example:
     python rekey_recordset_rows.py --changes rekey.csv --component DatasetView \\
-        --write-log-table syn78404341 --report-dir reports --execute
+        --report-dir reports --execute
 
 author: orion.banks
 """

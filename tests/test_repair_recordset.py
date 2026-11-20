@@ -1,6 +1,7 @@
 """annotations/repair_recordset.py with every Synapse call stubbed."""
 from unittest import mock
 
+import pandas as pd
 import pytest
 
 from conftest import load_script
@@ -59,6 +60,16 @@ def test_dry_run_writes_nothing_and_reports(tmp_path, log, capsys):
     assert (rep / "broken_cells.csv").read_text().splitlines()[0] == "key,column,raw_value"
     assert "Möckl L" in (rep / "corrected.csv").read_text(encoding="utf-8")
     assert (rep / "changes.csv").exists()
+
+
+def test_dry_run_does_not_recover_an_aged_pending_row(tmp_path, log):
+    log.start("synRS", 1, "dcc-repair-dead", "42")
+    log.rows[0]["writtenOn"] = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
+    before = list(log.rows)
+    fake = fake_rs(log)
+    assert run(tmp_path, fake, log=log) == 0
+    assert_nothing_written(fake)
+    assert log.rows == before  # an execute run would log the row ``aborted``
 
 
 def test_refuses_a_broken_cell_without_a_fix(tmp_path, log, capsys):

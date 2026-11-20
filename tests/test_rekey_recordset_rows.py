@@ -67,6 +67,17 @@ def test_dry_run_changes_only_key_cells_and_stores_nothing(tmp_path, log, remova
     assert summary(tmp_path)["synA"]["status"] == "dryrun"
 
 
+def test_dry_run_does_not_recover_an_aged_pending_row(tmp_path, log, removals):
+    log.start("synA", 1, "dcc-rekey-dead", "42")
+    log.rows[0]["writtenOn"] = rs.pd.Timestamp.now(tz="UTC") - rs.pd.Timedelta(hours=3)
+    before = list(log.rows)
+    f = fake_rs(log=log)
+    assert run(tmp_path, FakeSynapse(log, synA=f), "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log) == 0
+    assert summary(tmp_path)["synA"]["status"] == "dryrun"
+    assert_nothing_written(f, removals=removals)
+    assert log.rows == before  # an execute run would log the row ``aborted``
+
+
 def test_new_key_already_present_refuses_that_recordset_only(tmp_path, log, capsys):
     a, b = fake_rs(log=log), fake_rs(log=log)
     fake = FakeSynapse(log, synA=a, synB=b)
