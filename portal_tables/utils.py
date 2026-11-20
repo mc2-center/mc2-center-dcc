@@ -1,37 +1,181 @@
 """Shared functions used by syncing scripts"""
 
+import csv
+import json
+import logging
 import os
 import argparse
+import uuid
 from getpass import getpass
 from datetime import datetime
+from pathlib import Path
 
-import synapseclient
+from synapseclient import Synapse, operations
+from synapseclient.core.exceptions import SynapseNoCredentialsError
+from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
+
+logger = logging.getLogger(__name__)
 
 
 # Manifest and portal table synIDs of each resource type.
 CONFIG = {
-    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591"},
-    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968"},
-    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427"},
-    "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
-    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
-    "education": {"manifest": "syn53651540", "portal_table": "syn51497305"},
-    "project": {"manifest": "syn59074382", "portal_table": "syn21868602"}
+    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591", "staging_table": "syn78748028"},
+    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968", "staging_table": "syn78748031"},
+    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427", "staging_table": "syn78748036"},
+    "people": {"manifest": "syn38301033", "portal_table": "syn28073190", "staging_table": "syn78748040"},
+    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972", "staging_table": "syn78748038"},
+    "education": {"manifest": "syn53651540", "portal_table": "syn51497305", "staging_table": "syn78748037"},
+    "project": {"manifest": "syn59074382", "portal_table": "syn21868602", "staging_table": "syn78748039"},
+    # Consortium table ("Consortium", in CCKP - MC2 Admin). Used by
+    # consortium_display_names(); not a synced resource.
+    "consortium": {"table": "syn36345930"},
+    # Theme count tables written by utils/tally_themes.py (no manifest).
+    "consortium_counts": {"portal_table": "syn21641485", "staging_table": "syn78754152"},
+    "consortium_theme_counts": {"portal_table": "syn21649281", "staging_table": "syn78754154"},
+    "theme_counts": {"portal_table": "syn21639584", "staging_table": "syn78754168"},
 }
 
-DUO_DICT = {
-    "GRU" : "Data access is allowed for any research purpose",
-    "IRB" : "Requestor must provide documentation of local IRB/ERB approval to access data",
-    "NCU" : "Data access is limited to not-for-profit use",
-    "NPU" : "Data access is limited to not-for-profit organizations",
-    "NPUNCU" : "Data access is limited to not-for-profit organizations and not-for-profit/non-commercial use",
-    "NRES" : "There are no restrictions on the use of this data",
-    "RS" : "Data access is limited to use in specific types of research",
-    "RTN" : "Derived/enriched data must be returned to the database/resource repository",
-    "Pending Annotation" : "Access information was not provided for this dataset"
-}
+# Production portal tables. Only portal_tables/promote_staging.py writes them.
+PRODUCTION_TABLES = frozenset(c["portal_table"] for c in CONFIG.values() if "staging_table" in c)
+
+
+def refuse_production(table_id: str) -> None:
+    """Raise ``ValueError`` if ``table_id`` is a production portal table."""
+    if table_id in PRODUCTION_TABLES:
+        raise ValueError(
+            f"{table_id} is a production portal table; only promote_staging.py writes production. "
+            "Use the staging table."
+        )
+
+
+def read_table(syn, table_id: str, include_row_id_and_row_version: bool = False) -> pd.DataFrame:
+    """Every row of a Synapse table (``SELECT *``)."""
+    return Table(id=table_id).query(
+        query=f"SELECT * FROM {table_id}",
+        include_row_id_and_row_version=include_row_id_and_row_version,
+        synapse_client=syn,
+    )
+
+
+def write_atomic(path, write) -> None:
+    """Make ``path`` by calling ``write(tmp)`` on a temp file beside it, then replacing ``path`` with the temp
+    file, so no reader (or second process) sees a half-written file."""
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
+    write(tmp)
+    tmp.replace(path)
+
+
+def portal_table(resource: str, production: bool = False) -> str:
+    """Synapse ID of the portal table of ``resource``: staging unless ``production``."""
+    return CONFIG[resource]["portal_table" if production else "staging_table"]
+
+
+# Admin manifests (Grant, Project, PersonView) live in CCKP - MC2 Admin. The
+# migration (migration/migrate_admin_manifests_14.py) copies each table into a
+# shared RecordSet named MC2Center_<Component>_RecordSet in this folder of the
+# admin project, one per component.
+ADMIN_PROJECT = "syn28742843"
+ADMIN_RECORDSET_FOLDER = "admin_recordsets"
+ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "PersonView"}
+
+# Where the grant, project and people syncs read their manifest: "table" (the
+# legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above,
+# filled by migration/migrate_admin_manifests_14.py --execute).
+MANIFEST_SOURCE = "recordset"
+MANIFEST_SOURCES = ("table", "recordset")
+
+
+_CONSORTIUM_ROWS: dict[str, pd.DataFrame] = {}  # table ID -> usable Consortium rows, one read per process
+
+
+def _blank(value) -> bool:
+    return not isinstance(value, str) or not value.strip()
+
+
+def _consortium_rows(syn: Synapse) -> pd.DataFrame:
+    """Usable rows of the Consortium table, read once per process (read-only).
+
+    Rows with a blank ``consortiumDisplayName`` (or, when the table has the
+    column, a blank ``consortiumId``) are dropped with a warning.
+    """
+    table_id = CONFIG["consortium"]["table"]
+    if table_id not in _CONSORTIUM_ROWS:
+        rows = read_table(syn, table_id)
+        required = [c for c in ("consortiumDisplayName", "consortiumId") if c in rows.columns]
+        bad = rows[required].map(_blank).any(axis=1)
+        for _, row in rows[bad].iterrows():
+            logger.warning(
+                "Dropping Consortium row with a blank name or ID: %s", row[required].to_dict()
+            )
+        _CONSORTIUM_ROWS[table_id] = rows[~bad].reset_index(drop=True)
+    return _CONSORTIUM_ROWS[table_id]
+
+
+def load_consortium_keys(syn: Synapse) -> dict[str, str]:
+    """``{display name: consortiumId}`` from the Consortium table (read-only)."""
+    rows = _consortium_rows(syn)
+    return dict(zip(rows["consortiumDisplayName"], rows["consortiumId"]))
+
+
+def admin_recordset_name(component: str) -> str:
+    """Name of the admin RecordSet of ``component``: ``MC2Center_<Component>_RecordSet``."""
+    return f"MC2Center_{component}_RecordSet"
+
+
+def find_admin_recordset(syn, resource: str) -> str:
+    """Synapse ID of the admin RecordSet of a sync resource (``grant``, ``project``, ``people``).
+
+    Looked up by name in ``ADMIN_RECORDSET_FOLDER`` of ``ADMIN_PROJECT`` (read-only).
+    Raises ``LookupError`` if the folder or the RecordSet does not exist yet, i.e.
+    the migration has not run.
+    """
+    component = ADMIN_COMPONENTS[resource]
+    folder = operations.find_entity_id(name=ADMIN_RECORDSET_FOLDER, parent=ADMIN_PROJECT, synapse_client=syn)
+    found = (
+        operations.find_entity_id(name=admin_recordset_name(component), parent=folder, synapse_client=syn)
+        if folder
+        else None
+    )
+    if found is None:
+        raise LookupError(
+            f"{admin_recordset_name(component)} not found in {ADMIN_RECORDSET_FOLDER} of {ADMIN_PROJECT}; "
+            "run migration/migrate_admin_manifests_14.py --execute first, or use --manifest-source table"
+        )
+    return found
+
+
+def resolve_manifest_id(syn, args, resource: str) -> str:
+    """The manifest entity a sync reads.
+
+    ``--manifest_id`` other than the ``CONFIG`` default always wins. Otherwise
+    ``args.manifest_source`` ``"table"`` gives the legacy manifest table and
+    ``"recordset"`` the admin RecordSet (``find_admin_recordset``).
+    """
+    source = getattr(args, "manifest_source", "table")
+    if source == "recordset" and args.manifest_id == CONFIG[resource]["manifest"]:
+        return find_admin_recordset(syn, resource)
+    return args.manifest_id
+
+
+# Portal access text per data use code, keyed by DUO ID (manifests store
+# DUO:nnnnnnn, master decision O10), plus DUOPlus1-7 and Pending Annotation.
+# duo_terms.csv is generated by utils/sync_duo_terms.py from governanceDUO;
+# don't edit it by hand.
+def _load_duo_terms() -> list[dict[str, str]]:
+    with open(os.path.join(os.path.dirname(__file__), "duo_terms.csv"), newline="") as f:
+        return list(csv.DictReader(f))
+
+_DUO_TERMS = _load_duo_terms()
+DUO_DICT: dict[str, str] = {t["id"]: t["portal_text"] for t in _DUO_TERMS}
+# Official DUO short code (GRU, US, RS, ...) -> DUO ID.
+DUO_SHORTHANDS: dict[str, str] = {t["shorthand"]: t["id"] for t in _DUO_TERMS if t["shorthand"]}
+
+# Official DUO mints NPOA as DUO:00000044 (8 digits); governanceDUO and
+# data-models use DUO:0000044. Both are accepted until upstream reconciles.
+DUO_ID_ALIASES = {"DUO:00000044": "DUO:0000044"}
 
 REPO_DICT = {
     "CBioPortal" : [("cbioportal"), (None)],
@@ -62,21 +206,43 @@ REPO_DICT = {
     "None" : "No repository designated"
 }
 
+# Portal text for a resource with no DOI. Manifests may carry "No DOI Listed".
+DOI_NOT_AVAILABLE = "DOI Not Available"
+NO_DOI_LISTED = "No DOI Listed"
+
 REPO_REGEX = r"(https|http)(:\/\/)(www\.|)(.*\/)(.*?)(\/|)|(Pending Annotation)"
 
-def syn_login() -> synapseclient.Synapse:
+def syn_login() -> Synapse:
     """Log into Synapse. If env variables not found, prompt user."""
+    syn = Synapse()
     try:
-        syn = synapseclient.login(silent=True)
-    except synapseclient.core.exceptions.SynapseNoCredentialsError:
+        syn.login(silent=True)
+    except SynapseNoCredentialsError:
         print(
             ".synapseConfig not found; please manually provide your",
             "Synapse Personal Access Token (PAT). You can generate"
             "one at https://www.synapse.org/#!PersonalAccessTokens:0",
         )
         pat = getpass("Your Synapse PAT: ")
-        syn = synapseclient.login(authToken=pat, silent=True)
+        syn.login(authToken=pat, silent=True)
     return syn
+
+
+def read_sync_manifest(syn: Synapse, args: argparse.Namespace, resource: str | None = None,
+                       component: str | None = None) -> pd.DataFrame:
+    """The manifest a sync reads: ``--manifest-csv`` (strings, empty cells NaN) or the manifest entity.
+
+    With ``resource`` (the admin syncs: grant, project, people) the entity is
+    :func:`resolve_manifest_id`'s, honouring ``--manifest-source``; ``component``
+    shapes a RecordSet like a legacy table (``model_contract.read_manifest``).
+    """
+    import model_contract
+
+    path = getattr(args, "manifest_csv", None)
+    if path:
+        return pd.read_csv(path, dtype=str)
+    manifest_id = resolve_manifest_id(syn, args, resource) if resource else args.manifest_id
+    return model_contract.read_manifest(syn, manifest_id, component=component)
 
 
 def get_args(resource: str) -> argparse.Namespace:
@@ -90,14 +256,22 @@ def get_args(resource: str) -> argparse.Namespace:
         help="Synapse ID of the manifest CSV file.",
     )
     parser.add_argument(
+        "--manifest-csv",
+        type=str,
+        default=None,
+        help=(
+            "Read the manifest from this local CSV instead of --manifest_id "
+            "(for dry runs against a regenerated manifest; not for grant syncs). The CSV must be in the "
+            "legacy manifest shape (display headers such as 'GrantView Key', lists comma-joined), not a "
+            "RecordSet export; --manifest-source is ignored when it is given."
+        ),
+    )
+    parser.add_argument(
         "-t",
         "--portal_table_id",
         type=str,
-        default=CONFIG.get(resource).get("portal_table"),
-        help=(
-            f"Sync to this specified table. (Default: "
-            f"{CONFIG.get(resource).get('portal_table')})"
-        ),
+        default=None,
+        help="Sync to this specified table. (Default: the staging table)",
     )
     parser.add_argument(
         "-o",
@@ -107,6 +281,17 @@ def get_args(resource: str) -> argparse.Namespace:
         help="Filepath to output CSV.",
     )
     parser.add_argument("--dryrun", action="store_true")
+    if resource in ADMIN_COMPONENTS:
+        parser.add_argument(
+            "--manifest-source",
+            choices=MANIFEST_SOURCES,
+            default=MANIFEST_SOURCE,
+            help=(
+                "Read the legacy manifest table or the admin RecordSet "
+                f"(default: {MANIFEST_SOURCE}). "
+                "-m overrides both."
+            ),
+        )
     parser.add_argument(
         "-v",
         "--verbose",
@@ -119,52 +304,308 @@ def get_args(resource: str) -> argparse.Namespace:
         action="store_true",
         help="Do not output CSV file.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.portal_table_id is None:
+        args.portal_table_id = portal_table(resource)
+    else:
+        try:
+            refuse_production(args.portal_table_id)
+        except ValueError as e:
+            parser.error(str(e))
+    return args
 
 
 # TODO: check if we still need this function?
-def sort_and_stringify_col(col: pd.Series) -> str:
-    """Sort list col then join together as comma-separated string."""
-    # Check column by looking at first row; if str, convert to list first.
-    if isinstance(col.iloc[0], str):
-        col = col.str.replace(", ", ",").str.split(",")
-    return col.apply(lambda x: ",".join(map(str, sorted(x))))
-
-
 def convert_to_stringlist(col: pd.Series) -> pd.Series:
-    """Convert a string column to a list."""
-    return col.str.replace(", ", ",").str.split(",")
+    """Convert a string column to a list; an empty cell becomes ``[]``, not ``[""]``."""
+    return col.str.replace(", ", ",").str.split(",").map(lambda v: [] if v == [""] else v)
 
 
-def update_table(syn: synapseclient.Synapse, table_id: str, df: pd.DataFrame) -> None:
+# Live portal-table columns that sync scripts intentionally don't populate.
+# They may trail the DataFrame's columns and are left empty on each sync.
+OPTIONAL_TRAILING_COLUMNS = {"test_publicationId", "test_toolId"}
+
+
+def strip_newlines(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace embedded newlines/carriage returns in string cells with spaces.
+
+    A literal line break inside a quoted CSV field survives client-side
+    serialization, but Synapse's server-side bulk CSV ingestion splits large
+    uploads by scanning for newlines rather than parsing quotes, which corrupts
+    the batch containing that row into blank rows (only unquoted INTEGER
+    columns survive). See row-version 2230/2231 duplicated blank rows in
+    syn21897968.
+    """
+    # Only string/object columns: DataFrame.map would turn Int64 columns with
+    # nulls into float64 (uploaded as 2020.0).
+    out = df.copy()
+    for col in df.columns:
+        if pd.api.types.is_string_dtype(df[col]) or df[col].dtype == object:
+            out[col] = df[col].map(
+                lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
+            )
+    return out
+
+
+def fill_blank(df: pd.DataFrame, numeric: bool = True) -> pd.DataFrame:
+    """Replace nulls with empty strings, also in nullable-dtype columns.
+
+    ``df.fillna("")`` raises ``TypeError`` on Int64/Float64/boolean columns
+    that hold nulls (what ``Table.query`` can return); filled columns come
+    back as ``object``. With ``numeric=False`` numeric and boolean columns
+    are left as they are, nulls included, for callers that store the frame
+    back to a table.
+    """
+    if not numeric:
+        out = df.copy()
+        for c in df.columns:
+            if not (pd.api.types.is_numeric_dtype(df[c]) or pd.api.types.is_bool_dtype(df[c])):
+                out[c] = df[c].astype(object).where(df[c].notna(), "")
+        return out
+    return df.astype(object).where(df.notna(), "")
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
+    """Resolve ``program.*`` Consortium IDs to display names (``CSBC``).
+
+    Reads the Consortium table (``CONFIG["consortium"]["table"]``). Uses its
+    ``consortiumId`` column when it has one; until it does, an ID is
+    ``program.`` plus the slug of ``consortiumDisplayName`` (``PS-ON`` is
+    ``program.ps-on``). Empty IDs are skipped; any other ID the table doesn't
+    know raises ``ValueError``. Order follows ``ids``.
+    """
+    table_id = CONFIG["consortium"]["table"]
+    rows = _consortium_rows(syn)
+    if "consortiumId" in rows.columns:
+        lookup = dict(zip(rows["consortiumId"], rows["consortiumDisplayName"]))
+    else:
+        lookup = {
+            f"program.{_slugify(name)}": name for name in rows["consortiumDisplayName"]
+        }
+    wanted = [i.strip() for i in ids if i and i.strip()]
+    unknown = [i for i in wanted if i not in lookup]
+    if unknown:
+        raise ValueError(
+            f"Unknown Consortium ID(s) {unknown}; {table_id} has {sorted(lookup)}"
+        )
+    return [lookup[i] for i in wanted]
+
+
+def parse_json_list(text: str) -> list | None:
+    """The list a JSON-array cell holds, or ``None`` if ``text`` is not one."""
+    stripped = text.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            return None
+        if isinstance(parsed, list):
+            return parsed
+    return None
+
+
+def split_cell(value) -> list[str]:
+    """A manifest cell (JSON array, comma-separated string or list) as a list of strings."""
+    if isinstance(value, (list, tuple)):
+        items = [str(v) for v in value]
+    elif value is None or (not isinstance(value, str) and pd.isna(value)):
+        items = []
+    else:
+        parsed = parse_json_list(str(value))
+        items = [str(v) for v in parsed] if parsed is not None else str(value).split(",")
+    return [i.strip() for i in items if i and i.strip()]
+
+
+def known_consortium_names(syn: Synapse) -> set[str]:
+    """Display names in the Consortium table (read-only)."""
+    return set(_consortium_rows(syn)["consortiumDisplayName"])
+
+
+def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[str]]:
+    """Resolve ConsortiumKey cells to lists of consortium display names.
+
+    Until infrastructure step I5 regenerates the manifests, cells hold display
+    names (``CSBC``); afterwards they hold ``program.*`` IDs. A value that is
+    a display name the Consortium table knows passes through; a ``program.*``
+    ID is resolved with ``consortium_display_names``. Any other value is
+    fatal: every unknown value is collected and raised in one ``ValueError``.
+    """
+    if known_names is None:
+        known_names = known_consortium_names(syn)
+    resolved: dict[str, str] = {}
+    unknown = []
+    for cell in cells:
+        for token in split_cell(cell):
+            if token in resolved or token in unknown:
+                continue
+            if token in known_names:
+                resolved[token] = token
+            elif token.startswith("program."):
+                try:
+                    resolved[token] = consortium_display_names(syn, [token])[0]
+                except ValueError:
+                    unknown.append(token)
+            else:
+                unknown.append(token)
+    if unknown:
+        raise ValueError(
+            f"Unknown ConsortiumKey value(s) {sorted(unknown)}: neither a display "
+            f"name nor a program.* ID in the Consortium table "
+            f"({sorted(known_names)})"
+        )
+    out = []
+    for cell in cells:
+        names = []
+        for token in split_cell(cell):
+            if resolved[token] not in names:
+                names.append(resolved[token])
+        out.append(names)
+    return out
+
+
+def check_cell_sizes(table_id: str, columns: dict, df: pd.DataFrame) -> None:
+    """Raise ``ValueError`` if a cell or list in ``df`` exceeds its live column's limits.
+
+    ``columns`` is the live table's ``{name: Column}``; ``df``'s columns are
+    live names. Checks ``maximumSize`` of STRING, STRING_LIST (per item) and
+    LINK columns, and ``maximumListLength`` of list columns. Synapse rejects
+    such cells only after the rows have been deleted, so this runs first.
+    """
+    for name in df.columns:
+        col = columns.get(name)
+        if col is None:
+            continue
+        col_type = str(getattr(col.column_type, "value", col.column_type)).split(".")[-1]
+        max_size = col.maximum_size if isinstance(col.maximum_size, int) else None
+        max_items = col.maximum_list_length if isinstance(col.maximum_list_length, int) else None
+        is_list = col_type.endswith("_LIST")
+        sized = col_type in ("STRING", "STRING_LIST", "LINK")
+        for idx, value in df[name].items():
+            if isinstance(value, (list, tuple)):
+                if is_list and max_items is not None and len(value) > max_items:
+                    raise ValueError(
+                        f"{table_id}: column {name!r} row {idx} has {len(value)} list "
+                        f"items; the limit is {max_items}. Refusing to truncate the table."
+                    )
+                items = value if sized else []
+            elif isinstance(value, str) and sized and not is_list:
+                items = [value]
+            else:
+                continue
+            if max_size is None:
+                continue
+            for item in items:
+                if isinstance(item, str) and len(item) > max_size:
+                    raise ValueError(
+                        f"{table_id}: column {name!r} row {idx} has a value of length "
+                        f"{len(item)}; the limit is {max_size}. Refusing to truncate "
+                        "the table."
+                    )
+
+
+def update_table(
+    syn: Synapse,
+    table_id: str,
+    df: pd.DataFrame,
+    component: str | None = None,
+    allow_production: bool = False,
+) -> None:
     """Update the portal table.
 
+    A production table is refused unless ``allow_production`` (only promote_staging.py sets it).
+
+    With ``component``, ``df`` must already be in portal shape (see
+    ``crosswalk.to_portal``): the live table is checked against the
+    crosswalk and ``df``'s column names and order must equal the live
+    columns. Without it, a DataFrame whose names are all live column names is
+    reordered by name; any other DataFrame is renamed to the live columns by
+    position (the sync scripts' manifest-style ``col_order`` lists).
+
     Steps include:
+        - checking or aligning DataFrame column names to the live table's columns
         - creating a new table version
         - truncating the table
-        - sync over rows from the latest manifest
+        - sync over rows from the latest manifest, restoring the previous
+          rows if the upload fails
     """
+    if not allow_production:
+        refuse_production(table_id)
+    # An empty frame would snapshot, delete every live row and store none,
+    # without any error to trigger the restore.
+    if df.empty:
+        raise ValueError(f"No rows to store for {table_id}; refusing to truncate the table.")
+
+    table = Table(id=table_id).get(include_columns=True, synapse_client=syn)
+
+    # store_rows() uploads the DataFrame as a CSV with a header row, and
+    # Synapse matches that header to table columns by name. The sync scripts
+    # build their col_order lists with manifest-style names (e.g.
+    # "Publication Doi") laid out in the portal table's column order, which
+    # the previous positional row store relied on. Rename to the live column
+    # names by position here, and fail before the table is truncated if the
+    # shapes can't line up. The only live columns the DataFrame may omit are
+    # known unpopulated trailing columns, which are left empty.
+    live_columns = list(table.columns.keys())
+    if component is not None:
+        import crosswalk  # local import: crosswalk imports this module
+
+        crosswalk.check_live_columns(
+            table_id,
+            component,
+            {n: c.column_type for n, c in table.columns.items()},
+        )
+        want = live_columns
+        while want and want[-1] in OPTIONAL_TRAILING_COLUMNS:
+            want = want[:-1]
+        if list(df.columns) != want:
+            raise ValueError(
+                f"{table_id} expects columns {want} but got {list(df.columns)}; "
+                "refusing to truncate the table."
+            )
+        df = strip_newlines(df)
+    elif set(df.columns) <= set(live_columns) and not df.columns.has_duplicates:
+        # Names are live names (e.g. utils/tally_themes.py): reorder by name,
+        # so a different column order can't write values into the wrong column.
+        missing = [c for c in live_columns if c not in df.columns]
+        if not set(missing) <= OPTIONAL_TRAILING_COLUMNS:
+            raise ValueError(
+                f"{table_id} has columns {live_columns} but {list(df.columns)} were "
+                f"provided; refusing to truncate the table."
+            )
+        df = strip_newlines(df[[c for c in live_columns if c in df.columns]])
+    else:
+        missing = live_columns[len(df.columns):]
+        if len(df.columns) > len(live_columns) or not set(missing) <= OPTIONAL_TRAILING_COLUMNS:
+            raise ValueError(
+                f"{table_id} has columns {live_columns} but {len(df.columns)} were "
+                f"provided ({list(df.columns)}); refusing to truncate the table."
+            )
+        df = strip_newlines(df.set_axis(live_columns[: len(df.columns)], axis="columns"))
+
+    # Synapse rejects an oversized cell only after the delete below.
+    check_cell_sizes(table_id, table.columns, df)
 
     today = datetime.today().strftime("%Y-%m-%d-%H-%M-%S")
     print(f"Creating new table version with label: {today}...")
-    syn.create_snapshot_version(table_id, label=today)
+    table.snapshot(label=today, synapse_client=syn)
 
-    current_rows = syn.tableQuery(f"SELECT * FROM {table_id}")
+    current_rows = read_table(syn, table_id)
     print(f"Syncing table with latest data (new_rows={len(df) - len(current_rows)})...\n")
-    syn.delete(current_rows)
+    table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
 
-    # Strip embedded newlines/carriage returns from free-text cells. A literal
-    # line break inside a quoted CSV field survives synapseclient's row
-    # serialization (csv.writer with QUOTE_NONNUMERIC), but Synapse's
-    # server-side bulk CSV ingestion splits large uploads by scanning for
-    # newlines rather than parsing quotes, which corrupts the batch containing
-    # that row into blank rows (only the unquoted INTEGER `version` column
-    # survives). See row-version 2230/2231 duplicated blank rows in syn21897968.
-    df = df.map(
-        lambda v: re.sub(r"[\r\n]+", " ", v) if isinstance(v, str) else v
-    )
-    new_rows = df.values.tolist()
-    syn.store(synapseclient.Table(table_id, new_rows))
+    # delete_rows() and store_rows() are separate transactions. If the upload
+    # is rejected, put the previous rows back so the portal table is not left
+    # empty; the snapshot above remains as a further fallback.
+    try:
+        table.store_rows(values=df, synapse_client=syn)
+    except Exception:
+        print(f"Upload to {table_id} failed; restoring the previous {len(current_rows)} rows...")
+        table.store_rows(values=strip_newlines(current_rows), synapse_client=syn)
+        raise
 
 
 def get_manifest(resource: str) -> dict[str, dict[str, str]]:
@@ -172,8 +613,8 @@ def get_manifest(resource: str) -> dict[str, dict[str, str]]:
     return CONFIG.get(resource).get("manifest")
 
 def translate_duo(code: str, dict: dict[str, str] = DUO_DICT) -> str:
-    """Get the definition of a DUO code."""
-    return dict[code]
+    """Get the definition of a DUO code (an aliased ID resolves first)."""
+    return dict[DUO_ID_ALIASES.get(code, code)]
 
 def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DICT, regex: str = REPO_REGEX):
     """Extract distinctive link elements and map to a repository name."""
@@ -218,31 +659,39 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     
     return source_repo
 
-_DATASET_CONCRETE_TYPE = "org.sagebionetworks.repo.model.table.Dataset"
-
-
-def identify_download_type(syn: synapseclient.Synapse, row: pd.Series, source_repo: str):
+def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
     """Determine download type and return download id if Synapse hosted or indexed.
 
-    When DatasetView_id points to a Synapse Dataset entity (created by the
+    When DatasetViewId (the 14.0.0 key; the 13.1.0 ``DatasetView_id`` is still
+    accepted) points to a Synapse Dataset entity (created by the
     geo_dataset_creation bulk indexing pipeline), download_type is set to
     "Synapse Indexed" and download_id is set to that entity's synID. The portal
     uses download_id as downloadSynId to surface per-run download links.
 
-    DatasetView_id may contain a comma-separated list of synIDs from legacy
+    The id may contain a comma-separated list of synIDs from legacy
     manifest entries; only the first is used.
     """
-    entity_id = row["DatasetView_id"].split(",")[0].strip()
+    key = "DatasetViewId" if "DatasetViewId" in row else "DatasetView_id"
+    entity_id = row[key].split(",")[0].strip()
 
-    entity_type = None
+    is_dataset = False
     if entity_id:
         try:
-            entity = syn.get(entity_id, downloadFile=False)
-            entity_type = entity.concreteType
+            # operations.get() looks up the entity's actual type on Synapse
+            # first, then dispatches to the matching model (File, Folder,
+            # Dataset, ...) -- so, unlike calling the Dataset model's
+            # .get() directly, it handles any entity type without erroring
+            # out on DatasetView_ids that reference non-Dataset entities.
+            entity = operations.get(
+                entity_id,
+                file_options=operations.FileOptions(download_file=False),
+                synapse_client=syn,
+            )
+            is_dataset = isinstance(entity, Dataset)
         except Exception:
-            entity_type = None
+            is_dataset = False
 
-    if entity_type == _DATASET_CONCRETE_TYPE:
+    if is_dataset:
         indexed = True
         download_id = entity_id
     else:

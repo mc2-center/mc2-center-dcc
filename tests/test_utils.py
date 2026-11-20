@@ -1,0 +1,263 @@
+"""Shared helpers in portal_tables/utils.py."""
+
+from unittest.mock import MagicMock
+
+import pandas as pd
+import pytest
+
+import utils
+
+
+def _nullable_frame():
+    return pd.DataFrame(
+        {
+            "year": pd.array([2020, None], dtype="Int64"),
+            "score": pd.array([1.5, None], dtype="Float64"),
+            "flag": pd.array([True, None], dtype="boolean"),
+            "name": pd.array(["a", None], dtype="string"),
+        }
+    )
+
+
+def test_fillna_raises_on_nullable_dtypes():
+    """The failure fill_blank exists to avoid."""
+    with pytest.raises(TypeError):
+        _nullable_frame().fillna("")
+
+
+def test_fill_blank_fills_nullable_columns_with_empty_strings():
+    out = utils.fill_blank(_nullable_frame())
+    assert out["year"].tolist() == [2020, ""]
+    assert out["score"].tolist() == [1.5, ""]
+    assert out["flag"].tolist() == [True, ""]
+    assert out["name"].tolist() == ["a", ""]
+
+
+def test_fill_blank_numeric_false_keeps_numeric_columns_null():
+    out = utils.fill_blank(_nullable_frame(), numeric=False)
+    assert list(out.columns) == ["year", "score", "flag", "name"]
+    assert out["year"].dtype == "Int64" and pd.isna(out["year"].iloc[1])
+    assert out["flag"].dtype == "boolean" and pd.isna(out["flag"].iloc[1])
+    assert out["name"].tolist() == ["a", ""]
+
+
+def test_fill_blank_leaves_list_cells_and_the_input_alone():
+    df = pd.DataFrame({"tags": [["a", "b"], None]})
+    out = utils.fill_blank(df)
+    assert out["tags"].iloc[0] == ["a", "b"] and out["tags"].iloc[1] == ""
+    assert df["tags"].iloc[1] is None
+
+
+def test_convert_to_stringlist_makes_an_empty_cell_an_empty_list():
+    out = utils.convert_to_stringlist(pd.Series(["a, b", "", "c"]))
+    assert out.tolist() == [["a", "b"], [], ["c"]]
+
+
+# --- cell-size guard -------------------------------------------------------
+
+
+def _live_table(**cols):
+    """A mocked live table; ``cols`` maps name -> (type, maximum_size, maximum_list_length)."""
+    table = MagicMock()
+    table.columns = {
+        n: MagicMock(column_type=t, maximum_size=size, maximum_list_length=items)
+        for n, (t, size, items) in cols.items()
+    }
+    table.query.return_value = pd.DataFrame({"old": [1]})
+    fake = MagicMock()
+    fake.return_value.get.return_value = table
+    return table, fake
+
+
+def _update(monkeypatch, table, fake, df):
+    monkeypatch.setattr(utils, "Table", fake)
+    utils.update_table(None, "synX", df)
+
+
+def test_oversized_string_refused_before_snapshot_and_delete(monkeypatch):
+    table, fake = _live_table(name=("STRING", 5, None), n=("INTEGER", None, None))
+    df = pd.DataFrame({"name": ["ok", "toolong"], "n": [1, 2]})
+    with pytest.raises(ValueError, match=r"'name'.*length 7.*limit is 5"):
+        _update(monkeypatch, table, fake, df)
+    table.snapshot.assert_not_called()
+    table.delete_rows.assert_not_called()
+    table.store_rows.assert_not_called()
+
+
+def test_oversized_list_item_and_list_length_refused(monkeypatch):
+    table, fake = _live_table(access=("STRING_LIST", 10, 2))
+    with pytest.raises(ValueError, match=r"'access'.*length 11.*limit is 10"):
+        _update(monkeypatch, table, fake, pd.DataFrame({"access": [["short", "x" * 11]]}))
+    with pytest.raises(ValueError, match=r"'access'.*3 list items.*limit is 2"):
+        _update(monkeypatch, table, fake, pd.DataFrame({"access": [["a", "b", "c"]]}))
+    table.snapshot.assert_not_called()
+    table.delete_rows.assert_not_called()
+
+
+def test_cells_within_limits_and_nulls_are_stored(monkeypatch):
+    table, fake = _live_table(
+        name=("LINK", 5, None), access=("STRING_LIST", 10, 2), note=("LARGETEXT", None, None)
+    )
+    df = pd.DataFrame(
+        {"name": ["12345", None], "access": [["x" * 10, "y"], None], "note": ["z" * 5000, ""]}
+    )
+    _update(monkeypatch, table, fake, df)
+    table.snapshot.assert_called_once()
+    table.store_rows.assert_called_once()
+
+
+# --- strip_newlines ----------------------------------------------------------
+
+
+def test_strip_newlines_only_touches_text_columns():
+    df = pd.DataFrame(
+        {
+            "year": pd.array([2020, None], dtype="Int64"),
+            "score": [1.5, 2.0],
+            "text": ["a\r\nb", "c"],
+            "mixed": [["x\ny"], "p\nq"],
+            "name": pd.array(["m\nn", None], dtype="string"),
+        }
+    )
+    out = utils.strip_newlines(df)
+    assert out["year"].dtype == "Int64" and out["year"].iloc[0] == 2020
+    assert out["score"].dtype == "float64"
+    assert out["text"].tolist() == ["a b", "c"]
+    assert out["mixed"].iloc[0] == ["x\ny"] and out["mixed"].iloc[1] == "p q"
+    assert out["name"].iloc[0] == "m n" and pd.isna(out["name"].iloc[1])
+    assert df["text"].iloc[0] == "a\r\nb"  # input untouched
+
+
+def test_split_cell_parses_json_array_keeping_commas_inside_items():
+    assert utils.split_cell('["Aged, 80 and over", "Humans"]') == ["Aged, 80 and over", "Humans"]
+    assert utils.split_cell("A, B,C") == ["A", "B", "C"]
+    assert utils.split_cell("[not json, x]") == ["[not json", "x]"]
+
+
+def test_manifest_csv_help_states_the_shape_and_that_manifest_source_is_ignored(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["sync", "-h"])
+    with pytest.raises(SystemExit):
+        utils.get_args("dataset")
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "legacy manifest shape" in help_text and "display headers" in help_text
+    assert "--manifest-source is ignored when it is given" in help_text
+
+
+STAGING_IDS = {
+    "publication": "syn78748028",
+    "dataset": "syn78748031",
+    "tool": "syn78748036",
+    "education": "syn78748037",
+    "grant": "syn78748038",
+    "project": "syn78748039",
+    "people": "syn78748040",
+}
+PRODUCTION_IDS = {
+    "publication": "syn21868591",
+    "dataset": "syn21897968",
+    "tool": "syn26127427",
+    "education": "syn51497305",
+    "grant": "syn21918972",
+    "project": "syn21868602",
+    "people": "syn28073190",
+}
+
+
+@pytest.mark.parametrize("resource", sorted(STAGING_IDS))
+def test_portal_table_is_staging_by_default_and_production_on_request(resource):
+    assert utils.portal_table(resource) == STAGING_IDS[resource]
+    assert utils.portal_table(resource, production=False) == STAGING_IDS[resource]
+    assert utils.portal_table(resource, production=True) == PRODUCTION_IDS[resource]
+
+
+def _table_id_from_args(argv, resource="dataset"):
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("sys.argv", ["sync.py", *argv])
+        return utils.get_args(resource).portal_table_id
+
+
+def test_get_args_uses_the_staging_table_by_default():
+    assert _table_id_from_args([]) == STAGING_IDS["dataset"]
+
+
+def test_get_args_has_no_production_flag():
+    with pytest.raises(SystemExit):
+        _table_id_from_args(["--production"])
+
+
+def test_get_args_portal_table_id_overrides_the_default():
+    assert _table_id_from_args(["-t", "syn1"]) == "syn1"
+
+
+@pytest.mark.parametrize("resource", sorted(PRODUCTION_IDS))
+def test_get_args_rejects_a_production_table_id(resource, capsys):
+    with pytest.raises(SystemExit):
+        _table_id_from_args(["-t", PRODUCTION_IDS[resource]])
+    assert "only promote_staging.py writes production" in capsys.readouterr().err
+
+
+def test_update_table_refuses_a_production_id_without_touching_synapse(monkeypatch):
+    table = MagicMock()
+    monkeypatch.setattr(utils, "Table", table)
+    with pytest.raises(ValueError, match="only promote_staging.py writes production"):
+        utils.update_table(MagicMock(), PRODUCTION_IDS["grant"], pd.DataFrame({"a": [1]}))
+    table.assert_not_called()
+
+
+def test_update_table_refuses_a_count_table_production_id():
+    for key in ("consortium_counts", "consortium_theme_counts", "theme_counts"):
+        with pytest.raises(ValueError):
+            utils.update_table(MagicMock(), utils.CONFIG[key]["portal_table"], pd.DataFrame())
+
+
+def test_read_table_selects_every_row_without_row_ids_unless_asked(monkeypatch):
+    seen = []
+
+    class FakeTable:
+        def __init__(self, id):
+            seen.append(id)
+
+        def query(self, **kwargs):
+            seen.append(kwargs)
+            return "frame"
+
+    monkeypatch.setattr(utils, "Table", FakeTable)
+    syn = object()
+    assert utils.read_table(syn, "syn1") == "frame"
+    assert seen == ["syn1", {"query": "SELECT * FROM syn1", "include_row_id_and_row_version": False,
+                             "synapse_client": syn}]
+    utils.read_table(syn, "syn2", include_row_id_and_row_version=True)
+    assert seen[-1]["include_row_id_and_row_version"] is True
+
+
+def test_write_atomic_replaces_the_file_and_leaves_no_temp_file(tmp_path):
+    target = tmp_path / "out" / "state.json"
+    target.parent.mkdir()
+    target.write_text("old")
+    utils.write_atomic(target, lambda tmp: tmp.write_text("new"))
+    assert target.read_text() == "new" and list(target.parent.iterdir()) == [target]
+
+    def dies(tmp):
+        tmp.write_text("half")
+        raise RuntimeError("died")
+
+    with pytest.raises(RuntimeError):
+        utils.write_atomic(target, dies)
+    assert target.read_text() == "new"  # the target is never half written
+
+
+@pytest.mark.parametrize("module,option,resource", [
+    ("create_grant_projects", "--portal_table", "grant"),
+    ("add_datasets_to_pub", "--dataset_table", "dataset"),
+    ("add_datasets_to_pub", "--pubs_table", "publication"),
+])
+def test_scripts_refuse_a_production_table_id_when_parsing_arguments(monkeypatch, capsys, module, option, resource):
+    import importlib
+
+    script = importlib.import_module(module)
+    monkeypatch.setattr("sys.argv", [f"{module}.py", option, PRODUCTION_IDS[resource]])
+    with pytest.raises(SystemExit) as e:
+        script.get_args()
+    assert e.value.code == 2
+    assert (f"{PRODUCTION_IDS[resource]} is a production portal table; only promote_staging.py writes "
+            "production. Use the staging table.") in capsys.readouterr().err

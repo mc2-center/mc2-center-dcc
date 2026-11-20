@@ -16,9 +16,25 @@ import os
 import pandas as pd
 import random
 import re
-import synapseclient
-from synapseclient import Dataset
+import sys
+from synapseclient import operations
+from synapseclient.models import Dataset, EntityRef, Table
 import synapseutils
+
+import importlib.util
+# removed when the mc2dcc package (CLI consolidation plan) lands
+# portal_tables/utils.py, loaded by path: "utils" would collide with this package
+_spec = importlib.util.spec_from_file_location(
+    "portal_tables_utils",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables", "utils.py"),
+)
+_portal_utils = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_portal_utils)
+syn_login = _portal_utils.syn_login
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
 
 
 def get_args():
@@ -69,15 +85,6 @@ def get_args():
     return parser.parse_args()
 
 
-def get_table(syn, source_id: str) -> pd.DataFrame:
-    """Collect a Synapse table entity and return as a Dataframe."""
-
-    query = f"SELECT * FROM {source_id}"
-    table = syn.tableQuery(query).asDataFrame().fillna("")
-
-    return table
-
-
 def filter_files_in_folder(syn, scope: str, formats: list[str], folder_or_files: str, cutoff_date: str, after_date: bool, check_version: bool, default_version: int) -> list:
     """Capture all files in provided scope and select files that match a list of formats,
     return list of dataset items"""
@@ -91,8 +98,12 @@ def filter_files_in_folder(syn, scope: str, formats: list[str], folder_or_files:
             file_to_add = [entity_id for f, entity_id in filename]  # select all files in folder
         for entity_id in file_to_add:
             if check_version or cutoff_date is not None:
-                file_info = syn.get(entity_id, downloadFile=False)
-                current_version, created_on_date = file_info.versionLabel, file_info.createdOn
+                file_info = operations.get(
+                    entity_id,
+                    file_options=operations.FileOptions(download_file=False),
+                    synapse_client=syn,
+                )
+                current_version, created_on_date = file_info.version_number, file_info.created_on
             if cutoff_date is not None:
                 add_file = filter_files_by_date(created_on_date, cutoff_date, after_date)
                 if add_file is False:
@@ -140,11 +151,13 @@ def create_dataset_entity(syn, name: str, grant: str, multi_dataset: bool, scope
     Return the Dataset object."""
 
     query = f"SELECT grantId FROM syn21918972 WHERE grantViewId='{grant}'"
-    project_id = syn.tableQuery(query).asDataFrame().iat[0, 0]
+    project_id = Table(id="syn21918972").query(
+        query=query, include_row_id_and_row_version=False, synapse_client=syn
+    )["grantId"].iat[0]
     if multi_dataset:
         name = f"{name}-{random.randint(1000, 9999)}"  # append random number to name for multi-dataset
-    dataset = Dataset(name=name, parent=project_id, dataset_items=scope)
-    dataset = syn.store(dataset)
+    items = [EntityRef(id=item["entityId"], version=int(item["versionNumber"])) for item in scope]
+    dataset = Dataset(name=name, parent_id=project_id, items=items).store(synapse_client=syn)
 
     return dataset
 
@@ -164,7 +177,7 @@ def chunk_files_for_dataset(scope_files: list[str], file_max: int, dataset_total
 
 def main():
 
-    syn = synapseclient.login()
+    syn = syn_login()
 
     args = get_args()
 
@@ -180,7 +193,7 @@ def main():
         dsp_df = pd.read_csv(dsp, keep_default_na=False, header=0)
         print("\nData Sharing Plan read successfully!")
     elif "syn" in dsp:
-        dsp_df = get_table(syn, dsp)
+        dsp_df = _portal_utils.fill_blank(model_contract.read_manifest(syn, dsp))
         print(f"Data Sharing Plan acquired from Synapse table {dsp}!")
     else:
         print(
@@ -247,11 +260,26 @@ def main():
                 file_scope_list = [scope_files]  # single dataset, no chunking needed
 
             if dataset_id:
-                dataset = syn.get(dataset_id, downloadFile=False)
+                dataset = operations.get(
+                    dataset_id,
+                    file_options=operations.FileOptions(download_file=False),
+                    synapse_client=syn,
+                )
                 dataset_id_list.append(dataset.id)
                 dataset_name_list.append(dataset.name)
-                dataset.add_items(dataset_items=file_scope_list[0], force=True)
-                syn.store(dataset)
+                # OOP Dataset.add_item() takes one EntityRef at a time (no bulk
+                # equivalent to the legacy add_items(force=True)); loop instead.
+                # add_item() appends a second ref if the id is already present at
+                # another version, so drop any existing ref for the id first
+                # (legacy force=True replaced it).
+                for item in file_scope_list[0]:
+                    for ref in [r for r in dataset.items if r.id == item["entityId"]]:
+                        dataset.remove_item(ref, synapse_client=syn)
+                    dataset.add_item(
+                        EntityRef(id=item["entityId"], version=int(item["versionNumber"])),
+                        synapse_client=syn,
+                    )
+                dataset.store(synapse_client=syn)
                 print(f"--> {len(file_scope_list[0])} files added to existing Dataset {dataset.id}")
                 file_scope_list = file_scope_list[1:]  # remove first item, already added
             else:

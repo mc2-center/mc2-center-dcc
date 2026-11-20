@@ -19,29 +19,37 @@ import os
 import csv
 import pandas as pd
 import sys
-import synapseclient
+from synapseclient.models import Table
 from datetime import datetime
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import utils
 
 
 def query_synapse_for_folder_info(
     ref_path: str, data_type: str, folder_id_column_name: str, grant_id_column_name: str
 ) -> pd.DataFrame:
 
-    syn = synapseclient.login()
+    syn = utils.syn_login()
 
     grant_table = (
-        syn.tableQuery(
-            f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972'
+        Table(id="syn21918972")
+        .query(
+            query=f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972',
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
         )
-        .asDataFrame()
         .fillna("")
     )
 
     folder_table = (
-        syn.tableQuery(
-            f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId"
+        Table(id="syn27210848")
+        .query(
+            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
         )
-        .asDataFrame()
         .fillna("")
     )
 
@@ -78,15 +86,12 @@ def get_folder_id_and_grant_id_from_csv(
 
         match = df[df["grantNumber"] == ca_number]
 
-        if not match.empty:
+        if mapping is not None and ca_number in mapping:
+            print(f"Entry {ca_number} contains values from mapping dictionary")
+            folder_id, grant_id = mapping[ca_number]
+        elif not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
-
-        if mapping is not None:
-            if ca_number in mapping.keys():
-                print(f"Entry {ca_number} contains values from mapping dictionary")
-                folder_id, grant_id = mapping[ca_number]
-            
         else:
             print(f"No match found for {ca_number}.")
             return None, None

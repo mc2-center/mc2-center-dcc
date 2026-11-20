@@ -15,6 +15,12 @@ from datetime import datetime
 import os
 import pandas as pd
 import re
+import sys
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
+from manifest_cleanup import fill_empty_cells, trim_whitespace  # noqa: F401 (shared with portal_tables/union_qc.py)
 
 def get_args():
     """Set up command-line interface and get arguments."""
@@ -79,61 +85,6 @@ def update_database(database_df: pd.DataFrame, new_entries_df: pd.DataFrame, ind
     return database_df
 
 
-def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataFrame:
-    """Fill empty cells in the updated database with 'Pending Annotation' or 'Not Applicable'."""
-    
-    cols_to_fill = [
-        "Publication Assay",
-        "Publication Tumor Type",
-        "Publication Tissue",
-        "Publication Dataset Alias",
-        "PublicationView Key",
-        "Dataset Description",
-        "Dataset Design",
-        "Dataset Assay",
-        "Dataset Species",
-        "Dataset Tissue",
-        "Dataset Tumor Type",
-        "Dataset File Formats",
-        "Data Use Codes"       
-    ]
-
-    current_cols_to_fill = [col for col in updated_database.columns if col in cols_to_fill]
-
-    for _,row in updated_database.iterrows():
-        for col in current_cols_to_fill:
-            if pd.isna(row[col]) or row[col] == "" or re.match(r"^,+", row[col]):
-                if data_type == "PublicationView" and row["Publication Accessibility"] == "Open Access":
-                    value = "Not Applicable"
-                else:
-                    value = "Pending Annotation"
-                updated_database.at[row.name, col] = value
-
-    return updated_database
-
-
-def trim_whitespace(database: pd.DataFrame) -> pd.DataFrame:
-    """Remove leading and trailing whitespace from entries in curated columns."""
-    
-    cols_to_clean = [
-        "Publication Assay",
-        "Publication Tumor Type",
-        "Publication Tissue",
-        "Dataset Assay",
-        "Dataset Species",
-        "Dataset Tissue",
-        "Dataset Tumor Type"
-    ]
-    
-    clean_cols = [col for col in database.columns if col in cols_to_clean]
-    
-    for _,row in database.iterrows():
-        for col in clean_cols:
-            database.at[row.name, col] = row[col].strip()
-
-    return database
-
-
 def fix_pub_doi(database: pd.DataFrame) -> pd.DataFrame:
     """Add 'https://doi.org/' to existing identifiers or record 'No DOI Listed' if cell is empty."""
 
@@ -181,10 +132,13 @@ def main():
     # can never match 40424361 (int) to "40424361" (str) - it silently
     # no-ops for every row, regardless of which Source row was kept.
     database_df = pd.read_csv(database, keep_default_na=False, index_col=False, dtype=str)
+    # Accept inputs that still use 13.1.0 headers.
+    database_df = model_contract.rename_legacy_headers(database_df, data_type)
     print(f"\nDatabase read successfully!")
     
     if new_entries is not None:
         new_entries_df = pd.read_csv(new_entries, keep_default_na=False, index_col=False, dtype=str)
+        new_entries_df = model_contract.rename_legacy_headers(new_entries_df, data_type)
         print(f"\nNew_entries read successfully!")
         filtered_entries_df = filter_updated_manifest(new_entries_df, index_col, data_type)
         filtered_entries_df.drop(["entityId", "iconTags", "Source"], axis=1, errors="ignore", inplace=True)
