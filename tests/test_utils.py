@@ -208,3 +208,39 @@ def test_update_table_refuses_a_count_table_production_id():
     for key in ("consortium_counts", "consortium_theme_counts", "theme_counts"):
         with pytest.raises(ValueError):
             utils.update_table(MagicMock(), utils.CONFIG[key]["portal_table"], pd.DataFrame())
+
+
+def test_read_table_selects_every_row_without_row_ids_unless_asked(monkeypatch):
+    seen = []
+
+    class FakeTable:
+        def __init__(self, id):
+            seen.append(id)
+
+        def query(self, **kwargs):
+            seen.append(kwargs)
+            return "frame"
+
+    monkeypatch.setattr(utils, "Table", FakeTable)
+    syn = object()
+    assert utils.read_table(syn, "syn1") == "frame"
+    assert seen == ["syn1", {"query": "SELECT * FROM syn1", "include_row_id_and_row_version": False,
+                             "synapse_client": syn}]
+    utils.read_table(syn, "syn2", include_row_id_and_row_version=True)
+    assert seen[-1]["include_row_id_and_row_version"] is True
+
+
+def test_write_atomic_replaces_the_file_and_leaves_no_temp_file(tmp_path):
+    target = tmp_path / "out" / "state.json"
+    target.parent.mkdir()
+    target.write_text("old")
+    utils.write_atomic(target, lambda tmp: tmp.write_text("new"))
+    assert target.read_text() == "new" and list(target.parent.iterdir()) == [target]
+
+    def dies(tmp):
+        tmp.write_text("half")
+        raise RuntimeError("died")
+
+    with pytest.raises(RuntimeError):
+        utils.write_atomic(target, dies)
+    assert target.read_text() == "new"  # the target is never half written

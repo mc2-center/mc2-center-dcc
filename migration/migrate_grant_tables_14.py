@@ -67,7 +67,6 @@ import re
 import sys
 import urllib.error
 from collections import Counter
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -175,7 +174,7 @@ def get_args(argv=None):
         "(read-only NCBI calls; default: on for PublicationView)",
     )
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
-    parser.add_argument("--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp")
+    parser.add_argument("--run-id", default=recordsets.new_run_id(), help="default: a timestamp")
     parser.add_argument("--redo", nargs="+", default=[], help="grant numbers to repeat although done (dry run only)")
     parser.add_argument(
         "--union-id",
@@ -229,9 +228,7 @@ def project_of(syn, entity_id: str) -> tuple[str | None, str | None]:
 
 
 def read_source(syn, table_id: str) -> pd.DataFrame:
-    return Table(id=table_id).query(
-        query=f"SELECT * FROM {table_id}", include_row_id_and_row_version=False, synapse_client=syn
-    )
+    return utils.read_table(syn, table_id)
 
 
 def safe_name(label: str) -> str:
@@ -326,10 +323,7 @@ def read_reference(syn, component: str, version: int | None = None) -> pd.DataFr
 
 def read_portal(syn, component: str) -> pd.DataFrame:
     """The live portal table of the component (read-only)."""
-    table_id = utils.CONFIG[REFERENCE_RESOURCE[component]]["portal_table"]
-    return Table(id=table_id).query(
-        query=f"SELECT * FROM {table_id}", include_row_id_and_row_version=False, synapse_client=syn
-    )
+    return utils.read_table(syn, utils.CONFIG[REFERENCE_RESOURCE[component]]["portal_table"])
 
 
 def _flat(value) -> str:
@@ -611,7 +605,7 @@ def _id_value(value) -> tuple[int, int, str]:
 def load_duplicate_choices(path) -> dict[tuple[str, str], str]:
     """``{(grant, key): legacy Id to keep}`` from a CSV with columns ``key, keep_legacy_id`` and an
     optional ``grant`` (blank: any grant)."""
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df = recordsets.read_csv_str(path)
     missing = {"key", "keep_legacy_id"} - set(df.columns)
     if missing:
         raise ValueError(f"{path} lacks column(s) {sorted(missing)}")
@@ -873,10 +867,6 @@ def validate_frame(frame: pd.DataFrame, component: str, ref: str | None = None) 
 
 
 # --- one grant ----------------------------------------------------------------
-
-
-def _write(df: pd.DataFrame, path: Path) -> None:
-    recordsets.to_csv(df, path)
 
 
 def find_or_create_folder(syn, project_id: str, name: str) -> str:
@@ -1142,18 +1132,18 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     differences, not_in_manifest = manifest_differences(converted, reference(), component, entry["grant"], recovered_keys, known)
     validation = validate_frame(converted, component, args.model_ref)
     converted_path = report_dir / "converted.csv"
-    _write(converted, converted_path)
-    _write(changes, report_dir / "changes.csv")
-    _write(unmapped, report_dir / "unmapped.csv")
-    _write(validation, report_dir / "validation.csv")
-    _write(validation_counts(validation), report_dir / "validation_counts.csv")
+    recordsets.to_csv(converted, converted_path)
+    recordsets.to_csv(changes, report_dir / "changes.csv")
+    recordsets.to_csv(unmapped, report_dir / "unmapped.csv")
+    recordsets.to_csv(validation, report_dir / "validation.csv")
+    recordsets.to_csv(validation_counts(validation), report_dir / "validation_counts.csv")
     if len(resolutions):
-        _write(resolutions, report_dir / "duplicates_resolved.csv")
+        recordsets.to_csv(resolutions, report_dir / "duplicates_resolved.csv")
     if len(recovered):
-        _write(recovered, report_dir / "recovered.csv")
-    _write(differences, report_dir / "manifest_differences.csv")
+        recordsets.to_csv(recovered, report_dir / "recovered.csv")
+    recordsets.to_csv(differences, report_dir / "manifest_differences.csv")
     if info.get("id_worklist"):
-        _write(pd.DataFrame(info["id_worklist"]).assign(grant=entry["grant"], grant_table=entry["table"])[ID_WORKLIST_COLUMNS],
+        recordsets.to_csv(pd.DataFrame(info["id_worklist"]).assign(grant=entry["grant"], grant_table=entry["table"])[ID_WORKLIST_COLUMNS],
                report_dir / "manifest_id_worklist.csv")
     authors_recovered = int((recovered["reason"] == "").sum())
     summary.update(
@@ -1183,16 +1173,9 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     return _noted(summary, absent), converted, source_keys
 
 
-def summary_line(s: dict) -> str:
-    parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
+SUMMARY_FIELDS = ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
                   "validation_failures", "duplicates_resolved", "manifest_id_remapped", "manifest_id_ambiguous",
-                  "manifest_id_unmatched", "manifest_id_collision", "manifest_id_other_grant", "manifest_differences", "not_in_manifest", "authors_recovered", "truncated", "invalid_rows", "recovered"):
-        if field in s:
-            parts.append(f"{field}={s[field]}")
-    if s.get("message"):
-        parts.append(s["message"])
-    return " ".join(parts)
+                  "manifest_id_unmatched", "manifest_id_collision", "manifest_id_other_grant", "manifest_differences", "not_in_manifest", "authors_recovered", "truncated", "invalid_rows", "recovered")
 
 
 # --- state --------------------------------------------------------------------
@@ -1206,9 +1189,7 @@ def load_state(path: Path) -> dict:
 
 def save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
-    tmp.replace(path)
+    utils.write_atomic(path, lambda tmp: tmp.write_text(json.dumps(state, indent=2, sort_keys=True)))
 
 
 # --- comparison ---------------------------------------------------------------
@@ -1499,7 +1480,7 @@ def main(argv=None, syn=None):
     args = get_args(argv)
     syn = syn or utils.syn_login()
     component = args.component
-    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table) if args.write_log_table else None
+    write_log, _ = recordsets.open_logs(syn, args)  # None without --write-log-table
     list_cols = recordsets.list_columns(component)
     set_like = recordsets.set_like_columns(component)
     overrides = value_maps.load_overrides(args.overrides) if args.overrides else None
@@ -1571,8 +1552,8 @@ def main(argv=None, syn=None):
                        f"project {entry['project']} has more than one {component} table ({', '.join(ids)}); "
                        "one RecordSet per grant, none migrated"}
             report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / "summary.txt").write_text(summary_line(summary) + "\n")
-            print(summary_line(summary))
+            (report_dir / "summary.txt").write_text(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS) + "\n")
+            print(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS))
             summaries.append(summary)
             continue
         previous = state["grants"].get(grant, {})
@@ -1591,7 +1572,7 @@ def main(argv=None, syn=None):
             legacy_keys[grant] = [str(k).strip() for k in converted[KEYS[component]]]
             source_keys[grant] = previous.get("source_keys", legacy_keys[grant])
             summaries.append(summary)
-            print(summary_line(summary))
+            print(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS))
             continue
         try:
             summary, converted, s_keys = process_grant(
@@ -1603,8 +1584,8 @@ def main(argv=None, syn=None):
                 {"grant": grant, "table": entry["table"], "status": "failed", "message": repr(err)}, None, [],
             )
         report_dir.mkdir(parents=True, exist_ok=True)
-        (report_dir / "summary.txt").write_text(summary_line(summary) + "\n")
-        print(summary_line(summary))
+        (report_dir / "summary.txt").write_text(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS) + "\n")
+        print(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS))
         summaries.append(summary)
         if converted is not None:
             frames[grant] = _frames_from(report_dir)
@@ -1680,7 +1661,7 @@ def _frames_from(report_dir: Path) -> dict:
     out = {}
     for name in ("changes", "unmapped", "validation", "converted", "recovered", "manifest_differences", "manifest_id_worklist"):
         path = report_dir / f"{name}.csv"
-        out[name] = pd.read_csv(path, dtype=str, keep_default_na=False) if path.exists() else None
+        out[name] = recordsets.read_csv_str(path) if path.exists() else None
     return out
 
 

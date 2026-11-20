@@ -65,7 +65,6 @@ import importlib.util
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import jsonschema
@@ -96,12 +95,11 @@ CHANGE_COLUMNS = ["component", "grant", "key", "column", "new_value"]
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
     parser.add_argument("--changes", required=True, help=f"CSV with columns {', '.join(CHANGE_COLUMNS)}")
-    parser.add_argument("--write-log-table", default="syn78404341", help="Synapse ID of the write-log table")
-    parser.add_argument("--removals-table", default="syn78404342", help="Synapse ID of the removals table")
+    recordsets.add_log_args(parser)
     parser.add_argument("--report-dir", required=True, help="directory for the files and reports")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     parser.add_argument(
-        "--run-id", default=RUN_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S"),
+        "--run-id", default=recordsets.new_run_id(RUN_PREFIX),
         help=f"default: {RUN_PREFIX!r} plus a timestamp",
     )
     return parser.parse_args(argv)

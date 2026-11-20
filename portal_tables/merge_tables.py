@@ -272,9 +272,7 @@ def publish_union(syn, component, union, target):
             f"fixed {component} schema; refusing to publish.\n  existing: {have}\n  expected: {want}"
         )
     existing.snapshot(label=f"pre-union-{datetime.now():%Y-%m-%d-%H-%M-%S}", synapse_client=syn)
-    previous = existing.query(
-        query=f"SELECT * FROM {existing_id}", include_row_id_and_row_version=False, synapse_client=syn
-    )
+    previous = utils.read_table(syn, existing_id)
     existing.delete_rows(query=f"SELECT ROW_ID, ROW_VERSION FROM {existing_id}", synapse_client=syn)
     try:
         existing.store_rows(values=values, synapse_client=syn)

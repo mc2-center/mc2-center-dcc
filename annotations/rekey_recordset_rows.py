@@ -47,8 +47,8 @@ Files are in ``<report-dir>/<run-id>/<recordset>/``; ``summary.csv`` in
 rekeyed, refused, locked, failed, readback_mismatch), changes, version, message.
 
 The run id starts with ``dcc-rekey-`` (generated; a ``--run-id`` without it is
-rejected). The write-log and removals tables are read in a dry run too; a dry run
-writes nothing to them.
+rejected). ``--write-log-table`` and ``--removals-table`` default to the production
+tables; a dry run reads them and writes nothing to them.
 
 Exit status: 0 ok (every RecordSet dry-run complete, or rekeyed and the
 read-back matches); 1 if any RecordSet is refused, locked, failed, or its
@@ -67,7 +67,6 @@ import io
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -92,12 +91,11 @@ def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
     parser.add_argument("--changes", required=True, help="CSV with columns recordset, old_key, new_key[, reason]")
     parser.add_argument("--component", required=True, help="the RecordSets' component, e.g. DatasetView")
-    parser.add_argument("--write-log-table", required=True, help="Synapse ID of the write-log table")
-    parser.add_argument("--removals-table", default="syn78404342", help="Synapse ID of the removals table")
+    recordsets.add_log_args(parser)
     parser.add_argument("--report-dir", required=True, help="directory for the CSVs and summary")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     parser.add_argument(
-        "--run-id", default=REKEY_RUN_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S"),
+        "--run-id", default=recordsets.new_run_id(REKEY_RUN_PREFIX),
         help=f"must start with {REKEY_RUN_PREFIX!r}; default: that plus a timestamp",
     )
     args = parser.parse_args(argv)
@@ -108,7 +106,7 @@ def get_args(argv=None):
 
 def load_changes(path) -> dict[str, list[dict]]:
     """``{recordset: [{old_key, new_key, reason}]}`` from the changes CSV, in file order."""
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df = recordsets.read_csv_str(path)
     missing = {"recordset", "old_key", "new_key"} - set(df.columns)
     if missing:
         raise SystemExit(f"{path} lacks column(s) {sorted(missing)}")
@@ -278,8 +276,7 @@ def main(argv=None, syn=None):
     args = get_args(sys.argv[1:] if argv is None else argv)
     by_rs = load_changes(args.changes)
     syn = syn or utils.syn_login()
-    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table)
-    removals = recordsets.SynapseTableRemovals(syn, args.removals_table)
+    write_log, removals = recordsets.open_logs(syn, args)
     principal = recordsets.principal_id(syn) if args.execute else ""
     run_dir = Path(args.report_dir) / args.run_id
     print(f"Run {args.run_id}: {'EXECUTE' if args.execute else 'dry run'}, {len(by_rs)} RecordSets ({args.component})")

@@ -99,7 +99,7 @@ def schema_diff(resource: str, staging, production) -> list[dict]:
 
 def read_table(syn, table_id: str) -> pd.DataFrame:
     """All rows of a table, without system columns, blanks normalised."""
-    df = Table(id=table_id).query(query=f"SELECT * FROM {table_id}", synapse_client=syn)
+    df = utils.read_table(syn, table_id, include_row_id_and_row_version=True)  # the system columns are dropped below
     df = df.drop(columns=[c for c in SYSTEM_COLUMNS if c in df.columns])
     return utils.fill_blank(df, numeric=False).reset_index(drop=True)
 

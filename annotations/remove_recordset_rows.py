@@ -43,8 +43,8 @@ upsert key column, joined with the key separator); dry run unless ``--execute``.
 
 Dry run is the default: it prints, per RecordSet, the keys that would be
 removed, the keys not found and any blocking session or lock; nothing is
-written (the write-log and removals tables are only read). Use ``--execute`` to
-write.
+written (``--write-log-table`` and ``--removals-table``, which default to the
+production tables, are only read). Use ``--execute`` to write.
 
 The exit status is 1 if any RecordSet needs attention (failed, locked, blocked
 or retry).
@@ -56,7 +56,6 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -74,8 +73,7 @@ PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older t
 
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
-    parser.add_argument("--removals-table", required=True, help="Synapse ID of the removals table")
-    parser.add_argument("--write-log-table", required=True, help="Synapse ID of the write-log table")
+    recordsets.add_log_args(parser)
     parser.add_argument("--recordset", help="only this RecordSet ID")
     parser.add_argument("--report-dir", required=True, help="directory for the stored CSVs and summary")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
@@ -85,7 +83,7 @@ def get_args(argv=None):
         help="on-disk cache of downloaded RecordSet versions (immutable); default: %(default)s",
     )
     parser.add_argument(
-        "--run-id", default=recordsets.REMOVAL_RUN_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S"),
+        "--run-id", default=recordsets.new_run_id(recordsets.REMOVAL_RUN_PREFIX),
         help=f"must start with {recordsets.REMOVAL_RUN_PREFIX!r}, which recover_pending recognises; default: that plus a timestamp",
     )
     args = parser.parse_args(argv)
@@ -316,20 +314,13 @@ class _ReadOnly:
         pass
 
 
-def summary_line(s: dict) -> str:
-    parts = [f"{s['recordset']}: {s['status']}"]
-    for field in ("base", "version", "remove", "not_found", "claimed"):
-        if field in s:
-            parts.append(f"{field}={s[field]}")
-    if s["message"]:
-        parts.append(s["message"])
-    return " ".join(parts)
+SUMMARY_FIELDS = ("base", "version", "remove", "not_found", "claimed")
 
 
 def get_request_args(argv):
     parser = argparse.ArgumentParser(
         prog="remove_recordset_rows.py request", description="Request row removals: append `requested` rows")
-    parser.add_argument("--removals-table", required=True, help="Synapse ID of the removals table")
+    recordsets.add_log_args(parser, write_log=False)
     parser.add_argument("--recordset", required=True, help="RecordSet ID")
     parser.add_argument(
         "--key", nargs="+", action="append", required=True, metavar="VALUE",
@@ -344,7 +335,7 @@ def request_main(argv, syn=None):
     """``request``: append ``requested`` rows (one write) for the given keys; dry run by default."""
     args = get_request_args(argv)
     syn = syn or utils.syn_login()
-    removals = recordsets.SynapseTableRemovals(syn, args.removals_table)
+    _, removals = recordsets.open_logs(syn, args)
     _, key_cols = recordsets.recordset_info(syn, args.recordset)
     if not key_cols:
         print(f"{args.recordset} has no upsert key")
@@ -378,8 +369,7 @@ def main(argv=None, syn=None):
         return request_main(argv[1:], syn)
     args = get_args(argv)
     syn = syn or utils.syn_login()
-    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table)
-    removals = recordsets.SynapseTableRemovals(syn, args.removals_table)
+    write_log, removals = recordsets.open_logs(syn, args)
     ids = [args.recordset] if args.recordset else removals.recordset_ids()
     principal = recordsets.principal_id(syn) if args.execute else ""
     run_dir = Path(args.report_dir) / args.run_id
@@ -396,7 +386,7 @@ def main(argv=None, syn=None):
             continue  # only resolved keys: not worth a line
         if summary["status"] in NEEDS_ATTENTION:
             failed += 1
-        print(summary_line(summary))
+        print(recordsets.summary_line(summary, "recordset", SUMMARY_FIELDS))
         summaries.append(summary)
 
     if summaries:

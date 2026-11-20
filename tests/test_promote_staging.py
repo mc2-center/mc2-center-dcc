@@ -44,10 +44,11 @@ class World:
             def get(self, include_columns=True, synapse_client=None):
                 return SimpleNamespace(columns=world.tables[self.id][0])
 
-            def query(self, query, synapse_client=None):
+            def query(self, query, include_row_id_and_row_version=True, synapse_client=None):
                 df = world.tables[self.id][1].copy()
-                df.insert(0, "ROW_ID", range(len(df)))
-                df["ROW_VERSION"] = 1
+                if include_row_id_and_row_version:
+                    df.insert(0, "ROW_ID", range(len(df)))
+                    df["ROW_VERSION"] = 1
                 return df
 
             def snapshot(self, comment=None, synapse_client=None):
@@ -60,6 +61,7 @@ class World:
 def world(monkeypatch):
     w = World()
     monkeypatch.setattr(promote_staging, "Table", w.table_class())
+    monkeypatch.setattr(utils, "Table", promote_staging.Table)  # read_table queries through utils
     monkeypatch.setattr(utils, "syn_login", lambda: object())
 
     def fake_update(syn, table_id, df, component=None, allow_production=False):

@@ -76,7 +76,7 @@ def run(tmp_path, fake, *extra, execute=True, grants=("syn100",), run_id="r1", p
          mock.patch.object(ur.recordsets, "read_recordset", fake.read), \
          mock.patch.object(ur.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(ur.recordsets, "get_validation", fake.validation), \
-         mock.patch.object(ur, "principal_id", lambda syn: "42"):
+         mock.patch.object(ur.recordsets, "principal_id", lambda syn: "42"):
         code = ur.main(argv, syn=object())
     return code, tmp_path / "reports" / run_id
 
@@ -430,3 +430,12 @@ def test_comma_terms_are_learned_only_after_an_executed_write(tmp_path):
         code, rep = run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), run_id="r2")
         learn.assert_called_once()
     assert code == 0 and "new_comma_terms" in pd.read_csv(rep.parent / "r2" / "summary.csv").columns
+
+
+def test_summary_line_text():
+    s = {"grant": "g1", "status": "written", "message": "wrote v2", "recordset": "synRS", "version": 2, "rows": 3,
+         "decisions": 4, "conflicts": 5, "overwritten": 6, "invalid_rows": 7, "recovered": [8], "foreign_midwrite": [9],
+         "removal_skipped": 10, "unsafe_rows": 11, "file": "ignored.csv"}
+    assert rs.summary_line(s, "grant", ur.SUMMARY_FIELDS) == (
+        "g1: written recordset=synRS version=2 rows=3 decisions=4 conflicts=5 overwritten=6 invalid_rows=7 "
+        "recovered=[8] foreign_midwrite=[9] removal_skipped=10 unsafe_rows=11 wrote v2")

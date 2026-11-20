@@ -185,7 +185,7 @@ def test_read_manifest_table(monkeypatch, concrete):
             seen.update(kwargs)
             return frame
 
-    monkeypatch.setattr(mc, "Table", FakeTable)
+    monkeypatch.setattr(mc.utils, "Table", FakeTable)
     syn = FakeRestSyn(concrete)
     out = mc.read_manifest(syn, "syn1")
     assert out is frame
@@ -215,7 +215,7 @@ def test_read_manifest_file_entity(monkeypatch, tmp_path):
             raise AssertionError("a CSV entity must not be queried")
 
     monkeypatch.setattr(mc, attr, FakeEntity)
-    monkeypatch.setattr(mc, "Table", NoTable)
+    monkeypatch.setattr(mc.utils, "Table", NoTable)
     syn = FakeRestSyn(concrete)
     out = mc.read_manifest(syn, "syn1")
     assert seen["id"] == "syn1" and seen["get"] == {"synapse_client": syn}

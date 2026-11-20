@@ -870,3 +870,56 @@ def test_download_version_file_does_not_retry_other_errors(tmp_path):
     with pytest.raises(RuntimeError, match="404"):
         rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
     assert syn._requests_session.get.call_count == 1
+
+
+# --- helpers shared by the scripts ---
+
+
+def test_add_log_args_defaults_and_options():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    rs.add_log_args(parser)
+    args = parser.parse_args([])
+    assert (args.write_log_table, args.removals_table) == ("syn78404341", "syn78404342")
+    assert parser.parse_args(["--write-log-table", "synL", "--removals-table", "synR"]).removals_table == "synR"
+    only_log = argparse.ArgumentParser()
+    rs.add_log_args(only_log, removals=False)
+    assert not hasattr(only_log.parse_args([]), "removals_table")
+    only_removals = argparse.ArgumentParser()
+    rs.add_log_args(only_removals, write_log=False)
+    assert not hasattr(only_removals.parse_args([]), "write_log_table")
+
+
+def test_open_logs_builds_the_tables_named_in_args():
+    from types import SimpleNamespace
+
+    write_log, removals = rs.open_logs("syn", SimpleNamespace(write_log_table="synL", removals_table="synR"))
+    assert isinstance(write_log, rs.SynapseTableWriteLog) and write_log.table_id == "synL"
+    assert isinstance(removals, rs.SynapseTableRemovals) and removals.table_id == "synR"
+    # a table that is not given (or an option the script does not have) is None
+    assert rs.open_logs("syn", SimpleNamespace(write_log_table=None)) == (None, None)
+
+
+def test_new_run_id_is_the_prefix_and_a_timestamp():
+    import re
+
+    assert re.fullmatch(r"\d{8}T\d{6}", rs.new_run_id())
+    assert re.fullmatch(r"dcc-rekey-\d{8}T\d{6}", rs.new_run_id("dcc-rekey-"))
+
+
+def test_summary_line_lists_the_set_fields_in_order_then_the_message():
+    fields = ("recordset", "version", "rows")
+    s = {"grant": "g1", "status": "written", "rows": 3, "recordset": "synRS", "other": 1, "message": "wrote v2"}
+    assert rs.summary_line(s, "grant", fields) == "g1: written recordset=synRS rows=3 wrote v2"
+    assert rs.summary_line({"grant": "g1", "status": "dryrun", "message": ""}, "grant", fields) == "g1: dryrun"
+    assert rs.summary_line({"grant": "g2", "status": "failed"}, "grant", fields) == "g2: failed"  # no message key
+
+
+def test_read_csv_str_keeps_text_and_reads_a_file_without_data_as_empty(tmp_path):
+    path = tmp_path / "a.csv"
+    path.write_text("a,b\n01,\nNA,x\n")
+    df = rs.read_csv_str(path)
+    assert df.to_dict("records") == [{"a": "01", "b": ""}, {"a": "NA", "b": "x"}]
+    path.write_text("")
+    assert rs.read_csv_str(path).empty

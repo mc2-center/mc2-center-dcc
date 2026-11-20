@@ -130,6 +130,7 @@ def _publish(existing_columns=None, store_rows=None):
                         for c in (existing_columns or schema)}
     union = pd.DataFrame(columns=mt.model_contract.template_headers("ToolView"))
     with mock.patch.object(mt.operations, "find_entity_id", return_value="syn9"), \
+         mock.patch.object(mt.utils, "read_table", lambda syn, table_id: existing.query(table_id)), \
          mock.patch.object(mt, "Table") as table_cls:
         table_cls.return_value.get.return_value = existing
         result = mt.publish_union(mock.MagicMock(), "ToolView", union, "syn1")

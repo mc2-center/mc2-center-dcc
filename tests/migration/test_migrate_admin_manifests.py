@@ -92,7 +92,7 @@ def run(tmp_path, fake, *extra, execute=False, run_id="r1", component=None, out=
             "--cache-dir", str(tmp_path / "cache"), *extra]
     if execute:
         argv += ["--execute", "--write-log-table", "synLOG"]
-    with mock.patch.object(adm, "read_source", fake.read_source), \
+    with mock.patch.object(grants, "read_source", fake.read_source), \
          mock.patch.object(grants.operations, "find_entity_id", fake.find_entity_id), \
          mock.patch.object(grants, "Folder", fake.Folder), \
          mock.patch.object(grants, "create_record_based_metadata_task", fake.create_task), \

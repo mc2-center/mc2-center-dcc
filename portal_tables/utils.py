@@ -5,8 +5,10 @@ import json
 import logging
 import os
 import argparse
+import uuid
 from getpass import getpass
 from datetime import datetime
+from pathlib import Path
 
 from synapseclient import Synapse, operations
 from synapseclient.core.exceptions import SynapseNoCredentialsError
@@ -52,6 +54,24 @@ def refuse_production(table_id: str) -> None:
         raise ValueError(_production_message(table_id))
 
 
+def read_table(syn, table_id: str, include_row_id_and_row_version: bool = False) -> pd.DataFrame:
+    """Every row of a Synapse table (``SELECT *``)."""
+    return Table(id=table_id).query(
+        query=f"SELECT * FROM {table_id}",
+        include_row_id_and_row_version=include_row_id_and_row_version,
+        synapse_client=syn,
+    )
+
+
+def write_atomic(path, write) -> None:
+    """Make ``path`` by calling ``write(tmp)`` on a temp file beside it, then replacing ``path`` with the temp
+    file, so no reader (or second process) sees a half-written file."""
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
+    write(tmp)
+    tmp.replace(path)
+
+
 def portal_table(resource: str, production: bool = False) -> str:
     """Synapse ID of the portal table of ``resource``: staging unless ``production``."""
     return CONFIG[resource]["portal_table" if production else "staging_table"]
@@ -87,11 +107,7 @@ def _consortium_rows(syn: Synapse) -> pd.DataFrame:
     """
     table_id = CONFIG["consortium"]["table"]
     if table_id not in _CONSORTIUM_ROWS:
-        rows = Table(id=table_id).query(
-            query=f"SELECT * FROM {table_id}",
-            include_row_id_and_row_version=False,
-            synapse_client=syn,
-        )
+        rows = read_table(syn, table_id)
         required = [c for c in ("consortiumDisplayName", "consortiumId") if c in rows.columns]
         bad = rows[required].map(_blank).any(axis=1)
         for _, row in rows[bad].iterrows():
@@ -578,11 +594,7 @@ def update_table(
     print(f"Creating new table version with label: {today}...")
     table.snapshot(label=today, synapse_client=syn)
 
-    current_rows = table.query(
-        query=f"SELECT * FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    current_rows = read_table(syn, table_id)
     print(f"Syncing table with latest data (new_rows={len(df) - len(current_rows)})...\n")
     table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
 

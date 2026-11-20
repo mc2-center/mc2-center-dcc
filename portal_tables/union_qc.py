@@ -37,7 +37,7 @@ author: orion.banks
 """
 
 from synapseclient import Synapse, operations
-from synapseclient.models import File, Table
+from synapseclient.models import File
 import argparse
 import logging
 import os
@@ -194,11 +194,7 @@ def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tu
     names = []
 
     for tableId in tableIdList:  # pull table from Synapse
-        table = Table(id=tableId).query(
-            query=f"SELECT * FROM {tableId}",
-            include_row_id_and_row_version=False,
-            synapse_client=syn,
-        )
+        table = utils.read_table(syn, tableId)
         table = utils.fill_blank(table)
         name = table["Component"].iat[1]  # grab name of data type from table (second row, as before)
         manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV

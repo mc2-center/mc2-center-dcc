@@ -1862,3 +1862,16 @@ def test_migration_resolves_the_folder_name_per_project(entry, expected):
     with mock.patch.object(mig.operations, "find_entity_id", find):
         assert mig._would_rebind(object(), entry, args) is None
     assert seen == [expected] and finds == [expected]
+
+
+def test_summary_line_text():
+    s = {"grant": "CA1", "status": "migrated", "message": "done", "table": "syn1", "recordset": "synRS", "version": 2,
+         "source_rows": 2, "rows": 2, "changes": 3, "unmapped": 1, "validation_failures": 0, "duplicates_resolved": 1,
+         "manifest_id_remapped": 1, "manifest_id_ambiguous": 2, "manifest_id_unmatched": 3, "manifest_id_collision": 4,
+         "manifest_id_other_grant": 5, "manifest_differences": 6, "not_in_manifest": 7, "authors_recovered": 8,
+         "truncated": 9, "invalid_rows": 10, "recovered": [3], "state": "ignored"}
+    assert rs.summary_line(s, "grant", mig.SUMMARY_FIELDS) == (
+        "CA1: migrated table=syn1 recordset=synRS version=2 source_rows=2 rows=2 changes=3 unmapped=1 "
+        "validation_failures=0 duplicates_resolved=1 manifest_id_remapped=1 manifest_id_ambiguous=2 "
+        "manifest_id_unmatched=3 manifest_id_collision=4 manifest_id_other_grant=5 manifest_differences=6 "
+        "not_in_manifest=7 authors_recovered=8 truncated=9 invalid_rows=10 recovered=[3] done")

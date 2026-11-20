@@ -60,6 +60,7 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, str(HERE.parent / "portal_tables"))
+import recordsets
 
 logger = logging.getLogger("upload_workflow")
 
@@ -193,10 +194,6 @@ def subprocess_env():
     return env
 
 
-def read_csv(path):
-    return pd.read_csv(path, dtype=str, keep_default_na=False)
-
-
 def write_paths_csv(paths: pd.DataFrame, path: Path):
     paths.to_csv(path, index=False)
     return str(path)
@@ -290,7 +287,7 @@ def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
         return paths
     keep = []
     for _, prow in paths.iterrows():
-        df = read_csv(prow["File Paths"])
+        df = recordsets.read_csv_str(prow["File Paths"])
         empty = df[link_column].str.strip() == ""
         for i in df.index[empty]:
             label = df.iloc[i].get("Tool Name") or df.iloc[i].get(DATASET_NAME_COLUMN) or f"row {i}"
@@ -316,7 +313,7 @@ def drop_conflict_rows(paths: pd.DataFrame, pk, conflicts: list, report: list, n
         return paths
     keep = []
     for _, prow in paths.iterrows():
-        df = read_csv(prow["File Paths"])
+        df = recordsets.read_csv_str(prow["File Paths"])
         blank = df[pk].str.strip() == ""
         for i in df.index[blank]:
             label = df.iloc[i].get(name_column) or f"row {i}"
@@ -353,7 +350,7 @@ def reuse_existing_datasets(syn, paths: pd.DataFrame, pk, link_column, dir_: Pat
     for _, prow in paths.iterrows():
         path = prow["File Paths"]
         grant = grant_of(path)
-        df = read_csv(path)
+        df = recordsets.read_csv_str(path)
         matched = {}
         for i, row in df.iterrows():
             acc = parse_accession(row[DATASET_NAME_COLUMN], row[link_column])
@@ -389,10 +386,10 @@ def merge_reused(paths_after: pd.DataFrame, original_paths: pd.DataFrame, dir_: 
         parts = []
         created = dir_ / name
         if created.exists() and str(created) in set(paths_after["File Paths"]):
-            parts.append(read_csv(created))
+            parts.append(recordsets.read_csv_str(created))
         reused = dir_ / "reused" / name
         if reused.exists():
-            parts.append(read_csv(reused))
+            parts.append(recordsets.read_csv_str(reused))
         if not parts:
             continue
         dest = final_dir / name
@@ -426,7 +423,7 @@ def stage_paths(run, args):
     out = d / "paths.csv"
     split_dir = run.output("split", "dir")
     call_main(_load("gen-mp-csv.py").main, split_dir, str(out), dtype)
-    paths = read_csv(out)
+    paths = recordsets.read_csv_str(out)
     missing = paths[paths[folder_col].str.strip() == ""]["File Paths"].tolist()
     for m in missing:
         logger.warning("No target folder resolved for %s", m)
@@ -435,7 +432,7 @@ def stage_paths(run, args):
 
 def stage_reshape(run, args):
     d = run.stage_dir("reshape")
-    paths = retarget(read_csv(run.output("paths", "paths_csv")), d)
+    paths = retarget(recordsets.read_csv_str(run.output("paths", "paths_csv")), d)
     out = write_paths_csv(paths, d / "paths.csv")
     call_main(_load("processing-splits.py").main, [out])
     return {"paths_csv": out, "files": paths["File Paths"].tolist()}
@@ -452,7 +449,7 @@ def exclude_unresolved_folders(paths: pd.DataFrame, folder_col):
 
 
 def stage_links(run, args, syn=None):
-    reshaped = read_csv(run.output("reshape", "paths_csv"))
+    reshaped = recordsets.read_csv_str(run.output("reshape", "paths_csv"))
     folder_col = CONFIG[args.type][3]
     # Resuming at links keeps created_ids.csv: it is how finished rows are skipped.
     d = run.stage_dir("links", keep=("created_ids.csv",) if args.from_stage == "links" else ())
@@ -525,7 +522,7 @@ def stage_upload(run, args):
     if args.execute and "dry run" in links.get("note", ""):
         raise RuntimeError("links was skipped in a dry run; resume with --from-stage links --execute")
     paths_csv = links["outputs"]["paths_csv"]
-    if not len(read_csv(paths_csv)):
+    if not len(recordsets.read_csv_str(paths_csv)):
         logger.warning("No split files left to upload")
         return {"paths_csv": paths_csv, "uploaded": 0}
 
@@ -568,8 +565,9 @@ def get_args(argv=None):
     p.add_argument("--type", required=True, choices=COMPONENTS)
     p.add_argument("--out-dir", required=True)
     p.add_argument("--target", choices=["recordset", "schematic-table"], default="recordset")
-    p.add_argument("--write-log-table", help="Synapse ID of the write-log table (recordset target)")
-    p.add_argument("--removals-table", default="syn78404342",
+    p.add_argument("--write-log-table", default=recordsets.DEFAULT_WRITE_LOG_TABLE,
+                   help="Synapse ID of the write-log table (recordset target; default: production)")
+    p.add_argument("--removals-table", default=recordsets.DEFAULT_REMOVALS_TABLE,
                    help="Synapse ID of the RecordSet removals table (recordset target; default: production)")
     p.add_argument("--schematic-config", help="schematic config file (schematic-table target)")
     p.add_argument("--cv-file", help="all_valid_values.csv path/URL for split (default: pinned release)")
@@ -583,8 +581,6 @@ def get_args(argv=None):
     args = p.parse_args(argv)
     if args.force_new and args.from_stage:
         p.error("--force-new cannot be combined with --from-stage")
-    if args.target == "recordset" and not args.write_log_table:
-        p.error("--target recordset needs --write-log-table")
     if args.target == "schematic-table" and args.execute and not args.schematic_config:
         p.error("--target schematic-table with --execute needs --schematic-config")
     return args
@@ -631,7 +627,7 @@ def main(argv=None, syn=None):
     args.manifest = Path(args.manifest).resolve()
     args.manifest_sha256 = sha256_of(args.manifest)
     run = Run(out_dir, args)
-    args.run_id = args.run_id or f"{re.sub(r'[^A-Za-z0-9._-]', '_', out_dir.name)}-{datetime.now():%Y%m%dT%H%M%S}"
+    args.run_id = args.run_id or recordsets.new_run_id(re.sub(r"[^A-Za-z0-9._-]", "_", out_dir.name) + "-")
 
     start = STAGES.index(args.from_stage) if args.from_stage else 0
     if args.from_stage:

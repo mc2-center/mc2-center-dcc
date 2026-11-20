@@ -92,7 +92,6 @@ import shutil
 import os
 import tempfile
 import time
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -288,11 +287,16 @@ def _split_list_cell(value: str, column: str = "") -> list[str]:
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "mc2-center-dcc" / "recordsets"
 
 
-def _load_csv(path, list_cols=()) -> pd.DataFrame:
+def read_csv_str(path) -> pd.DataFrame:
+    """Read a CSV with every cell as a string (empty is ``""``); a file with no data at all is an empty frame."""
     try:
-        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        return pd.read_csv(path, dtype=str, keep_default_na=False)
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
+
+
+def _load_csv(path, list_cols=()) -> pd.DataFrame:
+    df = read_csv_str(path)
     for column in df.columns:
         if column in list_cols:
             df[column] = df[column].map(parse_cell)
@@ -331,9 +335,7 @@ def read_recordset(
                 raise ValueError(f"{rs_id} v{version}: the downloaded file does not match its file handle's md5")
         if cached is not None:
             cached.parent.mkdir(parents=True, exist_ok=True)
-            tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
-            shutil.copyfile(path, tmp)
-            tmp.replace(cached)
+            utils.write_atomic(cached, lambda tmp: shutil.copyfile(path, tmp))
             want = getattr(getattr(entity, "file_handle", None), "content_md5", None)
             _md5_sidecar(cached).write_text(
                 want if isinstance(want, str) and want else synapse_utils.md5_for_file_hex(filename=str(cached)))
@@ -818,6 +820,45 @@ def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_
     ]
     table = Table(name=name, parent_id=parent_id, columns=columns).store(synapse_client=syn)
     return table.id
+
+
+# --- shared by the scripts ----------------------------------------------------
+
+DEFAULT_WRITE_LOG_TABLE = "syn78404341"
+DEFAULT_REMOVALS_TABLE = "syn78404342"
+
+
+def add_log_args(parser, write_log=True, removals=True) -> None:
+    """Add ``--write-log-table`` and (with ``removals``) ``--removals-table``, defaulting to the production tables."""
+    if write_log:
+        parser.add_argument("--write-log-table", default=DEFAULT_WRITE_LOG_TABLE,
+                            help="Synapse ID of the write-log table; default: %(default)s")
+    if removals:
+        parser.add_argument("--removals-table", default=DEFAULT_REMOVALS_TABLE,
+                            help="Synapse ID of the removals table; default: %(default)s")
+
+
+def open_logs(syn, args):
+    """``(write_log, removals)`` for the tables named in ``args``; one is None when its table is not given."""
+    write_log = SynapseTableWriteLog(syn, args.write_log_table) if getattr(args, "write_log_table", None) else None
+    removals = SynapseTableRemovals(syn, args.removals_table) if getattr(args, "removals_table", None) else None
+    return write_log, removals
+
+
+def new_run_id(prefix: str = "") -> str:
+    """``prefix`` plus the time now (``YYYYmmddTHHMMSS``). The write log keeps run IDs in this form."""
+    return prefix + datetime.now().strftime("%Y%m%dT%H%M%S")
+
+
+def summary_line(s: dict, key: str, fields) -> str:
+    """One line for a summary dict: ``<s[key]>: <status>``, each of ``fields`` that is set as ``name=value``, then the message."""
+    parts = [f"{s[key]}: {s['status']}"]
+    for field in fields:
+        if field in s:
+            parts.append(f"{field}={s[field]}")
+    if s.get("message"):
+        parts.append(s["message"])
+    return " ".join(parts)
 
 
 def removed_keys(versions, removal_bases, key) -> dict[str, int]:

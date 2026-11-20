@@ -4,7 +4,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from test_upload_recordsets import KEY, FakeSynapse, make_inputs, run, stored, ur
+from test_upload_recordsets import KEY, FakeSynapse, run, stored, ur
 
 pytestmark = pytest.mark.usefixtures("synapse_tables")
 
@@ -41,7 +41,7 @@ def test_upload_skips_removed_keys_and_reports_them(tmp_path, log, removals, cap
 
 def test_removal_the_table_does_not_list_is_skipped_from_the_log_and_history(tmp_path, log, removals):
     fake = setup(log, removals)
-    code, rep = run(tmp_path, fake, execute=False)  # no removals source at all
+    code, rep = run(tmp_path, fake, execute=False)  # the removals table is empty
     assert merged_keys(rep) == {"p1"}
     assert list(pd.read_csv(rep / "syn100" / "removal_skipped.csv", dtype=str)[KEY]) == ["p2"]
 
@@ -62,12 +62,10 @@ def test_a_dead_removal_runs_store_is_recovered_as_removed_and_not_written_back(
     assert list(pd.read_csv(rep / "syn100" / "removal_skipped.csv", dtype=str)[KEY]) == ["p2"]
 
 
-def test_execute_without_a_removals_source_is_refused(tmp_path):
-    paths = make_inputs(tmp_path)
-    argv = ["--paths-csv", str(paths), "--component", "PublicationView", "--report-dir", str(tmp_path / "r"),
-            "--write-log-table", "synLOG", "--execute"]
-    with pytest.raises(SystemExit):
-        ur.get_args(argv)
+def test_the_tables_default_to_the_production_ones(tmp_path):
+    argv = ["--paths-csv", "p.csv", "--component", "PublicationView", "--report-dir", str(tmp_path / "r")]
+    args = ur.get_args(argv)
+    assert (args.write_log_table, args.removals_table) == ("syn78404341", "syn78404342")
     assert ur.get_args(argv + ["--removals-table", "synREM"]).removals_table == "synREM"
 
 

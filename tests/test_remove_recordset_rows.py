@@ -356,3 +356,10 @@ def test_a_crashed_revalidation_export_is_recovered_as_written_not_removed(tmp_p
     status = dict(zip(log._read("synRS")["version"], log._read("synRS")["status"]))
     assert status[3] == "recovered" and log.unresolved_pending("synRS") == []
     assert log.unexported_removals("synRS") == []
+
+
+def test_summary_line_text():
+    s = {"recordset": "synRS", "status": "removed", "message": "removed ['b']", "base": 1, "version": 2, "remove": 1,
+         "not_found": 0, "claimed": {"b": 2}, "owed_export": [2]}
+    assert rs.summary_line(s, "recordset", cmd.SUMMARY_FIELDS) == (
+        "synRS: removed base=1 version=2 remove=1 not_found=0 claimed={'b': 2} removed ['b']")

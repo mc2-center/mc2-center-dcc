@@ -61,7 +61,6 @@ import os
 import re
 import sys
 import unicodedata
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -98,7 +97,7 @@ def get_args(argv=None):
     parser.add_argument("--out-dir", help="default: output/migration_14/admin/<component>")
     parser.add_argument("--overrides", help="CSV of curated corrections: column, current_value, proposed_value")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
-    parser.add_argument("--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp")
+    parser.add_argument("--run-id", default=recordsets.new_run_id(), help="default: a timestamp")
     parser.add_argument("--redo", action="store_true", help="repeat although done (dry run only)")
     parser.add_argument("--cache-dir", default=str(recordsets.DEFAULT_CACHE_DIR),
                         help="on-disk cache of downloaded RecordSet versions; default: %(default)s")
@@ -299,10 +298,6 @@ def validate_admin(converted: pd.DataFrame, component: str, key_missing: bool, r
 # --- one component ------------------------------------------------------------
 
 
-def read_source(syn, table_id: str) -> pd.DataFrame:
-    return grants.read_source(syn, table_id)
-
-
 def source_keys_of(source: pd.DataFrame, component: str) -> list[str] | None:
     header = SOURCE_KEY_HEADER[component]
     if header not in source.columns:
@@ -319,7 +314,7 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     component, key = args.component, KEYS[args.component]
     summary = {"grant": entry["grant"], "table": entry["table"], "status": "", "message": ""}
     report_dir.mkdir(parents=True, exist_ok=True)
-    source = read_source(syn, entry["table"])
+    source = grants.read_source(syn, entry["table"])
     summary["source_rows"] = len(source)
     source_keys = source_keys_of(source, component)
     normalizer.used_row_overrides.clear()
@@ -336,13 +331,13 @@ def process_component(syn, entry, args, normalizer, write_log, report_dir: Path,
     if key_missing:
         converted = converted.assign(**{key: ""})
     converted_path = report_dir / "converted.csv"
-    grants._write(converted, converted_path)
-    grants._write(changes, report_dir / "changes.csv")
-    grants._write(unmapped, report_dir / "unmapped.csv")
-    grants._write(validation, report_dir / "validation.csv")
-    grants._write(grants.validation_counts(validation), report_dir / "validation_counts.csv")
+    recordsets.to_csv(converted, converted_path)
+    recordsets.to_csv(changes, report_dir / "changes.csv")
+    recordsets.to_csv(unmapped, report_dir / "unmapped.csv")
+    recordsets.to_csv(validation, report_dir / "validation.csv")
+    recordsets.to_csv(grants.validation_counts(validation), report_dir / "validation_counts.csv")
     if len(duplicates):
-        grants._write(duplicates, report_dir / "duplicates.csv")
+        recordsets.to_csv(duplicates, report_dir / "duplicates.csv")
     no_source = sorted(recordsets.schema_columns(component) - set(converted.columns))
     summary.update(
         rows=len(converted), changes=len(changes), unmapped=len(unmapped), validation_failures=len(validation),
@@ -417,7 +412,7 @@ def main(argv=None, syn=None):
     args = get_args(argv)
     syn = syn or utils.syn_login()
     component, key = args.component, KEYS[args.component]
-    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table) if args.write_log_table else None
+    write_log, _ = recordsets.open_logs(syn, args)  # None without --write-log-table
     list_cols = recordsets.list_columns(component)
     set_like = recordsets.set_like_columns(component)
     overrides = value_maps.load_overrides(args.overrides) if args.overrides else None
@@ -464,8 +459,9 @@ def main(argv=None, syn=None):
             "source_keys": source_keys if converted is not None else [],
         }
         grants.save_state(state_path, state)
-    (report_dir / "summary.txt").write_text(grants.summary_line(summary) + "\n")
-    print(grants.summary_line(summary))
+    line = recordsets.summary_line(summary, "grant", grants.SUMMARY_FIELDS)
+    (report_dir / "summary.txt").write_text(line + "\n")
+    print(line)
 
     run_dir.mkdir(parents=True, exist_ok=True)
     if converted is not None:

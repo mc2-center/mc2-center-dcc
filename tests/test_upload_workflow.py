@@ -271,11 +271,6 @@ def test_target_selection(tmp_path, env, monkeypatch):
     assert len(env["upload"]) == 1  # the recordset uploader was only used by the first run
 
 
-def test_recordset_target_needs_write_log():
-    with pytest.raises(SystemExit):
-        uw.get_args(["--manifest", "m.csv", "--type", "ToolView", "--out-dir", "o"])
-
-
 def test_create_entity_links_main_takes_argv(monkeypatch):
     """Backward-compatible main(argv=None) refactor: argv parses, no argv reads sys.argv."""
     for name in ["geo_synapse", "geo_synapse.mc2_table", "geo_synapse.synapse_ops", "geo_synapse.pipeline"]:
@@ -622,20 +617,11 @@ def test_grant_lookup_uses_the_split_files_grant(monkeypatch, tmp_path):
 # --- exit-code mapping ------------------------------------------------------------------
 
 
-def test_recordset_target_without_a_write_log_table_fails_in_get_args(tmp_path):
+def test_the_tables_default_to_the_production_ones(tmp_path):
     base = ["--manifest", "m.csv", "--type", "ToolView", "--out-dir", str(tmp_path / "o")]
-    with pytest.raises(SystemExit) as e:
-        uw.get_args(base + ["--execute"])
-    assert e.value.code == 2
-    assert uw.get_args(base + ["--execute", "--write-log-table", "syn1"]).execute
-    assert uw.get_args(base + ["--write-log-table", "syn1"]).write_log_table == "syn1"  # dry run
-
-
-def test_bad_recordset_args_create_no_entities(tmp_path, env):
-    with pytest.raises(SystemExit):
-        uw.main(["--manifest", str(FIXTURES / "p1" / "tool.xlsx"), "--type", "ToolView",
-                 "--out-dir", str(tmp_path / "out"), "--cv-file", str(CV), "--execute"])
-    assert env["links"] == [] and not (tmp_path / "out").exists()
+    args = uw.get_args(base)
+    assert (args.write_log_table, args.removals_table) == ("syn78404341", "syn78404342")
+    assert uw.get_args(base + ["--execute", "--write-log-table", "syn1"]).write_log_table == "syn1"
 
 
 @pytest.mark.parametrize("code,ok", [(0, True), (None, True), (1, False), (2, False), ("msg", False)])

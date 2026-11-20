@@ -32,8 +32,8 @@ if it fails before a version exists the pending row is aborted. The final
 version is then read back and compared with the corrected file.
 
 The run id starts with ``dcc-repair-`` (generated; a ``--run-id`` without it is
-rejected). The write-log table is read in a dry run too; a dry run writes nothing
-to it.
+rejected). ``--write-log-table`` defaults to the production table; a dry run reads
+it and writes nothing to it.
 
 Exit status: 0 ok (dry run complete, or repaired and the read-back matches);
 1 refused (locked, no upsert key, broken cell without a fix, invalid fix,
@@ -49,7 +49,6 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -74,11 +73,11 @@ def get_args(argv=None):
     parser.add_argument("--recordset", required=True, help="RecordSet ID")
     parser.add_argument("--component", required=True, help="the RecordSet's component, e.g. PublicationView")
     parser.add_argument("--fixes", required=True, help="CSV with columns key, column, value (a JSON array)")
-    parser.add_argument("--write-log-table", required=True, help="Synapse ID of the write-log table")
+    recordsets.add_log_args(parser, removals=False)
     parser.add_argument("--report-dir", required=True, help="directory for the CSVs and summary")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     parser.add_argument(
-        "--run-id", default=REPAIR_RUN_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S"),
+        "--run-id", default=recordsets.new_run_id(REPAIR_RUN_PREFIX),
         help=f"must start with {REPAIR_RUN_PREFIX!r}; default: that plus a timestamp",
     )
     args = parser.parse_args(argv)
@@ -104,7 +103,7 @@ def find_broken(rows, key_cols, list_cols) -> list[dict]:
 
 def load_fixes(path, list_cols) -> dict[tuple[str, str], str]:
     """``{(key, column): corrected cell text}`` from the fixes CSV; raises :class:`Refused` on an invalid fix."""
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df = recordsets.read_csv_str(path)
     missing = {"key", "column", "value"} - set(df.columns)
     if missing:
         raise Refused(f"{path} lacks column(s) {sorted(missing)}")
@@ -258,7 +257,7 @@ def repair(syn, args, write_log, report_dir: Path, principal) -> dict:
 def main(argv=None, syn=None):
     args = get_args(sys.argv[1:] if argv is None else argv)
     syn = syn or utils.syn_login()
-    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table)
+    write_log, _ = recordsets.open_logs(syn, args)
     principal = recordsets.principal_id(syn) if args.execute else ""
     report_dir = Path(args.report_dir)
     print(f"Run {args.run_id}: {'EXECUTE' if args.execute else 'dry run'}, {args.recordset} ({args.component})")

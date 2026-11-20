@@ -23,7 +23,9 @@ from pathlib import Path
 
 import pandas as pd
 from synapseclient.core.constants import concrete_types
-from synapseclient.models import File, Table
+from synapseclient.models import File
+
+import utils
 
 logger = logging.getLogger(__name__)
 
@@ -146,10 +148,9 @@ def fetch(path: str, ref: str | None = None) -> Path:
     cached = (CACHE_DIR if ref == MODEL_REF else CACHE_DIR.parent / ref) / path
     if not cached.exists():
         cached.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cached.with_name(cached.name + ".part")
         with urllib.request.urlopen(f"{RAW.rsplit('/', 1)[0]}/{ref}/{path}", timeout=60) as resp:
-            tmp.write_bytes(resp.read())
-        tmp.replace(cached)
+            data = resp.read()
+        utils.write_atomic(cached, lambda tmp: tmp.write_bytes(data))
     return cached
 
 
@@ -361,11 +362,7 @@ def read_manifest(syn, entity_id: str, component: str | None = None, version: in
     """
     concrete = syn.restGET(f"/entity/{entity_id}").get("concreteType")
     if concrete in _TABLE_TYPES:
-        return Table(id=entity_id).query(
-            query=f"SELECT * FROM {entity_id}",
-            include_row_id_and_row_version=False,
-            synapse_client=syn,
-        )
+        return utils.read_table(syn, entity_id)
     if concrete == concrete_types.RECORD_SET_ENTITY:
         import recordsets  # here, not at the top: recordsets imports this module
 

@@ -13,8 +13,9 @@ python annotations/upload_workflow.py ... --execute              # write to Syna
 python annotations/upload_workflow.py ... --from-stage reshape   # resume
 ```
 
-- `--target recordset` (default) calls `upload_recordsets.py` (`--write-log-table`, read in a dry run too, written only with `--execute`;
-  `--removals-table` defaults to `syn78404342`, the production `MC2Center_RecordSet_Removals`, and is always passed on);
+- `--target recordset` (default) calls `upload_recordsets.py` (a dry run reads the write-log and removals tables and writes nothing to them;
+  `--write-log-table` defaults to `syn78404341` and `--removals-table` to `syn78404342`, the production
+  `MC2Center_RecordSet_WriteLog` and `MC2Center_RecordSet_Removals`, and both are always passed on);
   `--target schematic-table` runs `upload-manifests.py` as a subprocess (needs `--schematic-config`
   with `--execute`; it has no dry-run mode, so a dry run only prints the command).
 - Each stage writes `<out-dir>/<NN>_<stage>/`; `<out-dir>/run.json` records stages, outputs and timestamps.
