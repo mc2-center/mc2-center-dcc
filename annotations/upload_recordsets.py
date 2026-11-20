@@ -79,6 +79,11 @@ def get_args(argv=None):
     removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
     parser.add_argument("--report-dir", required=True, help="directory for the per-grant reports")
     parser.add_argument(
+        "--overwrite-csv",
+        help="CSV with columns grantId, key, column (RecordSet key name): these cells may replace a "
+             "curator-owned value (fix_recordset_cells.py only); default: none",
+    )
+    parser.add_argument(
         "--execute", action="store_true", help="write to Synapse; the default is a dry run"
     )
     parser.add_argument(
@@ -105,6 +110,18 @@ def folder_column(paths: pd.DataFrame) -> str:
     return matches[0]
 
 
+def load_overwrite(path) -> dict[str, frozenset]:
+    """``{grantId: {(key, column)}}`` from the ``--overwrite-csv`` file."""
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    missing = {"grantId", "key", "column"} - set(df.columns)
+    if missing:
+        raise SystemExit(f"{path} lacks column(s) {sorted(missing)}")
+    out: dict[str, set] = {}
+    for r in df.itertuples():
+        out.setdefault(r.grantId.strip(), set()).add((r.key.strip(), r.column.strip()))
+    return {g: frozenset(c) for g, c in out.items()}
+
+
 def stored_keys(df: pd.DataFrame, key_cols: list[str]) -> list[str]:
     return [recordsets._key_of(row, key_cols) for _, row in df.iterrows()]
 
@@ -125,7 +142,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     upload = recordsets.parse_upload(upload, list_cols)
     # Grid cannot open a RecordSet whose list cell holds an item with a quote or backslash.
     unsafe = pd.Series(
-        [any(isinstance(v, list) and any('"' in i or "\\" in i for i in v) for v in r)
+        [any(recordsets.has_unsafe_item(v) for v in r)
          for r in upload.itertuples(index=False)],
         index=upload.index, dtype=bool)
     if unsafe.any():
@@ -208,7 +225,9 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         logger.info("%s: %d upload row(s) skipped, key removed by the DCC (removal_skipped.csv)",
                     report_dir.name, len(skipped))
     mode = "first write (no replay)" if not log_map else f"replayed v1..v{latest}"
-    merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
+    allowed = (getattr(args, "overwrite", None) or {}).get(report_dir.name, frozenset())
+    overwritten = []
+    merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like, allowed, overwritten)
     # Columns that are no longer schema properties are dropped by a Grid import; compare without them.
     stored = recordsets.schema_columns(component) | set(key)
     merged = merged[[c for c in merged.columns if c in stored]]
@@ -217,6 +236,10 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     recordsets.to_csv(merged, merged_path)
     _write_report(report_dir / "decisions.csv", decisions)
     _write_report(report_dir / "conflicts.csv", conflicts)
+    if allowed:
+        _write_report(report_dir / "overwritten.csv",
+                      pd.DataFrame(overwritten, columns=recordsets.CONFLICT_COLUMNS))
+        summary["overwritten"] = len(overwritten)
 
     summary.update(rows=len(merged), decisions=len(decisions), conflicts=len(conflicts), mode=mode)
     # Nothing to write: every version adds to the history later runs read.
@@ -295,7 +318,7 @@ def _write_report(path: Path, df: pd.DataFrame) -> None:
 
 def summary_line(s: dict) -> str:
     parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("recordset", "version", "rows", "decisions", "conflicts", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped", "unsafe_rows"):
+    for field in ("recordset", "version", "rows", "decisions", "conflicts", "overwritten", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped", "unsafe_rows"):
         if field in s:
             parts.append(f"{field}={s[field]}")
     if s["message"]:
@@ -317,6 +340,7 @@ def main(argv=None, syn=None):
     )
     list_cols = recordsets.list_columns(args.component)
     set_like = recordsets.set_like_columns(args.component)
+    args.overwrite = load_overwrite(args.overwrite_csv) if args.overwrite_csv else {}
     paths = pd.read_csv(args.paths_csv, dtype=str, keep_default_na=False)
     folder_column(paths)  # fail early on a malformed paths CSV
     run_dir = Path(args.report_dir) / args.run_id

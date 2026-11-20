@@ -24,6 +24,28 @@ python annotations/upload_workflow.py ... --from-stage reshape   # resume
   Other datasets get an empty placeholder Folder named `{alias}_links` in the central project's `datasets` folder. A Dataset Url that names a Synapse entity gives that Synapse ID, with no new entity. A row is skipped, listed in `04_links/dataset_conflicts.csv` and dropped if its folder name is taken by a non-Folder entity or by a Folder that is not empty (an empty Folder of that name is reused), if its alias has different Dataset Url values across files, or if its Synapse URL has no Synapse ID.
 - `SYNAPSE_AUTH_TOKEN`, when set, is passed to subprocesses (never logged).
 
+## Fix single cells: `fix_recordset_cells.py`
+
+Use `fix_recordset_cells.py` to change cell values in grant RecordSets without code. Give it a CSV with the columns
+`component, grant, key, column, new_value`: one line for each cell, one grant number in each line (to fix a row that lists
+several grants, add one line for each grant). When the named grant does not hold the row, the script finds the RecordSet that holds it;
+if several RecordSets hold it, the script refuses the line and lists the grants. `key` is the row key (a PMID for PublicationView, a Synapse ID for DatasetView and ToolView).
+`column` is the display name or the key name. `new_value` is the whole new value; write a list as a comma separated list.
+An item that holds a comma must be given as a JSON array, for example `["Smith, John", "Lee, Ann"]`; the script writes every list cell
+as a JSON array, so an unchanged item with a comma stays one item. A line is refused when a list item (new, or unchanged in a row that the script
+writes) holds a quote or a backslash, because `upload_recordsets.py` drops such a row.
+
+```bash
+python annotations/fix_recordset_cells.py --changes fixes.csv --report-dir reports            # dry run (default)
+python annotations/fix_recordset_cells.py --changes fixes.csv --report-dir reports --execute  # write to Synapse
+```
+
+The script refuses all lines, and writes nothing, if one line has an unknown grant, key or column, names the key column
+(use `rekey_recordset_rows.py`), or has a value that the JSON Schema does not allow. It then runs `upload_recordsets.py`.
+A cell that a curator edited in Curator is normally kept by an upload. Here, each cell in the changes file replaces such a value,
+because it is a deliberate fix; every other curator-owned cell is kept. The replaced values are in `overwritten.csv` of the upload report.
+Only this script does this (`upload_recordsets.py --overwrite-csv`); the standard upload never does.
+
 This repository contains a workflow to process and upload manifests into synapse using a shell script named `upload-workflow.sh`. The workflow involves several steps, each with specific input files, processes, and outputs. Below is a detailed description of each step:
 
 ## Step 0: Activate Conda Environment
