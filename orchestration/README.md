@@ -79,7 +79,10 @@ rather than calling each script individually.
    `--target schematic-table` below.)*
 5. `create_entity_links.py` — creates real Synapse entities (for
    DatasetView, full GEO/SRA Dataset entities via the `geo_synapse`
-   pipeline; for ToolView, plain File link entities) and writes the
+   pipeline, and an empty placeholder Folder (`{alias}_links`) for each other
+   dataset in the central `datasets` folder (a Dataset Url that names a
+   Synapse entity gives that ID, with no new entity; an alias with different
+   URLs across files is skipped and listed in `dataset_conflicts.csv`); for ToolView, plain File link entities) and writes the
    resulting entity IDs back into each split file's primary-key column.
    Required for DatasetView/ToolView; not needed for PublicationView.
 6. **Upload target (two paths, selected by `--target`):**
