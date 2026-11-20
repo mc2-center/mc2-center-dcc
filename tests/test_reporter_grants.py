@@ -4,14 +4,13 @@ The expected_* fixtures were produced by the two scripts it replaced
 (reporter_project_query.py, clean_reporter_results.py) on the same mocked
 response, so these tests keep proving equivalence after those files are gone.
 """
-import importlib.util
 import json
 import sys
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
+from conftest import ROOT, load_script
+
 FIXTURES = ROOT / "tests" / "fixtures" / "reporter"
 
 RESULTS = [
@@ -34,16 +33,9 @@ class FakeResponse:
         return {"results": self._results}
 
 
-def _load(relpath, name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / relpath)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 @pytest.fixture
 def new():
-    return _load("utils/reporter_grants.py", "reporter_grants")
+    return load_script("utils/reporter_grants.py", "reporter_grants")
 
 
 def test_payload_matches_old_script(new):

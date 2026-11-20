@@ -4,7 +4,6 @@ Synapse is mocked: gen-mp-csv's query is a canned grant/folder table, the
 upload scripts are replaced by recorders, and Synapse entity lookups use a fake.
 """
 
-import importlib.util
 import json
 import sys
 import types
@@ -13,14 +12,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from conftest import load_script
+
 ANNOTATIONS = Path(__file__).resolve().parent.parent / "annotations"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "handoff"
 CV = FIXTURES / "all_valid_values.csv"
 GRANTS = ["CA209997", "CA209923", "CA184898"]
 
-spec = importlib.util.spec_from_file_location("upload_workflow", ANNOTATIONS / "upload_workflow.py")
-uw = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(uw)
+uw = load_script("annotations/upload_workflow.py", "upload_workflow")
 
 
 @pytest.fixture
@@ -288,9 +287,7 @@ def test_create_entity_links_main_takes_argv(monkeypatch):
         setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
     sys.modules["geo_synapse.synapse_ops"].find_or_create_folder = lambda syn, name, parent: TOOLS_FOLDER
     sys.modules["geo_synapse.pipeline"].run_one = None
-    spec2 = importlib.util.spec_from_file_location("cel", ANNOTATIONS / "create_entity_links.py")
-    mod = importlib.util.module_from_spec(spec2)
-    spec2.loader.exec_module(mod)
+    mod = load_script("annotations/create_entity_links.py", "cel")
     args = mod.get_args(["-m", "p.csv", "-t", "ToolView"])
     assert (args.m, args.t) == ("p.csv", "ToolView")
     monkeypatch.setattr(sys, "argv", ["x", "-t", "DatasetView"])
@@ -309,10 +306,7 @@ def load_cel(monkeypatch):
         setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
     sys.modules["geo_synapse.synapse_ops"].find_or_create_folder = lambda syn, name, parent: TOOLS_FOLDER
     sys.modules["geo_synapse.pipeline"].run_one = None
-    spec2 = importlib.util.spec_from_file_location("cel_resume", ANNOTATIONS / "create_entity_links.py")
-    mod = importlib.util.module_from_spec(spec2)
-    spec2.loader.exec_module(mod)
-    return mod
+    return load_script("annotations/create_entity_links.py", "cel_resume")
 
 
 TOOLS_FOLDER = "syn900"  # the central tools folder, as the faked find_or_create_folder returns it

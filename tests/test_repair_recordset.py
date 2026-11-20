@@ -1,16 +1,10 @@
 """annotations/repair_recordset.py with every Synapse call stubbed."""
-import importlib.util
-from pathlib import Path
 from unittest import mock
 
-import pytest
+from conftest import load_script
+from fakes import FakeRS
 
-import recordsets as rs
-
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("repair_recordset", ROOT / "annotations" / "repair_recordset.py")
-cmd = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cmd)
+cmd = load_script("annotations/repair_recordset.py", "repair_recordset")
 
 K, LIST = "PublicationViewId", "PublicationAuthors"
 # v1: one doubled-quote cell (Grid's export of M"ockl L), one fine list cell, one empty
@@ -23,41 +17,8 @@ V1 = (
 FIX_OK = ("key,column,value\n" f'1,{LIST},"[""Möckl L"",""Lee K""]"\n')
 
 
-class FakeRS:
-    """Versions as stored CSV text; store and export append versions, calls are ordered in ``events``."""
-
-    def __init__(self, v1=V1, log=None):
-        self.versions = [v1]
-        self.events = []
-        self.log = log
-
-    def info(self, syn, rs_id):
-        return len(self.versions), [K]
-
-    def download(self, syn, rs_id, version, dest):
-        dest.write_text(self.versions[version - 1], encoding="utf-8")
-        return dest
-
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
-        text = self.versions[(version or len(self.versions)) - 1]
-        path = Path(self.log.path).with_name(f"read{len(self.versions)}.csv")
-        path.write_text(text, encoding="utf-8")
-        return rs._load_csv(path, list_cols)
-
-    def store(self, syn, rs_id, path):
-        self.events.append(("store", list(self.log._read(rs_id)["status"])))
-        self.versions.append(Path(path).read_text(encoding="utf-8"))
-        return len(self.versions)
-
-    def export(self, syn, rs_id, on_version=None, **kw):
-        self.events.append(("export", None))
-        self.versions.append(self.versions[-1])
-        if on_version:
-            on_version(len(self.versions))
-        return [len(self.versions)]
-
-    def meta(self, syn, rs_id, v):
-        return "42", rs.pd.Timestamp.now(tz="UTC")
+def fake_rs(log):
+    return FakeRS([V1], [K], log=log)
 
 
 def run(tmp_path, fake, fixes=FIX_OK, execute=False, log=None):
@@ -83,13 +44,6 @@ def run(tmp_path, fake, fixes=FIX_OK, execute=False, log=None):
         return cmd.main(argv, syn=object())
 
 
-@pytest.fixture
-def log(tmp_path):
-    l = rs.CsvWriteLog(tmp_path / "log.csv")
-    l.path = tmp_path / "log.csv"
-    return l
-
-
 def test_find_broken_detects_the_doubled_quote_cell():
     import csv
     import io
@@ -101,7 +55,7 @@ def test_find_broken_detects_the_doubled_quote_cell():
 
 
 def test_dry_run_writes_nothing_and_reports(tmp_path, log, capsys):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     assert run(tmp_path, fake, log=log) == 0
     assert "dry run: 1 broken cells, 1 fixes; nothing written" in capsys.readouterr().out
     assert len(fake.versions) == 1 and fake.events == [] and not log.path.exists()
@@ -112,27 +66,27 @@ def test_dry_run_writes_nothing_and_reports(tmp_path, log, capsys):
 
 
 def test_refuses_a_broken_cell_without_a_fix(tmp_path, log, capsys):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     assert run(tmp_path, fake, fixes=f"key,column,value\n2,{LIST},\"[\"\"Ng Q\"\"]\"\n", log=log) == 1
     assert "has no fix" in capsys.readouterr().out and len(fake.versions) == 1
 
 
 def test_refuses_a_fix_value_containing_a_quote_or_backslash(tmp_path, log, capsys):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     bad = 'key,column,value\n1,%s,"[""M\\""ockl L""]"\n' % LIST  # JSON-escaped quote inside the item
     assert run(tmp_path, fake, fixes=bad, log=log) == 1
     assert "contains" in capsys.readouterr().out and len(fake.versions) == 1
 
 
 def test_refuses_a_fix_for_a_missing_row(tmp_path, log, capsys):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     fixes = FIX_OK + f'9,{LIST},"[""A""]"\n'
     assert run(tmp_path, fake, fixes=fixes, log=log) == 1
     assert "no such row" in capsys.readouterr().out
 
 
 def test_a_fix_for_a_healthy_cell_is_allowed(tmp_path, log, capsys):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     fixes = FIX_OK + f'2,{LIST},"[""Ng Q""]"\n'
     assert run(tmp_path, fake, fixes=fixes, log=log) == 0
     assert "1 broken cells, 2 fixes" in capsys.readouterr().out
@@ -140,14 +94,14 @@ def test_a_fix_for_a_healthy_cell_is_allowed(tmp_path, log, capsys):
 
 def test_locked_recordset_is_refused(tmp_path, log, capsys):
     log.start("synRS", 1, "dcc-removal-other", "7")
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     assert run(tmp_path, fake, log=log, execute=True) == 1
     assert "dcc-removal-other" in capsys.readouterr().out
     assert fake.events == [] and len(fake.versions) == 1
 
 
 def test_execute_logs_start_store_record_export_finish_and_matches(tmp_path, log, capsys):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
     assert run(tmp_path, fake, log=log, execute=True) == 0
     assert "repaired 1 cells in v2 (re-validated in v3); matches the corrected file" in capsys.readouterr().out
     assert fake.events == [("store", ["pending"]), ("export", None)]
@@ -161,7 +115,7 @@ def test_execute_logs_start_store_record_export_finish_and_matches(tmp_path, log
 
 
 def test_execute_aborts_the_pending_row_when_the_store_fails(tmp_path, log):
-    fake = FakeRS(log=log)
+    fake = fake_rs(log)
 
     def boom(syn, rs_id, path):
         raise RuntimeError("store failed")

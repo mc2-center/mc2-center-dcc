@@ -1,15 +1,12 @@
 """annotations/fix_recordset_cells.py with every Synapse call stubbed."""
-import importlib.util
-from pathlib import Path
 from unittest import mock
 
 import pandas as pd
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("fix_recordset_cells", ROOT / "annotations" / "fix_recordset_cells.py")
-fx = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(fx)
+from conftest import load_script
+
+fx = load_script("annotations/fix_recordset_cells.py", "fix_recordset_cells")
 
 K = "DatasetViewId"
 URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE1"

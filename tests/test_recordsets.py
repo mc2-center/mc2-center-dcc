@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 import recordsets as rs
+from fakes import write_log
 
 K = "PublicationViewId"
 
@@ -445,7 +446,7 @@ def test_read_recordset_cache_miss_then_hit(tmp_path):
 
 
 def test_csv_write_log_v2(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "sub" / "log.csv")
+    log = write_log(tmp_path / "sub" / "log.csv")
     assert log.pipeline_map("syn1") == {} and log.last_version("syn1") is None
     log.start("syn1", 4, "run1", "42")
     assert log.pipeline_map("syn1") == {}  # pending has no version
@@ -462,8 +463,7 @@ def test_csv_write_log_v2(tmp_path):
     assert log.unresolved_pending("syn1") == []
 
 
-def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_lock_from_unresolved_pending_row_younger_than_two_hours(log):
     log.start("syn1", 3, "other", "7")
     assert log.locked_by("syn1", "me") == "other"
     assert log.locked_by("syn1", "other") is None  # a run is not locked by itself
@@ -476,8 +476,7 @@ def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
     assert log.locked_by("syn1", "me") is None
 
 
-def test_crash_recovery_by_principal_and_time_from_the_pending_row(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_crash_recovery_by_principal_and_time_from_the_pending_row(log):
     log.record("syn1", 1, "r0", 3, base=0, principal="42")
     log.start("syn1", 1, "dead", "42")
     pending_on = log.unresolved_pending("syn1")[0]["writtenOn"]
@@ -497,8 +496,7 @@ def test_crash_recovery_by_principal_and_time_from_the_pending_row(tmp_path):
     assert rs.recover_pending("syn", "syn1", log, 5, meta=lambda v: meta[v]) == {}
 
 
-def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(log):
     log.start("syn1", 1, "dead", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     meta = lambda v: ("42", on + pd.Timedelta(minutes=1))
@@ -509,28 +507,25 @@ def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(tmp_path):
     assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
 
 
-def test_recovery_accepts_clock_skew_within_the_tolerance(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recovery_accepts_clock_skew_within_the_tolerance(tmp_path, log):
     log.start("syn1", 1, "dead", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     skewed = lambda v: ("42", on - pd.Timedelta(minutes=9))  # server clock 9 min behind
     assert rs.recover_pending("syn", "syn1", log, 2, meta=skewed) == {2: 1}
-    log2 = rs.CsvWriteLog(tmp_path / "log2.csv")
+    log2 = write_log(tmp_path / "log2.csv")
     log2.start("syn1", 1, "dead", "42")
     on = log2.unresolved_pending("syn1")[0]["writtenOn"]
     assert rs.recover_pending("syn", "syn1", log2, 2, meta=lambda v: ("42", on - pd.Timedelta(minutes=11))) == {}
 
 
-def test_recovery_covers_a_pending_row_of_the_same_run_id(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recovery_covers_a_pending_row_of_the_same_run_id(log):
     log.start("syn1", 1, "same", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     found = rs.recover_pending("syn", "syn1", log, 2, meta=lambda v: ("42", on + pd.Timedelta(seconds=5)))
     assert found == {2: 1} and log.pipeline_map("syn1") == {2: 1}
 
 
-def test_lock_counts_a_same_run_id_row_older_than_this_process(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_lock_counts_a_same_run_id_row_older_than_this_process(log):
     log.start("syn1", 1, "same", "42")
     started_before = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=1)
     started_after = pd.Timestamp.now(tz="UTC") + pd.Timedelta(minutes=1)
@@ -539,8 +534,7 @@ def test_lock_counts_a_same_run_id_row_older_than_this_process(tmp_path):
     assert log.locked_by("syn1", "same") is None
 
 
-def test_earlier_pending_row_wins_the_lock_race(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_earlier_pending_row_wins_the_lock_race(log):
     log.start("syn1", 1, "first", "7")
     log.start("syn1", 1, "second", "8")
     assert log.earlier_pending("syn1", "second") == "first"
@@ -551,8 +545,7 @@ def test_earlier_pending_row_wins_the_lock_race(tmp_path):
     assert log.earlier_pending("syn1", "second") is None
 
 
-def test_no_recovered_warning_for_an_aborted_row(tmp_path, caplog):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_no_recovered_warning_for_an_aborted_row(caplog, log):
     log.start("syn1", 1, "dead", "42")
     with caplog.at_level("WARNING"):
         rs.recover_pending("syn", "syn1", log, 1, meta=lambda v: 1 / 0)
@@ -798,10 +791,9 @@ def test_replay_benchmark_200_versions_500_rows_18_columns():
     assert len(state) == 500 and elapsed < 5
 
 
-def test_rerun_and_reused_run_id_keep_their_lock(tmp_path):
+def test_rerun_and_reused_run_id_keep_their_lock(log):
     # Same runId writes v6 (base 4) and finishes, then a rerun starts at base 6:
     # its pending row must not be resolved by the first write's rows.
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     log.start("syn1", 4, "RUN", "42")
     log.record("syn1", 6, "RUN", 3, base=4, principal="42")
     log.finish("syn1", 4, "RUN", "42")
@@ -812,9 +804,8 @@ def test_rerun_and_reused_run_id_keep_their_lock(tmp_path):
     assert log.earlier_pending("syn1", "OTHER") == "RUN"
 
 
-def test_second_export_crash_is_recovered(tmp_path):
+def test_second_export_crash_is_recovered(log):
     # A write exported v2 (logged) and v3, then died before logging v3 or done.
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     log.start("syn1", 1, "R", "42")
     log.record("syn1", 2, "R", 3, base=1, principal="42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"] + pd.Timedelta(minutes=1)
@@ -823,8 +814,7 @@ def test_second_export_crash_is_recovered(tmp_path):
     assert log.unresolved_pending("syn1") == []
 
 
-def test_pre_start_recovery_leaves_a_young_live_row_alone(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_pre_start_recovery_leaves_a_young_live_row_alone(log):
     log.start("syn1", 5, "B", "42")  # run B just started; nothing exported yet
     found = rs.recover_pending(None, "syn1", log, 5, meta=lambda v: ("42", pd.NaT),
                                skip_younger_than=rs.LOCK_HOURS)
@@ -838,8 +828,7 @@ def test_leading_space_number_compares_as_number():
 # --- D-Q49 removals ---
 
 
-def test_write_log_removed_status_is_a_pipeline_version(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_write_log_removed_status_is_a_pipeline_version(log):
     log.start("syn1", 4, "run1", "42")
     log.removed("syn1", 5, 4, "run1", "42", 9)
     log.record("syn1", 6, "run1", 9, base=5, principal="42")

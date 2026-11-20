@@ -1,7 +1,4 @@
 """migration/migrate_admin_manifests_14.py with every Synapse call mocked."""
-import importlib.util
-from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import pandas as pd
@@ -9,13 +6,12 @@ import pytest
 
 import recordsets as rs
 import utils
+from conftest import load_script
+from fakes import FakeProjectSynapse, write_log
 
 REAL_LOAD = utils.load_consortium_keys  # before the autouse fixture replaces it
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-spec = importlib.util.spec_from_file_location("migrate_admin_manifests_14", ROOT / "migration" / "migrate_admin_manifests_14.py")
-adm = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(adm)
+adm = load_script("migration/migrate_admin_manifests_14.py", "migrate_admin_manifests_14")
 grants = adm.grants
 
 # The Consortium table's {consortiumDisplayName: consortiumId} (syn36345930, read 2026-11-11).
@@ -75,70 +71,18 @@ def person_table():
     ], columns=PERSON_HEADERS)
 
 
-class FakeSynapse:
-    """The admin source tables, folders and RecordSets (versions as DataFrames)."""
+class FakeSynapse(FakeProjectSynapse):
+    """The admin source tables, on top of the folders and RecordSets (versions as DataFrames)."""
 
     def __init__(self, component="GrantView", source=None, existing=None):
+        super().__init__(f"{component}Id", rs.list_columns(component), existing)
         self.component = component
-        self.key = f"{component}Id"
         self.source = source if source is not None else grant_table()
-        self.folders = {}
-        self.rs = dict(existing or {})
-        self.rs_folder = {}
-        self.created = []
-        self.created_folders = []
-        self.writes = []
         self.reads = []
-        self.next_id = 100
 
     def read_source(self, syn, table_id):
         self.reads.append(table_id)
         return self.source.copy()
-
-    def find_entity_id(self, name, parent, synapse_client=None):
-        return self.folders.get((parent, name))
-
-    def Folder(self, name, parent_id):
-        outer = self
-
-        class _F:
-            def store(self, synapse_client=None):
-                outer.next_id += 1
-                fid = f"synF{outer.next_id}"
-                outer.folders[(parent_id, name)] = fid
-                outer.created_folders.append((parent_id, name))
-                return SimpleNamespace(id=fid)
-
-        return _F()
-
-    def find_recordset(self, syn, folder, component):
-        return self.rs_folder.get(folder)
-
-    def create_task(self, **kw):
-        self.created.append(kw)
-        self.next_id += 1
-        rs_id = f"synRS{self.next_id}"
-        self.rs[rs_id] = [pd.DataFrame(columns=[self.key])]
-        self.rs_folder[kw["folder_id"]] = rs_id
-        return SimpleNamespace(id=rs_id), SimpleNamespace(task_id=1)
-
-    def info(self, syn, rs_id):
-        return len(self.rs[rs_id]), [self.key]
-
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
-        return self.rs[rs_id][(version or len(self.rs[rs_id])) - 1].copy()
-
-    def write(self, syn, rs_id, csv_path, on_version=None, **kw):
-        written = rs._load_csv(csv_path, rs.list_columns(self.component))
-        self.writes.append(written)
-        self.rs[rs_id].append(written)
-        if on_version:
-            on_version(len(self.rs[rs_id]))
-        return [len(self.rs[rs_id])]
-
-    def validation(self, syn, rs_id, version, loc, keys):
-        return pd.DataFrame({"key": keys, "row_index": range(len(keys)), "is_valid": [True] * len(keys),
-                             "validation_error_message": [""] * len(keys), "all_validation_messages": [""] * len(keys)})
 
 
 def run(tmp_path, fake, *extra, execute=False, run_id="r1", component=None, out="out"):
@@ -156,7 +100,7 @@ def run(tmp_path, fake, *extra, execute=False, run_id="r1", component=None, out=
          mock.patch.object(grants.recordsets, "read_recordset", fake.read), \
          mock.patch.object(grants.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(grants.recordsets, "get_validation", fake.validation), \
-         mock.patch.object(adm.recordsets, "SynapseTableWriteLog", lambda syn, tid: rs.CsvWriteLog(tmp_path / "log.csv")), \
+         mock.patch.object(adm.recordsets, "SynapseTableWriteLog", lambda syn, tid: write_log(tmp_path / "log.csv")), \
          mock.patch.object(grants.recordsets, "principal_id", lambda syn: "42"):
         code = adm.main(argv, syn=object())
     return code, tmp_path / out / run_id / component
@@ -464,7 +408,7 @@ def test_person_without_a_name_column_has_no_key_and_nothing_is_written(tmp_path
 # --- execute ----------------------------------------------------------------------
 
 
-def test_execute_creates_the_admin_folder_and_recordset_loads_through_grid_and_logs(tmp_path):
+def test_execute_creates_the_admin_folder_and_recordset_loads_through_grid_and_logs(tmp_path, log):
     fake = FakeSynapse()
     code, rep = run(tmp_path, fake, execute=True)
     assert fake.created_folders == [("syn28742843", "admin_recordsets")]
@@ -475,9 +419,9 @@ def test_execute_creates_the_admin_folder_and_recordset_loads_through_grid_and_l
     assert kw["upsert_keys"] == ["GrantViewId"] and kw["schema_uri"] == "MC2Center-GrantView-14.1.2"
     assert "admin manifest" in kw["record_set_description"] and "syn53259587" in kw["record_set_description"]
     rs_id = next(iter(fake.rs))
-    assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
-    log = rs.CsvWriteLog(tmp_path / "log.csv")._read(rs_id)
-    assert log["status"].tolist() == ["created", "pending", "written", "done", "verified"]
+    assert len(fake.writes) == 1 and len(fake.rs[rs_id].versions) == 2
+    rows = log._read(rs_id)
+    assert rows["status"].tolist() == ["created", "pending", "written", "done", "verified"]
     assert status_of(rep) == "migrated"
     assert (rep / "synapse_validation.csv").exists()
 
@@ -512,7 +456,7 @@ def test_execute_verifies_the_read_back_and_reports_a_mismatch(tmp_path):
 
     def corrupt(syn, rs_id, csv_path, on_version=None, **kw):
         out = real(syn, rs_id, csv_path, on_version, **kw)
-        fake.rs[rs_id][-1].loc[0, "GrantName"] = "Changed"
+        fake.rs[rs_id].versions[-1].loc[0, "GrantName"] = "Changed"
         return out
 
     fake.write = corrupt
@@ -599,7 +543,7 @@ def test_a_migrated_recordset_is_not_written_again(tmp_path):
 def test_an_existing_recordset_without_a_logged_write_is_never_overwritten(tmp_path):
     fake = FakeSynapse()
     fake.folders[("syn28742843", "admin_recordsets")] = "synFx"
-    fake.rs["synRSx"] = [pd.DataFrame({"GrantViewId": ["CA1"]})]
+    fake.add("synRSx", [pd.DataFrame({"GrantViewId": ["CA1"]})])
     fake.rs_folder["synFx"] = "synRSx"
     code, rep = run(tmp_path, fake, execute=True)
     assert code == 1 and status_of(rep) == "failed"

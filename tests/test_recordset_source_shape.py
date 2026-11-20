@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-from synapseclient.core.constants import concrete_types
 
 import create_grant_projects as cgp
 import crosswalk as cw
@@ -12,13 +11,9 @@ import model_contract as mc
 import sync_people as sper
 import sync_projects as sproj
 import utils
+from fakes import FakeRestSyn
 
 from test_sync_grants import _live_types, _portal, _table_factory
-
-
-class FakeSyn:
-    def restGET(self, uri):
-        return {"concreteType": concrete_types.RECORD_SET_ENTITY}
 
 
 def recordset_reader(monkeypatch, tmp_path, frame):
@@ -76,7 +71,7 @@ def test_project_recordset_and_table_give_the_same_portal_strings(monkeypatch, t
 
     monkeypatch.setattr(utils, "consortium_display_names", lambda syn, ids: [{"program.csbc": "CSBC", "program.ps-on": "PS-ON"}[i] for i in ids])
     from_table = run(table, KNOWN)
-    from_recordset = run(mc.read_manifest(FakeSyn(), "synRS", component="ProjectView"), KNOWN)
+    from_recordset = run(mc.read_manifest(FakeRestSyn(), "synRS", component="ProjectView"), KNOWN)
     assert from_recordset["investigator"].tolist() == ["Jane Doe", "John Roe, Ann Poe"]
     pd.testing.assert_frame_equal(from_recordset, from_table)
 
@@ -112,7 +107,7 @@ def test_people_recordset_and_table_give_the_same_portal_strings(monkeypatch, tm
         return sper.clean_table(sper.add_missing_info(m, GRANTS, consortia), live)
 
     from_table = run(table)
-    from_recordset = run(mc.read_manifest(FakeSyn(), "synRS", component="PersonView"))
+    from_recordset = run(mc.read_manifest(FakeRestSyn(), "synRS", component="PersonView"))
     assert from_recordset["chairRoles"].tolist() == ["Steering Committee, Working Group", ""]
     pd.testing.assert_frame_equal(from_recordset, from_table)
 
@@ -139,7 +134,7 @@ def test_grant_recordset_and_table_give_the_same_portal_strings(monkeypatch, tmp
     def run(source):
         factory = _table_factory(table)
         reader = (lambda syn, eid, component=None: table.copy()) if source == "table" else (
-            lambda syn, eid, component=None: real(FakeSyn(), eid, component=component))
+            lambda syn, eid, component=None: real(FakeRestSyn(), eid, component=component))
         with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
                 patch.object(cgp.model_contract, "read_manifest", reader), \
                 patch.object(cgp, "create_grant_projects", return_value={"NEW1": ("syn99", "123")}):

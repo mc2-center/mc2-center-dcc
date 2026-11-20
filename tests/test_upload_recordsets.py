@@ -1,18 +1,14 @@
 """annotations/upload_recordsets.py with every Synapse call mocked."""
-import importlib.util
-from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import pandas as pd
 import pytest
 
 import recordsets as rs
+from conftest import load_script
+from fakes import FakeRS, write_log
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("upload_recordsets", ROOT / "annotations" / "upload_recordsets.py")
-ur = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ur)
+ur = load_script("annotations/upload_recordsets.py", "upload_recordsets")
 
 KEY = "PublicationViewId"
 HEADERS = ["Component", "PublicationView_id", "Publication Title", "Assay"]
@@ -33,32 +29,25 @@ def make_inputs(tmp_path, grants=("syn100",)):
     return paths
 
 
-class FakeSynapse:
-    """Versions of one RecordSet as DataFrames; a Grid write appends versions."""
+class FakeSynapse(FakeRS):
+    """A RecordSet whose versions are DataFrames, where a Grid write appends versions and can be disturbed.
+
+    Kept as a subclass: the write is the upload's own (it appends the export versions, and a foreign version
+    can land before or after it).
+    """
 
     def __init__(self, versions, find=None, key=(KEY,), drift=None, midwrite=None, invalid=0):
-        self.versions = list(versions)
+        super().__init__(versions, key, invalid=invalid, list_cols={"Assay", "PublicationAuthors"})
         self.find = find if find is not None else (lambda folder: "synRS")
-        self.key = list(key)
         self.drift = drift  # frame appended after our write: a foreign version landing later
         self.midwrite = midwrite  # frame appended before our write: landed between read and write
         self.extra_exports = 0
-        self.invalid = invalid
-        self.writes = []
-        self.calls = []
 
     def find_recordset(self, syn, folder, component):
         return self.find(folder)
 
-    def info(self, syn, rs_id):
-        return len(self.versions), self.key
-
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
-        return self.versions[(version or len(self.versions)) - 1].copy()
-
     def write(self, syn, rs_id, csv_path, on_version=None, **kw):
-        self.calls.append("write")
-        written = rs._load_csv(csv_path, {"Assay", "PublicationAuthors"})
+        written = rs._load_csv(csv_path, self.list_cols)
         self.writes.append(written)
         if self.midwrite is not None:
             self.versions.append(self.midwrite)
@@ -73,20 +62,14 @@ class FakeSynapse:
             self.versions.append(self.drift)
         return created
 
-    def validation(self, syn, rs_id, version, loc, keys):
-        valid = [i >= self.invalid for i in range(len(keys))]
-        return pd.DataFrame({"key": keys, "row_index": range(len(keys)), "is_valid": valid,
-                             "validation_error_message": [""] * len(keys),
-                             "all_validation_messages": [""] * len(keys)})
-
 
 def run(tmp_path, fake, *extra, execute=True, log=None, grants=("syn100",), run_id="r1", paths=None):
     paths = paths or make_inputs(tmp_path, grants)
-    log = log or tmp_path / "log.csv"
+    log = log if log is not None else write_log(tmp_path / "log.csv")
     argv = ["--paths-csv", str(paths), "--component", "PublicationView",
             "--report-dir", str(tmp_path / "reports"), "--run-id", run_id,
             "--cache-dir", str(tmp_path / "cache"), *extra]
-    argv += ["--write-log-table", "synLOG"] if execute else ["--write-log-csv", str(log)]
+    argv += ["--write-log-table", "synLOG"] if execute else ["--write-log-csv", str(log.path)]
     if execute:
         argv += ["--execute", "--removals-csv", str(tmp_path / "removals.csv")]
     with mock.patch.object(ur.recordsets, "find_recordset", fake.find_recordset), \
@@ -94,7 +77,7 @@ def run(tmp_path, fake, *extra, execute=True, log=None, grants=("syn100",), run_
          mock.patch.object(ur.recordsets, "read_recordset", fake.read), \
          mock.patch.object(ur.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(ur.recordsets, "get_validation", fake.validation), \
-         mock.patch.object(ur.recordsets, "SynapseTableWriteLog", lambda syn, tid: rs.CsvWriteLog(log)), \
+         mock.patch.object(ur.recordsets, "SynapseTableWriteLog", lambda syn, tid: log), \
          mock.patch.object(ur, "principal_id", lambda syn: "42"):
         code = ur.main(argv, syn=object())
     return code, tmp_path / "reports" / run_id
@@ -108,7 +91,7 @@ def status_of(rep, grant="syn100"):
     return (rep / grant / "summary.txt").read_text().split()[1]
 
 
-def test_first_write_is_plain_upsert_pending_then_written(tmp_path):
+def test_first_write_is_plain_upsert_pending_then_written(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ["RNA Sequencing"]], ["p9", "Other", ""])])
     code, rep = run(tmp_path, fake)
     assert code == 0
@@ -116,7 +99,6 @@ def test_first_write_is_plain_upsert_pending_then_written(tmp_path):
     assert written.loc["p1", "PublicationTitle"] == "Pipeline title"
     assert written.loc["p1", "Assay"] == ["RNA Sequencing", "Mass Spectrometry"]
     assert "p9" in written.index and "p2" in written.index
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log.pipeline_map("synRS") == {2: 1}
     statuses = log._read("synRS")
     assert statuses["status"].tolist() == ["pending", "written", "done"]
@@ -166,9 +148,8 @@ def test_exception_in_one_grant_does_not_stop_others(tmp_path):
     assert status_of(rep) == "failed"
 
 
-def test_log_ahead_of_recordset_fails(tmp_path):
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).record("synRS", 5, "old", 2)
+def test_log_ahead_of_recordset_fails(tmp_path, log):
+    log.record("synRS", 5, "old", 2)
     code, rep = run(tmp_path, FakeSynapse([stored(["p1", "Old", ""])]), log=log)
     assert code == 1
 
@@ -185,17 +166,15 @@ def test_duplicate_and_blank_upload_keys_fail_that_grant(tmp_path):
     assert fake.writes == []
 
 
-def test_lock_from_another_runs_pending_row_skips_the_grant(tmp_path):
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).start("synRS", 1, "other-run", "7")
+def test_lock_from_another_runs_pending_row_skips_the_grant(tmp_path, log):
+    log.start("synRS", 1, "other-run", "7")
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     code, rep = run(tmp_path, fake, log=log)
     assert code == 1 and fake.writes == []  # non-zero: the upload is not done
     assert status_of(rep) == "locked"
 
 
-def test_crashed_run_is_recovered_before_replay(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_crashed_run_is_recovered_before_replay(tmp_path, log):
     log.record("synRS", 1, "r0", 2, base=0, principal="42")
     log.start("synRS", 1, "dead", "42")
     old = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
@@ -208,7 +187,7 @@ def test_crashed_run_is_recovered_before_replay(tmp_path):
     fake = FakeSynapse([v1, v2])
     with mock.patch.object(ur.recordsets, "recordset_version_meta",
                            lambda syn, rs_id, v: ("42", pd.Timestamp.now(tz="UTC"))):
-        code, rep = run(tmp_path, fake, log=tmp_path / "log.csv")
+        code, rep = run(tmp_path, fake, log=log)
     assert code == 0
     assert log.pipeline_map("synRS")[2] == 1  # recovered with the pending row's base
     # v2 is a pipeline version, not a contributor edit: the upload overwrites it
@@ -216,11 +195,10 @@ def test_crashed_run_is_recovered_before_replay(tmp_path):
     assert "recovered=[2]" in (rep / "syn100" / "summary.txt").read_text()
 
 
-def test_contributor_value_survives_later_runs(tmp_path):
+def test_contributor_value_survives_later_runs(tmp_path, log):
     v1 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
     v2 = stored(["p1", "Contributor title", ""], ["p2", "Second", ""])
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    log.record("synRS", 1, "old", 2)
     fake = FakeSynapse([v1, v2])
     for n in (1, 2):
         code, rep = run(tmp_path, fake, log=log, run_id=f"r{n}")
@@ -230,16 +208,15 @@ def test_contributor_value_survives_later_runs(tmp_path):
         assert list(conflicts["column"]) == ["PublicationTitle"], n
 
 
-def curator_edits(tmp_path):
+def curator_edits(log):
     v1 = stored(["p1", "Pipeline title", ["RNA Sequencing"]], ["p2", "Second", ""])
     v2 = stored(["p1", "Contributor title", ["Imaging"]], ["p2", "Second", ""])
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
-    return FakeSynapse([v1, v2]), log
+    log.record("synRS", 1, "old", 2)
+    return FakeSynapse([v1, v2])
 
 
-def test_overwrite_csv_replaces_only_the_listed_curator_cell(tmp_path):
-    fake, log = curator_edits(tmp_path)
+def test_overwrite_csv_replaces_only_the_listed_curator_cell(tmp_path, log):
+    fake = curator_edits(log)
     allow = tmp_path / "overwrite.csv"
     pd.DataFrame([["syn100", "p1", "PublicationTitle"]], columns=["grantId", "key", "column"]).to_csv(allow, index=False)
     code, rep = run(tmp_path, fake, "--overwrite-csv", str(allow), log=log)
@@ -254,8 +231,8 @@ def test_overwrite_csv_replaces_only_the_listed_curator_cell(tmp_path):
     assert list(conflicts["column"]) == ["Assay"]
 
 
-def test_overwrite_csv_of_another_grant_changes_nothing(tmp_path):
-    fake, log = curator_edits(tmp_path)
+def test_overwrite_csv_of_another_grant_changes_nothing(tmp_path, log):
+    fake = curator_edits(log)
     allow = tmp_path / "overwrite.csv"
     pd.DataFrame([["syn555", "p1", "PublicationTitle"]], columns=["grantId", "key", "column"]).to_csv(allow, index=False)
     code, rep = run(tmp_path, fake, "--overwrite-csv", str(allow), log=log)
@@ -263,21 +240,19 @@ def test_overwrite_csv_of_another_grant_changes_nothing(tmp_path):
     assert not (rep / "syn100" / "overwritten.csv").exists()
 
 
-def test_pipeline_originated_value_is_overwritten(tmp_path):
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+def test_pipeline_originated_value_is_overwritten(tmp_path, log):
+    log.record("synRS", 1, "old", 2)
     fake = FakeSynapse([stored(["p1", "Old pipeline", ""], ["p2", "Second", ""])])
     code, rep = run(tmp_path, fake, log=log)
     assert fake.writes[-1].set_index(KEY).loc["p1", "PublicationTitle"] == "Pipeline title"
     assert pd.read_csv(rep / "syn100" / "conflicts.csv").empty
 
 
-def test_stale_session_scenario_second_run_keeps_both_edits(tmp_path):
+def test_stale_session_scenario_second_run_keeps_both_edits(tmp_path, log):
     v5 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
     v6 = stored(["p1", "A edit", ""], ["p2", "Second", ""])
     v7 = stored(["p1", "Pipeline title", ""], ["p2", "B edit", ""])
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    log.record("synRS", 1, "old", 2)
     fake = FakeSynapse([v5, v6, v7])
     for n in (1, 2):
         run(tmp_path, fake, log=log, run_id=f"r{n}")
@@ -286,8 +261,7 @@ def test_stale_session_scenario_second_run_keeps_both_edits(tmp_path):
         assert written.loc["p2", "PublicationTitle"] == "B edit"
 
 
-def test_unchanged_merge_skips_the_write(tmp_path):
-    log = tmp_path / "log.csv"
+def test_unchanged_merge_skips_the_write(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     run(tmp_path, fake, log=log, run_id="r1")
     n = len(fake.versions)
@@ -295,31 +269,29 @@ def test_unchanged_merge_skips_the_write(tmp_path):
     assert status_of(rep) == "unchanged" and len(fake.versions) == n
 
 
-def test_every_export_is_logged_with_the_base_version(tmp_path):
+def test_every_export_is_logged_with_the_base_version(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     fake.extra_exports = 1
     run(tmp_path, fake)
-    assert rs.CsvWriteLog(tmp_path / "log.csv").pipeline_map("synRS") == {2: 1, 3: 1}
+    assert log.pipeline_map("synRS") == {2: 1, 3: 1}
 
 
-def test_contributor_export_mid_write_triggers_one_immediate_rerun(tmp_path):
+def test_contributor_export_mid_write_triggers_one_immediate_rerun(tmp_path, log):
     v1 = stored(["p1", "Pipeline title", ""], ["p2", "Second", ""])
-    log = tmp_path / "log.csv"
-    rs.CsvWriteLog(log).record("synRS", 1, "old", 2)
+    log.record("synRS", 1, "old", 2)
     mid = stored(["p1", "Contributor title", ""], ["p2", "Second", ""])
     fake = FakeSynapse([v1], midwrite=mid)
     code, rep = run(tmp_path, fake, log=log, run_id="r1")
     text = (rep / "syn100" / "summary.txt").read_text()
     assert "rerun after foreign versions [2] landed mid-write" in text
     # v3 (base 1) overwrote the edit; the rerun's replay restored it as v4
-    assert rs.CsvWriteLog(log).pipeline_map("synRS") == {1: 0, 3: 1, 4: 3}
+    assert log.pipeline_map("synRS") == {1: 0, 3: 1, 4: 3}
     assert fake.versions[-1].set_index(KEY).loc["p1", "PublicationTitle"] == "Contributor title"
     assert (rep / "syn100" / "rerun" / "merged.csv").exists()
     assert len(fake.writes) == 2  # at most one rerun
 
 
-def test_dropped_schema_property_column_does_not_force_a_write(tmp_path):
-    log = tmp_path / "log.csv"
+def test_dropped_schema_property_column_does_not_force_a_write(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     run(tmp_path, fake, log=log, run_id="r1")
     stale = fake.versions[-1].copy()
@@ -395,7 +367,7 @@ def test_verification_reads_the_exported_version_and_flags_a_real_mismatch(tmp_p
     assert (rep / "syn100" / "verification.txt").exists()
 
 
-def test_failed_write_resolves_the_pending_row(tmp_path):
+def test_failed_write_resolves_the_pending_row(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
 
     def boom(*a, **kw):
@@ -406,14 +378,12 @@ def test_failed_write_resolves_the_pending_row(tmp_path):
     with mock.patch.object(ur.recordsets, "recordset_version_meta", meta):
         code, rep = run(tmp_path, fake)
     assert code == 1 and status_of(rep) == "failed"
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
     assert log.unresolved_pending("synRS") == []
 
 
-def test_lock_race_loser_aborts_and_reports_locked(tmp_path):
+def test_lock_race_loser_aborts_and_reports_locked(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     real_start = rs.WriteLog.start
 
     def start_after_rival(self, rs_id, base, run_id, principal):
@@ -422,12 +392,12 @@ def test_lock_race_loser_aborts_and_reports_locked(tmp_path):
         real_start(self, rs_id, base, run_id, principal)
 
     with mock.patch.object(rs.WriteLog, "start", start_after_rival):
-        code, rep = run(tmp_path, fake, log=tmp_path / "log.csv")
+        code, rep = run(tmp_path, fake, log=log)
     assert status_of(rep) == "locked" and fake.writes == []
     assert log._read("synRS")["status"].tolist() == ["pending", "pending", "aborted"]
 
 
-def test_recordset_moving_before_the_write_aborts_with_retry(tmp_path):
+def test_recordset_moving_before_the_write_aborts_with_retry(tmp_path, log):
     fake = FakeSynapse([stored(["p1", "Old", ""])])
     calls = {"n": 0}
     real_info = fake.info
@@ -441,7 +411,6 @@ def test_recordset_moving_before_the_write_aborts_with_retry(tmp_path):
     fake.info = moving_info
     code, rep = run(tmp_path, fake)
     assert status_of(rep) == "retry" and fake.writes == []
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
 
 

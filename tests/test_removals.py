@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 import recordsets as rs
+from fakes import removals_table
 
 K = "PublicationViewId"
 
@@ -109,7 +110,7 @@ def test_pipeline_version_readding_a_removed_key_is_reported():
 
 
 def test_csv_removals_latest_row_per_key_is_its_status(tmp_path):
-    r = rs.CsvRemovals(tmp_path / "sub" / "removals.csv")
+    r = removals_table(tmp_path / "sub" / "removals.csv")
     assert r.requested("syn1") == {} and r.removed("syn1") == {}
     r.append("syn1", "a", "requested", reason="dup", requested_by="u1")
     r.append("syn1", "b", "requested", reason="typo", requested_by="u1")
@@ -200,16 +201,15 @@ def test_append_many_is_one_write():
 
 
 def test_append_many_validates_before_writing(tmp_path):
-    r = rs.CsvRemovals(tmp_path / "r.csv")
+    r = removals_table(tmp_path / "r.csv")
     with pytest.raises(ValueError):
         r.append_many("syn1", [{"key": "a", "status": "removed"}, {"key": "b", "status": "bogus"}])
     assert not (tmp_path / "r.csv").exists()
 
 
-def test_a_not_found_row_never_supersedes_a_removed_status(tmp_path):
-    r = rs.CsvRemovals(tmp_path / "removals.csv")
-    r.append("syn1", "a", "requested")
-    r.append("syn1", "a", "removed", removed_in_version=5, run_id="r1")
-    r.append("syn1", "a", "not_found", run_id="r2")  # a repeat request resolved against a version without it
-    assert r.removed("syn1") == {"a": 5}
-    assert r.requested("syn1") == {}
+def test_a_not_found_row_never_supersedes_a_removed_status(removals):
+    removals.append("syn1", "a", "requested")
+    removals.append("syn1", "a", "removed", removed_in_version=5, run_id="r1")
+    removals.append("syn1", "a", "not_found", run_id="r2")  # a repeat request resolved against a version without it
+    assert removals.removed("syn1") == {"a": 5}
+    assert removals.requested("syn1") == {}

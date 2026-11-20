@@ -62,3 +62,19 @@ def _clear_consortium_cache():
     import utils
 
     utils._CONSORTIUM_ROWS.clear()
+
+
+@pytest.fixture
+def log(tmp_path):
+    """The write log for a test: a CSV at tmp_path/log.csv (``log.path``)."""
+    from fakes import write_log
+
+    return write_log(tmp_path / "log.csv")
+
+
+@pytest.fixture
+def removals(tmp_path):
+    """The removals table for a test: a CSV at tmp_path/removals.csv."""
+    from fakes import removals_table
+
+    return removals_table(tmp_path / "removals.csv")
