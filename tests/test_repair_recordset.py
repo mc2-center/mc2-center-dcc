@@ -1,10 +1,13 @@
 """annotations/repair_recordset.py with every Synapse call stubbed."""
 from unittest import mock
 
+import pytest
+
 from conftest import load_script
 from fakes import FakeRS, assert_nothing_written
 
 cmd = load_script("annotations/repair_recordset.py", "repair_recordset")
+pytestmark = pytest.mark.usefixtures("synapse_tables")
 
 K, LIST = "PublicationViewId", "PublicationAuthors"
 # v1: one doubled-quote cell (Grid's export of M"ockl L), one fine list cell, one empty
@@ -24,13 +27,7 @@ def fake_rs(log):
 def run(tmp_path, fake, fixes=FIX_OK, execute=False, log=None):
     (tmp_path / "fixes.csv").write_text(fixes, encoding="utf-8")
     argv = ["--recordset", "synRS", "--component", "PublicationView", "--fixes", str(tmp_path / "fixes.csv"),
-            "--write-log-csv", str(log.path), "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-repair-1"]
-    real_get_args = cmd.get_args  # --execute with a CSV write log is refused by the parser; tests need it
-
-    def get_args(a):
-        ns = real_get_args([x for x in a if x != "--execute"])
-        ns.execute = "--execute" in a
-        return ns
+            "--write-log-table", "synLOG", "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-repair-1"]
     if execute:
         argv.append("--execute")
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
@@ -39,8 +36,7 @@ def run(tmp_path, fake, fixes=FIX_OK, execute=False, log=None):
          mock.patch.object(cmd.recordsets, "store_new_version", fake.store), \
          mock.patch.object(cmd.recordsets, "export_via_grid", fake.export), \
          mock.patch.object(cmd.recordsets, "recordset_version_meta", fake.meta), \
-         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"), \
-         mock.patch.object(cmd, "get_args", get_args):
+         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
         return cmd.main(argv, syn=object())
 
 

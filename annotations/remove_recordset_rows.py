@@ -43,8 +43,8 @@ upsert key column, joined with the key separator); dry run unless ``--execute``.
 
 Dry run is the default: it prints, per RecordSet, the keys that would be
 removed, the keys not found and any blocking session or lock; nothing is
-written. Use ``--execute`` to write; it needs ``--write-log-table`` and
-``--removals-table`` (CSV versions are for dry runs and tests).
+written (the write-log and removals tables are only read). Use ``--execute`` to
+write.
 
 The exit status is 1 if any RecordSet needs attention (failed, locked, blocked
 or retry).
@@ -74,12 +74,8 @@ PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older t
 
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
-    removals = parser.add_mutually_exclusive_group(required=True)
-    removals.add_argument("--removals-table", help="Synapse ID of the removals table")
-    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
-    log = parser.add_mutually_exclusive_group(required=True)
-    log.add_argument("--write-log-table", help="Synapse ID of the write-log table")
-    log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
+    parser.add_argument("--removals-table", required=True, help="Synapse ID of the removals table")
+    parser.add_argument("--write-log-table", required=True, help="Synapse ID of the write-log table")
     parser.add_argument("--recordset", help="only this RecordSet ID")
     parser.add_argument("--report-dir", required=True, help="directory for the stored CSVs and summary")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
@@ -95,8 +91,6 @@ def get_args(argv=None):
     args = parser.parse_args(argv)
     if not args.run_id.startswith(recordsets.REMOVAL_RUN_PREFIX):
         parser.error(f"--run-id must start with {recordsets.REMOVAL_RUN_PREFIX!r}")
-    if args.execute and not (args.write_log_table and args.removals_table):
-        parser.error("--execute needs --write-log-table and --removals-table; CSVs are for dry runs and tests only")
     return args
 
 
@@ -335,9 +329,7 @@ def summary_line(s: dict) -> str:
 def get_request_args(argv):
     parser = argparse.ArgumentParser(
         prog="remove_recordset_rows.py request", description="Request row removals: append `requested` rows")
-    removals = parser.add_mutually_exclusive_group(required=True)
-    removals.add_argument("--removals-table", help="Synapse ID of the removals table")
-    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
+    parser.add_argument("--removals-table", required=True, help="Synapse ID of the removals table")
     parser.add_argument("--recordset", required=True, help="RecordSet ID")
     parser.add_argument(
         "--key", nargs="+", action="append", required=True, metavar="VALUE",
@@ -345,21 +337,14 @@ def get_request_args(argv):
     parser.add_argument("--reason", required=True)
     parser.add_argument("--requested-by", default="", help="default: the runner's Synapse user ID (--execute)")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
-    args = parser.parse_args(argv)
-    if args.execute and not args.removals_table:
-        parser.error("--execute needs --removals-table; a CSV is for dry runs and tests only")
-    return args
+    return parser.parse_args(argv)
 
 
 def request_main(argv, syn=None):
     """``request``: append ``requested`` rows (one write) for the given keys; dry run by default."""
     args = get_request_args(argv)
     syn = syn or utils.syn_login()
-    removals = (
-        recordsets.SynapseTableRemovals(syn, args.removals_table)
-        if args.removals_table
-        else recordsets.CsvRemovals(args.removals_csv)
-    )
+    removals = recordsets.SynapseTableRemovals(syn, args.removals_table)
     _, key_cols = recordsets.recordset_info(syn, args.recordset)
     if not key_cols:
         print(f"{args.recordset} has no upsert key")
@@ -393,16 +378,8 @@ def main(argv=None, syn=None):
         return request_main(argv[1:], syn)
     args = get_args(argv)
     syn = syn or utils.syn_login()
-    write_log = (
-        recordsets.SynapseTableWriteLog(syn, args.write_log_table)
-        if args.write_log_table
-        else recordsets.CsvWriteLog(args.write_log_csv)
-    )
-    removals = (
-        recordsets.SynapseTableRemovals(syn, args.removals_table)
-        if args.removals_table
-        else recordsets.CsvRemovals(args.removals_csv)
-    )
+    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table)
+    removals = recordsets.SynapseTableRemovals(syn, args.removals_table)
     ids = [args.recordset] if args.recordset else removals.recordset_ids()
     principal = recordsets.principal_id(syn) if args.execute else ""
     run_dir = Path(args.report_dir) / args.run_id

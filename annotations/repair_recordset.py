@@ -32,8 +32,8 @@ if it fails before a version exists the pending row is aborted. The final
 version is then read back and compared with the corrected file.
 
 The run id starts with ``dcc-repair-`` (generated; a ``--run-id`` without it is
-rejected). ``--execute`` needs ``--write-log-table`` (a CSV write log is for
-dry runs and tests).
+rejected). The write-log table is read in a dry run too; a dry run writes nothing
+to it.
 
 Exit status: 0 ok (dry run complete, or repaired and the read-back matches);
 1 refused (locked, no upsert key, broken cell without a fix, invalid fix,
@@ -74,9 +74,7 @@ def get_args(argv=None):
     parser.add_argument("--recordset", required=True, help="RecordSet ID")
     parser.add_argument("--component", required=True, help="the RecordSet's component, e.g. PublicationView")
     parser.add_argument("--fixes", required=True, help="CSV with columns key, column, value (a JSON array)")
-    log = parser.add_mutually_exclusive_group(required=True)
-    log.add_argument("--write-log-table", help="Synapse ID of the write-log table")
-    log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
+    parser.add_argument("--write-log-table", required=True, help="Synapse ID of the write-log table")
     parser.add_argument("--report-dir", required=True, help="directory for the CSVs and summary")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
     parser.add_argument(
@@ -86,8 +84,6 @@ def get_args(argv=None):
     args = parser.parse_args(argv)
     if not args.run_id.startswith(REPAIR_RUN_PREFIX):
         parser.error(f"--run-id must start with {REPAIR_RUN_PREFIX!r}")
-    if args.execute and not args.write_log_table:
-        parser.error("--execute needs --write-log-table; a CSV is for dry runs and tests only")
     return args
 
 
@@ -262,11 +258,7 @@ def repair(syn, args, write_log, report_dir: Path, principal) -> dict:
 def main(argv=None, syn=None):
     args = get_args(sys.argv[1:] if argv is None else argv)
     syn = syn or utils.syn_login()
-    write_log = (
-        recordsets.SynapseTableWriteLog(syn, args.write_log_table)
-        if args.write_log_table
-        else recordsets.CsvWriteLog(args.write_log_csv)
-    )
+    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table)
     principal = recordsets.principal_id(syn) if args.execute else ""
     report_dir = Path(args.report_dir)
     print(f"Run {args.run_id}: {'EXECUTE' if args.execute else 'dry run'}, {args.recordset} ({args.component})")

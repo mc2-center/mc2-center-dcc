@@ -65,16 +65,26 @@ def _clear_consortium_cache():
 
 
 @pytest.fixture
-def log(tmp_path):
-    """The write log for a test: a CSV at tmp_path/log.csv (``log.path``)."""
-    from fakes import write_log
+def log():
+    """The write log for a test, in memory (``log.rows``)."""
+    from fakes import MemoryWriteLog
 
-    return write_log(tmp_path / "log.csv")
+    return MemoryWriteLog()
 
 
 @pytest.fixture
-def removals(tmp_path):
-    """The removals table for a test: a CSV at tmp_path/removals.csv."""
-    from fakes import removals_table
+def removals():
+    """The removals table for a test, in memory (``removals.rows``)."""
+    from fakes import MemoryRemovals
 
-    return removals_table(tmp_path / "removals.csv")
+    return MemoryRemovals()
+
+
+@pytest.fixture
+def synapse_tables(log, removals, monkeypatch):
+    """The scripts open the ``log`` and ``removals`` fixtures where they would open the Synapse tables
+    (a test file turns this on with ``pytestmark = pytest.mark.usefixtures("synapse_tables")``)."""
+    import recordsets
+
+    monkeypatch.setattr(recordsets, "SynapseTableWriteLog", lambda syn, table_id: log)
+    monkeypatch.setattr(recordsets, "SynapseTableRemovals", lambda syn, table_id: removals)

@@ -8,9 +8,10 @@ import pytest
 
 import recordsets as rs
 from conftest import load_script
-from fakes import FakeProjectSynapse, write_log
+from fakes import FakeProjectSynapse
 
 mig = load_script("migration/migrate_grant_tables_14.py", "migrate_grant_tables_14")
+pytestmark = pytest.mark.usefixtures("synapse_tables")
 
 KEY = "PublicationViewId"
 HEADERS = ["Component", "PublicationView_id", "GrantView Key", "Publication Title", "Publication Doi",
@@ -119,7 +120,6 @@ def run(tmp_path, fake, *extra, execute=False, run_id="r1", component="Publicati
                              schema_binding=lambda syn, rs_id: fake.binding(syn, rs_id, component)), \
          mock.patch.object(mig.recordsets, "bind_schema", fake.bind), \
          mock.patch.object(mig.recordsets, "export_via_grid", fake.export), \
-         mock.patch.object(mig.recordsets, "SynapseTableWriteLog", lambda syn, tid: write_log(tmp_path / "log.csv")), \
          mock.patch.object(mig.recordsets, "principal_id", lambda syn: "42"), \
          mock.patch.object(mig.merge_tables, "build_union", lambda syn, comp, grants: fake.union(grants)):
         code = mig.main(argv, syn=object())
@@ -290,11 +290,11 @@ def test_local_validation_flags_a_non_enum_value_and_a_bad_uri():
 # --- dry run ----------------------------------------------------------------------
 
 
-def test_dry_run_writes_nothing_to_synapse_and_writes_the_reports(tmp_path):
+def test_dry_run_writes_nothing_to_synapse_and_writes_the_reports(tmp_path, log):
     fake = FakeSynapse()
     code, rep = run(tmp_path, fake)
     assert fake.writes == [] and fake.created == [] and fake.created_folders == []
-    assert not (tmp_path / "log.csv").exists()
+    assert log.rows == []
     grant = rep / "CA1"
     for name in ("converted.csv", "changes.csv", "unmapped.csv", "validation.csv", "summary.txt"):
         assert (grant / name).exists(), name
@@ -518,8 +518,7 @@ def migrated_but_bound_to_the_old_schema(tmp_path, fake, log, verified=True):
     run(tmp_path, fake, execute=True, run_id="r1")
     rs_id = next(iter(fake.rs))
     if not verified:  # as after a run that died before logging ``verified``
-        lines = log.path.read_text().splitlines(keepends=True)
-        log.path.write_text("".join(line for i, line in enumerate(lines) if i == 0 or "verified" not in line))
+        log.rows = [r for r in log.rows if r["status"] != "verified"]
     fake.bound[rs_id] = OLD_URI
     return rs_id
 

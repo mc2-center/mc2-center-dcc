@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 
 import recordsets as rs
-from fakes import removals_table
 from test_remove_recordset_rows import V1, process, setup
 
 K = "PublicationViewId"
@@ -110,8 +109,8 @@ def test_pipeline_version_readding_a_removed_key_is_reported():
 # --- Removals ---
 
 
-def test_csv_removals_latest_row_per_key_is_its_status(tmp_path):
-    r = removals_table(tmp_path / "sub" / "removals.csv")
+def test_removals_latest_row_per_key_is_its_status(removals):
+    r = removals
     assert r.requested("syn1") == {} and r.removed("syn1") == {}
     r.append("syn1", "a", "requested", reason="dup", requested_by="u1")
     r.append("syn1", "b", "requested", reason="typo", requested_by="u1")
@@ -127,8 +126,6 @@ def test_csv_removals_latest_row_per_key_is_its_status(tmp_path):
     assert r.removed("syn1") == {} and r.removal_events("syn1") == {5: {"a"}}
     r.append("syn1", "a", "requested")  # requested again
     assert set(r.requested("syn1")) == {"a"}
-    header = (tmp_path / "sub" / "removals.csv").read_text().splitlines()[0]
-    assert header == ",".join(rs.REMOVALS_COLUMNS)
 
 
 def test_synapse_removals_queries_and_stores():
@@ -201,11 +198,10 @@ def test_append_many_is_one_write():
         assert table.return_value.store_rows.call_count == 1
 
 
-def test_append_many_validates_before_writing(tmp_path):
-    r = removals_table(tmp_path / "r.csv")
+def test_append_many_validates_before_writing(removals):
     with pytest.raises(ValueError):
-        r.append_many("syn1", [{"key": "a", "status": "removed"}, {"key": "b", "status": "bogus"}])
-    assert not (tmp_path / "r.csv").exists()
+        removals.append_many("syn1", [{"key": "a", "status": "removed"}, {"key": "b", "status": "bogus"}])
+    assert removals.rows == []
 
 
 def test_a_not_found_row_never_supersedes_a_removed_status(removals):
@@ -241,8 +237,8 @@ def test_removed_keys_use_the_removals_base():
     assert rs.removed_keys(list(enumerate([v1, v2, v3], start=1)), {3: 1}, K) == {"R": 3}
 
 
-def test_a_concurrent_export_racing_the_store_is_warned_about(tmp_path, caplog):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_a_concurrent_export_racing_the_store_is_warned_about(tmp_path, caplog, log, removals):
+    fake = setup(log, removals, [V1])
     orig = fake.store
 
     def racing_store(syn, rs_id, path):

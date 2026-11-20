@@ -100,8 +100,7 @@ def run(tmp_path, type_="PublicationView", *extra, manifest=None, syn=None):
     name = {"PublicationView": "publication.csv", "DatasetView": "dataset.csv", "ToolView": "tool.xlsx"}[type_]
     argv = ["--manifest", str(manifest or FIXTURES / "p1" / name), "--type", type_,
             "--out-dir", str(tmp_path / "out"), "--cv-file", str(CV),
-            *(["--write-log-table", "syn999"] if "--execute" in extra
-              else ["--write-log-csv", str(tmp_path / "log.csv")]), *extra]
+            "--write-log-table", "syn999", *extra]
     code = uw.main(argv, syn=syn)
     return code, json.loads((tmp_path / "out" / "run.json").read_text())
 
@@ -253,7 +252,7 @@ def test_dry_run_still_reports_reuse_without_creating(tmp_path, env):
 
 def test_target_selection(tmp_path, env, monkeypatch):
     run(tmp_path)  # default recordset
-    assert "PublicationView" in env["upload"][0] and "--write-log-csv" in env["upload"][0]
+    assert "PublicationView" in env["upload"][0] and "--write-log-table" in env["upload"][0]
 
     ran = []
     monkeypatch.setattr(uw.subprocess, "run",
@@ -452,7 +451,7 @@ def test_resume_refuses_changed_arguments(tmp_path, env, capsys):
     run(tmp_path)
     with pytest.raises(SystemExit) as e:  # different --cv-file
         uw.main(["--manifest", str(FIXTURES / "p1" / "publication.csv"), "--type", "PublicationView",
-                 "--out-dir", str(tmp_path / "out"), "--write-log-csv", "l.csv", "--from-stage", "upload"])
+                 "--out-dir", str(tmp_path / "out"), "--write-log-table", "syn999", "--from-stage", "upload"])
     assert "cv_file" in str(e.value)
     with pytest.raises(SystemExit) as e:  # different target
         run(tmp_path, "PublicationView", "--from-stage", "upload", "--target", "schematic-table")
@@ -489,7 +488,7 @@ def test_new_run_in_used_out_dir_needs_force_new(tmp_path, env):
     assert code == 0 and state["type"] == "ToolView"
     assert not list((tmp_path / "out" / "01_split").glob("*_publication.csv"))
     with pytest.raises(SystemExit):
-        uw.get_args(["--manifest", "m.csv", "--type", "ToolView", "--out-dir", "o", "--write-log-csv", "l",
+        uw.get_args(["--manifest", "m.csv", "--type", "ToolView", "--out-dir", "o", "--write-log-table", "l",
                      "--force-new", "--from-stage", "links"])
 
 
@@ -623,19 +622,19 @@ def test_grant_lookup_uses_the_split_files_grant(monkeypatch, tmp_path):
 # --- exit-code mapping ------------------------------------------------------------------
 
 
-def test_execute_with_csv_log_fails_in_get_args(tmp_path, env):
+def test_recordset_target_without_a_write_log_table_fails_in_get_args(tmp_path):
     base = ["--manifest", "m.csv", "--type", "ToolView", "--out-dir", str(tmp_path / "o")]
-    for bad in (["--execute", "--write-log-csv", "l.csv"], ["--write-log-table", "syn1", "--write-log-csv", "l.csv"]):
-        with pytest.raises(SystemExit) as e:
-            uw.get_args(base + bad)
-        assert e.value.code == 2
+    with pytest.raises(SystemExit) as e:
+        uw.get_args(base + ["--execute"])
+    assert e.value.code == 2
     assert uw.get_args(base + ["--execute", "--write-log-table", "syn1"]).execute
-    assert uw.get_args(base + ["--write-log-csv", "l.csv"]).write_log_csv  # dry run
+    assert uw.get_args(base + ["--write-log-table", "syn1"]).write_log_table == "syn1"  # dry run
 
 
 def test_bad_recordset_args_create_no_entities(tmp_path, env):
     with pytest.raises(SystemExit):
-        run(tmp_path, "ToolView", "--execute", "--write-log-csv", str(tmp_path / "l.csv"))
+        uw.main(["--manifest", str(FIXTURES / "p1" / "tool.xlsx"), "--type", "ToolView",
+                 "--out-dir", str(tmp_path / "out"), "--cv-file", str(CV), "--execute"])
     assert env["links"] == [] and not (tmp_path / "out").exists()
 
 

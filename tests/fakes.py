@@ -10,22 +10,50 @@ import recordsets as rs
 
 
 # --- write log and removals --------------------------------------------------------------------------------------
-# These two functions are the only place the tests name the CSV-backed classes.
 
 
-def write_log(path):
-    return rs.CsvWriteLog(path)
+class MemoryWriteLog(rs.WriteLog):
+    """The write log in memory: ``rows`` holds every row appended, in order (dicts like ``WriteLog._row`` makes)."""
+
+    def __init__(self):
+        self.rows = []
+
+    def _read(self, rs_id):
+        df = pd.DataFrame([r for r in self.rows if r["recordSetId"] == rs_id], columns=rs.WRITE_LOG_COLUMNS)
+        for column in ("version", "baseVersion", "rowsWritten"):
+            df[column] = pd.to_numeric(df[column])
+        return df
+
+    def _append(self, row):
+        self.rows.append(dict(row))
 
 
-def removals_table(path):
-    return rs.CsvRemovals(path)
+class MemoryRemovals(rs.Removals):
+    """The removals table in memory: ``rows`` holds every row appended, in order."""
+
+    def __init__(self):
+        self.rows = []
+
+    def _read(self, rs_id):
+        df = pd.DataFrame([r for r in self.rows if r["recordSetId"] == rs_id], columns=rs.REMOVALS_COLUMNS)
+        df["removedInVersion"] = pd.to_numeric(df["removedInVersion"])
+        return df
+
+    def recordset_ids(self):
+        return sorted({r["recordSetId"] for r in self.rows})
+
+    def _append_rows(self, rows):
+        self.rows.extend(dict(r) for r in rows)
 
 
-def assert_nothing_written(fake, log=None):
-    """The RecordSet is still at one version with no store or export; with ``log``, that log file was never made."""
+def assert_nothing_written(fake, log=None, removals=None):
+    """The RecordSet is still at one version with no store or export; with ``log`` or ``removals``, nothing was
+    appended to it."""
     assert len(fake.versions) == 1 and fake.events == []
     if log is not None:
-        assert not log.path.exists()
+        assert log.rows == []
+    if removals is not None:
+        assert removals.rows == []
 
 
 # --- RecordSets ---------------------------------------------------------------------------------------------------

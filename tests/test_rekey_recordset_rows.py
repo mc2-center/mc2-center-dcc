@@ -10,6 +10,7 @@ from conftest import load_script
 from fakes import FakeRS, FakeSynapse, assert_nothing_written
 
 cmd = load_script("annotations/rekey_recordset_rows.py", "rekey_recordset_rows")
+pytestmark = pytest.mark.usefixtures("synapse_tables")
 
 K = "DatasetViewId"
 V1 = (
@@ -27,14 +28,8 @@ def fake_rs(key_cols=(K,), **kw):
 def run(tmp_path, fake, changes, execute=False, log=None):
     (tmp_path / "changes.csv").write_text(changes, encoding="utf-8")
     argv = ["--changes", str(tmp_path / "changes.csv"), "--component", "DatasetView",
-            "--write-log-csv", str(log.path), "--removals-csv", str(tmp_path / "removals.csv"),
+            "--write-log-table", "synLOG", "--removals-table", "synREM",
             "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-rekey-1"]
-    real_get_args = cmd.get_args  # --execute with a CSV write log is refused by the parser; tests need it
-
-    def get_args(a):
-        ns = real_get_args([x for x in a if x != "--execute"])
-        ns.execute = "--execute" in a
-        return ns
     if execute:
         argv.append("--execute")
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
@@ -43,8 +38,7 @@ def run(tmp_path, fake, changes, execute=False, log=None):
          mock.patch.object(cmd.recordsets, "store_new_version", fake.store), \
          mock.patch.object(cmd.recordsets, "export_via_grid", fake.export), \
          mock.patch.object(cmd.recordsets, "recordset_version_meta", fake.meta), \
-         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"), \
-         mock.patch.object(cmd, "get_args", get_args):
+         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
         return cmd.main(argv, syn=object())
 
 
@@ -56,12 +50,12 @@ def summary(tmp_path):
     return {r["recordset"]: r for r in read_csv((tmp_path / "rep" / "dcc-rekey-1" / "summary.csv").read_text())}
 
 
-def test_dry_run_changes_only_key_cells_and_stores_nothing(tmp_path, log, capsys):
+def test_dry_run_changes_only_key_cells_and_stores_nothing(tmp_path, log, removals, capsys):
     f = fake_rs(log=log)
     fake = FakeSynapse(log, synA=f)
     assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\nsynA,syn3,syn30\n", log=log) == 0
     assert "synA: dryrun" in capsys.readouterr().out
-    assert_nothing_written(f, log)
+    assert_nothing_written(f, log, removals)
     rep = tmp_path / "rep" / "dcc-rekey-1" / "synA"
     rows = read_csv((rep / "rekeyed.csv").read_text(encoding="utf-8"))
     assert rows == [
@@ -140,13 +134,13 @@ def test_execute_logs_start_store_record_export_finish_and_writes_removals(tmp_p
     assert log.removal_versions("synA") == {2} and log.unexported_removals("synA") == []
     assert "syn10,First,a" in f.versions[1] and "syn2,Second,b" in f.versions[1] and "syn1," not in f.versions[1]
     assert removals.removed("synA") == {"syn1": 2, "syn3": 2}
-    reasons = {r["key"]: r["reason"] for r in read_csv((tmp_path / "removals.csv").read_text())}
+    reasons = {r["key"]: r["reason"] for r in removals.rows}
     assert reasons == {"syn1": "rekeyed to syn10 (dcc-rekey-1); moved", "syn3": "rekeyed to syn30 (dcc-rekey-1)"}
     s = summary(tmp_path)["synA"]
     assert s["status"] == "rekeyed" and s["version"] == "2" and s["changes"] == "2"
 
 
-def test_execute_aborts_the_pending_row_when_the_store_fails(tmp_path, log):
+def test_execute_aborts_the_pending_row_when_the_store_fails(tmp_path, log, removals):
     f = fake_rs(log=log)
     fake = FakeSynapse(log, synA=f)
 
@@ -155,12 +149,12 @@ def test_execute_aborts_the_pending_row_when_the_store_fails(tmp_path, log):
     fake.store = boom
     assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log, execute=True) == 1
     assert log._read("synA")["status"].tolist() == ["pending", "aborted"]
-    assert summary(tmp_path)["synA"]["status"] == "failed" and not (tmp_path / "removals.csv").exists()
+    assert summary(tmp_path)["synA"]["status"] == "failed" and removals.rows == []
 
 
-def test_run_id_without_the_prefix_is_rejected(log):
+def test_run_id_without_the_prefix_is_rejected():
     with pytest.raises(SystemExit):
-        cmd.get_args(["--changes", "c.csv", "--component", "DatasetView", "--write-log-csv", "l.csv",
+        cmd.get_args(["--changes", "c.csv", "--component", "DatasetView", "--write-log-table", "synLOG",
                       "--report-dir", "r", "--run-id", "dcc-repair-1"])
 
 

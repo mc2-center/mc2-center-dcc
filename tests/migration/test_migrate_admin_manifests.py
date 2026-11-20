@@ -7,11 +7,12 @@ import pytest
 import recordsets as rs
 import utils
 from conftest import load_script
-from fakes import FakeProjectSynapse, write_log
+from fakes import FakeProjectSynapse
 
 REAL_LOAD = utils.load_consortium_keys  # before the autouse fixture replaces it
 
 adm = load_script("migration/migrate_admin_manifests_14.py", "migrate_admin_manifests_14")
+pytestmark = pytest.mark.usefixtures("synapse_tables")
 grants = adm.grants
 
 # The Consortium table's {consortiumDisplayName: consortiumId} (syn36345930, read 2026-11-11).
@@ -100,7 +101,6 @@ def run(tmp_path, fake, *extra, execute=False, run_id="r1", component=None, out=
          mock.patch.object(grants.recordsets, "read_recordset", fake.read), \
          mock.patch.object(grants.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(grants.recordsets, "get_validation", fake.validation), \
-         mock.patch.object(adm.recordsets, "SynapseTableWriteLog", lambda syn, tid: write_log(tmp_path / "log.csv")), \
          mock.patch.object(grants.recordsets, "principal_id", lambda syn: "42"):
         code = adm.main(argv, syn=object())
     return code, tmp_path / out / run_id / component

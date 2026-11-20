@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 import recordsets as rs
-from fakes import write_log
+from fakes import MemoryWriteLog
 
 K = "PublicationViewId"
 
@@ -458,8 +458,7 @@ def test_read_recordset_cache_miss_then_hit(tmp_path):
 # --- write log v2 ---
 
 
-def test_csv_write_log_v2(tmp_path):
-    log = write_log(tmp_path / "sub" / "log.csv")
+def test_write_log_v2(log):
     assert log.pipeline_map("syn1") == {} and log.last_version("syn1") is None
     log.start("syn1", 4, "run1", "42")
     assert log.pipeline_map("syn1") == {}  # pending has no version
@@ -468,8 +467,6 @@ def test_csv_write_log_v2(tmp_path):
     log.record("syn2", 9, "run2", 1)
     assert log.pipeline_map("syn1") == {5: 4, 7: 6}
     assert log.pipeline_versions("syn1") == [5, 7] and log.last_version("syn1") == 7
-    header = (tmp_path / "sub" / "log.csv").read_text().splitlines()[0]
-    assert header == ",".join(rs.WRITE_LOG_COLUMNS)
     # a written row doesn't close the write (more exports may follow); done does
     assert [r["runId"] for r in log.unresolved_pending("syn1")] == ["run1"]
     log.finish("syn1", 4, "run1", "42")
@@ -520,12 +517,12 @@ def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(log):
     assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
 
 
-def test_recovery_accepts_clock_skew_within_the_tolerance(tmp_path, log):
+def test_recovery_accepts_clock_skew_within_the_tolerance(log):
     log.start("syn1", 1, "dead", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     skewed = lambda v: ("42", on - pd.Timedelta(minutes=9))  # server clock 9 min behind
     assert rs.recover_pending("syn", "syn1", log, 2, meta=skewed) == {2: 1}
-    log2 = write_log(tmp_path / "log2.csv")
+    log2 = MemoryWriteLog()
     log2.start("syn1", 1, "dead", "42")
     on = log2.unresolved_pending("syn1")[0]["writtenOn"]
     assert rs.recover_pending("syn", "syn1", log2, 2, meta=lambda v: ("42", on - pd.Timedelta(minutes=11))) == {}

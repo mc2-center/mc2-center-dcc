@@ -9,8 +9,8 @@ write (``portal_tables/recordsets.py``: reconcile, then merge the upload), and
 writes the result through a Grid session so Synapse validates it.
 
 Dry run is the default: everything is computed and reported, nothing is
-written to Synapse and validation is skipped. Use ``--execute`` to write; it
-needs ``--write-log-table`` (a CSV log is for dry runs and tests). The state is
+written to Synapse and validation is skipped (the write-log table is only read).
+Use ``--execute`` to write. The state is
 rebuilt by a deterministic replay of every version with per-cell ownership
 (see ``portal_tables/recordsets.py``); a cell owned by a contributor is never
 overwritten by the upload and is reported in conflicts.csv. A grant whose
@@ -24,9 +24,8 @@ replay and before the merge, and listed in removal_skipped.csv. The removed keys
 come from the write log's ``removed`` versions and the history (so a removal
 the removals table doesn't list yet counts) and from the removals table's
 ``removed`` rows; a key whose latest status is ``restored`` is uploaded
-normally. ``--execute`` needs a removals source (``--removals-table``, or
-``--removals-csv`` in tests); a dry run may omit it, and then ``restored`` keys
-are unknown.
+normally. ``--execute`` needs ``--removals-table`` so removed rows are not uploaded
+again; a dry run may omit it, and then ``restored`` keys are unknown.
 
 The exit status is 1 if any grant needs attention (failed, missing_recordset,
 locked, retry or verification_mismatch), so a workflow does not treat the
@@ -71,12 +70,8 @@ def get_args(argv=None):
         choices=["PublicationView", "DatasetView", "ToolView", "EducationalResource", "GrantView"],
         help="component of the manifests, e.g. PublicationView",
     )
-    log = parser.add_mutually_exclusive_group(required=True)
-    log.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
-    log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
-    removals = parser.add_mutually_exclusive_group()
-    removals.add_argument("--removals-table", help="Synapse ID of the removals table (D-Q49)")
-    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
+    parser.add_argument("--write-log-table", required=True, help="Synapse ID of the write-log table")
+    parser.add_argument("--removals-table", help="Synapse ID of the removals table (D-Q49)")
     parser.add_argument("--report-dir", required=True, help="directory for the per-grant reports")
     parser.add_argument(
         "--overwrite-csv",
@@ -95,10 +90,8 @@ def get_args(argv=None):
         "--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp"
     )
     args = parser.parse_args(argv)
-    if args.execute and not args.write_log_table:
-        parser.error("--execute needs --write-log-table; a CSV log is for dry runs and tests only")
-    if args.execute and not (args.removals_table or args.removals_csv):
-        parser.error("--execute needs --removals-table (or --removals-csv) so removed rows are not uploaded again")
+    if args.execute and not args.removals_table:
+        parser.error("--execute needs --removals-table so removed rows are not uploaded again")
     return args
 
 
@@ -329,15 +322,8 @@ def summary_line(s: dict) -> str:
 def main(argv=None, syn=None):
     args = get_args(argv)
     syn = syn or utils.syn_login()
-    write_log = (
-        recordsets.SynapseTableWriteLog(syn, args.write_log_table)
-        if args.write_log_table
-        else recordsets.CsvWriteLog(args.write_log_csv)
-    )
-    removals = (
-        recordsets.SynapseTableRemovals(syn, args.removals_table) if args.removals_table
-        else recordsets.CsvRemovals(args.removals_csv) if args.removals_csv else None
-    )
+    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table)
+    removals = recordsets.SynapseTableRemovals(syn, args.removals_table) if args.removals_table else None
     list_cols = recordsets.list_columns(args.component)
     set_like = recordsets.set_like_columns(args.component)
     args.overwrite = load_overwrite(args.overwrite_csv) if args.overwrite_csv else {}

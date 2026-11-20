@@ -532,9 +532,7 @@ def stage_upload(run, args):
     if args.target == "recordset":
         argv = ["--paths-csv", paths_csv, "--component", args.type, "--report-dir", str(d),
                 "--run-id", args.run_id]
-        argv += (["--write-log-table", args.write_log_table] if args.write_log_table
-                 else ["--write-log-csv", args.write_log_csv])
-        argv += ["--removals-table", args.removals_table]
+        argv += ["--write-log-table", args.write_log_table, "--removals-table", args.removals_table]
         if args.execute:
             argv.append("--execute")
         code = call_main(_load("upload_recordsets.py").main, argv)
@@ -571,7 +569,6 @@ def get_args(argv=None):
     p.add_argument("--out-dir", required=True)
     p.add_argument("--target", choices=["recordset", "schematic-table"], default="recordset")
     p.add_argument("--write-log-table", help="Synapse ID of the write-log table (recordset target)")
-    p.add_argument("--write-log-csv", help="local CSV write log instead of a table (tests, dry runs)")
     p.add_argument("--removals-table", default="syn78404342",
                    help="Synapse ID of the RecordSet removals table (recordset target; default: production)")
     p.add_argument("--schematic-config", help="schematic config file (schematic-table target)")
@@ -586,14 +583,8 @@ def get_args(argv=None):
     args = p.parse_args(argv)
     if args.force_new and args.from_stage:
         p.error("--force-new cannot be combined with --from-stage")
-    if args.target == "recordset" and not (args.write_log_table or args.write_log_csv):
-        p.error("--target recordset needs --write-log-table (or --write-log-csv)")
-    if args.target == "recordset":
-        # Fail before `links` creates any entity, not at the upload stage.
-        if args.execute and not args.write_log_table:
-            p.error("--execute with --target recordset needs --write-log-table (a CSV log is for dry runs only)")
-        if args.write_log_table and args.write_log_csv:
-            p.error("--write-log-table and --write-log-csv are mutually exclusive")
+    if args.target == "recordset" and not args.write_log_table:
+        p.error("--target recordset needs --write-log-table")
     if args.target == "schematic-table" and args.execute and not args.schematic_config:
         p.error("--target schematic-table with --execute needs --schematic-config")
     return args

@@ -85,7 +85,6 @@ a 20-digit string never equals a different one; no float); leading zeros
 
 from __future__ import annotations
 
-import csv
 import json
 import logging
 import re
@@ -647,34 +646,6 @@ class SynapseTableWriteLog(WriteLog):
         Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
 
 
-class CsvWriteLog(WriteLog):
-    """The same log as a local CSV, for tests and dry runs."""
-
-    def __init__(self, path):
-        self.path = Path(path)
-
-    def _read(self, rs_id: str) -> pd.DataFrame:
-        if not self.path.exists():
-            return pd.DataFrame(columns=WRITE_LOG_COLUMNS)
-        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
-        df = df[df["recordSetId"] == rs_id].copy()
-        for column in ("version", "baseVersion", "rowsWritten"):
-            df[column] = pd.to_numeric(df[column].replace("", pd.NA))
-        return df
-
-    def _append(self, row: dict) -> None:
-        new = not self.path.exists()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
-            if new:
-                writer.writerow(WRITE_LOG_COLUMNS)
-            writer.writerow(
-                ["" if row[c] is None else (row[c].isoformat() if c == "writtenOn" else row[c])
-                 for c in WRITE_LOG_COLUMNS]
-            )
-
-
 def create_write_log_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_WriteLog") -> str:
     """Create the write-log table under ``parent_id`` and return its ID.
 
@@ -827,39 +798,6 @@ class SynapseTableRemovals(Removals):
         frame["changedOn"] = frame["changedOn"].map(lambda t: int(t.timestamp() * 1000))
         frame["removedInVersion"] = frame["removedInVersion"].astype("Int64")
         Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
-
-
-class CsvRemovals(Removals):
-    """The same table as a local CSV, for tests and dry runs."""
-
-    def __init__(self, path):
-        self.path = Path(path)
-
-    def _read(self, rs_id: str) -> pd.DataFrame:
-        if not self.path.exists():
-            return pd.DataFrame(columns=REMOVALS_COLUMNS)
-        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
-        df = df[df["recordSetId"] == rs_id].copy()
-        df["removedInVersion"] = pd.to_numeric(df["removedInVersion"].replace("", pd.NA))
-        return df
-
-    def recordset_ids(self) -> list[str]:
-        if not self.path.exists():
-            return []
-        return sorted(set(pd.read_csv(self.path, dtype=str, keep_default_na=False)["recordSetId"]))
-
-    def _append_rows(self, rows: list[dict]) -> None:
-        new = not self.path.exists()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
-            if new:
-                writer.writerow(REMOVALS_COLUMNS)
-            for row in rows:
-                writer.writerow(
-                    ["" if row[c] is None else (row[c].isoformat() if c == "changedOn" else row[c])
-                     for c in REMOVALS_COLUMNS]
-                )
 
 
 def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_Removals") -> str:
