@@ -183,13 +183,10 @@ class Run:
 
 
 def subprocess_env():
-    """Environment for every subprocess: inherits, and passes SYNAPSE_AUTH_TOKEN
-    explicitly when set (never logged). The running interpreter's bin/ goes first
-    on PATH so ``schematic`` resolves when invoked by absolute venv path."""
+    """Environment for every subprocess: a copy of this process's environment, so
+    SYNAPSE_AUTH_TOKEN passes when set (never logged). The running interpreter's bin/
+    goes first on PATH so ``schematic`` resolves when invoked by absolute venv path."""
     env = dict(os.environ)
-    token = os.environ.get("SYNAPSE_AUTH_TOKEN")
-    if token:
-        env["SYNAPSE_AUTH_TOKEN"] = token
     env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
     return env
 

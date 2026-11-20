@@ -35,8 +35,10 @@ def get_args():
     if args.pubs_table is None:
         args.pubs_table = utils.portal_table("publication")
     for table_id in (args.dataset_table, args.pubs_table):
-        if table_id in utils.PRODUCTION_TABLES:
-            parser.error(utils._production_message(table_id))
+        try:
+            utils.refuse_production(table_id)
+        except ValueError as e:
+            parser.error(str(e))
     return args
 
 

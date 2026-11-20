@@ -47,8 +47,11 @@ def get_args():
     args = parser.parse_args()
     if args.table_id is None:
         args.table_id = _portal_utils.portal_table("publication")
-    elif args.table_id in _portal_utils.PRODUCTION_TABLES:
-        parser.error(_portal_utils._production_message(args.table_id))
+    else:
+        try:
+            _portal_utils.refuse_production(args.table_id)
+        except ValueError as e:
+            parser.error(str(e))
     return args
 
 

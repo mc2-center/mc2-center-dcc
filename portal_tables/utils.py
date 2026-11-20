@@ -41,17 +41,13 @@ CONFIG = {
 PRODUCTION_TABLES = frozenset(c["portal_table"] for c in CONFIG.values() if "staging_table" in c)
 
 
-def _production_message(table_id: str) -> str:
-    return (
-        f"{table_id} is a production portal table; only promote_staging.py writes production. "
-        "Use the staging table."
-    )
-
-
 def refuse_production(table_id: str) -> None:
     """Raise ``ValueError`` if ``table_id`` is a production portal table."""
     if table_id in PRODUCTION_TABLES:
-        raise ValueError(_production_message(table_id))
+        raise ValueError(
+            f"{table_id} is a production portal table; only promote_staging.py writes production. "
+            "Use the staging table."
+        )
 
 
 def read_table(syn, table_id: str, include_row_id_and_row_version: bool = False) -> pd.DataFrame:
@@ -311,8 +307,11 @@ def get_args(resource: str) -> argparse.Namespace:
     args = parser.parse_args()
     if args.portal_table_id is None:
         args.portal_table_id = portal_table(resource)
-    elif args.portal_table_id in PRODUCTION_TABLES:
-        parser.error(_production_message(args.portal_table_id))
+    else:
+        try:
+            refuse_production(args.portal_table_id)
+        except ValueError as e:
+            parser.error(str(e))
     return args
 
 

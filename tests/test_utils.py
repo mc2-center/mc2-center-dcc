@@ -244,3 +244,20 @@ def test_write_atomic_replaces_the_file_and_leaves_no_temp_file(tmp_path):
     with pytest.raises(RuntimeError):
         utils.write_atomic(target, dies)
     assert target.read_text() == "new"  # the target is never half written
+
+
+@pytest.mark.parametrize("module,option,resource", [
+    ("create_grant_projects", "--portal_table", "grant"),
+    ("add_datasets_to_pub", "--dataset_table", "dataset"),
+    ("add_datasets_to_pub", "--pubs_table", "publication"),
+])
+def test_scripts_refuse_a_production_table_id_when_parsing_arguments(monkeypatch, capsys, module, option, resource):
+    import importlib
+
+    script = importlib.import_module(module)
+    monkeypatch.setattr("sys.argv", [f"{module}.py", option, PRODUCTION_IDS[resource]])
+    with pytest.raises(SystemExit) as e:
+        script.get_args()
+    assert e.value.code == 2
+    assert (f"{PRODUCTION_IDS[resource]} is a production portal table; only promote_staging.py writes "
+            "production. Use the staging table.") in capsys.readouterr().err

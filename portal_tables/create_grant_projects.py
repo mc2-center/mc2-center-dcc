@@ -83,8 +83,10 @@ def get_args():
     )
     parser.add_argument("--dryrun", action="store_true")
     args = parser.parse_args()
-    if args.portal_table in utils.PRODUCTION_TABLES:
-        parser.error(utils._production_message(args.portal_table))
+    try:
+        utils.refuse_production(args.portal_table)
+    except ValueError as e:
+        parser.error(str(e))
     return args
 
 
