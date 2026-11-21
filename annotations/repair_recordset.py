@@ -143,9 +143,9 @@ def repair(syn, args, write_log, report_dir: Path, principal) -> dict:
     rs_id, run_id = args.recordset, args.run_id
     summary = {"recordset": rs_id, "status": "", "message": ""}
 
-    locker = write_log.locked_by(rs_id, run_id, since=PROCESS_START)
-    if locker:
-        raise Refused(f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old)")
+    locked = recordsets.lock_message(write_log, rs_id, run_id, PROCESS_START)
+    if locked:
+        raise Refused(locked)
     latest, key_cols = recordsets.recordset_info(syn, rs_id)
     if not key_cols:
         raise Refused(f"{rs_id} has no upsert key")
@@ -210,37 +210,21 @@ def repair(syn, args, write_log, report_dir: Path, principal) -> dict:
         summary.update(status="dryrun", message=f"dry run: {len(broken)} broken cells, {len(fixes)} fixes; nothing written")
         return summary
 
-    write_log.start(rs_id, latest, run_id, principal)
     created: list[int] = []
     try:
-        winner = write_log.earlier_pending(rs_id, run_id)
-        if winner:
-            write_log.abort(rs_id, latest, run_id, principal)
-            raise Refused(f"run {winner} started its write first")
-        now_latest, _ = recordsets.recordset_info(syn, rs_id)
-        if now_latest != latest:
-            write_log.abort(rs_id, latest, run_id, principal)
-            raise Refused(f"{rs_id} moved from v{latest} to v{now_latest} before the write; rerun")
-        version = recordsets.store_new_version(syn, rs_id, corrected)
-        created.append(version)
-        write_log.record(rs_id, version, run_id, len(rows), base=latest, principal=principal)
-        summary["version"] = version
+        with recordsets.locked_write(syn, rs_id, write_log, run_id, principal, latest, retry_note="rerun"):
+            version = recordsets.store_new_version(syn, rs_id, corrected)
+            created.append(version)
+            write_log.record(rs_id, version, run_id, len(rows), base=latest, principal=principal)
+            summary["version"] = version
 
-        def on_version(v):
-            write_log.record(rs_id, v, run_id, len(rows), base=version, principal=principal)
-            created.append(v)
+            def on_version(v):
+                write_log.record(rs_id, v, run_id, len(rows), base=version, principal=principal)
+                created.append(v)
 
-        recordsets.export_via_grid(syn, rs_id, on_version=on_version)
-        write_log.finish(rs_id, latest, run_id, principal)
-    except Refused:
-        raise
-    except BaseException:
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)  # aborts when nothing was created
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
+            recordsets.export_via_grid(syn, rs_id, on_version=on_version)
+    except recordsets.WriteRefused as err:
+        raise Refused(err.message) from err
 
     final = recordsets.read_recordset(syn, rs_id, version=created[-1], list_cols=list_cols)
     mismatch = recordsets.differences(after, final[after.columns], key_cols)

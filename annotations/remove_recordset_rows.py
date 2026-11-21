@@ -128,22 +128,11 @@ def claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_c
     return claim_removed(syn, rs_id, removals, unclaimed, requested, key_cols, cache_dir, run_id, principal)
 
 
-def _under_lock_checks(syn, rs_id, write_log, run_id, principal, base):
-    """After ``start``: ``(status, message)`` of a refusal (pending row aborted), or None to go ahead."""
-    refusal = None
-    winner = write_log.earlier_pending(rs_id, run_id)
-    if winner:
-        refusal = ("locked", f"run {winner} started its write first; skipped")
-    elif recordsets.open_grid_sessions(syn, rs_id):  # one may have opened since the first check
-        refusal = ("blocked", "a Grid session was opened meanwhile (visible to the runner; best effort); nothing written")
-    else:
-        now_latest, _ = recordsets.recordset_info(syn, rs_id)
-        if now_latest != base:
-            refusal = ("retry", (f"{rs_id} moved from v{base} to v{now_latest} before the write; "
-                                 "nothing written, the next run retries"))
-    if refusal:
-        write_log.abort(rs_id, base, run_id, principal)
-    return refusal
+def _open_session_refusal(syn, rs_id):
+    """``("blocked", message)`` when a Grid session opened since the first check (best effort), else None."""
+    if recordsets.open_grid_sessions(syn, rs_id):
+        return ("blocked", "a Grid session was opened meanwhile (visible to the runner; best effort); nothing written")
+    return None
 
 
 def _revalidate(syn, rs_id, write_log, run_id, principal, latest, owed):
@@ -152,21 +141,14 @@ def _revalidate(syn, rs_id, write_log, run_id, principal, latest, owed):
     Returns a refusal ``(status, message)`` or None when done.
     """
     run_id += recordsets.REVALIDATE_RUN_SUFFIX  # marks the pending row as export-only for recover_pending
-    write_log.start(rs_id, latest, run_id, principal)
     try:
-        refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
-        if refusal:
-            return refusal
-        recordsets.export_via_grid(
-            syn, rs_id, on_version=lambda v: write_log.record(rs_id, v, run_id, None, base=max(owed), principal=principal))
-        write_log.finish(rs_id, latest, run_id, principal)
-    except BaseException:
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
+        with recordsets.locked_write(syn, rs_id, write_log, run_id, principal, latest, retry_note="the next run retries",
+                                     extra_refusal=lambda: _open_session_refusal(syn, rs_id)):
+            recordsets.export_via_grid(
+                syn, rs_id,
+                on_version=lambda v: write_log.record(rs_id, v, run_id, None, base=max(owed), principal=principal))
+    except recordsets.WriteRefused as refused:
+        return refused.status, refused.message
     return None
 
 
@@ -178,10 +160,9 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         summary.update(status="nothing_to_remove", message="no requested keys")
         return summary
 
-    locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
-    if locker:
-        summary.update(status="locked", message=(
-            f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old); skipped"))
+    locked = recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
+    if locked:
+        summary.update(status="locked", message=f"{locked}; skipped")
         return summary
     latest, key_cols = recordsets.recordset_info(syn, rs_id)
     if not key_cols:
@@ -244,58 +225,52 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         return summary
 
     run_id = args.run_id
-    write_log.start(rs_id, latest, run_id, principal)
     created: list[int] = []
     try:
-        refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
-        if refusal:
-            summary.update(status=refusal[0], message=refusal[1])
-            return summary
-        removals.append_many(rs_id, [
-            {"key": k, "status": "not_found", "reason": requested[k]["reason"],
-             "requested_by": requested[k]["requestedBy"]} for k in not_found], run_id, principal)
-        if not to_remove:
-            write_log.abort(rs_id, latest, run_id, principal)
-            summary.update(status="nothing_to_remove", message=f"none of the requested keys is in v{latest}")
-            return summary
+        with recordsets.locked_write(
+                syn, rs_id, write_log, run_id, principal, latest, retry_note="the next run retries",
+                extra_refusal=lambda: _open_session_refusal(syn, rs_id),
+                after_recover=lambda recovered: claim_unclaimed(
+                    syn, rs_id, removals, write_log, recovered, requested, key_cols, args.cache_dir,
+                    run_id, principal)):
+            removals.append_many(rs_id, [
+                {"key": k, "status": "not_found", "reason": requested[k]["reason"],
+                 "requested_by": requested[k]["requestedBy"]} for k in not_found], run_id, principal)
+            if not to_remove:
+                write_log.abort(rs_id, latest, run_id, principal)
+                raise recordsets.WriteRefused("nothing_to_remove", f"none of the requested keys is in v{latest}")
 
-        drop = set(to_remove)
-        remaining = current[[k not in drop for k in _keys_of(current, key_cols)]]
-        report_dir.mkdir(parents=True, exist_ok=True)
-        path = report_dir / "removal.csv"
-        recordsets.to_csv(remaining, path)
-        version = recordsets.store_new_version(syn, rs_id, path)
-        created.append(version)
-        raced = version != latest + 1
-        if raced:
-            logger.warning(
-                "%s: v%s landed between the version check and the store, so the removal is v%s: a concurrent export "
-                "raced it and the next upload will restore its changes", rs_id, latest + 1, version)
-            summary["raced"] = True
-        write_log.removed(rs_id, version, latest, run_id, principal, len(remaining))
-        removals.append_many(rs_id, [
-            {"key": k, "status": "removed", "reason": requested[k]["reason"],
-             "requested_by": requested[k]["requestedBy"], "removed_in_version": version}
-            for k in to_remove], run_id, principal)  # one write: all keys or none
-        summary["version"] = version
+            drop = set(to_remove)
+            remaining = current[[k not in drop for k in _keys_of(current, key_cols)]]
+            report_dir.mkdir(parents=True, exist_ok=True)
+            path = report_dir / "removal.csv"
+            recordsets.to_csv(remaining, path)
+            version = recordsets.store_new_version(syn, rs_id, path)
+            created.append(version)
+            raced = version != latest + 1
+            if raced:
+                logger.warning(
+                    "%s: v%s landed between the version check and the store, so the removal is v%s: a concurrent "
+                    "export raced it and the next upload will restore its changes", rs_id, latest + 1, version)
+                summary["raced"] = True
+            write_log.removed(rs_id, version, latest, run_id, principal, len(remaining))
+            removals.append_many(rs_id, [
+                {"key": k, "status": "removed", "reason": requested[k]["reason"],
+                 "requested_by": requested[k]["requestedBy"], "removed_in_version": version}
+                for k in to_remove], run_id, principal)  # one write: all keys or none
+            summary["version"] = version
 
-        def on_version(v):
-            # base = the removal version; if a foreign version raced the store, the removal's own base,
-            # so replay keeps that version's edits (kept_unseen_edit) instead of treating them as seen
-            write_log.record(rs_id, v, run_id, len(remaining), base=latest if raced else version, principal=principal)
-            created.append(v)
+            def on_version(v):
+                # base = the removal version; if a foreign version raced the store, the removal's own base,
+                # so replay keeps that version's edits (kept_unseen_edit) instead of treating them as seen
+                write_log.record(rs_id, v, run_id, len(remaining), base=latest if raced else version,
+                                 principal=principal)
+                created.append(v)
 
-        recordsets.export_via_grid(syn, rs_id, on_version=on_version)
-        write_log.finish(rs_id, latest, run_id, principal)
-    except BaseException:
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recovered = recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
-            claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_cols, args.cache_dir,
-                            run_id, principal)
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
+            recordsets.export_via_grid(syn, rs_id, on_version=on_version)
+    except recordsets.WriteRefused as refused:
+        summary.update(status=refused.status, message=refused.message)
+        return summary
     summary.update(status="removed", message=(
         f"removed {to_remove} in v{version} (re-validated in v{created[-1]}); not found {not_found}"))
     return summary

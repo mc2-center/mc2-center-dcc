@@ -158,10 +158,9 @@ def rekey(syn, args, rs_id, changes, write_log, removals, report_dir: Path, prin
     run_id = args.run_id
     summary = {"recordset": rs_id, "status": "", "changes": len(changes), "version": "", "message": ""}
 
-    locker = write_log.locked_by(rs_id, run_id, since=PROCESS_START)
-    if locker:
-        summary.update(status="locked", message=(
-            f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old)"))
+    locked = recordsets.lock_message(write_log, rs_id, run_id, PROCESS_START)
+    if locked:
+        summary.update(status="locked", message=locked)
         return summary
     latest, key_cols = recordsets.recordset_info(syn, rs_id)
     if len(key_cols) != 1:
@@ -212,48 +211,34 @@ def rekey(syn, args, rs_id, changes, write_log, removals, report_dir: Path, prin
         summary.update(status="dryrun", message=f"dry run: {len(changes)} keys would change; nothing written")
         return summary
 
-    write_log.start(rs_id, latest, run_id, principal)
     created: list[int] = []
     try:
-        winner = write_log.earlier_pending(rs_id, run_id)
-        if winner:
-            write_log.abort(rs_id, latest, run_id, principal)
-            raise Refused(f"run {winner} started its write first")
-        now_latest, _ = recordsets.recordset_info(syn, rs_id)
-        if now_latest != latest:
-            write_log.abort(rs_id, latest, run_id, principal)
-            raise Refused(f"{rs_id} moved from v{latest} to v{now_latest} before the write; rerun")
-        version = recordsets.store_new_version(syn, rs_id, rekeyed)
-        created.append(version)
-        write_log.removed(rs_id, version, latest, run_id, principal, len(rows))
-        summary["version"] = version
-        # a later upload of a manifest that still has the old id must not add it again; an old key that is
-        # also a new key (a chain or swap) is live again and gets no row. Before the export, so a failed
-        # export or read-back cannot leave the old keys without rows.
-        reused = {c["new_key"] for c in changes}
-        try:
-            removals.append_many(rs_id, [
-                {"key": c["old_key"], "status": "removed", "removed_in_version": version, "requested_by": principal,
-                 "reason": f"rekeyed to {c['new_key']} ({run_id})" + (f"; {c['reason']}" if c["reason"] else "")}
-                for c in changes if c["old_key"] not in reused], run_id, principal)  # one write: all keys or none
-        except Exception as err:
-            raise RuntimeError(f"the removals rows for the old keys are missing: {err!r}") from err
+        with recordsets.locked_write(syn, rs_id, write_log, run_id, principal, latest, retry_note="rerun"):
+            version = recordsets.store_new_version(syn, rs_id, rekeyed)
+            created.append(version)
+            write_log.removed(rs_id, version, latest, run_id, principal, len(rows))
+            summary["version"] = version
+            # a later upload of a manifest that still has the old id must not add it again; an old key that is
+            # also a new key (a chain or swap) is live again and gets no row. Before the export, so a failed
+            # export or read-back cannot leave the old keys without rows.
+            reused = {c["new_key"] for c in changes}
+            try:
+                removals.append_many(rs_id, [
+                    {"key": c["old_key"], "status": "removed", "removed_in_version": version, "requested_by": principal,
+                     "reason": f"rekeyed to {c['new_key']} ({run_id})" + (f"; {c['reason']}" if c["reason"] else "")}
+                    for c in changes if c["old_key"] not in reused], run_id, principal)  # one write: all keys or none
+            except Exception as err:
+                raise RuntimeError(f"the removals rows for the old keys are missing: {err!r}") from err
 
-        def on_version(v):
-            write_log.record(rs_id, v, run_id, len(rows), base=version, principal=principal)
-            created.append(v)
+            def on_version(v):
+                write_log.record(rs_id, v, run_id, len(rows), base=version, principal=principal)
+                created.append(v)
 
-        recordsets.export_via_grid(syn, rs_id, on_version=on_version)
-        write_log.finish(rs_id, latest, run_id, principal)
-    except Refused:
-        raise
-    except BaseException as err:
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)  # aborts when nothing was created
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        if isinstance(err, Exception) and created:
+            recordsets.export_via_grid(syn, rs_id, on_version=on_version)
+    except recordsets.WriteRefused as err:
+        raise Refused(err.message) from err
+    except Exception as err:
+        if created:
             raise RuntimeError(f"v{created[0]} was stored, then: {err!r}") from err
         raise
 

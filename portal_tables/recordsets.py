@@ -92,6 +92,7 @@ import shutil
 import os
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -1412,12 +1413,72 @@ def principal_id(syn) -> str:
 
 
 class WriteRefused(Exception):
-    """A logged write was not started: ``status`` is ``locked`` or ``retry``."""
+    """A logged write was not started: ``status`` is ``locked`` or ``retry`` (a script may add its own)."""
 
     def __init__(self, status: str, message: str):
         super().__init__(message)
         self.status = status
         self.message = message
+
+
+def lock_message(write_log, rs_id: str, run_id: str, since) -> str | None:
+    """Why another run's unfinished write blocks this one (``since``: this process's start), or None."""
+    locker = write_log.locked_by(rs_id, run_id, since=since)
+    if locker:
+        return f"run {locker} has an unfinished write (pending row under {LOCK_HOURS} h old)"
+    return None
+
+
+@contextmanager
+def locked_write(syn, rs_id: str, write_log, run_id: str, principal, base: int,
+                 retry_note: str = "the next run replays it", extra_refusal=None, after_recover=None):
+    """Hold the write-log lock around the ``with`` body: a ``pending`` row, then ``done`` when the body ends.
+
+    ``base`` is the RecordSet version the content was computed against. Raises
+    :class:`WriteRefused` (nothing written, the pending row aborted) when another
+    run's earlier pending row holds the lock (``locked``), or when the RecordSet
+    moved past ``base`` since it was read (``retry``). ``extra_refusal()``, if
+    given, runs between these two checks and returns ``(status, message)`` to
+    refuse, or None. The body logs the versions it creates. It may raise
+    :class:`WriteRefused` itself, after it resolved the pending row; it must not
+    return early unless the write is complete. If the body fails, a version whose
+    write raised after it was created is claimed through :func:`recover_pending`,
+    or the run's pending row is resolved as aborted; ``after_recover(recovered)``,
+    if given, then runs, and the original exception propagates.
+    """
+    write_log.start(rs_id, base, run_id, principal)
+    try:
+        refusal = None
+        # Lock race: another run may have started between the caller's check and
+        # our pending row. The earlier pending row (ties by runId) keeps the lock.
+        winner = write_log.earlier_pending(rs_id, run_id)
+        if winner:
+            refusal = ("locked", f"run {winner} started its write first; skipped")
+        elif extra_refusal is not None:
+            refusal = extra_refusal()
+        # The content was computed against ``base``; if the RecordSet moved, recompute next run.
+        if not refusal:
+            now_latest, _ = recordset_info(syn, rs_id)
+            if now_latest != base:
+                refusal = ("retry", (
+                    f"{rs_id} moved from v{base} to v{now_latest} before the write; nothing written, "
+                    f"{retry_note}"))
+        if refusal:
+            write_log.abort(rs_id, base, run_id, principal)
+            raise WriteRefused(*refusal)
+        yield
+        write_log.finish(rs_id, base, run_id, principal)
+    except WriteRefused:
+        raise
+    except BaseException:
+        try:
+            newest, _ = recordset_info(syn, rs_id)
+            recovered = recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
+            if after_recover is not None:
+                after_recover(recovered)
+        except Exception:
+            logger.exception("%s: could not resolve the pending write-log row", rs_id)
+        raise
 
 
 def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, rows: int, base: int,
@@ -1427,49 +1488,21 @@ def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, r
     With no ``csv_path`` the session only exports (:func:`export_via_grid`, a re-validation).
     ``base`` is the RecordSet version the content was computed against. Logs
     ``start``, one ``written`` row per exported version, then ``done``, and
-    returns the versions created. Raises :class:`WriteRefused` (nothing
-    written, the pending row aborted) when another run's earlier pending row
-    holds the lock, or when the RecordSet moved past ``base`` since it was read.
-    If the write fails, exports that completed are already logged; a version
-    whose export raised after it was created is claimed through
-    :func:`recover_pending`, or the run's pending row is resolved as aborted,
-    and the original exception propagates.
+    returns the versions created. Raises :class:`WriteRefused` as
+    :func:`locked_write` does. If the write fails, exports that completed are
+    already logged; the failure is resolved as :func:`locked_write` does.
     """
-    write_log.start(rs_id, base, run_id, principal)
     created: list[int] = []
 
     def on_version(v):
         write_log.record(rs_id, v, run_id, rows, base=base, principal=principal)
         created.append(v)
 
-    try:
-        # Lock race: another run may have started between the caller's check and
-        # our pending row. The earlier pending row (ties by runId) keeps the lock.
-        winner = write_log.earlier_pending(rs_id, run_id)
-        if winner:
-            write_log.abort(rs_id, base, run_id, principal)
-            raise WriteRefused("locked", f"run {winner} started its write first; skipped")
-        # The content was computed against ``base``; if the RecordSet moved, recompute next run.
-        now_latest, _ = recordset_info(syn, rs_id)
-        if now_latest != base:
-            write_log.abort(rs_id, base, run_id, principal)
-            raise WriteRefused("retry", (
-                f"{rs_id} moved from v{base} to v{now_latest} before the write; nothing written, "
-                f"{retry_note}"))
+    with locked_write(syn, rs_id, write_log, run_id, principal, base, retry_note=retry_note):
         if csv_path is None:
             export_via_grid(syn, rs_id, on_version=on_version)
         else:
             write_via_grid(syn, rs_id, csv_path, on_version=on_version)
-        write_log.finish(rs_id, base, run_id, principal)
-    except WriteRefused:
-        raise
-    except BaseException:
-        try:
-            newest, _ = recordset_info(syn, rs_id)
-            recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
     return created
 
 
