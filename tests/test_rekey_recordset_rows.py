@@ -131,6 +131,18 @@ def test_locked_recordset_is_reported_and_not_written(tmp_path, log):
     assert_nothing_written(f)
 
 
+def test_an_earlier_pending_row_of_another_run_stops_the_write(tmp_path, log, removals):
+    f = fake_rs(log=log)
+    fake = FakeSynapse(log, synA=f)
+    # another run's earlier row appears after the pre-check, once our own pending row is logged
+    with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "dcc-other-1"):
+        assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log, execute=True) == 1
+    s = summary(tmp_path)["synA"]
+    assert s["status"] == "refused" and s["message"] == "run dcc-other-1 started its write first; skipped"
+    assert f.events == [] and len(f.versions) == 1 and removals.rows == []
+    assert log._read("synA")["status"].tolist() == ["pending", "aborted"]
+
+
 def test_execute_logs_start_store_record_export_finish_and_writes_removals(tmp_path, log, removals, capsys):
     f = fake_rs(log=log)
     fake = FakeSynapse(log, synA=f)

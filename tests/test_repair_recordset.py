@@ -129,3 +129,28 @@ def test_execute_aborts_the_pending_row_when_the_store_fails(tmp_path, log):
     fake.store = boom
     assert run(tmp_path, fake, log=log, execute=True) == 1
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
+
+
+def test_a_stored_version_that_differs_from_the_corrected_file_is_reported(tmp_path, log, capsys):
+    fake = fake_rs(log)
+    fake.export = lambda syn, rs_id, on_version=None, **kw: (fake.versions.append(V1), on_version(len(fake.versions)))
+    assert run(tmp_path, fake, log=log, execute=True) == 1
+    out = capsys.readouterr().out
+    assert "synRS: mismatch stored v2, exported v3, but the final version differs from the corrected file" in out
+    assert log._read("synRS")["status"].tolist() == ["pending", "written", "written", "done"]
+
+
+def test_a_recordset_that_moved_before_the_write_is_not_written(tmp_path, log, capsys):
+    fake = fake_rs(log)
+    info = fake.info
+
+    def moved(syn, rs_id):  # another version lands once our pending row is logged
+        if log.rows and len(fake.versions) == 1:
+            fake.versions.append(V1)
+        return info(syn, rs_id)
+    fake.info = moved
+    assert run(tmp_path, fake, log=log, execute=True) == 1
+    assert ("synRS: refused synRS moved from v1 to v2 before the write; nothing written, rerun"
+            in capsys.readouterr().out)
+    assert fake.events == [] and len(fake.versions) == 2  # only the foreign version; nothing stored or exported
+    assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
