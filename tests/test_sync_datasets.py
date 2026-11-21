@@ -279,6 +279,30 @@ def test_access_texts_containing_commas_are_not_split():
     assert out["accessInformation"].iloc[0] == [utils.DUO_DICT["DUO:0000029"], npuncu]
 
 
+def _access_texts(cell):
+    """The accessInformation add_missing_info gives for one DatasetDataUseCodes cell (NaN kept as it is)."""
+    df = prepare([dict(MANIFEST_14[0])], legacy=False)
+    df["DatasetDataUseCodes"] = pd.Series([cell], index=df.index, dtype=object)
+    out = sync_datasets.add_missing_info(None, df, GRANTS, PUBS)
+    return out["DatasetDataUseCodes"].iloc[0]
+
+
+def test_data_use_codes_json_array_gives_its_items():
+    rtn, npuncu = utils.DUO_DICT["DUO:0000029"], utils.DUO_DICT["DUO:0000018"]
+    assert _access_texts('["RTN","NPUNCU"]') == [rtn, npuncu]  # was split on the commas inside the brackets
+    assert _access_texts("RTN,NPUNCU") == [rtn, npuncu]
+
+
+def test_data_use_codes_trailing_comma_gives_no_empty_item(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert _access_texts("RTN,") == [utils.DUO_DICT["DUO:0000029"]]
+    assert caplog.text == ""  # the empty piece is not looked up, so it logs no unmapped code
+
+
+def test_data_use_codes_nan_cell_gives_no_access_text():
+    assert _access_texts(float("nan")) == [sync_datasets.NO_ACCESS_TEXT]  # raised AttributeError on .split before
+
+
 def test_no_doi_listed_is_standardized_for_datasets():
     rows = [
         dict(MANIFEST_14[0], **{"Dataset Doi": "No DOI Listed", "PublicationView Key": "123"}),
