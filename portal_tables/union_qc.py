@@ -45,6 +45,7 @@ import pandas as pd
 from pathlib import Path
 import re
 import build_tag_lists
+from cells import parse_list
 import comma_terms
 import manifest_cleanup
 import merge_tables
@@ -413,7 +414,7 @@ def _cell_items(column: str, value) -> list[str]:
         return [value.strip()]  # a spreadsheet-mangled PMID key (D-Q35): one item, for apply_key_corrections
     if comma_terms.is_keyword_column(column.replace(" ", "")):  # a display name or a class label
         return comma_terms.split_keyword_cell(value)
-    return utils.split_cell(value)
+    return parse_list(value)
 
 
 def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
@@ -447,9 +448,9 @@ def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
             row[col] = ", ".join(dict.fromkeys(i for v in group[col] for i in _cell_items(col, v)))
         stats["merged_groups"] += int(len(group) > 1)
         if id_col in union.columns and len(group) > 1:
-            ids = list(dict.fromkeys(i for v in group[id_col] for i in utils.split_cell(v)))
+            ids = list(dict.fromkeys(i for v in group[id_col] for i in parse_list(v)))
             if len(ids) > 1:
-                grants = list(dict.fromkeys(i for v in group[grant_col] for i in utils.split_cell(v))) if grant_col in union.columns else []
+                grants = list(dict.fromkeys(i for v in group[grant_col] for i in parse_list(v))) if grant_col in union.columns else []
                 stats["id_conflicts"].append({"alias": row[alias], "ids": ",".join(ids), "grants": ",".join(grants),
                                               "rows": len(group)})
         merged.append(row)
@@ -478,13 +479,13 @@ def apply_key_corrections(manifest: pd.DataFrame, component: str, path) -> tuple
     manifest = manifest.copy()
     for fix in fixes.to_dict("records"):
         column = to_display.get(fix["column"], fix["column"])
-        wanted = set(utils.split_cell(fix["row_key"]))
+        wanted = set(parse_list(fix["row_key"]))
         record = {"key": fix["row_key"], "column": column, "current_value": fix["current_value"],
                   "proposed_value": fix["proposed_value"]}
         if column not in manifest.columns or key_col not in manifest.columns:
             report.append({**record, "status": "no_column"})
             continue
-        hits = [i for i, v in manifest[key_col].items() if set(utils.split_cell(v)) == wanted]
+        hits = [i for i, v in manifest[key_col].items() if set(parse_list(v)) == wanted]
         if not hits:
             report.append({**record, "status": "not_found"})
         for i in hits:

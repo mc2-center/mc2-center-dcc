@@ -10,7 +10,7 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
-import utils
+from cells import parse_list
 
 CSV_PATH = Path(__file__).with_name("comma_terms.csv")
 COLUMNS = ["term", "source", "added"]
@@ -57,15 +57,7 @@ def split_keyword_cell(value, rejoined: list | None = None, path=None) -> list[s
 
     The pieces of each rejoined term are appended to ``rejoined`` when given.
     """
-    items = utils.split_cell(value)
-    if isinstance(value, (list, tuple)) or (isinstance(value, str) and utils.parse_json_list(value) is not None):
-        return items
-    out = []
-    for group in group_pieces(items, path):
-        if len(group) > 1 and rejoined is not None:
-            rejoined.append(group)
-        out.append(", ".join(group))
-    return out
+    return parse_list(value, lambda pieces: group_pieces(pieces, path), rejoined)
 
 
 def learn(items, source: str, path=None) -> list[str]:

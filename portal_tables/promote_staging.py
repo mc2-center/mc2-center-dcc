@@ -40,6 +40,7 @@ from pathlib import Path
 import pandas as pd
 from synapseclient.models import Table
 
+from cells import is_null
 import utils
 
 RESOURCES = [r for r, c in utils.CONFIG.items() if "staging_table" in c]
@@ -67,7 +68,7 @@ def _cell(value):
     """Hashable, comparable form of a cell: nulls are blank, lists are tuples."""
     if isinstance(value, (list, tuple)):
         return tuple(_cell(v) for v in value)
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return ""
     return value
 

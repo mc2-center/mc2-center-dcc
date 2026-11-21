@@ -1,12 +1,14 @@
-"""How each list-cell parser treats the same inputs (characterization of the existing behavior).
+"""How each list-cell parser treats the same inputs.
 
-``SPLIT`` is the reference: what ``utils.split_cell`` gives for each input. The other parsers state
-only where they differ from it. Each row of ``INPUTS`` is one form a cell can take.
+``SPLIT`` is the reference: what ``cells.parse_list`` gives for each input (it was ``utils.split_cell``).
+The other parsers state only where they differ from it. Each row of ``INPUTS`` is one form a cell can take.
 """
 
+import numpy as np
 import pandas as pd
 import pytest
 
+import cells
 import comma_terms
 import create_grant_projects as cgp
 import model_contract
@@ -67,7 +69,7 @@ SPLIT = {
     "bool": ["True"],
     "list": ["a", "b"],
     "tuple": ["a", "b"],
-    "set": ["{'a'}"],  # a set is not parsed: its repr is split
+    "set": ["a"],  # changed: utils.split_cell split the repr of a set ("{'a'}")
     "list_none": ["None", "1"],  # a null item becomes the text "None"
     "list_nan": ["nan", "x"],
     "json": ["a", "b, c"],
@@ -93,8 +95,8 @@ def check(parser, overrides=None):
         assert parser(value) == expected[name], name
 
 
-def test_split_cell():
-    check(utils.split_cell)
+def test_parse_list():
+    check(cells.parse_list)
 
 
 def test_value_maps_split_items_matches_split_cell():
@@ -111,8 +113,18 @@ def test_split_items_keyword_keeps_known_comma_terms_whole(tmp_path):
     assert rejoined == [["Aged", "80 and over"]]
 
 
-def test_split_cell_keeps_a_comma_term_split():
-    assert utils.split_cell("Aged, 80 and over") == ["Aged", "80 and over"]
+def test_parse_list_splits_a_comma_term_unless_given_a_grouping():
+    assert cells.parse_list("Aged, 80 and over") == ["Aged", "80 and over"]
+    group = lambda pieces: [["Aged", "80 and over"]] if pieces == ["Aged", "80 and over"] else [[p] for p in pieces]  # noqa: E731
+    assert cells.parse_list("Aged, 80 and over", group) == ["Aged, 80 and over"]
+    assert cells.parse_list('["Aged", "80 and over"]', group) == ["Aged", "80 and over"]  # JSON items are not grouped
+    assert cells.parse_list(["Aged", "80 and over"], group) == ["Aged", "80 and over"]
+
+
+def test_is_null():
+    assert all(cells.is_null(v) for v in [None, NAN, pd.NA, pd.NaT, np.nan])
+    not_null = ["", " ", "nan", 0, False, [], ["a", "b"], [None], ("a", "b"), {"a"}, np.array([1, 2]), np.array([np.nan]), pd.Series([1, 2])]
+    assert not any(cells.is_null(v) for v in not_null)  # a list-like value does not raise
 
 
 @pytest.mark.parametrize("column", ["", "StudyKeywords"])
@@ -137,7 +149,7 @@ def test_recordsets_split_list_cell(column):
 
 
 def test_parse_json_list():
-    got = {k: utils.parse_json_list(v) for k, v in INPUTS.items() if isinstance(v, str)}
+    got = {k: cells.json_list(v) for k, v in INPUTS.items() if isinstance(v, str)}
     assert got == {
         "plain": None, "padded": None, "doubled": None, "leading": None, "trailing": None, "empty": None, "blank": None,
         "json": ["a", "b, c"], "json_padded": ["a"], "json_empty": [], "json_numbers": [1, 2], "json_null": ["a", None],
@@ -186,22 +198,11 @@ def test_recordsets_parse_cell():
 
 
 def test_split_people():
-    # not parsed as JSON; a null item of a list is dropped, a set is read
-    overrides = {
-        "set": ["a"],
-        "list_none": ["1"],
-        "list_nan": ["x"],
-        "json": ['["a"', '"b', 'c"]'],
-        "json_padded": ['[ "a" ]'],
-        "json_empty": ["[]"],
-        "json_numbers": ["[1", "2]"],
-        "json_null": ['["a"', "null]"],
-        "json_nested": ['[["a"]', '"b"]'],
-        "json_blank_items": ['[""', '" x "]'],
-        "json_escape": [r'["a\\u2010b"]'],
-        "py_quoted": ["['a'", "'b']"],
-    }
-    check(cgp._split_people, overrides)
+    # a null item of a list is dropped (parse_list keeps it as "None" / "nan")
+    check(cgp._split_people, {"list_none": ["1"], "list_nan": ["x"]})
+    # fix (a): a JSON-array cell gives its items. The old function split its text on the commas:
+    assert cgp._split_people('["Ann Lee","Bo, Jr."]') == ["Ann Lee", "Bo, Jr."]  # was ['["Ann Lee"', '"Bo', 'Jr."]']
+    assert cgp._split_people("[]") == []  # was ["[]"]
 
 
 def test_list_to_string():
@@ -260,5 +261,4 @@ def test_null_tests():
     assert promote_staging._cell(["a", None]) == ("a", "")
     assert str(recordsets._to_dt("2026-01-02")) == "2026-01-02 00:00:00+00:00"
     assert str(recordsets._to_dt(1000)) == "1970-01-01 00:00:01+00:00"
-    with pytest.raises(ValueError):  # a list of several values is not a null test result
-        cgp._text(["a", "b"])
+    assert cgp._text(["a", "b"]) == "['a', 'b']"  # changed: a list of several values made pd.isna raise ValueError

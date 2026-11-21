@@ -9,6 +9,7 @@ from typing import List
 
 import pandas as pd
 from synapseclient.models import Table
+from cells import parse_list
 import crosswalk
 import model_contract
 import utils
@@ -44,7 +45,7 @@ def add_missing_info(
     for col in new_cols:
         pubs[col] = ""
         for i, row in pubs.iterrows():
-            n = utils.split_cell(row["GrantViewKey"])
+            n = parse_list(row["GrantViewKey"])
             extracted = []
             for g in n:
                 if len(grants[grants.grantNumber == g][col].values) > 0:

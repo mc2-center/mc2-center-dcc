@@ -128,12 +128,6 @@ def test_strip_newlines_only_touches_text_columns():
     assert df["text"].iloc[0] == "a\r\nb"  # input untouched
 
 
-def test_split_cell_parses_json_array_keeping_commas_inside_items():
-    assert utils.split_cell('["Aged, 80 and over", "Humans"]') == ["Aged, 80 and over", "Humans"]
-    assert utils.split_cell("A, B,C") == ["A", "B", "C"]
-    assert utils.split_cell("[not json, x]") == ["[not json", "x]"]
-
-
 def test_manifest_csv_help_states_the_shape_and_that_manifest_source_is_ignored(monkeypatch, capsys):
     monkeypatch.setattr("sys.argv", ["sync", "-h"])
     with pytest.raises(SystemExit):

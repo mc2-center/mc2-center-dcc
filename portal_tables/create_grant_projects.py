@@ -15,6 +15,7 @@ from synapseclient import Project, Wiki, Folder, Team
 from synapseclient.models import Table, Team as TeamModel
 from synapseclient.operations import find_entity_id
 
+from cells import is_null, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -92,7 +93,7 @@ def get_args():
 
 def _text(value):
     """Cell value as text: ``None`` and NaN become the empty string."""
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return ""
     return str(value)
 
@@ -100,10 +101,8 @@ def _text(value):
 def _split_people(value):
     """Comma-separated people cell to a list; missing or empty gives ``[]``."""
     if isinstance(value, (list, tuple, set)):
-        names = [_text(v) for v in value]
-    else:
-        names = _text(value).split(",")
-    return [n.strip() for n in names if n.strip()]
+        value = [v for v in value if not is_null(v)]
+    return parse_list(value)
 
 
 def create_wiki_pages(syn, project_id, grant):
@@ -267,7 +266,7 @@ def resolve_consortium(syn, values):
     See ``utils.resolve_consortium_keys``; unknown values raise ``ValueError``.
     """
     cells = list(values)
-    if not any(utils.split_cell(c) for c in cells):
+    if not any(parse_list(c) for c in cells):
         return pd.Series([""] * len(cells), index=values.index, dtype=object)
     names = utils.resolve_consortium_keys(syn, cells)
     return pd.Series([", ".join(n) for n in names], index=values.index, dtype=object)
@@ -344,7 +343,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     # that has no number, would get a duplicate project or a bare KeyError.
     # Fail before anything is created (also on a dry run).
     def _text(value):
-        return "" if pd.isna(value) else str(value).strip()
+        return "" if is_null(value) else str(value).strip()
 
     def _describe(row):
         name = _text(row["GrantName"]) if "GrantName" in row.index else ""

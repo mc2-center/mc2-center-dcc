@@ -78,6 +78,7 @@ from synapseclient.models import Folder, MaterializedView, Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+from cells import is_null
 import crosswalk
 import merge_tables
 import model_contract
@@ -283,7 +284,7 @@ def _as_text(series: pd.Series) -> pd.Series:
     """String cells; an integral float (a numeric column holding blanks) loses its ``.0``."""
     if pd.api.types.is_float_dtype(series):
         return series.map(lambda v: "" if pd.isna(v) else (str(int(v)) if float(v).is_integer() else str(v)))
-    return series.map(lambda v: "" if v is None or (not isinstance(v, (str, list)) and pd.isna(v)) else v)
+    return series.map(lambda v: "" if is_null(v) else v)
 
 
 def legacy_renames(component: str) -> dict[str, str]:
@@ -330,7 +331,7 @@ def _flat(value) -> str:
     """A cell as comparable text: lists ", "-joined, blank for missing."""
     if isinstance(value, (list, tuple)):
         return ", ".join(str(v).strip() for v in value)
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return ""
     text = str(value).strip()
     if text.startswith("[") and text.endswith("]"):

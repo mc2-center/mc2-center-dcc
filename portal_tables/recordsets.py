@@ -103,6 +103,7 @@ from synapseclient.core import utils as synapse_utils
 from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
+from cells import is_null, json_list, parse_list
 import comma_terms
 import model_contract
 import utils
@@ -140,19 +141,14 @@ _GRID_ESCAPE = re.compile(r"\\(?:u(00[89][0-9a-fA-F]|20[0-9a-fA-F]{2})|/)")
 
 def parse_cell(value):
     """A stored CSV cell as a list (JSON array) or string; empty is ``""``."""
-    if value is None or (not isinstance(value, (str, list)) and pd.isna(value)):
+    if is_null(value):
         return ""
     if isinstance(value, list):
         return value
     text = str(value)
-    stripped = text.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        try:
-            parsed = json.loads(stripped)
-        except ValueError:
-            return text
-        if isinstance(parsed, list):
-            return [grid_unescape(str(v)) for v in parsed]
+    parsed = json_list(text)
+    if parsed is not None:
+        return [grid_unescape(str(v)) for v in parsed]
     return text
 
 
@@ -279,7 +275,7 @@ def _split_list_cell(value: str, column: str = "") -> list[str]:
         return parsed
     if comma_terms.is_keyword_column(column):
         return comma_terms.split_keyword_cell(value)
-    return utils.split_cell(value)
+    return parse_list(value)
 
 
 # --- reading ----------------------------------------------------------------
@@ -460,7 +456,7 @@ def find_recordset(syn, folder_id: str, component: str) -> str | None:
 
 def _to_dt(value):
     """A write-log time (datetime, epoch milliseconds or ISO text) as a UTC Timestamp."""
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return pd.NaT
     if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
         return pd.to_datetime(int(value), unit="ms", utc=True)
@@ -468,7 +464,7 @@ def _to_dt(value):
 
 
 def _int_or_none(value):
-    return None if value is None or (not isinstance(value, str) and pd.isna(value)) else int(value)
+    return None if is_null(value) else int(value)
 
 
 class WriteLog:

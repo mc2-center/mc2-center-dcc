@@ -1,7 +1,6 @@
 """Shared functions used by syncing scripts"""
 
 import csv
-import json
 import logging
 import os
 import argparse
@@ -15,6 +14,8 @@ from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
+
+from cells import parse_list
 
 logger = logging.getLogger(__name__)
 
@@ -315,9 +316,12 @@ def get_args(resource: str) -> argparse.Namespace:
     return args
 
 
-# TODO: check if we still need this function?
 def convert_to_stringlist(col: pd.Series) -> pd.Series:
-    """Convert a string column to a list; an empty cell becomes ``[]``, not ``[""]``."""
+    """Convert a string column to a list; an empty cell becomes ``[]``, not ``[""]``.
+
+    It is not ``parse_list``: it keeps empty pieces (``a,,b``) and the spaces around a piece, and it
+    does not read a JSON array.
+    """
     return col.str.replace(", ", ",").str.split(",").map(lambda v: [] if v == [""] else v)
 
 
@@ -395,31 +399,6 @@ def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
     return [lookup[i] for i in wanted]
 
 
-def parse_json_list(text: str) -> list | None:
-    """The list a JSON-array cell holds, or ``None`` if ``text`` is not one."""
-    stripped = text.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        try:
-            parsed = json.loads(stripped)
-        except ValueError:
-            return None
-        if isinstance(parsed, list):
-            return parsed
-    return None
-
-
-def split_cell(value) -> list[str]:
-    """A manifest cell (JSON array, comma-separated string or list) as a list of strings."""
-    if isinstance(value, (list, tuple)):
-        items = [str(v) for v in value]
-    elif value is None or (not isinstance(value, str) and pd.isna(value)):
-        items = []
-    else:
-        parsed = parse_json_list(str(value))
-        items = [str(v) for v in parsed] if parsed is not None else str(value).split(",")
-    return [i.strip() for i in items if i and i.strip()]
-
-
 def known_consortium_names(syn: Synapse) -> set[str]:
     """Display names in the Consortium table (read-only)."""
     return set(_consortium_rows(syn)["consortiumDisplayName"])
@@ -439,7 +418,7 @@ def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[
     resolved: dict[str, str] = {}
     unknown = []
     for cell in cells:
-        for token in split_cell(cell):
+        for token in parse_list(cell):
             if token in resolved or token in unknown:
                 continue
             if token in known_names:
@@ -460,7 +439,7 @@ def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[
     out = []
     for cell in cells:
         names = []
-        for token in split_cell(cell):
+        for token in parse_list(cell):
             if resolved[token] not in names:
                 names.append(resolved[token])
         out.append(names)

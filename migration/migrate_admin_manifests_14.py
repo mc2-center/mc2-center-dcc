@@ -68,6 +68,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import migrate_grant_tables_14 as grants  # noqa: E402  (also puts portal_tables on sys.path)
 
+from cells import is_null, parse_list
 import model_contract  # noqa: E402
 import recordsets  # noqa: E402
 import utils  # noqa: E402
@@ -173,7 +174,7 @@ def mint_person_key(name) -> str:
     """``person.<name-slug>``: trailing credentials dropped (:func:`strip_credentials`), NFKD-normalised without
     accents, lowercase, each run of non-alphanumeric characters one ``-``, no leading or trailing ``-``.
     Blank when ``name`` has no letter or digit."""
-    if name is None or (not isinstance(name, str) and pd.isna(name)):
+    if is_null(name):
         return ""
     text = unicodedata.normalize("NFKD", strip_credentials(str(name))).encode("ascii", "ignore").decode().lower()
     slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
@@ -256,7 +257,7 @@ def convert_admin_table(source: pd.DataFrame, component: str, normalizer: "value
     for column in keyed:  # one or more keys, rejoined; a ConsortiumKey name becomes its program.* ID
         cells = []
         for k, items in zip(out[key], out[column]):
-            items = items if isinstance(items, list) else utils.split_cell(items)
+            items = items if isinstance(items, list) else parse_list(items)
             if column == "ConsortiumKey":
                 mapped = []
                 for item in items:

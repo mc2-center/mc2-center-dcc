@@ -43,10 +43,10 @@ import re
 
 import pandas as pd
 
+from cells import is_null, parse_list
 import comma_terms
 import model_contract
 import recordsets
-import utils
 
 logger = logging.getLogger(__name__)
 CHANGE_COLUMNS = ["key", "column", "from", "to", "rule"]
@@ -72,8 +72,7 @@ def split_items(text: str, keyword: bool = False, rejoined: list | None = None) 
 
     With ``keyword``, comma text keeps known comma terms whole (pieces appended to ``rejoined``).
     """
-    text = "" if text is None else text
-    return comma_terms.split_keyword_cell(text, rejoined) if keyword else utils.split_cell(text)
+    return comma_terms.split_keyword_cell(text, rejoined) if keyword else parse_list(text)
 
 
 def _squash(text: str) -> str:
@@ -392,7 +391,7 @@ class Normalizer:
 
     def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list, grant: str = ""):
         """The normalized cell: a list for list columns, else a string."""
-        text = "" if cell is None or (not isinstance(cell, (str, list)) and pd.isna(cell)) else cell
+        text = "" if is_null(cell) else cell
         target = next((t for t in ((column, str(key), ROW, grant), (column, str(key), ROW)) if t in self.overrides), None)
         row_override = self.overrides[target] if target is not None else None
         if row_override is not None:

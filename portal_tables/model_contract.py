@@ -25,6 +25,7 @@ import pandas as pd
 from synapseclient.core.constants import concrete_types
 from synapseclient.models import File
 
+from cells import json_list
 import utils
 
 logger = logging.getLogger(__name__)
@@ -309,16 +310,11 @@ def array_columns(component: str) -> set[str]:
 def _parse_json_list(value):
     """A JSON-array cell as a list of strings; any other cell unchanged."""
     if isinstance(value, str):
-        text = value.strip()
-        if text.startswith("[") and text.endswith("]"):
-            try:
-                parsed = json.loads(text)
-            except ValueError:
-                return value
-            if isinstance(parsed, list):
-                import recordsets  # here, not at the top: recordsets imports this module
+        parsed = json_list(value)
+        if parsed is not None:
+            import recordsets  # here, not at the top: recordsets imports this module
 
-                return [recordsets.grid_unescape(str(v)) for v in parsed]
+            return [recordsets.grid_unescape(str(v)) for v in parsed]
     return value
 
 
