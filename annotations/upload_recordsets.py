@@ -164,10 +164,9 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="failed", message=f"bad upload keys: {err}")
         return summary
 
-    locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
-    if locker:
-        summary.update(status="locked", message=(
-            f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old); skipped"))
+    locked = recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
+    if locked:
+        summary.update(status="locked", message=f"{locked}; skipped")
         return summary
 
     # A run that died after exporting leaves a pending row; claim its versions.

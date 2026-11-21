@@ -8,7 +8,7 @@ table, this stores a new version without those rows directly, then opens a
 fresh Grid session with no import and one export, so Synapse re-validates it.
 The binding, upsert key and CurationTask are kept.
 
-Per RecordSet: take the write-log lock as ``write_logged`` does (a ``pending``
+Per RecordSet: take the write-log lock with ``recordsets.locked_write`` (a ``pending``
 row, settled with ``earlier_pending``); refuse, writing nothing, while a Grid
 session is open on it that the runner can see (``Grid.list`` may list only the
 runner's own sessions: best effort, so a contributor's stale session can still

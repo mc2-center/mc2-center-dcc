@@ -173,6 +173,8 @@ def test_lock_from_another_runs_pending_row_skips_the_grant(tmp_path, log):
     code, rep = run(tmp_path, fake)
     assert code == 1 and fake.writes == []  # non-zero: the upload is not done
     assert status_of(rep) == "locked"
+    assert ("run other-run has an unfinished write (pending row under 2 h old); skipped"
+            in (rep / "syn100" / "summary.txt").read_text())
 
 
 def test_crashed_run_is_recovered_before_replay(tmp_path, log):
