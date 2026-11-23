@@ -1000,3 +1000,37 @@ def test_locked_write_logs_a_failed_recovery_and_raises_the_original_error(caplo
     record = next(r for r in caplog.records if "could not resolve the pending write-log row" in r.getMessage())
     assert record.getMessage().startswith("syn1:") and isinstance(record.exc_info[1], RuntimeError)
     assert log._read("syn1")["status"].tolist() == ["pending"]  # recovery failed, so the row stays for the next run
+
+
+def _http_error(status):
+    from synapseclient.core.exceptions import SynapseHTTPError
+
+    return SynapseHTTPError(f"{status} error", response=SimpleNamespace(status_code=status))
+
+
+def _read_with_get_errors(tmp_path, errors):
+    path = tmp_path / "rs.csv"
+    path.write_text(f"{K},Title\na,x\n")
+    outcomes = list(errors) + [SimpleNamespace(path=str(path))]
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.side_effect = outcomes
+        try:
+            return rs.read_recordset("syn", "syn1", version=3), cls.return_value.get.call_count
+        except Exception as err:
+            return err, cls.return_value.get.call_count
+
+
+def test_read_recordset_retries_a_403_from_the_file_host(tmp_path):
+    out, calls = _read_with_get_errors(tmp_path, [_http_error(403)])
+    assert out.loc[0, "Title"] == "x" and calls == 2
+
+
+def test_read_recordset_gives_up_after_download_tries_403s(tmp_path):
+    err, calls = _read_with_get_errors(tmp_path, [_http_error(403)] * rs.DOWNLOAD_TRIES)
+    assert getattr(err.response, "status_code", None) == 403 and calls == rs.DOWNLOAD_TRIES
+
+
+def test_read_recordset_does_not_retry_other_errors(tmp_path):
+    for error in (_http_error(404), ValueError("boom")):
+        err, calls = _read_with_get_errors(tmp_path, [error])
+        assert err is error and calls == 1

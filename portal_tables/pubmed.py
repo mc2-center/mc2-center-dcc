@@ -28,6 +28,8 @@ import xml.etree.ElementTree as ET
 
 import requests
 
+import utils
+
 logger = logging.getLogger(__name__)
 
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
@@ -53,29 +55,23 @@ def _request(get, url, params, parse, interval, sleep, clock):
     Raises the last error once the retries are used up (or at once for a
     non-retryable status such as 400).
     """
-    last = None
-    for attempt in range(len(BACKOFF) + 1):
-        if attempt:
-            sleep(BACKOFF[attempt - 1])
+    def attempt():
         wait = interval - (clock() - _last_request[0])
         if wait > 0:
             sleep(wait)
         _last_request[0] = clock()
-        try:
-            response = get(url, params)
-        except requests.RequestException as err:
-            last = err
-            continue
+        response = get(url, params)
         status = getattr(response, "status_code", 200)
         if status == 429 or status >= 500:
-            last = Retryable(f"HTTP {status}")
-            continue
+            raise Retryable(f"HTTP {status}")
         response.raise_for_status()
-        try:
-            return parse(response)
-        except ET.ParseError as err:
-            last = err
-    raise last
+        return parse(response)
+
+    def retryable(err):  # raise_for_status errors (400 and the like) are not retried
+        return isinstance(err, (Retryable, ET.ParseError)) or (
+            isinstance(err, requests.RequestException) and not isinstance(err, requests.HTTPError))
+
+    return utils.retry(attempt, len(BACKOFF) + 1, retryable, waits=BACKOFF, sleep=sleep)
 
 
 def author_name(author: ET.Element) -> str:

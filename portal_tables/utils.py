@@ -14,6 +14,7 @@ from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
+import time
 
 from cells import is_placeholder, parse_list
 
@@ -702,3 +703,31 @@ def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str, entit
 
     return download_type, download_id
     
+
+
+def retry(call, tries, retry_if, waits=(), sleep=time.sleep, on_retry=None):
+    """Run ``call()`` up to ``tries`` times and return its result.
+
+    ``retry_if(outcome)`` gets a result, or the error ``call`` raised; when it is true, another try follows.
+    ``on_retry(outcome)`` runs before each retry, then ``sleep(waits[i])`` for retry ``i`` (when ``waits`` has one).
+    After the last try, the last result is returned, or the last error is raised. An error that
+    ``retry_if`` rejects is raised at once.
+    """
+    for attempt in range(tries):
+        try:
+            outcome, failed = call(), False
+        except Exception as err:
+            if not retry_if(err):
+                raise
+            outcome, failed = err, True
+        if not failed and not retry_if(outcome):
+            return outcome
+        if attempt == tries - 1:
+            break
+        if on_retry:
+            on_retry(outcome)
+        if attempt < len(waits):
+            sleep(waits[attempt])
+    if failed:
+        raise outcome
+    return outcome

@@ -119,7 +119,7 @@ WRITE_LOG_COLUMNS = [
     "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
 ]
 LOCK_HOURS = 2
-DOWNLOAD_TRIES = 3  # _download_version_file: tries on a 403 from the file host
+DOWNLOAD_TRIES = 3  # read_recordset and _download_version_file: tries on a 403 from the file host
 REMOVAL_RUN_PREFIX = "dcc-removal-"  # runId of a DCC removal run (D-Q49); recover_pending keys on it
 # A removal run's re-validation (Grid export only, no direct store) opens its pending row under
 # ``<run id><suffix>``: the write log has no kind column, and the runId is what it can hold. recover_pending
@@ -319,7 +319,11 @@ def read_recordset(
         cached = Path(cache_dir) / rs_id / f"v{version}.csv"
         if _cache_hit(cached, md5):
             return _load_csv(cached, list_cols)
-    entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
+    entity = utils.retry(  # the file host sometimes answers 403 to a valid URL; the client does not retry it
+        lambda: RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn),
+        DOWNLOAD_TRIES, _is_403,
+        on_retry=lambda _: logger.warning("%s v%s: download answered 403; retrying", rs_id, version),
+    )
     path, fresh_dir = entity.path, None
     try:
         if _md5_mismatch(entity):
@@ -361,17 +365,24 @@ def _cache_hit(cached: Path, md5: str | None = None) -> bool:
     return recorded == synapse_utils.md5_for_file_hex(filename=str(cached))
 
 
+def _is_403(err) -> bool:
+    """True for the ``SynapseHTTPError`` the client raises when the file host answers 403 (and for no other error)."""
+    return isinstance(err, SynapseHTTPError) and getattr(err.response, "status_code", None) == 403
+
+
 def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
     """Download one version's file through its pre-signed URL, bypassing the client's file cache.
 
     The file host sometimes answers 403 to a valid URL (seen on about 1 in 6 downloads); each try gets a fresh URL.
     """
-    for attempt in range(DOWNLOAD_TRIES):
+    def fetch():
         url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
-        response = syn._requests_session.get(url, timeout=120)
-        if response.status_code != 403 or attempt == DOWNLOAD_TRIES - 1:
-            break
-        logger.warning("%s v%s: download answered 403; retrying with a fresh URL", rs_id, version)
+        return syn._requests_session.get(url, timeout=120)
+
+    response = utils.retry(
+        fetch, DOWNLOAD_TRIES, lambda r: not isinstance(r, Exception) and r.status_code == 403,
+        on_retry=lambda _: logger.warning("%s v%s: download answered 403; retrying with a fresh URL", rs_id, version),
+    )
     response.raise_for_status()
     dest.write_bytes(response.content)
     return dest
