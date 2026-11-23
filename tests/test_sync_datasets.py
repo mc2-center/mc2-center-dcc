@@ -281,6 +281,13 @@ def test_identify_download_type_accepts_both_keys(monkeypatch):
     assert seen == ["syn5", "syn5"]
 
 
+def test_identify_download_type_skips_a_leading_comma(monkeypatch):
+    seen = []
+    monkeypatch.setattr(utils.operations, "get", lambda eid, **k: seen.append(eid) or None)
+    REAL_IDENTIFY(None, pd.Series({"DatasetViewId": ", syn5,syn6"}), "Synapse")
+    assert seen == ["syn5"]
+
+
 def test_access_texts_containing_commas_are_not_split():
     npuncu = utils.DUO_DICT["DUO:0000018"]
     assert "," in npuncu  # the case that used to be split into fragments
@@ -398,3 +405,28 @@ def test_main_reads_staging_grants_and_publications_by_default(monkeypatch):
 def test_main_has_no_production_flag(monkeypatch):
     with pytest.raises(SystemExit):
         _run_main_collecting_table_reads(monkeypatch, ["--production"])
+
+
+def test_a_leading_comma_in_the_dataset_id_does_not_hide_the_first_id(monkeypatch):
+    seen = []
+    monkeypatch.setattr(sync_datasets.operations, "get", lambda eid, **k: seen.append(eid) or None)
+    df = prepare([dict(MANIFEST_14[0], **{"DatasetView_id": ",syn111, syn112"})], legacy=False)
+    sync_datasets.add_missing_info(None, df, GRANTS, PUBS)
+    assert seen == ["syn111"]
+
+
+def test_a_json_array_in_the_publication_key_gives_its_items():
+    pubs = pd.DataFrame(
+        {"pubMedId": [11111111, 22222222], "publicationTitle": ["T1", "T2"], "doi": ["d1", "d2"],
+         "publicationYear": [2020, 2021]}
+    )
+    row = dict(MANIFEST_14[1], **{"PublicationView Key": '["11111111", "22222222"]'})
+    out = sync_datasets.add_missing_info(None, prepare([row], legacy=False), GRANTS, pubs)
+    assert out.at[0, "pub"] == ["T1", "T2"]
+
+
+def test_list_columns_drop_empty_pieces_and_read_a_json_array():
+    row = dict(MANIFEST_14[0], **{"Assay": "RNA-seq,,ATAC-seq", "Tissue": '["Breast", "Lung"]'})
+    out = run([row])
+    assert sorted(out["assay"].iloc[0]) == ["ATAC-seq", "RNA-seq"]
+    assert sorted(out["tissue"].iloc[0]) == ["Breast", "Lung"]

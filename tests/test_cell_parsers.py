@@ -14,7 +14,6 @@ import create_grant_projects as cgp
 import model_contract
 import promote_staging
 import recordsets
-import utils
 import value_maps
 
 NAN = float("nan")
@@ -225,25 +224,6 @@ def test_list_to_string():
     assert f(None) is None
     assert f(5) == 5
     assert f(NAN) is NAN
-
-
-def test_convert_to_stringlist():
-    strings = pd.Series(
-        ["a, b", " a ,b ", "a,,b", ",a", "a,", "", "   ", '["a","b, c"]', "['a', 'b']", "Aged, 80 and over, Humans"],
-        dtype=object,
-    )
-    assert utils.convert_to_stringlist(strings).tolist() == [
-        ["a", "b"],
-        [" a ", "b "],  # whitespace is not stripped except after a comma
-        ["a", "", "b"],  # empty pieces are kept
-        ["", "a"],
-        ["a", ""],
-        [],
-        ["   "],
-        ['["a"', '"b', 'c"]'],  # a JSON array is split on its commas
-        ["['a'", "'b']"],
-        ["Aged", "80 and over", "Humans"],
-    ]
 
 
 def test_null_tests():

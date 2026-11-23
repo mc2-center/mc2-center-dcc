@@ -22,6 +22,7 @@ from synapseclient import Synapse
 from synapseclient.models import Table
 
 import utils
+from cells import parse_list
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +350,7 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
             is_str = col.map(lambda v: isinstance(v, str))
             if is_str.any():
                 col = col.astype(object).copy()
-                col[is_str] = utils.convert_to_stringlist(col[is_str])
+                col[is_str] = col[is_str].map(parse_list)
         elif kind == "int" and live_type == "INTEGER":
             col = pd.to_numeric(col.replace("", pd.NA), errors="raise").astype("Int64")
         elif kind == "bool" and live_type == "BOOLEAN":

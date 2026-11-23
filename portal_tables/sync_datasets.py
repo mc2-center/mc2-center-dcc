@@ -135,7 +135,7 @@ def add_missing_info(
         # Use the actual Synapse entity ID (DatasetViewId), not DatasetAlias,
         # since DatasetAlias is often an external accession (e.g. a GEO
         # GSE ID) rather than a syn ID for externally-hosted datasets.
-        dataset_id = row["DatasetViewId"].split(",")[0]
+        dataset_id = (parse_list(row["DatasetViewId"]) or [""])[0]
         try:
             # operations.get() looks up the entity's actual type on Synapse
             # first and dispatches to the matching model (File, Folder,
@@ -174,7 +174,7 @@ def add_missing_info(
         pub_titles = []
         pub_doi = []
         pub_years = []
-        for p in row["PublicationViewKey"].split(","):
+        for p in parse_list(row["PublicationViewKey"]):
             p = p.strip()  # Remove leading/trailing whitespace, if any
             if len(p) < 4:
                 pmid_list = [e for elem in "".join(row["PublicationViewKey"].split(",")) for e in elem.split()]
@@ -241,7 +241,7 @@ def clean_table(df: pd.DataFrame, live_types: dict) -> pd.DataFrame:
     ]
 
     for col in cols:
-        df[col] = utils.convert_to_stringlist(df[col])
+        df[col] = df[col].map(parse_list)
 
     # DatasetDataUseCodes already holds a list of access texts (which may
     # contain commas), so it is deduped below but never string-split.

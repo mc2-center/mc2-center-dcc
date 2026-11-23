@@ -118,6 +118,14 @@ def test_list_column_becomes_list_against_string_list():
     assert out.loc[0, "theme"] == ["a", "b"]
 
 
+def test_string_list_cells_drop_empty_pieces_and_read_a_json_array():
+    live = _live("GrantView", {"theme": "STRING_LIST"})
+    out = cw.to_portal(_grant_df(GrantThemeName=["a,,b"]), "GrantView", live)
+    assert out.loc[0, "theme"] == ["a", "b"]
+    out = cw.to_portal(_grant_df(GrantThemeName=['["c", "d, e"]']), "GrantView", live)
+    assert out.loc[0, "theme"] == ["c", "d, e"]
+
+
 def test_existing_lists_pass_through_untouched():
     live = _live("GrantView", {"theme": "STRING_LIST"})
     original = ["a", "b"]

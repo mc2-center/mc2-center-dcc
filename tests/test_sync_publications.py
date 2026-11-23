@@ -109,6 +109,14 @@ def test_blank_and_no_doi_listed_become_doi_not_available(tmp_path):
     }
 
 
+def test_dataset_alias_cell_drops_empty_pieces_and_reads_a_json_array():
+    df = manifest(NEW_HEADERS)
+    df["Publication Dataset Alias"] = ["ds1,,SRX123", '["ds2", "SRX9"]']
+    m = sp.prepare_manifest(df.astype(str))
+    out = sp.add_missing_info(m, GRANTS, ["grantName"])
+    assert out["PublicationDatasetAlias"].tolist() == ["ds1", "ds2"]
+
+
 def test_joined_grant_cell_with_comma_space_resolves_every_grant():
     df = manifest(NEW_HEADERS)
     df["GrantView Key"] = ["CA1, CA2", "CA2"]

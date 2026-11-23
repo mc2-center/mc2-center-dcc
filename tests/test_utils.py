@@ -48,11 +48,6 @@ def test_fill_blank_leaves_list_cells_and_the_input_alone():
     assert df["tags"].iloc[1] is None
 
 
-def test_convert_to_stringlist_makes_an_empty_cell_an_empty_list():
-    out = utils.convert_to_stringlist(pd.Series(["a, b", "", "c"]))
-    assert out.tolist() == [["a", "b"], [], ["c"]]
-
-
 # --- cell-size guard -------------------------------------------------------
 
 

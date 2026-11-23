@@ -7,6 +7,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
+import cells
 import model_contract
 import union_qc as uq
 import utils
@@ -107,7 +108,7 @@ def test_list_cells_parse_to_the_same_items_in_the_sync(tmp_path, mapping_csv):
     _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
     cell = manifest["Assay"].iat[0]
     assert cell == "RNA Sequencing, ATAC-Seq"
-    assert utils.convert_to_stringlist(pd.Series([cell])).iat[0] == ["RNA Sequencing", "ATAC-Seq"]
+    assert cells.parse_list(cell) == ["RNA Sequencing", "ATAC-Seq"]
     codes = manifest["Dataset Data Use Codes"].iat[0]
     assert [c.strip() for c in codes.split(",")] == ["DUO:0000042", "DUO:0000011"]
     assert manifest["PublicationView Key"].iat[0] == "11111111"

@@ -614,6 +614,15 @@ def test_grant_lookup_uses_the_split_files_grant(monkeypatch, tmp_path):
     assert lookup[(str(other), "GSE2")] == "CA209923"  # no grant prefix: first listed grant
 
 
+def test_grant_lookup_skips_a_leading_comma_in_the_grant_key(monkeypatch, tmp_path):
+    mod = load_cel(monkeypatch)
+    other = tmp_path / "misc.csv"
+    pd.DataFrame({"Dataset Alias": ["GSE2"], "GrantView Key": [", CA209923"]}).to_csv(other, index=False)
+    paths = tmp_path / "paths.csv"
+    pd.DataFrame({"File Paths": [str(other)]}).to_csv(paths, index=False)
+    assert mod._build_grant_lookup(str(paths))[(str(other), "GSE2")] == "CA209923"
+
+
 # --- exit-code mapping ------------------------------------------------------------------
 
 

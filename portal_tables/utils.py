@@ -316,15 +316,6 @@ def get_args(resource: str) -> argparse.Namespace:
     return args
 
 
-def convert_to_stringlist(col: pd.Series) -> pd.Series:
-    """Convert a string column to a list; an empty cell becomes ``[]``, not ``[""]``.
-
-    It is not ``parse_list``: it keeps empty pieces (``a,,b``) and the spaces around a piece, and it
-    does not read a JSON array.
-    """
-    return col.str.replace(", ", ",").str.split(",").map(lambda v: [] if v == [""] else v)
-
-
 # Live portal-table columns that sync scripts intentionally don't populate.
 # They may trail the DataFrame's columns and are left empty on each sync.
 OPTIONAL_TRAILING_COLUMNS = {"test_publicationId", "test_toolId"}
@@ -651,7 +642,7 @@ def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
     manifest entries; only the first is used.
     """
     key = "DatasetViewId" if "DatasetViewId" in row else "DatasetView_id"
-    entity_id = row[key].split(",")[0].strip()
+    entity_id = (parse_list(row[key]) or [""])[0]
 
     is_dataset = False
     if entity_id:

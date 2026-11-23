@@ -39,7 +39,7 @@ def add_missing_info(
 
     for _, row in pubs.iterrows():
         datasets = row["PublicationDatasetAlias"]
-        final_datasets = [d for d in datasets.split(", ") if d.startswith("SRX") is False]
+        final_datasets = [d for d in parse_list(datasets) if d.startswith("SRX") is False]
         pubs.at[_, "PublicationDatasetAlias"] = ", ".join(final_datasets)
 
     for col in new_cols:

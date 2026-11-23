@@ -130,6 +130,23 @@ def test_education_14_and_13_give_same_output():
     assert row["synapseLink"].startswith("[syn17012903]")
 
 
+def test_education_topic_and_key_cells_drop_empty_pieces_and_read_a_json_array():
+    df = _manifest(
+        "EducationalResource",
+        {
+            "Resource Topic": "Outreach,,Data",
+            "Resource Alias": "syn17012903",
+            "Resource Link": "",
+            "Resource Dataset Alias": '["GSE1", "GSE2"]',
+            "DatasetView Key": ",syn1",
+        },
+    )
+    out = sync_education.add_missing_info(_load(df, "EducationalResource"))
+    row = out.iloc[0]
+    assert row["ResourceTopic"] == "Outreach, Data"
+    assert row["ResourceDatasetAlias"] == "GSE1, GSE2, [syn1](https://www.synapse.org/#!Synapse:syn1)"
+
+
 def test_education_license_list_when_live_is_list():
     live = _live("EducationalResource", publicationId="STRING", license="STRING_LIST")
     assert _edu_out(_edu_14(), live).iloc[0]["license"] == ["CC-BY-4.0"]

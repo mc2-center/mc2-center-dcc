@@ -33,11 +33,11 @@ def add_missing_info(
         syn_links = ", ".join(formatted_syn_link_list)
         education.at[_, "synapseLink"] = syn_links
 
-        education.at[_, "ResourceTopic"] = ", ".join(dict.fromkeys(topic for topic in row["ResourceTopic"].split(", ") if topic != "Diversity/Equity/Inclusion"))
+        education.at[_, "ResourceTopic"] = ", ".join(dict.fromkeys(topic for topic in parse_list(row["ResourceTopic"]) if topic != "Diversity/Equity/Inclusion"))
         
         for key_col, external_link_col in zip(["DatasetViewKey", "ToolViewKey"], ["ResourceDatasetAlias", "ResourceToolLink"]):
-            key_links = [f"[{key}](https://www.synapse.org/#!Synapse:{key})" for key in row[key_col].split(", ") if row[key_col]]
-            external_links = [external_link for external_link in row[external_link_col].split(", ") if row[external_link_col]]
+            key_links = [f"[{key}](https://www.synapse.org/#!Synapse:{key})" for key in parse_list(row[key_col])]
+            external_links = [external_link for external_link in parse_list(row[external_link_col])]
             education.at[_, external_link_col] = ", ".join(external_links + key_links)
     
     return education
