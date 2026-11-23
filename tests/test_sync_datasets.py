@@ -417,6 +417,48 @@ def test_a_leading_comma_in_the_dataset_id_does_not_hide_the_first_id(monkeypatc
     assert seen == ["syn111"]
 
 
+class FakeEntity:
+    def __init__(self, version_number):
+        self.version_number = version_number
+
+
+def test_each_distinct_id_is_read_once_when_rows_share_it(monkeypatch):
+    seen = []
+    monkeypatch.setattr(sync_datasets.operations, "get", lambda eid, **k: seen.append(eid) or None)
+    rows = [dict(MANIFEST_14[0], **{"DatasetView_id": "syn111"}),
+            dict(MANIFEST_14[1], **{"DatasetView_id": "syn111"}),
+            dict(MANIFEST_14[1], **{"DatasetView_id": "syn222"})]
+    sync_datasets.add_missing_info(None, prepare(rows, legacy=False), GRANTS, PUBS)
+    assert sorted(seen) == ["syn111", "syn222"]
+
+
+def test_a_failed_read_gives_the_same_version_as_no_entity(monkeypatch, capsys):
+    import synapseclient
+
+    def fail(eid, **k):
+        raise synapseclient.core.exceptions.SynapseHTTPError("boom")
+
+    monkeypatch.setattr(sync_datasets.operations, "get", fail)
+    out = sync_datasets.add_missing_info(None, prepare(MANIFEST_14, legacy=False), GRANTS, PUBS)
+    assert list(out["version"]) == [1, 1]
+    assert "Encountered error: boom" in capsys.readouterr().out
+
+
+def test_entities_go_to_the_right_rows_when_reads_finish_out_of_order(monkeypatch):
+    import time
+
+    delays = {"syn111": 0.3, "syn222": 0.0}
+    versions = {"syn111": 5, "syn222": 9}
+
+    def slow_get(eid, **k):
+        time.sleep(delays[eid])
+        return FakeEntity(versions[eid])
+
+    monkeypatch.setattr(sync_datasets.operations, "get", slow_get)
+    out = sync_datasets.add_missing_info(None, prepare(MANIFEST_14, legacy=False), GRANTS, PUBS)
+    assert list(out["version"]) == [4, 8]
+
+
 def test_a_json_array_in_the_publication_key_gives_its_items():
     pubs = pd.DataFrame(
         {"pubMedId": [11111111, 22222222], "publicationTitle": ["T1", "T2"], "doi": ["d1", "d2"],

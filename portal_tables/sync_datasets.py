@@ -5,6 +5,7 @@ portal table, by first truncating the table, then re-adding the rows.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import re
@@ -22,6 +23,9 @@ COMPONENT = "DatasetView"
 
 # Manifest columns that are not model attributes but are passed through.
 MANIFEST_PASSTHROUGH = ("iconTags",)
+
+# Number of Synapse entity reads that run at the same time.
+MAX_READERS = 4
 
 def duo_code_to_id() -> dict[str, str]:
     """Short code (``RTN``) -> DUO ID (``DUO:0000029``).
@@ -67,6 +71,31 @@ def _get_croissant_versions(syn: Synapse) -> dict:
     return df.groupby("dataset")["dataset_version"].max().to_dict()
 
 
+def _fetch_entity(syn: Synapse, dataset_id: str):
+    """Read one entity without its file; return None if Synapse refuses."""
+    try:
+        # operations.get() looks up the entity's actual type on Synapse
+        # first and dispatches to the matching model (File, Folder,
+        # Dataset, etc.), unlike the Dataset model's .get() directly,
+        # which errors out on DatasetViewIds that reference non-Dataset
+        # entities.
+        return operations.get(
+            dataset_id,
+            file_options=operations.FileOptions(download_file=False),
+            synapse_client=syn,
+        )
+    except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
+        print(f"Encountered error: {e}")
+        return None
+
+
+def _fetch_entities(syn: Synapse, dataset_ids) -> dict:
+    """Read each distinct syn ID once, in parallel; return dict ID -> entity or None."""
+    ids = list(dict.fromkeys(i for i in dataset_ids if re.match(r'syn\d{,9}', i) is not None))
+    with ThreadPoolExecutor(max_workers=MAX_READERS) as pool:
+        return dict(zip(ids, pool.map(lambda i: _fetch_entity(syn, i), ids)))
+
+
 def add_missing_info(
     syn: Synapse, datasets: pd.DataFrame, grants: pd.DataFrame, pubs: pd.DataFrame
 ) -> pd.DataFrame:
@@ -91,6 +120,11 @@ def add_missing_info(
     # version the Croissant DAG actually processed, not just the latest snapshot.
     croissant_versions = _get_croissant_versions(syn)
 
+    # Read all entities first, in parallel, instead of one call per row.
+    entities = _fetch_entities(
+        syn, [(parse_list(v) or [""])[0] for v in datasets["DatasetViewId"]]
+    )
+
     for _, row in datasets.iterrows():
         grant_names = []
         themes = []
@@ -112,24 +146,7 @@ def add_missing_info(
         # since DatasetAlias is often an external accession (e.g. a GEO
         # GSE ID) rather than a syn ID for externally-hosted datasets.
         dataset_id = (parse_list(row["DatasetViewId"]) or [""])[0]
-        try:
-            # operations.get() looks up the entity's actual type on Synapse
-            # first and dispatches to the matching model (File, Folder,
-            # Dataset, etc.), unlike the Dataset model's .get() directly,
-            # which errors out on DatasetViewIds that reference non-Dataset
-            # entities.
-            entity = (
-                operations.get(
-                    dataset_id,
-                    file_options=operations.FileOptions(download_file=False),
-                    synapse_client=syn,
-                )
-                if re.match(r'syn\d{,9}', dataset_id) is not None
-                else None
-            )
-        except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
-            print(f"Encountered error: {e}")
-            entity = None
+        entity = entities.get(dataset_id)
         # Prefer the Croissant-processed version so the portal button appears
         # correctly. Fall back to (version_number - 1) for datasets not yet
         # in the Croissant table.
