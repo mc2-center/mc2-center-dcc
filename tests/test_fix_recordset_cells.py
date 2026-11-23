@@ -245,7 +245,7 @@ def run_tool(tmp_path, *rows, cur=None):
     with mock.patch.object(fx, "grant_projects", lambda syn: {"CA1": "syn100"}), \
          mock.patch.object(fx.merge_tables, "find_component_recordset", lambda syn, p, c: ("syn9100", "synRS100")), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [TOOL_K])), \
-         mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, version=None, cache_dir=None, list_cols=(), md5=None: cur.copy()), \
+         mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, version=None, cache_dir=None, list_cols=(): cur.copy()), \
          mock.patch.object(fx, "run_upload", lambda a, syn: 0):
         code = fx.main(argv, syn=object())
     return code, tmp_path / "rep" / "dcc-fixcells-t" / "fix_cells"
