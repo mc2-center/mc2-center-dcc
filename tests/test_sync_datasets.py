@@ -227,6 +227,16 @@ LEGACY_CODE_IDS = {
 }
 
 
+def test_placeholder_cells_count_as_incomplete_in_the_sort():
+    # B: 4 placeholder cells; C: the same row with those 4 annotated but 2 other cells blank
+    b = dict(MANIFEST_14[1], **{"Dataset Name": "Set B", "Dataset Alias": "setB"})
+    c = dict(b, **{"Dataset Name": "Set C", "Dataset Alias": "setC", "DatasetView_id": "syn333",
+                   "Assay": "RNA-seq", "Species": "Human", "Tumor Type": "Breast Cancer", "Tissue": "Breast",
+                   "Dataset Description": "", "Dataset Design": ""})
+    out = run([b, c])
+    assert out["datasetName"].tolist() == ["Set C", "Set B"]
+
+
 def test_legacy_short_codes_resolve_to_their_id_text():
     code_to_id = sync_datasets.duo_code_to_id()
     for code, duo_id in LEGACY_CODE_IDS.items():

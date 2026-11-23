@@ -361,14 +361,14 @@ def test_fill_value_comes_from_the_schema(tmp_path, monkeypatch):
     import model_contract
 
     schema = {"properties": {"Tissue": {"items": {"enum": ["Lung", "Unknown"]}, "type": "array"},
-                             "Assay": {"anyOf": [{"enum": ["Pending Annotation", "RNA-seq"]}, {"type": "null"}]}}}
+                             "Assay": {"anyOf": [{"enum": ["Pending Annotation", "RNA-seq", "Unknown"]}, {"type": "null"}]}}}
     (tmp_path / "json_schemas").mkdir()
     (tmp_path / "json_schemas" / "DatasetView.json").write_text(json.dumps(schema))
     monkeypatch.setenv("MC2_MODEL_DIR", str(tmp_path))
     monkeypatch.setattr(model_contract, "label_map", lambda: {"Tissue": "Tissue", "Assay": "Assay", "Species": "Species"})
     frame = pd.DataFrame({"Tissue": [""], "Assay": [""], "Species": [""]})
     out = manifest_cleanup.fill_empty_cells(frame, "DatasetView")
-    # Tissue allows only "Unknown"; Assay allows the placeholder; Species is not in this schema
+    # Tissue allows only "Unknown"; Assay allows both, and the placeholder wins; Species is not in this schema
     assert out["Tissue"].iat[0] == "Unknown"
     assert out["Assay"].iat[0] == "Pending Annotation"
     assert out["Species"].iat[0] == "Pending Annotation"
