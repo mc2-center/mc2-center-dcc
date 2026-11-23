@@ -30,6 +30,8 @@ def setup(log, removals, versions, requested=("b",), **kw):
 def process(tmp_path, fake, log, removals, execute=True, run_id="dcc-removal-1"):
     args = argparse.Namespace(execute=execute, run_id=run_id, cache_dir=str(tmp_path / "cache"))
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
+         mock.patch.object(cmd.recordsets, "latest_version",
+                           lambda syn, rs_id: (*fake.info(syn, rs_id), getattr(fake, "md5", None))), \
          mock.patch.object(cmd.recordsets, "read_recordset", fake.read), \
          mock.patch.object(cmd.recordsets, "store_new_version", fake.store), \
          mock.patch.object(cmd.recordsets, "export_via_grid", fake.export), \
@@ -60,6 +62,7 @@ def test_dry_run_reports_a_blocking_session(tmp_path, log, removals):
 def test_main_dry_run_exit_code_and_output(tmp_path, capsys, log, removals):
     fake = setup(log, removals, [V1])
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
+         mock.patch.object(cmd.recordsets, "latest_version", lambda syn, rs_id: (*fake.info(syn, rs_id), None)), \
          mock.patch.object(cmd.recordsets, "read_recordset", fake.read), \
          mock.patch.object(cmd.recordsets, "open_grid_sessions", fake.open_sessions), \
          mock.patch.object(cmd.recordsets, "recordset_version_meta", fake.meta):
@@ -222,6 +225,7 @@ def test_main_skips_recordsets_without_requested_keys(tmp_path, capsys, log, rem
     removals.append("synDONE", "x", "removed", removed_in_version=3)
     assert removals.recordset_ids() == ["synDONE", "synRS"]
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
+         mock.patch.object(cmd.recordsets, "latest_version", lambda syn, rs_id: (*fake.info(syn, rs_id), None)), \
          mock.patch.object(cmd.recordsets, "read_recordset", fake.read), \
          mock.patch.object(cmd.recordsets, "open_grid_sessions", fake.open_sessions):
         cmd.main(["--removals-table", "synREM", "--write-log-table", "synLOG",
@@ -303,6 +307,7 @@ def test_open_session_blocks_the_owed_export_too(tmp_path, log, removals):
 def request(*argv, key_cols=(K,)):
     base = ["request", "--removals-table", "synREM", "--recordset", "synRS", "--reason", "dup"]
     with mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, list(key_cols))), \
+         mock.patch.object(cmd.recordsets, "latest_version", lambda syn, rs_id: (3, list(key_cols), None)), \
          mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
         return cmd.main(base + list(argv), syn=object())
 
@@ -320,6 +325,7 @@ def test_request_dry_run_writes_nothing_and_execute_appends_requested_rows(remov
 
 def test_request_composite_key_values_are_joined_per_key_column(removals):
     with mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, ["g", "t"])), \
+         mock.patch.object(cmd.recordsets, "latest_version", lambda syn, rs_id: (3, ["g", "t"], None)), \
          mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
         assert cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "G1", "T1",
                          "--reason", "dup", "--requested-by", "me", "--execute"], syn=object()) == 0
@@ -426,3 +432,12 @@ def test_claim_unclaimed_refreshes_the_removals_before_it_reads(log, removals, m
     monkeypatch.setattr(removals, "removal_events", lambda rs_id: calls.append(("events", rs_id)) or events(rs_id))
     assert cmd.claim_unclaimed("syn", "synRS", removals, log, {}, {}, ["key"], None, "run-1", "42") == {}
     assert calls == [("refresh", "synRS"), ("events", "synRS")]  # a claim decides from fresh removals rows
+
+
+def test_the_latest_version_is_read_with_its_md5(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
+    fake.md5, seen, read = "md5-latest", [], fake.read
+    fake.read = lambda syn, rs_id, version=None, cache_dir=None, md5=None, **kw: seen.append((version, md5)) or read(
+        syn, rs_id, version, cache_dir, md5=md5, **kw)
+    process(tmp_path, fake, log, removals, execute=False)
+    assert (1, "md5-latest") in seen

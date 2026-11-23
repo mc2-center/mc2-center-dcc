@@ -87,7 +87,7 @@ class FakeRS:
         dest.write_text(self.versions[version - 1], encoding="utf-8")
         return dest
 
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
+    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=(), md5=None):
         version = self.versions[(version or len(self.versions)) - 1]
         return rs._load_csv(io.StringIO(version), list_cols) if isinstance(version, str) else version.copy()
 
@@ -141,7 +141,7 @@ class FakeSynapse:
     def download(self, syn, rs_id, version, dest):
         return self.rs[rs_id].download(syn, rs_id, version, dest)
 
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
+    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=(), md5=None):
         return self.rs[rs_id].read(syn, rs_id, version, cache_dir, list_cols)
 
     def store(self, syn, rs_id, path):

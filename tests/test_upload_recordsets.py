@@ -73,6 +73,8 @@ def run(tmp_path, fake, *extra, execute=True, grants=("syn100",), run_id="r1", p
         argv += ["--execute", "--removals-table", "synREM"]
     with mock.patch.object(ur.recordsets, "find_recordset", fake.find_recordset), \
          mock.patch.object(ur.recordsets, "recordset_info", fake.info), \
+         mock.patch.object(ur.recordsets, "latest_version",
+                           lambda syn, rs_id: (*fake.info(syn, rs_id), getattr(fake, "md5", None))), \
          mock.patch.object(ur.recordsets, "read_recordset", fake.read), \
          mock.patch.object(ur.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(ur.recordsets, "get_validation", fake.validation), \
@@ -451,3 +453,12 @@ def test_summary_line_text():
     assert rs.summary_line(s, "grant", ur.SUMMARY_FIELDS) == (
         "g1: written recordset=synRS version=2 rows=3 decisions=4 conflicts=5 overwritten=6 invalid_rows=7 "
         "recovered=[8] foreign_midwrite=[9] removal_skipped=10 unsafe_rows=11 wrote v2")
+
+
+def test_only_the_latest_version_is_read_with_its_md5(tmp_path, log):
+    fake = FakeSynapse([stored(["p1", "Old", ""]), stored(["p1", "Older", ""])])
+    fake.md5, seen, read = "md5-latest", [], fake.read
+    fake.read = lambda syn, rs_id, version=None, md5=None, **kw: seen.append((version, md5)) or read(
+        syn, rs_id, version=version, md5=md5, **kw)
+    run(tmp_path, fake, execute=False)
+    assert (1, None) in seen and (2, "md5-latest") in seen  # an older version is immutable: no md5 check

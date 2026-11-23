@@ -150,7 +150,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
     summary["recordset"] = rs_id
 
-    latest, key = recordsets.recordset_info(syn, rs_id)
+    latest, key, latest_md5 = recordsets.latest_version(syn, rs_id)
     if not key:
         summary.update(status="failed", message=f"{rs_id} has no upsert key")
         return summary
@@ -181,8 +181,9 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         return summary
 
     def read(v):
-        df = recordsets.read_recordset(
-            syn, rs_id, version=v, cache_dir=args.cache_dir, list_cols=list_cols
+        df = recordsets.read_recordset(  # the latest version's file can be replaced in place: check its md5
+            syn, rs_id, version=v, cache_dir=args.cache_dir, list_cols=list_cols,
+            md5=latest_md5 if v == latest else None,
         )
         dupes = recordsets.duplicate_keys(df, key)
         if dupes:
