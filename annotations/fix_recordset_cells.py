@@ -74,6 +74,7 @@ import pandas as pd
 # removed when the mc2dcc package (CLI consolidation plan) lands
 HERE = Path(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, str(HERE / ".." / "portal_tables"))
+import crosswalk  # folder_id_column: as gen-mp-csv.py writes it; upload_recordsets.py reads the one folderId* column
 import merge_tables
 import model_contract
 import recordsets
@@ -83,12 +84,6 @@ import utils
 logger = logging.getLogger(__name__)
 
 COMPONENTS = ("PublicationView", "DatasetView", "ToolView", "EducationalResource")
-FOLDER_COLUMNS = {  # as gen-mp-csv.py writes them; upload_recordsets.py reads the one folderId* column
-    "PublicationView": "folderIdPublication",
-    "DatasetView": "folderIdDatasets",
-    "ToolView": "folderIdTools",
-    "EducationalResource": "folderIdEducation",
-}
 MAX_READERS = 4  # RecordSets read at the same time in the search
 RUN_PREFIX = "dcc-fixcells-"
 CHANGE_COLUMNS = ["component", "grant", "key", "column", "new_value"]
@@ -332,7 +327,7 @@ def main(argv=None, syn=None):
         path = out / "files" / f"{grant}.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
         model_contract.normalize_headers(g["frame"], to="display").to_csv(path, index=False)
-        paths.append({"File Paths": str(path), FOLDER_COLUMNS[component]: g["folder"], "grantId": g["project"]})
+        paths.append({"File Paths": str(path), crosswalk.COMPONENT_FOLDERS[component]["folder_id_column"]: g["folder"], "grantId": g["project"]})
         cells += g["cells"]
     pd.DataFrame(paths).to_csv(out / "paths.csv", index=False)
     cells_df = pd.DataFrame(cells)

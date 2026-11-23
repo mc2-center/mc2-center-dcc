@@ -46,6 +46,7 @@ import os
 import sys
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import crosswalk
 import utils
 from cells import parse_list
 
@@ -55,6 +56,11 @@ logger = logging.getLogger(__name__)
 # Must have PUBLIC: READ + DOWNLOAD so files are accessible without touching PI projects.
 _CENTRAL_PROJECT_SYNID = utils.CENTRAL_PROJECT   # CCKP Indexed Datasets
 _COLLECTION_SYNID = utils.DATASET_COLLECTION     # DatasetCollection in _CENTRAL_PROJECT_SYNID
+_NAME_LINK_COLUMNS = {  # component -> (name column, link column) of its manifest
+    "DatasetView": ("Dataset Alias", "Dataset Url"),
+    "ToolView": ("Tool Name", "Tool Homepage"),
+    "EducationalResource": ("Resource Title", "Resource Link"),
+}
 _DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders and non-GEO placeholder folders
 _TOOLS_FOLDER = "tools"                  # subfolder holding one shared entity per tool
 
@@ -401,26 +407,9 @@ def main(argv=None):
     created_ids_path = args.created_ids
     conflicts = []
 
-    if data_type == "DatasetView":
-
-        name_column = "Dataset Alias"
-        primary_key = "DatasetView_id"
-        link_column = "Dataset Url"
-        target_column = "folderIdDatasets"
-
-    elif data_type == "ToolView":
-
-        name_column = "Tool Name"
-        primary_key = "ToolView_id"
-        link_column = "Tool Homepage"
-        target_column = "folderIdTools"
-
-    elif data_type == "EducationalResource":
-
-        name_column = "Resource Title"
-        primary_key = "EducationalResource_id"
-        link_column = "Resource Link"
-        target_column = "folderIdEducation"
+    name_column, link_column = _NAME_LINK_COLUMNS[data_type]
+    primary_key = crosswalk.COMPONENT_FOLDERS[data_type]["primary_key"]
+    target_column = crosswalk.COMPONENT_FOLDERS[data_type]["folder_id_column"]
 
     if manifest is not None:
         print("Capturing information from " + data_type + " manifests...")

@@ -46,6 +46,17 @@ COMPONENT_RESOURCE = {
     "ProjectView": "project",
 }
 
+# Component -> the facts the folder and upload scripts share: the data-type
+# folder under a grant project ("folder"), the paths-CSV column that holds the
+# folder ID ("folder_id_column"), and the ID column of the manifest
+# ("primary_key"). Name and link columns differ between scripts and stay local.
+COMPONENT_FOLDERS = {
+    "PublicationView": {"folder": "publications", "folder_id_column": "folderIdPublication", "primary_key": "PublicationView_id"},
+    "DatasetView": {"folder": "datasets", "folder_id_column": "folderIdDatasets", "primary_key": "DatasetView_id"},
+    "ToolView": {"folder": "tools", "folder_id_column": "folderIdTools", "primary_key": "ToolView_id"},
+    "EducationalResource": {"folder": "education", "folder_id_column": "folderIdEducation", "primary_key": "EducationalResource_id"},
+}
+
 CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
     "PublicationView": [
         ("PublicationDoi", "doi", "string"),

@@ -24,7 +24,11 @@ from datetime import datetime
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import crosswalk
 import utils
+
+# lower-case data type -> folder ID column, from the shared per-component table
+_FOLDER_ID_COLUMNS = {v["folder"]: v["folder_id_column"] for v in crosswalk.COMPONENT_FOLDERS.values()}
 
 
 def query_synapse_for_folder_info(
@@ -150,7 +154,7 @@ def main(folder_path, output_csv_file, data_type):
 
     if data_type == "publications":
         file_suffix = "_publication.csv"
-        folder_id_column_name = "folderIdPublication"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["publications"]
         folder_map = {"CA209997": "syn32698150",
                       "CA209923": "syn43447063",
                       "CAfiliatedNon-GrantAssociated": "syn52963310",
@@ -159,7 +163,7 @@ def main(folder_path, output_csv_file, data_type):
 
     elif data_type == "datasets":
         file_suffix = "_dataset.csv"
-        folder_id_column_name = "folderIdDatasets"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["datasets"]
         folder_map = {"CA209997": "syn52744921",
                       "CA209923": "syn43447065",
                       "CAfiliatedNon-GrantAssociated": "syn52963225",
@@ -168,7 +172,7 @@ def main(folder_path, output_csv_file, data_type):
 
     elif data_type == "tools":
         file_suffix = "_tool.csv"
-        folder_id_column_name = "folderIdTools"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["tools"]
         folder_map = {"CA209997": "syn32698153",
                       "CA209923": "syn43447067",
                       "CAfiliatedNon-GrantAssociated": "syn52963223",
@@ -177,7 +181,7 @@ def main(folder_path, output_csv_file, data_type):
 
     elif data_type == "education":
         file_suffix = "_education.csv"
-        folder_id_column_name = "folderIdEducation"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["education"]
         folder_map = {"CA209997": "syn53014160",
                       "CA209923": "syn53014271",
                       "CAfiliatedNon-GrantAssociated": "syn52963215",
