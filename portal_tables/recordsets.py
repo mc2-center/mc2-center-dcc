@@ -98,6 +98,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
+import requests
 from synapseclient import operations
 from synapseclient.core import utils as synapse_utils
 from synapseclient.core.exceptions import SynapseHTTPError
@@ -363,8 +364,8 @@ def _cache_hit(cached: Path) -> bool:
 
 
 def _is_403(err) -> bool:
-    """True for the ``SynapseHTTPError`` the client raises when the file host answers 403 (and for no other error)."""
-    return isinstance(err, SynapseHTTPError) and getattr(err.response, "status_code", None) == 403
+    """True for an HTTP error whose response is a 403 (the client's ``SynapseHTTPError`` is one), and for no other error."""
+    return isinstance(err, requests.HTTPError) and getattr(err.response, "status_code", None) == 403
 
 
 def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
@@ -374,13 +375,14 @@ def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
     """
     def fetch():
         url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
-        return syn._requests_session.get(url, timeout=120)
+        response = syn._requests_session.get(url, timeout=120)
+        response.raise_for_status()
+        return response
 
     response = utils.retry(
-        fetch, DOWNLOAD_TRIES, lambda r: not isinstance(r, Exception) and r.status_code == 403,
+        fetch, DOWNLOAD_TRIES, _is_403,
         on_retry=lambda _: logger.warning("%s v%s: download answered 403; retrying with a fresh URL", rs_id, version),
     )
-    response.raise_for_status()
     dest.write_bytes(response.content)
     return dest
 

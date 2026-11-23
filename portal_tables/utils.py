@@ -697,28 +697,19 @@ def parallel_map(fn, items, workers=MAX_READERS) -> list:
 
 
 def retry(call, tries, retry_if, waits=(), sleep=time.sleep, on_retry=None):
-    """Run ``call()`` up to ``tries`` times and return its result.
+    """Run ``call()`` up to ``tries`` times and return its first result.
 
-    ``retry_if(outcome)`` gets a result, or the error ``call`` raised; when it is true, another try follows.
-    ``on_retry(outcome)`` runs before each retry, then ``sleep(waits[i])`` for retry ``i`` (when ``waits`` has one).
-    After the last try, the last result is returned, or the last error is raised. An error that
-    ``retry_if`` rejects is raised at once.
+    When ``call`` raises an error, ``retry_if(err)`` decides: true means another try follows, false raises
+    the error at once. ``on_retry(err)`` runs before each retry, then ``sleep(waits[i])`` for retry ``i``
+    (when ``waits`` has one). After the last try, the last error is raised.
     """
     for attempt in range(tries):
         try:
-            outcome, failed = call(), False
+            return call()
         except Exception as err:
-            if not retry_if(err):
+            if attempt == tries - 1 or not retry_if(err):
                 raise
-            outcome, failed = err, True
-        if not failed and not retry_if(outcome):
-            return outcome
-        if attempt == tries - 1:
-            break
-        if on_retry:
-            on_retry(outcome)
-        if attempt < len(waits):
-            sleep(waits[attempt])
-    if failed:
-        raise outcome
-    return outcome
+            if on_retry:
+                on_retry(err)
+            if attempt < len(waits):
+                sleep(waits[attempt])

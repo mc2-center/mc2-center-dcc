@@ -4,6 +4,7 @@ from unittest import mock
 
 import pandas as pd
 import pytest
+import requests
 
 import recordsets as rs
 from fakes import MemoryWriteLog
@@ -847,7 +848,7 @@ class _Resp:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
+            raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
 
 
 def _download_syn(statuses):
@@ -868,14 +869,14 @@ def test_download_version_file_retries_a_403_with_a_fresh_url(tmp_path):
 
 def test_download_version_file_gives_up_after_the_last_403(tmp_path):
     syn = _download_syn([403] * rs.DOWNLOAD_TRIES)
-    with pytest.raises(RuntimeError, match="403"):
+    with pytest.raises(requests.HTTPError, match="403"):
         rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
     assert syn._requests_session.get.call_count == rs.DOWNLOAD_TRIES
 
 
 def test_download_version_file_does_not_retry_other_errors(tmp_path):
     syn = _download_syn([404])
-    with pytest.raises(RuntimeError, match="404"):
+    with pytest.raises(requests.HTTPError, match="404"):
         rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
     assert syn._requests_session.get.call_count == 1
 
