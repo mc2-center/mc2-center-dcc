@@ -28,7 +28,7 @@ import model_contract
 import recordsets
 import utils
 
-GRANTS_TABLE = "syn21918972"
+GRANTS_TABLE = utils.CONFIG["grant"]["portal_table"]
 MAX_READERS = 4  # grants read at the same time
 # Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
 UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project

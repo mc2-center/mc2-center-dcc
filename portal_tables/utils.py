@@ -36,6 +36,11 @@ CONFIG = {
     "consortium_counts": {"portal_table": "syn21641485", "staging_table": "syn78754152"},
     "consortium_theme_counts": {"portal_table": "syn21649281", "staging_table": "syn78754154"},
     "theme_counts": {"portal_table": "syn21639584", "staging_table": "syn78754168"},
+    # Tables read by the grant sync and annotations/gen-mp-csv.py: the project
+    # tables whose scope the sync updates, and "All Files V2" from the CCKP database.
+    "grant_files": {"project_tables": "syn52750482", "all_files_table": "syn27210848"},
+    # Croissant table read by sync_datasets.py for dataset versions.
+    "croissant": {"table": "syn65903895"},
 }
 
 # Production portal tables. Only portal_tables/promote_staging.py writes them.
@@ -87,6 +92,18 @@ ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "P
 # filled by migration/migrate_admin_manifests_14.py --execute).
 MANIFEST_SOURCE = "recordset"
 MANIFEST_SOURCES = ("table", "recordset")
+
+# Central public project ("CCKP Indexed Datasets") where annotations/create_entity_links.py
+# creates GEO Dataset entities, and the DatasetCollection in it that they join.
+CENTRAL_PROJECT = "syn76986881"
+DATASET_COLLECTION = "syn77025587"
+
+# Folder where annotations/upload_validation.py stores its monthly upload report.
+VALIDATION_REPORT_FOLDER = "syn53461903"
+
+# Default tables of the write log and the removals log (recordsets.py).
+WRITE_LOG_TABLE = "syn78404341"
+REMOVALS_TABLE = "syn78404342"
 
 
 _CONSORTIUM_ROWS: dict[str, pd.DataFrame] = {}  # table ID -> usable Consortium rows, one read per process

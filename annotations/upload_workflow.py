@@ -61,6 +61,7 @@ HERE = Path(__file__).resolve().parent
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, str(HERE.parent / "portal_tables"))
 import recordsets
+import utils
 
 logger = logging.getLogger("upload_workflow")
 
@@ -87,10 +88,10 @@ DATASET_NAME_COLUMN = "Dataset Alias"
 # there: create_synapse_dataset(syn, accession, _CENTRAL_PROJECT_SYNID) creates a
 # Dataset named after the accession directly under the central project, next to
 # the "datasets" folder holding its "<accession>_links" folder) and the
-# DatasetCollection it adds them to (_COLLECTION_SYNID there). A test keeps these
-# copies equal to create_entity_links.py's.
-CENTRAL_PROJECT_SYNID = "syn76986881"
-COLLECTION_SYNID = "syn77025587"
+# DatasetCollection it adds them to (_COLLECTION_SYNID there). Both scripts read
+# the IDs from utils.
+CENTRAL_PROJECT_SYNID = utils.CENTRAL_PROJECT
+COLLECTION_SYNID = utils.DATASET_COLLECTION
 DATASETS_FOLDER = "datasets"
 
 _modules = {}

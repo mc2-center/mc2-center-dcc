@@ -70,8 +70,8 @@ def get_args():
         "-m",
         "--manifest",
         type=str,
-        default="syn53259587",
-        help=("Synapse ID to the manifest table/fileview." "(Default: syn53259587)"),
+        default=utils.CONFIG["grant"]["manifest"],
+        help=("Synapse ID to the manifest table/fileview." f"(Default: {utils.CONFIG['grant']['manifest']})"),
     )
     parser.add_argument(
         "-t",

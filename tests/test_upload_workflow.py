@@ -239,10 +239,18 @@ def test_accession_parsing_requires_geo_synapse(tmp_path, env, monkeypatch):
     assert code == 1 and "geo_synapse" in state["stages"]["links"]["note"]
 
 
-def test_collection_constants_match_create_entity_links():
-    src = (ANNOTATIONS / "create_entity_links.py").read_text()
-    assert f'_CENTRAL_PROJECT_SYNID = "{uw.CENTRAL_PROJECT_SYNID}"' in src
-    assert f'_COLLECTION_SYNID = "{uw.COLLECTION_SYNID}"' in src
+def test_collection_constants_match_create_entity_links(monkeypatch):
+    for name in ["geo_synapse", "geo_synapse.mc2_table", "geo_synapse.synapse_ops", "geo_synapse.pipeline"]:
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    for n in ["parse_accession", "find_project_for_grant"]:
+        setattr(sys.modules["geo_synapse.mc2_table"], n, None)
+    for n in ["create_synapse_dataset", "add_to_dataset_collection", "find_or_create_folder", "find_or_create_link"]:
+        setattr(sys.modules["geo_synapse.synapse_ops"], n, None)
+    sys.modules["geo_synapse.pipeline"].run_one = None
+    cel = load_script("annotations/create_entity_links.py", "create_entity_links")
+    utils = sys.modules["utils"]
+    assert cel._CENTRAL_PROJECT_SYNID == uw.CENTRAL_PROJECT_SYNID == utils.CENTRAL_PROJECT == "syn76986881"
+    assert cel._COLLECTION_SYNID == uw.COLLECTION_SYNID == utils.DATASET_COLLECTION == "syn77025587"
 
 
 def test_dry_run_still_reports_reuse_without_creating(tmp_path, env):

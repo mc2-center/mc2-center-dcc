@@ -866,8 +866,8 @@ def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_
 
 # --- shared by the scripts ----------------------------------------------------
 
-DEFAULT_WRITE_LOG_TABLE = "syn78404341"
-DEFAULT_REMOVALS_TABLE = "syn78404342"
+DEFAULT_WRITE_LOG_TABLE = utils.WRITE_LOG_TABLE
+DEFAULT_REMOVALS_TABLE = utils.REMOVALS_TABLE
 
 
 def add_log_args(parser, write_log=True, removals=True) -> None:

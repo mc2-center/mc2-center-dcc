@@ -64,8 +64,9 @@ def translate_access(code: str, code_to_id: dict) -> str | None:
 
 def _get_croissant_versions(syn: Synapse) -> dict:
     """Return a dict mapping dataset synID -> latest Croissant dataset_version."""
-    df = Table(id="syn65903895").query(
-        query="SELECT dataset, dataset_version FROM syn65903895",
+    croissant_table = utils.CONFIG["croissant"]["table"]
+    df = Table(id=croissant_table).query(
+        query=f"SELECT dataset, dataset_version FROM {croissant_table}",
         synapse_client=syn,
     )
     return df.groupby("dataset")["dataset_version"].max().to_dict()

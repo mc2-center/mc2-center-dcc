@@ -63,8 +63,8 @@ def main():
         raise SystemExit("--manifest-csv is not supported for the grant sync")
 
     # Info for table scope updates
-    project_tables = "syn52750482"
-    all_files_table = "syn27210848"
+    project_tables = utils.CONFIG["grant_files"]["project_tables"]
+    all_files_table = utils.CONFIG["grant_files"]["all_files_table"]
     table_list = [project_tables, all_files_table]
 
     if args.dryrun:

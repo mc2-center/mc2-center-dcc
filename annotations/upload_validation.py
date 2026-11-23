@@ -89,7 +89,7 @@ def main():
     print(f"Results saved to {output_csv_file}")
 
     if upload is None:
-        folder_id = "syn53770348"  # Replace with the actual Synapse folder ID
+        folder_id = utils.VALIDATION_REPORT_FOLDER
 
         file_entity = synapseclient.File(output_csv_file, parent=folder_id)
         syn.store(file_entity)

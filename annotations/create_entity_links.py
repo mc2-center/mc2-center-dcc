@@ -53,8 +53,8 @@ logger = logging.getLogger(__name__)
 
 # Central public project where GEO Dataset entities and link folders are created.
 # Must have PUBLIC: READ + DOWNLOAD so files are accessible without touching PI projects.
-_CENTRAL_PROJECT_SYNID = "syn76986881"   # CCKP Indexed Datasets
-_COLLECTION_SYNID = "syn77025587"        # DatasetCollection in _CENTRAL_PROJECT_SYNID
+_CENTRAL_PROJECT_SYNID = utils.CENTRAL_PROJECT   # CCKP Indexed Datasets
+_COLLECTION_SYNID = utils.DATASET_COLLECTION     # DatasetCollection in _CENTRAL_PROJECT_SYNID
 _DATASETS_FOLDER = "datasets"            # subfolder for {accession}_links folders and non-GEO placeholder folders
 _TOOLS_FOLDER = "tools"                  # subfolder holding one shared entity per tool
 

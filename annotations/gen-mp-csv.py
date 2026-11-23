@@ -7,9 +7,9 @@ This script will:
 - extract grant numbers from manifests
 - generate a CSV that contains manifest paths and target folder Synapse Ids, for use with upload-manifests.py
 
-Note that Synapse Ids to query are hardcoded:
-- grant_table = syn21918972 (Grants - Merged from CCKP database)
-- folder_table = syn27210848 (All Files V2 from CCKP database)
+Note that the Synapse Ids to query come from portal_tables/utils.py (CONFIG):
+- grant_table = CONFIG["grant"]["portal_table"] (Grants - Merged from CCKP database)
+- folder_table = CONFIG["grant_files"]["all_files_table"] (All Files V2 from CCKP database)
 
 author: aditi.gopalan
 author: orion.banks
@@ -32,11 +32,13 @@ def query_synapse_for_folder_info(
 ) -> pd.DataFrame:
 
     syn = utils.syn_login()
+    grants_table_id = utils.CONFIG["grant"]["portal_table"]
+    all_files_table_id = utils.CONFIG["grant_files"]["all_files_table"]
 
     grant_table = (
-        Table(id="syn21918972")
+        Table(id=grants_table_id)
         .query(
-            query=f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972',
+            query=f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM {grants_table_id}',
             include_row_id_and_row_version=False,
             synapse_client=syn,
         )
@@ -44,9 +46,9 @@ def query_synapse_for_folder_info(
     )
 
     folder_table = (
-        Table(id="syn27210848")
+        Table(id=all_files_table_id)
         .query(
-            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId",
+            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM {all_files_table_id} WHERE name='{data_type}' AND parentId=projectId",
             include_row_id_and_row_version=False,
             synapse_client=syn,
         )
