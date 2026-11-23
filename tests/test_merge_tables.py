@@ -2,6 +2,8 @@
 
 import json
 import logging
+import threading
+import time
 from types import SimpleNamespace
 from unittest import mock
 
@@ -67,6 +69,7 @@ def _union(rs_by_grant, grants):
 
     with mock.patch.object(mt.operations, "find_entity_id", side_effect=find), \
          mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
+         mock.patch.object(mt.recordsets, "recordset_info", return_value=(3, ["ToolViewId"])), \
          mock.patch.object(
              mt.recordsets, "read_recordset",
              side_effect=lambda syn, rs, **kw: rs_by_grant[rs.removeprefix("rs-folder-")].copy(),
@@ -240,3 +243,70 @@ def test_build_union_looks_for_the_override_folder_under_the_overridden_project(
     with mock.patch.object(mt.operations, "find_entity_id", side_effect=find):
         mt.build_union(mock.MagicMock(), "ToolView", ["syn9772917", "synOTHER"])
     assert names == [("syn9772917", "tool_curation"), ("synOTHER", "tools")]
+
+
+def test_build_union_keeps_grant_order_when_reads_finish_out_of_order(caplog):
+    frames = {"syn1": _rs(["t1"], ["A"]), "syn2": _rs(["t2"], ["B"]), "syn4": _rs(["t4"], ["D"])}
+    sleeps = {"syn1": 0.3, "syn2": 0.0, "syn4": 0.1}
+
+    def find(**kw):
+        return None if kw["parent"] == "syn3" else f"folder-{kw['parent']}"
+
+    def read(syn, rs, **kw):
+        grant = rs.removeprefix("rs-folder-")
+        time.sleep(sleeps[grant])
+        return frames[grant].copy()
+
+    grants = ["syn1", "syn2", "syn3", "syn4"]
+    with mock.patch.object(mt.operations, "find_entity_id", side_effect=find), \
+         mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
+         mock.patch.object(mt.recordsets, "recordset_info", return_value=(3, ["ToolViewId"])), \
+         mock.patch.object(mt.recordsets, "read_recordset", side_effect=read), \
+         caplog.at_level(logging.WARNING):
+        df, stats = mt.build_union(mock.MagicMock(), "ToolView", grants)
+    assert df["Tool Name"].tolist() == ["A", "B", "D"]
+    assert stats == {"grants_scanned": 4, "recordsets_found": 3, "missing": 1, "rows": 3, "duplicate_keys": 0}
+    assert "syn3" in caplog.text
+
+
+def test_build_union_reads_run_at_the_same_time_and_an_error_propagates():
+    inside, peak, lock = 0, 0, threading.Lock()
+
+    def read(syn, rs, **kw):
+        nonlocal inside, peak
+        with lock:
+            inside += 1
+            peak = max(peak, inside)
+        time.sleep(0.1)
+        with lock:
+            inside -= 1
+        if rs.endswith("syn3"):
+            raise RuntimeError("403")
+        return _rs(["t"], ["A"])
+
+    with mock.patch.object(mt.operations, "find_entity_id", side_effect=lambda **kw: "folder-" + kw["parent"]), \
+         mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
+         mock.patch.object(mt.recordsets, "recordset_info", return_value=(3, ["ToolViewId"])), \
+         mock.patch.object(mt.recordsets, "read_recordset", side_effect=read):
+        with pytest.raises(RuntimeError, match="403"):
+            mt.build_union(mock.MagicMock(), "ToolView", ["syn1", "syn2", "syn3"])
+    assert 1 < peak <= mt.MAX_READERS
+
+
+def test_build_union_reads_the_latest_version_through_the_cache(tmp_path, monkeypatch):
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(mt.recordsets, "DEFAULT_CACHE_DIR", cache)
+    download = tmp_path / "dl.csv"
+    download.write_text("ToolViewId,ToolName\nt1,A\n")
+    with mock.patch.object(mt.operations, "find_entity_id", side_effect=lambda **kw: "folder-" + kw["parent"]), \
+         mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
+         mock.patch.object(mt.recordsets, "recordset_info", return_value=(7, ["ToolViewId"])), \
+         mock.patch.object(mt.recordsets, "RecordSet") as cls:
+        cls.return_value.get.return_value = SimpleNamespace(path=str(download))
+        first, _ = mt.build_union(mock.MagicMock(), "ToolView", ["syn1"])
+        assert cls.return_value.get.call_count == 1
+        assert (cache / "rs-folder-syn1" / "v7.csv").exists()
+        second, _ = mt.build_union(mock.MagicMock(), "ToolView", ["syn1"])
+        assert cls.return_value.get.call_count == 1  # the second run is read from the cache
+    assert first.equals(second)
+    assert cls.call_args.kwargs["version_number"] == 7

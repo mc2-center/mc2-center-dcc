@@ -46,6 +46,14 @@ def _temp_comma_terms(tmp_path, monkeypatch):
     comma_terms._folds.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _temp_recordset_cache(tmp_path, monkeypatch):
+    """Scripts that read RecordSets through ``DEFAULT_CACHE_DIR`` write to a temp dir, never the home cache."""
+    import recordsets
+
+    monkeypatch.setattr(recordsets, "DEFAULT_CACHE_DIR", tmp_path / "recordset_cache")
+
+
 def load_script(relpath, name):
     """Load a script by path (several modules share the name "utils")."""
     import importlib.util

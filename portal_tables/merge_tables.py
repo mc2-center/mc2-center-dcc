@@ -18,6 +18,7 @@ author: orion.banks
 from synapseclient import operations
 from synapseclient.models import MaterializedView, Table
 import argparse
+import concurrent.futures
 import glob
 from datetime import datetime
 import logging
@@ -28,6 +29,7 @@ import recordsets
 import utils
 
 GRANTS_TABLE = "syn21918972"
+MAX_READERS = 4  # grants read at the same time
 # Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
 UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
 FOLDER_MAP = {
@@ -148,20 +150,30 @@ def build_union(syn, component, grant_ids):
     ``frame`` has display-name headers in template order; list cells are
     ", "-joined. ``stats`` holds grants scanned/found/missing, rows and duplicate keys.
     """
-    frames, missing = [], []
-    for grant in grant_ids:
+    list_cols = recordsets.list_columns(component)
+
+    def read_grant(grant):
+        """``(frame, None)`` for a grant with a RecordSet, else ``(None, warning)``; errors propagate."""
         name = folder_name(grant, component)
         folder_id = operations.find_entity_id(name=name, parent=grant, synapse_client=syn)
         if folder_id is None:
-            logger.warning("Skipping %s: folder '%s' not found", grant, name)
-            missing.append(grant)
-            continue
+            return None, ("Skipping %s: folder '%s' not found", grant, name)
         rs_id = recordsets.find_recordset(syn, folder_id, component)
         if rs_id is None:
-            logger.warning("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
-            missing.append(grant)
-            continue
-        frames.append(recordsets.read_recordset(syn, rs_id, list_cols=recordsets.list_columns(component)))
+            return None, ("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
+        latest, _ = recordsets.recordset_info(syn, rs_id)
+        frame = recordsets.read_recordset(
+            syn, rs_id, version=latest, cache_dir=recordsets.DEFAULT_CACHE_DIR, list_cols=list_cols)
+        return frame, None
+
+    frames, missing = [], []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_READERS) as pool:
+        for grant, (frame, warning) in zip(grant_ids, pool.map(read_grant, grant_ids)):
+            if frame is None:
+                logger.warning(*warning)
+                missing.append(grant)
+            else:
+                frames.append(frame)
 
     return assemble_union(component, frames, len(grant_ids), len(missing))
 

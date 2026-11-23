@@ -1,4 +1,6 @@
 """annotations/fix_recordset_cells.py with every Synapse call stubbed."""
+import threading
+import time
 from unittest import mock
 
 import pandas as pd
@@ -30,7 +32,7 @@ def run(tmp_path, *rows, extra=(), cur=None, projects=None, by_rs=None, reads=No
             "--run-id", "dcc-fixcells-t", *extra]
     cur = current() if cur is None else cur
     projects = {"CA1": "syn100", "CA2": "syn200"} if projects is None else projects
-    def read(syn, rs_id, list_cols=()):
+    def read(syn, rs_id, version=None, cache_dir=None, list_cols=()):
         if reads is not None:
             reads.append(rs_id)
         return (by_rs[rs_id] if by_rs is not None else cur).copy()
@@ -182,6 +184,52 @@ def test_normal_path_does_not_search_and_reads_each_recordset_once(tmp_path):
     assert sorted(reads) == ["synRS100", "synRS200"]
 
 
+def run_search(tmp_path, projects, read, *rows):
+    """A run whose RecordSets are read by ``read``; every grant has a folder and a RecordSet."""
+    with mock.patch.object(fx, "grant_projects", lambda syn: projects), \
+         mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9" + p[3:]), \
+         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS" + f[-3:]), \
+         mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
+         mock.patch.object(fx.recordsets, "read_recordset", read), \
+         mock.patch.object(fx, "run_upload", lambda a, syn: 0):
+        code = fx.main(["--changes", str(changes(tmp_path, *rows)), "--report-dir", str(tmp_path / "rep"),
+                        "--run-id", "dcc-fixcells-t"], syn=object())
+    return code, tmp_path / "rep" / "dcc-fixcells-t" / "fix_cells"
+
+
+def test_search_loads_each_grant_once_with_the_latest_version_and_the_cache(tmp_path):
+    projects = {f"CA{i}": f"syn{i}00" for i in range(1, 7)}
+    by_rs = {f"synRS{i}00": (other("syn7") if i == 5 else current()) for i in range(1, 7)}
+    calls, lock = [], threading.Lock()
+
+    def read(syn, rs_id, version=None, cache_dir=None, list_cols=()):
+        with lock:
+            calls.append((rs_id, version, cache_dir))
+        return by_rs[rs_id].copy()
+
+    # syn7 is a row of CA5 only; CA1 lacks it, so the search loads the other grants
+    code, out = run_search(tmp_path, projects, read, row(grant="CA1", key="syn7"))
+    assert code == 0
+    cells = pd.read_csv(out / "cells.csv", dtype=str, keep_default_na=False)
+    assert cells.loc[0, "holding_grant"] == "CA5" and cells.loc[0, "found_by_search"] == "True"
+    assert sorted(c[0] for c in calls) == sorted(by_rs)  # each RecordSet once
+    assert {c[1] for c in calls} == {3} and {c[2] for c in calls} == {fx.recordsets.DEFAULT_CACHE_DIR}
+
+
+def test_search_holders_keep_the_order_of_the_grants_when_reads_finish_out_of_order(tmp_path):
+    projects = {"CA1": "syn100", "CA2": "syn200", "CA3": "syn300", "CA4": "syn400"}
+    delay = {"synRS100": 0.0, "synRS200": 0.3, "synRS300": 0.0}
+
+    def read(syn, rs_id, version=None, cache_dir=None, list_cols=()):
+        time.sleep(delay.get(rs_id, 0))
+        return (other() if rs_id == "synRS400" else current()).copy()
+
+    # CA4 lacks syn1; CA1, CA2 and CA3 hold it, and CA2 is the slowest read
+    code, out = run_search(tmp_path, projects, read, row(grant="CA4", key="syn1"))
+    reason = pd.read_csv(out / "refused.csv", dtype=str).loc[0, "reason"]
+    assert code == 1 and "CA1, CA2, CA3" in reason
+
+
 TOOL_K = "ToolViewId"
 
 
@@ -198,7 +246,7 @@ def run_tool(tmp_path, *rows, cur=None):
          mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9100"), \
          mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS100"), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [TOOL_K])), \
-         mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, list_cols=(): cur.copy()), \
+         mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, version=None, cache_dir=None, list_cols=(): cur.copy()), \
          mock.patch.object(fx, "run_upload", lambda a, syn: 0):
         code = fx.main(argv, syn=object())
     return code, tmp_path / "rep" / "dcc-fixcells-t" / "fix_cells"
@@ -265,7 +313,7 @@ def test_unsafe_copied_item_refuses_the_lines_of_that_row(tmp_path):
 
 
 def test_unreadable_recordset_is_a_refusal_naming_the_grant(tmp_path):
-    def boom(syn, rs_id, list_cols=()):
+    def boom(syn, rs_id, version=None, cache_dir=None, list_cols=()):
         raise RuntimeError("403")
     argv = ["--changes", str(changes(tmp_path, tool_row())), "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-fixcells-t"]
     with mock.patch.object(fx, "grant_projects", lambda syn: {"CA1": "syn100"}), \

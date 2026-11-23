@@ -61,6 +61,7 @@ author: orion.banks
 """
 
 import argparse
+import concurrent.futures
 import importlib.util
 import logging
 import os
@@ -88,6 +89,7 @@ FOLDER_COLUMNS = {  # as gen-mp-csv.py writes them; upload_recordsets.py reads t
     "ToolView": "folderIdTools",
     "EducationalResource": "folderIdEducation",
 }
+MAX_READERS = 4  # RecordSets read at the same time in the search
 RUN_PREFIX = "dcc-fixcells-"
 CHANGE_COLUMNS = ["component", "grant", "key", "column", "new_value"]
 
@@ -194,11 +196,12 @@ def plan(syn, changes: pd.DataFrame, component: str):
                 if rs_id is None:
                     loaded[grant] = f"no {component} folder or RecordSet in {project}"
                 else:
-                    _, key_cols = recordsets.recordset_info(syn, rs_id)
+                    latest, key_cols = recordsets.recordset_info(syn, rs_id)
                     if len(key_cols) != 1:
                         loaded[grant] = f"{rs_id} upsert key is not exactly one column: {key_cols}"
                     else:
-                        current = recordsets.read_recordset(syn, rs_id, list_cols=list_cols)
+                        current = recordsets.read_recordset(
+                            syn, rs_id, version=latest, cache_dir=recordsets.DEFAULT_CACHE_DIR, list_cols=list_cols)
                         current = current.drop_duplicates(subset=key_cols[0], keep="last").set_index(key_cols[0])
                         loaded[grant] = {"project": project, "folder": folder, "recordset": rs_id,
                                          "key": key_cols[0], "current": current}
@@ -209,6 +212,9 @@ def plan(syn, changes: pd.DataFrame, component: str):
     def holders(key, skip):
         """The grants other than ``skip`` whose RecordSet has a row ``key``."""
         found = []
+        pending = [g for g in projects if g != skip and g not in loaded]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_READERS) as pool:
+            list(pool.map(load, pending))  # load never raises; each grant is submitted once
         for g in projects:
             info = load(g) if g != skip else None
             if isinstance(info, dict) and key in info["current"].index:
