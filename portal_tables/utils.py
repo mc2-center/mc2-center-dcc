@@ -647,10 +647,7 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     
     return source_repo
 
-_UNSET = object()  # "no entity given" for identify_download_type; None means the fetch failed
-
-
-def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str, entity=_UNSET):
+def identify_download_type(row: pd.Series, source_repo: str, entity):
     """Determine download type and return download id if Synapse hosted or indexed.
 
     When DatasetViewId (the 14.0.0 key; the 13.1.0 ``DatasetView_id`` is still
@@ -663,29 +660,12 @@ def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str, entit
     manifest entries; only the first is used.
 
     ``entity`` is the already fetched entity of that first id (None when the
-    fetch failed). When given, no Synapse call is made.
+    fetch failed). No Synapse call is made.
     """
     key = "DatasetViewId" if "DatasetViewId" in row else "DatasetView_id"
     entity_id = (parse_list(row[key]) or [""])[0]
 
-    is_dataset = False
-    if entity_id and entity is not _UNSET:
-        is_dataset = isinstance(entity, Dataset)
-    elif entity_id:
-        try:
-            # operations.get() looks up the entity's actual type on Synapse
-            # first, then dispatches to the matching model (File, Folder,
-            # Dataset, ...) -- so, unlike calling the Dataset model's
-            # .get() directly, it handles any entity type without erroring
-            # out on DatasetView_ids that reference non-Dataset entities.
-            entity = operations.get(
-                entity_id,
-                file_options=operations.FileOptions(download_file=False),
-                synapse_client=syn,
-            )
-            is_dataset = isinstance(entity, Dataset)
-        except Exception:
-            is_dataset = False
+    is_dataset = bool(entity_id) and isinstance(entity, Dataset)
 
     if is_dataset:
         indexed = True

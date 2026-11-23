@@ -208,7 +208,7 @@ def add_missing_info(
 
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
         download_type, download_id = utils.identify_download_type(
-            syn, row, source_repo, entity=entity
+            row, source_repo, entity
         )
         
         datasets.at[_, "sourceRepository"] = source_repo

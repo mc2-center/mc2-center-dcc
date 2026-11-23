@@ -86,7 +86,7 @@ def offline(monkeypatch):
 
     received = {}  # first DatasetViewId -> the entity add_missing_info passed
 
-    def fake_download(syn, row, repo, entity=None):
+    def fake_download(row, repo, entity):
         assert "DatasetViewId" in row  # the 14.0.0 key, passed straight through
         received[row["DatasetViewId"].split(",")[0]] = entity
         return "Open Access", row["DatasetViewId"].split(",")[0]
@@ -277,33 +277,24 @@ def test_duo_dict_keys_are_ids_or_manifest_sentinels():
         assert key.startswith("DUO:") or key.startswith("DUOPlus") or key == "Pending Annotation", key
 
 
-def test_identify_download_type_accepts_both_keys(monkeypatch):
-    seen = []
-    monkeypatch.setattr(
-        utils.operations, "get", lambda eid, **k: seen.append(eid) or None
-    )
+def test_identify_download_type_accepts_both_keys():
     for key in ("DatasetViewId", "DatasetView_id"):
-        REAL_IDENTIFY(None, pd.Series({key: "syn5, syn6"}), "Synapse")
-    assert seen == ["syn5", "syn5"]
+        row = pd.Series({key: "syn5, syn6"})
+        assert REAL_IDENTIFY(row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
 
 
-def test_identify_download_type_skips_a_leading_comma(monkeypatch):
-    seen = []
-    monkeypatch.setattr(utils.operations, "get", lambda eid, **k: seen.append(eid) or None)
-    REAL_IDENTIFY(None, pd.Series({"DatasetViewId": ", syn5,syn6"}), "Synapse")
-    assert seen == ["syn5"]
+def test_identify_download_type_skips_a_leading_comma():
+    row = pd.Series({"DatasetViewId": ", syn5,syn6"})
+    assert REAL_IDENTIFY(row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
 
 
-def test_identify_download_type_uses_a_given_entity_without_a_call(monkeypatch):
-    def no_call(*a, **k):
-        raise AssertionError("no Synapse call expected")
-
-    monkeypatch.setattr(utils.operations, "get", no_call)
+def test_identify_download_type_uses_the_given_entity():
     row = pd.Series({"DatasetViewId": "syn5, syn6"})
-    assert REAL_IDENTIFY(None, row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
-    assert REAL_IDENTIFY(None, row, "GEO", entity=utils.Dataset(id="syn5")) == ("Synapse Indexed", "syn5")
-    assert REAL_IDENTIFY(None, row, "Synapse", entity=None) == ("Not Available for Download", None)
-    assert REAL_IDENTIFY(None, row, "GEO", entity=None) == ("Externally Hosted", None)
+    assert REAL_IDENTIFY(row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
+    assert REAL_IDENTIFY(row, "GEO", entity=utils.Dataset(id="syn5")) == ("Synapse Indexed", "syn5")
+    assert REAL_IDENTIFY(row, "Synapse", entity=None) == ("Not Available for Download", None)
+    assert REAL_IDENTIFY(row, "GEO", entity=None) == ("Externally Hosted", None)
+    assert REAL_IDENTIFY(pd.Series({"DatasetViewId": ""}), "GEO", entity=None) == ("Externally Hosted", None)
 
 
 def test_access_texts_containing_commas_are_not_split():
