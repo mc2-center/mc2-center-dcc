@@ -192,6 +192,7 @@ def manifest_upload(syn, table_id, final_df):
 
 def main():
 
+    args = get_args()
     choice = input(
         "\n\nDid you validate the manifest using Schematic before running this script?"
         " Type 'y' for yes, 'n' for no"
@@ -199,7 +200,6 @@ def main():
     if choice == "y":
 
         syn = _portal_utils.syn_login()
-        args = get_args()
         update_df = get_updated_df(args.manifest_path)
         annots_results = get_annotations(args.table_id, update_df, syn)
         final_df = edit_annotations(
