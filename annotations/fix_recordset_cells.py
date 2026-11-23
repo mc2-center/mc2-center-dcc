@@ -196,12 +196,13 @@ def plan(syn, changes: pd.DataFrame, component: str):
                 if rs_id is None:
                     loaded[grant] = f"no {component} folder or RecordSet in {project}"
                 else:
-                    latest, key_cols = recordsets.recordset_info(syn, rs_id)
+                    latest, key_cols, md5 = recordsets.latest_version(syn, rs_id)
                     if len(key_cols) != 1:
                         loaded[grant] = f"{rs_id} upsert key is not exactly one column: {key_cols}"
                     else:
                         current = recordsets.read_recordset(
-                            syn, rs_id, version=latest, cache_dir=recordsets.DEFAULT_CACHE_DIR, list_cols=list_cols)
+                            syn, rs_id, version=latest, cache_dir=recordsets.DEFAULT_CACHE_DIR, list_cols=list_cols,
+                            md5=md5)
                         current = current.drop_duplicates(subset=key_cols[0], keep="last").set_index(key_cols[0])
                         loaded[grant] = {"project": project, "folder": folder, "recordset": rs_id,
                                          "key": key_cols[0], "current": current}

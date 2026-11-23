@@ -455,6 +455,60 @@ def test_read_recordset_cache_miss_then_hit(tmp_path):
         assert cls.return_value.get.call_count == 3
 
 
+def _md5_of(path):
+    import hashlib
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def test_read_recordset_md5_match_is_a_cache_hit(tmp_path):
+    cache, dl = tmp_path / "cache", tmp_path / "dl.csv"
+    dl.write_text(f"{K},Title\na,x\n")
+    md5 = _md5_of(dl)
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = SimpleNamespace(path=str(dl))
+        rs.read_recordset("syn", "syn1", version=4, cache_dir=cache, md5=md5)
+        rs.read_recordset("syn", "syn1", version=4, cache_dir=cache, md5=md5)
+        assert cls.return_value.get.call_count == 1
+
+
+def test_read_recordset_md5_mismatch_fetches_again_and_rewrites_the_cache(tmp_path):
+    cache, dl = tmp_path / "cache", tmp_path / "dl.csv"
+    dl.write_text(f"{K},Title\na,x\n")
+    old_md5 = _md5_of(dl)
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = SimpleNamespace(path=str(dl))
+        rs.read_recordset("syn", "syn1", version=4, cache_dir=cache)
+        # the file of the same version is replaced in place: a new md5 is given
+        dl.write_text(f"{K},Title\na,y\n")
+        new_md5 = _md5_of(dl)
+        out = rs.read_recordset("syn", "syn1", version=4, cache_dir=cache, md5=new_md5)
+        assert cls.return_value.get.call_count == 2
+    assert out.loc[0, "Title"] == "y"
+    cached = cache / "syn1" / "v4.csv"
+    assert "y" in cached.read_text() and cached.with_name("v4.csv.md5").read_text() == new_md5 != old_md5
+
+
+def test_read_recordset_md5_none_keeps_the_cache(tmp_path):
+    cache, dl = tmp_path / "cache", tmp_path / "dl.csv"
+    dl.write_text(f"{K},Title\na,x\n")
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = SimpleNamespace(path=str(dl))
+        rs.read_recordset("syn", "syn1", version=4, cache_dir=cache)
+        rs.read_recordset("syn", "syn1", version=4, cache_dir=cache, md5=None)
+        assert cls.return_value.get.call_count == 1
+
+
+def test_latest_version_gives_the_file_md5_and_recordset_info_drops_it():
+    entity = SimpleNamespace(version_number=5, upsert_keys=[K], file_handle=SimpleNamespace(content_md5="abc"))
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = entity
+        assert rs.latest_version("syn", "syn1") == (5, [K], "abc")
+        assert rs.recordset_info("syn", "syn1") == (5, [K])
+        entity.file_handle = None
+        assert rs.latest_version("syn", "syn1") == (5, [K], None)
+    assert cls.call_args.kwargs["download_file"] is False
+
+
 # --- write log v2 ---
 
 
