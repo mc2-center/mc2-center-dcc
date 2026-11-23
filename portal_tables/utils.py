@@ -15,7 +15,7 @@ from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
 
-from cells import parse_list
+from cells import is_placeholder, parse_list
 
 logger = logging.getLogger(__name__)
 
@@ -597,7 +597,7 @@ def translate_duo(code: str, dict: dict[str, str] = DUO_DICT) -> str:
 
 def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DICT, regex: str = REPO_REGEX):
     """Extract distinctive link elements and map to a repository name."""
-    extracted_link = re.fullmatch(regex, link) if link != "Pending Annotation" else None
+    extracted_link = re.fullmatch(regex, link) if not is_placeholder(link) else None
     core_link = "".join([g for g in extracted_link.groups()[3:] if g is not None]) if extracted_link is not None else "No extracted content"
     source_repo_link_list, source_repo_alias_list, source_repo = [], [], None
     

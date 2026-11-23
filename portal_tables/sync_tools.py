@@ -7,7 +7,7 @@ table, by first truncating the table, then re-adding the rows.
 import pandas as pd
 import re
 from synapseclient.models import Table
-from cells import parse_list
+from cells import PENDING, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -40,7 +40,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
                 synapse_links.append("".join(["[Link](", s , ")"]))
         tools.at[_, "synapseLink"] = ", ".join(dict.fromkeys(synapse_links))
         
-        tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or "Pending Annotation"
+        tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or PENDING
         
     return tools
 

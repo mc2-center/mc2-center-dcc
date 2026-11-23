@@ -11,7 +11,7 @@ import re
 import synapseclient
 from synapseclient import Synapse, operations
 from synapseclient.models import Table
-from cells import parse_list
+from cells import is_placeholder, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -72,7 +72,7 @@ def translate_access(code: str, code_to_id: dict) -> str | None:
     no entry is logged as a warning and dropped.
     """
     code = code.strip()
-    if code == "Pending Annotation":
+    if is_placeholder(code):
         return PENDING_ACCESS_TEXT
     key = code_to_id.get(code, code)
     try:
@@ -280,9 +280,7 @@ def clean_table(df: pd.DataFrame, live_types: dict) -> pd.DataFrame:
 
     def _is_incomplete(value) -> bool:
         """A field is incomplete if it's empty or only holds 'Pending Annotation'."""
-        if isinstance(value, list):
-            return not [v for v in value if v not in ("", "Pending Annotation")]
-        return value in (None, "", "Pending Annotation") or pd.isna(value)
+        return not parse_list(value) or is_placeholder(value)
 
     df["_incompleteCount"] = df[content_cols].apply(
         lambda row: sum(_is_incomplete(v) for v in row), axis=1

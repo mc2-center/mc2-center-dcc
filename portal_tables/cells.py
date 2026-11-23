@@ -7,6 +7,9 @@ import json
 
 import pandas as pd
 
+PENDING = "Pending Annotation"
+"""The placeholder for a value that is not yet annotated."""
+
 
 def is_null(value) -> bool:
     """Whether ``value`` is ``None`` or a missing scalar (NaN, ``pd.NA``, ``NaT``). A list or a string is not."""
@@ -55,3 +58,9 @@ def parse_list(value, group=None, rejoined: list | None = None) -> list[str]:
 
 def _clean(items) -> list[str]:
     return [s for s in (str(i).strip() for i in items) if s]
+
+
+def is_placeholder(value) -> bool:
+    """Whether every item of the cell is ``PENDING`` (case and surrounding space ignored). A null or blank cell is not."""
+    items = parse_list(value)
+    return bool(items) and all(i.strip().casefold() == PENDING.casefold() for i in items)

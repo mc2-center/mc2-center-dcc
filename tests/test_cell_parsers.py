@@ -262,3 +262,25 @@ def test_null_tests():
     assert str(recordsets._to_dt("2026-01-02")) == "2026-01-02 00:00:00+00:00"
     assert str(recordsets._to_dt(1000)) == "1970-01-01 00:00:01+00:00"
     assert cgp._text(["a", "b"]) == "['a', 'b']"  # changed: a list of several values made pd.isna raise ValueError
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("Pending Annotation", True),
+        ("pending annotation", True),
+        ("  PENDING ANNOTATION  ", True),
+        (["Pending Annotation", "pending annotation"], True),
+        ("Pending Annotation, Pending Annotation", True),
+        (["Pending Annotation", "Lung"], False),
+        ('["Pending Annotation"]', True),
+        ('["Pending Annotation", "Lung"]', False),
+        ("", False),
+        ("  ", False),
+        (None, False),
+        (float("nan"), False),
+        ([], False),
+    ],
+)
+def test_is_placeholder(value, expected):
+    assert cells.is_placeholder(value) is expected
