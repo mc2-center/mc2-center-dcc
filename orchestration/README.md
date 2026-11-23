@@ -103,7 +103,11 @@ The syncs read and write only the staging tables (the `STAGING ...` tables in CC
 They refuse a production table id. Each script also takes `--output_csv` (default `./final_<resource>_table.csv`;
 `run_sync.sh` passes `--noprint`, so none is written), `-v`, `-m/--manifest_id` and `-t/--portal_table_id`; to compare
 a dry run to the staging table, run one directly:
-`python portal_tables/sync_publications.py --dryrun -o final_publication_table.csv`. The grant, project and people
+`python portal_tables/sync_publications.py --dryrun -o final_publication_table.csv`. To test a regenerated manifest
+before `--upload`, add `--manifest-csv <path>`: the sync reads that local CSV instead of `--manifest_id`. The CSV must
+be in the legacy manifest shape (display headers, list cells joined with commas), for example
+`<output-dir>/<Component>/<Component>_merged_manifest.csv` from step 5; `--manifest-source` is ignored with it. The grant
+sync refuses `--manifest-csv`. The grant, project and people
 syncs are not in `run_sync.sh`; run them directly when the admin RecordSets change (they read the admin RecordSets;
 `--manifest-source table` reads the legacy manifest tables instead):
 `python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun]`. Sync grants first: the other syncs
