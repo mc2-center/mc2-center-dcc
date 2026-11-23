@@ -103,7 +103,7 @@ from synapseclient.core import utils as synapse_utils
 from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
-from cells import is_null, json_list, parse_list
+from cells import is_null, is_placeholder, json_list, parse_list
 import comma_terms
 import model_contract
 import utils
@@ -994,16 +994,6 @@ def _is_blank(value) -> bool:
     return _norm(value) == ""
 
 
-def _is_pending(value) -> bool:
-    """The ``Pending Annotation`` placeholder (case and surrounding space ignored).
-
-    A list cell counts only if every item is the placeholder.
-    """
-    n = _norm(value)
-    items = n if isinstance(n, tuple) else (n,)
-    return all(isinstance(i, str) and i.strip().casefold() == "pending annotation" for i in items)
-
-
 def _session_base(cf, diffs, fingerprints, v) -> int:
     """The version a foreign version ``v`` was exported from: ``v - 1`` or an older stale base.
 
@@ -1169,7 +1159,7 @@ def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()
             snapshot = cf[_session_base(cf, diffs, fingerprints, v)] if v > 1 else {}
             for k, row in frame.items():
                 if k not in state:
-                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) or _is_pending(x) else C)
+                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) or is_placeholder(x) else C)
                     if k in gone:
                         gone.discard(k)
                         srow = snapshot.get(k)
