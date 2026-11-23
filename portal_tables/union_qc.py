@@ -81,7 +81,8 @@ CORRECTION_COLUMNS = ["key", "column", "current_value", "proposed_value", "statu
 def get_args(argv=None):
 
     parser = argparse.ArgumentParser(
-        description="Regenerate and validate the merged manifests the sync scripts read"
+        description="Regenerate and validate the merged manifests the sync scripts read",
+        allow_abbrev=False,  # a removed flag such as -t must not be read as an abbreviation of -tp
     )
     parser.add_argument(
         "--regenerate",

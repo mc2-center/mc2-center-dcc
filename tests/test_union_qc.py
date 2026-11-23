@@ -91,6 +91,7 @@ def test_no_schematic_subprocess():
     ["-l", "syn1", "-c", "~/qc_config.yml", "-p", "m.csv"],
     ["-tp", "x_updated.csv", "-p", "m.csv", "-bl", "rows.csv"],
     ["-tp", "x_updated.csv", "-t", "-p", "m.csv"],
+    ["-l", "syn1", "-t", "x_updated.csv"],  # not read as an abbreviation of -tp
 ])
 def test_removed_sop_flags_are_refused(argv):
     """-c (schematic config), -t (trim) and -bl (rows to trim) were ignored, and are now removed."""
