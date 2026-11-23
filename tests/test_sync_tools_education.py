@@ -135,12 +135,14 @@ def test_education_license_list_when_live_is_list():
     assert _edu_out(_edu_14(), live).iloc[0]["license"] == ["CC-BY-4.0"]
 
 
-@pytest.mark.parametrize("cell,expected", [("true", "True"), ("FALSE", "False"), ("True", "True"), ("", "")])
-def test_tool_package_dependencies_present_shows_True_False_on_the_portal(cell, expected):
+@pytest.mark.parametrize("cell,expected", [("true", True), ("FALSE", False), ("True", True), ("", None)])
+def test_tool_package_dependencies_present_is_a_portal_boolean(cell, expected):
     df = _tool_14()
     df["Tool Package Dependencies Present"] = cell
-    out = _tool_out(df, _live("ToolView"))
-    assert out["toolPackageDependenciesPresent"].tolist() == [expected]
+    out = _tool_out(df, _live("ToolView", toolPackageDependenciesPresent="BOOLEAN", portalDisplay="BOOLEAN"))
+    value = out["toolPackageDependenciesPresent"].iat[0]
+    assert (pd.isna(value) if expected is None else bool(value) is expected)
+    assert bool(out["portalDisplay"].iat[0]) is True
 
 
 def test_tool_joined_grant_cell_with_comma_space_resolves_every_grant():

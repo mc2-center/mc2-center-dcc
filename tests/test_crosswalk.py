@@ -27,7 +27,7 @@ def test_every_source_is_a_valid_label_for_its_component(component):
     template = mc.normalize_headers(pd.DataFrame(columns=mc.template_headers(component)))
     allowed = set(template.columns)
     for source, portal_col, kind in cw.CROSSWALK[component]:
-        assert kind in ("string", "list", "int"), (source, kind)
+        assert kind in ("string", "list", "int", "bool"), (source, kind)
         if source.startswith("derived:"):
             assert source[len("derived:"):], source
             continue
@@ -161,6 +161,44 @@ def test_int_kind_follows_live_type():
         _grant_df(DurationofFunding=["60"]), "GrantView", _live("GrantView")
     )
     assert out.loc[0, "durationOfFunding"] == "60"
+
+
+def _person_df(display):
+    cols = [cw.source_column(s) for s, _, _ in cw.CROSSWALK["PersonView"]]
+    df = pd.DataFrame({c: [""] * len(display) for c in cols})
+    df["PortalDisplay"] = display
+    return df
+
+
+@pytest.mark.parametrize(
+    "cell, expected",
+    [("true", True), ("True", True), ("TRUE", True), (" true ", True), (True, True),
+     ("false", False), ("False", False), ("FALSE", False), (False, False)],
+)
+def test_bool_kind_converts_true_and_false_forms_when_live_is_boolean(cell, expected):
+    live = _live("PersonView", {"portalDisplay": "BOOLEAN"})
+    out = cw.to_portal(_person_df([cell]), "PersonView", live)
+    assert out["portalDisplay"].dtype == "boolean"
+    assert out.loc[0, "portalDisplay"] is expected or out.loc[0, "portalDisplay"] == expected
+
+
+@pytest.mark.parametrize("cell", ["", "  ", None, float("nan"), pd.NA])
+def test_bool_kind_blank_is_missing(cell):
+    live = _live("PersonView", {"portalDisplay": "BOOLEAN"})
+    out = cw.to_portal(_person_df([cell]), "PersonView", live)
+    assert out["portalDisplay"].dtype == "boolean"
+    assert pd.isna(out.loc[0, "portalDisplay"])
+
+
+def test_bool_kind_bad_value_raises_naming_component_column_and_value():
+    live = _live("PersonView", {"portalDisplay": "BOOLEAN"})
+    with pytest.raises(ValueError, match="PersonView.portalDisplay.*'yes'"):
+        cw.to_portal(_person_df(["yes"]), "PersonView", live)
+
+
+def test_bool_kind_leaves_values_unchanged_when_live_is_string():
+    out = cw.to_portal(_person_df(["TRUE", "yes", ""]), "PersonView", _live("PersonView"))
+    assert out["portalDisplay"].tolist() == ["TRUE", "yes", ""]
 
 
 def test_missing_source_column_raises():

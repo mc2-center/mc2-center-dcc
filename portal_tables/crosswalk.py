@@ -7,7 +7,7 @@ ordered list of ``(source, portal_column, kind)`` for one portal table:
 * ``source`` is a class-label key, or ``derived:<name>`` for an enrichment
   column the sync script computes. The DataFrame handed to :func:`to_portal`
   holds a column called ``<name>`` for those.
-* ``kind`` is ``string``, ``list`` or ``int``.
+* ``kind`` is ``string``, ``list``, ``int`` or ``bool``.
 
 ``check_crosswalk`` compares the crosswalk with the live table (read-only);
 ``to_portal`` renames, orders and converts a DataFrame for upload.
@@ -128,13 +128,13 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("ToolLinkUrl", "linkUrl", "string"),
         ("ToolLinkType", "linkType", "string"),
         ("ToolLinkNote", "linkNote", "string"),
-        ("derived:portalDisplay", "portalDisplay", "string"),
+        ("derived:portalDisplay", "portalDisplay", "bool"),
         ("ToolDoi", "doi", "string"),
         ("derived:synapseLink", "synapseLink", "string"),
         ("ToolDateLastModified", "toolDateLastModified", "string"),
         ("ToolReleaseDate", "toolReleaseDate", "string"),
         ("ToolPackageDependencies", "toolPackageDependencies", "string"),
-        ("ToolPackageDependenciesPresent", "toolPackageDependenciesPresent", "string"),
+        ("ToolPackageDependenciesPresent", "toolPackageDependenciesPresent", "bool"),
         ("ToolComputeRequirements", "toolComputeRequirements", "string"),
         ("ToolEntityName", "toolEntityName", "string"),
         ("ToolEntityType", "toolEntityType", "string"),
@@ -159,7 +159,7 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("PersonDatasets", "datasetId", "list"),  # STRING live
         ("PersonTools", "toolId", "list"),  # STRING live
         ("ConsentForPortalDisplay", "consentForPortalDisplay", "string"),
-        ("PortalDisplay", "portalDisplay", "string"),
+        ("PortalDisplay", "portalDisplay", "bool"),
     ],
     "GrantView": [
         ("derived:grantId", "grantId", "string"),
@@ -296,6 +296,20 @@ def check_crosswalk(syn: Synapse, table_id: str, component: str) -> dict[str, st
     return check_live_columns(table_id, component, live_column_types(syn, table_id))
 
 
+def _to_bool(value, component: str, column: str):
+    """``True``/``False`` for a bool cell; ``pd.NA`` for a blank or null cell; anything else raises."""
+    if isinstance(value, bool):
+        return value
+    if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+        return pd.NA
+    text = str(value).strip().lower()
+    if text == "":
+        return pd.NA
+    if text in ("true", "false"):
+        return text == "true"
+    raise ValueError(f"{component}.{column}: {value!r} is not a boolean (true or false)")
+
+
 def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> pd.DataFrame:
     """Rename, order and convert ``df`` into the portal table's shape.
 
@@ -305,6 +319,8 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
     are converted: cells that are already lists pass through untouched.
     ``int``-kind columns become nullable integers where the live type is
     ``INTEGER`` (empty string means missing; any other non-integer raises).
+    ``bool``-kind columns become nullable booleans where the live type is ``BOOLEAN`` (``true``/``false`` in
+    any case or a Python bool; empty means missing; any other value raises).
     An optional column that exists live but has no source column in ``df``
     (the manifest does not carry it yet) is filled with empty strings.
     """
@@ -336,7 +352,11 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
                 col[is_str] = utils.convert_to_stringlist(col[is_str])
         elif kind == "int" and live_type == "INTEGER":
             col = pd.to_numeric(col.replace("", pd.NA), errors="raise").astype("Int64")
-        if kind != "int" and not (kind == "list" and live_type == "STRING_LIST"):
+        elif kind == "bool" and live_type == "BOOLEAN":
+            col = col.map(lambda v: _to_bool(v, component, portal_col)).astype("boolean")
+        if kind != "int" and not (kind == "list" and live_type == "STRING_LIST") and not (
+            kind == "bool" and live_type == "BOOLEAN"
+        ):
             # A STRING column (a list kind live as STRING, or a string kind such as chairRoles) cannot hold a
             # list: list cells (RecordSet manifests) are joined with ", "; string cells stay.
             col = col.map(lambda v: ", ".join(str(i) for i in v) if isinstance(v, (list, tuple)) else v)
