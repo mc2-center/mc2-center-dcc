@@ -84,11 +84,15 @@ def offline(monkeypatch):
     monkeypatch.setattr(sync_datasets, "_get_croissant_versions", lambda syn: {})
     monkeypatch.setattr(sync_datasets.operations, "get", lambda *a, **k: None)
 
-    def fake_download(syn, row, repo):
+    received = {}  # first DatasetViewId -> the entity add_missing_info passed
+
+    def fake_download(syn, row, repo, entity=None):
         assert "DatasetViewId" in row  # the 14.0.0 key, passed straight through
+        received[row["DatasetViewId"].split(",")[0]] = entity
         return "Open Access", row["DatasetViewId"].split(",")[0]
 
     monkeypatch.setattr(utils, "identify_download_type", fake_download)
+    return received
 
 
 def live_types():
@@ -290,6 +294,18 @@ def test_identify_download_type_skips_a_leading_comma(monkeypatch):
     assert seen == ["syn5"]
 
 
+def test_identify_download_type_uses_a_given_entity_without_a_call(monkeypatch):
+    def no_call(*a, **k):
+        raise AssertionError("no Synapse call expected")
+
+    monkeypatch.setattr(utils.operations, "get", no_call)
+    row = pd.Series({"DatasetViewId": "syn5, syn6"})
+    assert REAL_IDENTIFY(None, row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
+    assert REAL_IDENTIFY(None, row, "GEO", entity=utils.Dataset(id="syn5")) == ("Synapse Indexed", "syn5")
+    assert REAL_IDENTIFY(None, row, "Synapse", entity=None) == ("Not Available for Download", None)
+    assert REAL_IDENTIFY(None, row, "GEO", entity=None) == ("Externally Hosted", None)
+
+
 def test_access_texts_containing_commas_are_not_split():
     npuncu = utils.DUO_DICT["DUO:0000018"]
     assert "," in npuncu  # the case that used to be split into fragments
@@ -444,7 +460,7 @@ def test_a_failed_read_gives_the_same_version_as_no_entity(monkeypatch, capsys):
     assert "Encountered error: boom" in capsys.readouterr().out
 
 
-def test_entities_go_to_the_right_rows_when_reads_finish_out_of_order(monkeypatch):
+def test_entities_go_to_the_right_rows_when_reads_finish_out_of_order(monkeypatch, offline):
     import time
 
     delays = {"syn111": 0.3, "syn222": 0.0}
@@ -457,6 +473,7 @@ def test_entities_go_to_the_right_rows_when_reads_finish_out_of_order(monkeypatc
     monkeypatch.setattr(sync_datasets.operations, "get", slow_get)
     out = sync_datasets.add_missing_info(None, prepare(MANIFEST_14, legacy=False), GRANTS, PUBS)
     assert list(out["version"]) == [4, 8]
+    assert {k: e.version_number for k, e in offline.items()} == versions  # identify_download_type got the same entities
 
 
 def test_a_json_array_in_the_publication_key_gives_its_items():
