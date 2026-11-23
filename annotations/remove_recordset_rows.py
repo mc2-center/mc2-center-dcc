@@ -121,6 +121,7 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
 
 def claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_cols, cache_dir, run_id, principal):
     """:func:`claim_removed` over ``removed`` versions (logged, or just recovered) that have no removals rows."""
+    removals.refresh(rs_id)  # a claim writes rows: decide from fresh removals rows, not a cached read
     unclaimed = set(getattr(recovered, "removal", ())) | (
         write_log.removal_versions(rs_id) - set(removals.removal_events(rs_id)))
     if not unclaimed:

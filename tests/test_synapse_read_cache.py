@@ -152,3 +152,15 @@ def test_recover_pending_reads_fresh_before_it_uses_the_history(tables):
     log.pipeline_map = lambda rs_id: seen.append(history(rs_id)) or seen[-1]
     rs.recover_pending("syn", "synA", log, 2, meta=lambda v: ("42", pd.Timestamp.now(tz="UTC")))
     assert 2 in seen[0]  # recovery decides from the fresh history, not the cached one
+
+
+def test_refresh_makes_the_next_removals_read_fresh(tables):
+    removals = rs.SynapseTableRemovals("syn", "synRM")
+    assert removals.removal_events("synA") == {}  # cached
+    tables.append_directly("synRM", {
+        "recordSetId": "synA", "key": "k1", "reason": "", "requestedBy": "", "status": "removed",
+        "removedInVersion": 3, "runId": "rX", "principalId": "7",
+        "changedOn": int(pd.Timestamp.now(tz="UTC").timestamp() * 1000)})
+    assert removals.removal_events("synA") == {}  # still the cached read
+    removals.refresh("synA")
+    assert removals.removal_events("synA") == {3: {"k1"}}

@@ -418,3 +418,11 @@ def test_revalidation_refused_by_a_session_opened_after_the_lock_aborts_its_row(
     assert len(fake.versions) == 2 and fake.events == []
     assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
     assert log.unexported_removals("synRS") == [2]
+
+
+def test_claim_unclaimed_refreshes_the_removals_before_it_reads(log, removals, monkeypatch):
+    calls, events = [], removals.removal_events
+    monkeypatch.setattr(removals, "refresh", lambda rs_id: calls.append(("refresh", rs_id)), raising=False)
+    monkeypatch.setattr(removals, "removal_events", lambda rs_id: calls.append(("events", rs_id)) or events(rs_id))
+    assert cmd.claim_unclaimed("syn", "synRS", removals, log, {}, {}, ["key"], None, "run-1", "42") == {}
+    assert calls == [("refresh", "synRS"), ("events", "synRS")]  # a claim decides from fresh removals rows

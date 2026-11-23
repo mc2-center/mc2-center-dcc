@@ -725,6 +725,9 @@ class Removals:
         """Append every row in one write (one transaction in Synapse)."""
         raise NotImplementedError
 
+    def refresh(self, rs_id: str) -> None:
+        """Make the next read of ``rs_id`` fresh (a subclass that caches reads drops its entry)."""
+
     def append_many(self, rs_id, entries, run_id="", principal="") -> None:
         """Append rows in one write; ``entries`` are dicts with ``key``, ``status`` and optional
         ``reason``, ``requested_by``, ``removed_in_version``. All or none."""
@@ -820,6 +823,9 @@ class SynapseTableRemovals(Removals):
                 synapse_client=self.syn,
             )
         return self._cache[rs_id].copy()
+
+    def refresh(self, rs_id: str) -> None:
+        self._cache.pop(rs_id, None)
 
     def recordset_ids(self) -> list[str]:
         df = Table(id=self.table_id).query(
