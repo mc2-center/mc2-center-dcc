@@ -77,7 +77,7 @@ python portal_tables/union_qc.py --regenerate --output-dir output/i6 --upload   
 ```
 
 Builds each component's union from the grants' RecordSets (grants from the staging Grants table), merges rows by alias key
-(publications and datasets only; tools and education keep one row per grant unless `--merge-components` names them),
+(publications, datasets and tools; education keeps one row per grant unless `--merge-components` names it),
 fills empty cells, computes `iconTags` (publications and datasets), validates against the 14.x JSON Schemas, and writes
 `<output-dir>/<Component>/<Component>_merged_manifest.csv`, `validation.csv`, `validation_counts.csv`,
 `key_corrections.csv`, `id_conflicts.csv`, `key_conflicts.csv`, `report.txt`, plus `<output-dir>/summary.txt`. `--components` limits it.
@@ -85,7 +85,7 @@ fills empty cells, computes `iconTags` (publications and datasets), validates ag
 `syn53478774`, tools `syn53479671`, education `syn53651540`); it is refused with `--input-dir` or `--grant-projects`,
 and while any alias has different ids in different grants (`id_conflicts.csv`) or any unmerged id is twice in one
 grant or on different names (`key_conflicts.csv`): fix in the grant RecordSets and regenerate. Invalid rows are kept and reported, never dropped. Checkpoint: review the validation report
-(`validation_counts.csv`, `report.txt`, `id_conflicts.csv`) before `--upload`; `--upload` needs sign-off.
+(`validation_counts.csv`, `report.txt`, `id_conflicts.csv`, `key_conflicts.csv`) before `--upload`; `--upload` needs sign-off.
 Write each option in full: `union_qc.py` does not accept abbreviations. The old flags `-c`, `-t` and `-bl` are
 removed; a command with them stops with a usage error.
 
@@ -288,7 +288,7 @@ publication, then fix the wrong cell.
 
 1. After step 1: QC the AI pipeline output in `review_app.py`.
 2. After the step 2 dry run: read the reports, then `--execute`.
-3. After step 5 dry run: review the validation report and `id_conflicts.csv`; sign off before `--upload`.
+3. After step 5 dry run: review the validation report, `id_conflicts.csv` and `key_conflicts.csv`; sign off before `--upload`.
 4. After step 6 dry run: compare with `--output_csv` against the staging table before the real sync.
 5. After step 6: validate the staging tables (by query in Synapse), then read the
    step 7 dry run (`summary.csv`, `<resource>_diff.csv`). `--execute` needs explicit sign-off.
@@ -361,7 +361,8 @@ export; the data does not change. The admin RecordSets (grants, projects, people
 
 `missing_recordset`: the grant has no `MC2Center_<Component>_RecordSet` in its data-type folder; the upload does not
 create it.
-`migration/migrate_grant_tables_14.py` and `migration/migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle) use
+`migration/migrate_grant_tables_14.py` and `migration/migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle;
+`--execute` needs `--write-log-table` in both) use
 0 ok, 1 a grant failed or the comparison differs, 2 unmapped values or validation failures.
 
 ## Synapse IDs
