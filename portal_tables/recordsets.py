@@ -497,11 +497,17 @@ class WriteLog:
     keeps its lock and stays recoverable until it finishes. The migration also
     logs ``created`` (the RecordSet's creation version) and ``verified`` (a
     version read back and matched); neither is a pipeline version nor closes a
-    ``pending`` row. Subclasses implement ``_read`` and ``_append``.
+    ``pending`` row. Subclasses implement ``_read`` and ``_append``. A subclass may
+    cache ``_read``; the lock checks (:meth:`unresolved_pending` and the methods
+    that use it) call ``_read_fresh``, which always reads the table.
     """
 
     def _read(self, rs_id: str) -> pd.DataFrame:
         raise NotImplementedError
+
+    def _read_fresh(self, rs_id: str) -> pd.DataFrame:
+        """The rows of ``rs_id`` with no cache: the lock checks must see other runs' rows."""
+        return self._read(rs_id)
 
     def _append(self, row: dict) -> None:
         raise NotImplementedError
@@ -587,8 +593,8 @@ class WriteLog:
 
     def unresolved_pending(self, rs_id: str) -> list[dict]:
         """``pending`` rows not yet resolved by a later ``done``/``recovered``/``aborted``
-        row of the same runId and baseVersion."""
-        df = self._read(rs_id)
+        row of the same runId and baseVersion. Always reads fresh (every lock check uses it)."""
+        df = self._read_fresh(rs_id)
         closers = [
             (r["runId"], _int_or_none(r["baseVersion"]), _to_dt(r["writtenOn"]))
             for _, r in df[df["status"].isin(["done", "recovered", "aborted"])].iterrows()
@@ -643,15 +649,27 @@ class SynapseTableWriteLog(WriteLog):
     def __init__(self, syn, table_id: str):
         self.syn = syn
         self.table_id = table_id
+        self._cache: dict[str, pd.DataFrame] = {}
 
-    def _read(self, rs_id: str) -> pd.DataFrame:
+    def _query(self, rs_id: str) -> pd.DataFrame:
         return Table(id=self.table_id).query(
             query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
             include_row_id_and_row_version=False,
             synapse_client=self.syn,
         )
 
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        """History reads use a cached frame; an append drops it, :meth:`_read_fresh` replaces it."""
+        if rs_id not in self._cache:
+            self._cache[rs_id] = self._query(rs_id)
+        return self._cache[rs_id].copy()
+
+    def _read_fresh(self, rs_id: str) -> pd.DataFrame:
+        self._cache[rs_id] = self._query(rs_id)
+        return self._cache[rs_id].copy()
+
     def _append(self, row: dict) -> None:
+        self._cache.pop(row["recordSetId"], None)
         values = dict(row)
         values["writtenOn"] = int(values["writtenOn"].timestamp() * 1000)
         frame = pd.DataFrame([values], columns=WRITE_LOG_COLUMNS)
@@ -791,13 +809,17 @@ class SynapseTableRemovals(Removals):
     def __init__(self, syn, table_id: str):
         self.syn = syn
         self.table_id = table_id
+        self._cache: dict[str, pd.DataFrame] = {}
 
     def _read(self, rs_id: str) -> pd.DataFrame:
-        return Table(id=self.table_id).query(
-            query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
-            include_row_id_and_row_version=False,
-            synapse_client=self.syn,
-        )
+        """Cached per RecordSet; an append drops the entry."""
+        if rs_id not in self._cache:
+            self._cache[rs_id] = Table(id=self.table_id).query(
+                query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
+                include_row_id_and_row_version=False,
+                synapse_client=self.syn,
+            )
+        return self._cache[rs_id].copy()
 
     def recordset_ids(self) -> list[str]:
         df = Table(id=self.table_id).query(
@@ -808,6 +830,8 @@ class SynapseTableRemovals(Removals):
         return sorted(df["recordSetId"])
 
     def _append_rows(self, rows: list[dict]) -> None:
+        for rs_id in {r["recordSetId"] for r in rows}:
+            self._cache.pop(rs_id, None)
         frame = pd.DataFrame(rows, columns=REMOVALS_COLUMNS)
         frame["changedOn"] = frame["changedOn"].map(lambda t: int(t.timestamp() * 1000))
         frame["removedInVersion"] = frame["removedInVersion"].astype("Int64")
