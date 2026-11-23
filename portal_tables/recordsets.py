@@ -497,15 +497,14 @@ class WriteLog:
     version read back and matched); neither is a pipeline version nor closes a
     ``pending`` row. Subclasses implement ``_read`` and ``_append``. A subclass may
     cache ``_read``; the lock checks (:meth:`unresolved_pending` and the methods
-    that use it) call ``_read_fresh``, which always reads the table.
+    that use it) call :meth:`refresh` first, so they always read the table.
     """
 
     def _read(self, rs_id: str) -> pd.DataFrame:
         raise NotImplementedError
 
-    def _read_fresh(self, rs_id: str) -> pd.DataFrame:
-        """The rows of ``rs_id`` with no cache: the lock checks must see other runs' rows."""
-        return self._read(rs_id)
+    def refresh(self, rs_id: str) -> None:
+        """Make the next read of ``rs_id`` fresh (a subclass that caches reads drops its entry)."""
 
     def _append(self, row: dict) -> None:
         raise NotImplementedError
@@ -592,7 +591,8 @@ class WriteLog:
     def unresolved_pending(self, rs_id: str) -> list[dict]:
         """``pending`` rows not yet resolved by a later ``done``/``recovered``/``aborted``
         row of the same runId and baseVersion. Always reads fresh (every lock check uses it)."""
-        df = self._read_fresh(rs_id)
+        self.refresh(rs_id)
+        df = self._read(rs_id)
         closers = [
             (r["runId"], _int_or_none(r["baseVersion"]), _to_dt(r["writtenOn"]))
             for _, r in df[df["status"].isin(["done", "recovered", "aborted"])].iterrows()
@@ -657,14 +657,13 @@ class SynapseTableWriteLog(WriteLog):
         )
 
     def _read(self, rs_id: str) -> pd.DataFrame:
-        """History reads use a cached frame; an append drops it, :meth:`_read_fresh` replaces it."""
+        """History reads use a cached frame; an append or :meth:`refresh` drops it."""
         if rs_id not in self._cache:
             self._cache[rs_id] = self._query(rs_id)
         return self._cache[rs_id].copy()
 
-    def _read_fresh(self, rs_id: str) -> pd.DataFrame:
-        self._cache[rs_id] = self._query(rs_id)
-        return self._cache[rs_id].copy()
+    def refresh(self, rs_id: str) -> None:
+        self._cache.pop(rs_id, None)
 
     def _append(self, row: dict) -> None:
         self._cache.pop(row["recordSetId"], None)
@@ -967,7 +966,7 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
     :data:`REVALIDATE_RUN_SUFFIX` is a removal run's re-validation: it only exports, so all its versions are ``recovered``.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
-    pending = write_log.unresolved_pending(rs_id)  # a fresh read first: it also refreshes the cached history below
+    pending = write_log.unresolved_pending(rs_id)  # it refreshes the log first, so the cached history below is fresh too
     logged = write_log.pipeline_map(rs_id)
     found = Recovered()
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")

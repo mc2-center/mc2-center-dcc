@@ -133,7 +133,7 @@ def test_upload_run_makes_fewer_write_log_queries(tmp_path, tables, monkeypatch)
 
     # the same run, cache off: every history read queries
     with monkeypatch.context() as m:
-        m.setattr(rs.SynapseTableWriteLog, "_read", lambda self, rs_id: self._read_fresh(rs_id))
+        m.setattr(rs.SynapseTableWriteLog, "_read", lambda self, rs_id: self._query(rs_id))
         m.setattr(rs.SynapseTableRemovals, "_read", lambda self, rs_id: rs.Table(id=self.table_id).query(
             query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'", synapse_client=self.syn))
         writes_before, log_before, rem_before = execute_run(tmp_path / "before", "r1")
