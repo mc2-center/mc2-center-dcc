@@ -18,7 +18,6 @@ author: orion.banks
 from synapseclient import operations
 from synapseclient.models import MaterializedView, Table
 import argparse
-import concurrent.futures
 import glob
 from datetime import datetime
 import logging
@@ -30,7 +29,6 @@ import recordsets
 import utils
 
 GRANTS_TABLE = utils.CONFIG["grant"]["portal_table"]
-MAX_READERS = 4  # grants read at the same time
 # Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
 UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
 FOLDER_MAP = {component: v["folder"] for component, v in crosswalk.COMPONENT_FOLDERS.items()}
@@ -166,13 +164,12 @@ def build_union(syn, component, grant_ids):
         return recordsets.read_recordset(syn, rs_id, list_cols=list_cols), None
 
     frames, missing = [], []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_READERS) as pool:
-        for grant, (frame, warning) in zip(grant_ids, pool.map(read_grant, grant_ids)):
-            if frame is None:
-                logger.warning(*warning)
-                missing.append(grant)
-            else:
-                frames.append(frame)
+    for grant, (frame, warning) in zip(grant_ids, utils.parallel_map(read_grant, grant_ids)):
+        if frame is None:
+            logger.warning(*warning)
+            missing.append(grant)
+        else:
+            frames.append(frame)
 
     return assemble_union(component, frames, len(grant_ids), len(missing))
 

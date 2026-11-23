@@ -61,7 +61,6 @@ author: orion.banks
 """
 
 import argparse
-import concurrent.futures
 import importlib.util
 import logging
 import os
@@ -84,7 +83,6 @@ import utils
 logger = logging.getLogger(__name__)
 
 COMPONENTS = ("PublicationView", "DatasetView", "ToolView", "EducationalResource")
-MAX_READERS = 4  # RecordSets read at the same time in the search
 RUN_PREFIX = "dcc-fixcells-"
 CHANGE_COLUMNS = ["component", "grant", "key", "column", "new_value"]
 
@@ -202,8 +200,7 @@ def plan(syn, changes: pd.DataFrame, component: str):
         """The grants other than ``skip`` whose RecordSet has a row ``key``."""
         found = []
         pending = [g for g in projects if g != skip and g not in loaded]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_READERS) as pool:
-            list(pool.map(load, pending))  # load never raises; each grant is submitted once
+        utils.parallel_map(load, pending)  # load never raises; each grant is submitted once
         for g in projects:
             info = load(g) if g != skip else None
             if isinstance(info, dict) and key in info["current"].index:

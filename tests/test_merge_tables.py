@@ -287,7 +287,7 @@ def test_build_union_reads_run_at_the_same_time_and_an_error_propagates():
          mock.patch.object(mt.recordsets, "read_recordset", side_effect=read):
         with pytest.raises(RuntimeError, match="403"):
             mt.build_union(mock.MagicMock(), "ToolView", ["syn1", "syn2", "syn3"])
-    assert 1 < peak <= mt.MAX_READERS
+    assert 1 < peak <= mt.utils.MAX_READERS
 
 
 def test_build_union_reads_the_latest_version_without_a_cache_dir():

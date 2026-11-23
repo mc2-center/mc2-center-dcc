@@ -15,6 +15,7 @@ from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from cells import first_item, is_placeholder, parse_list
 
@@ -683,6 +684,16 @@ def identify_download_type(row: pd.Series, source_repo: str, entity):
 
     return download_type, download_id
     
+
+
+MAX_READERS = 4  # Synapse reads that run at the same time
+
+
+def parallel_map(fn, items, workers=MAX_READERS) -> list:
+    """``[fn(i) for i in items]``, run in up to ``workers`` threads; results keep the input order.
+    An error in ``fn`` is raised here."""
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(fn, items))
 
 
 def retry(call, tries, retry_if, waits=(), sleep=time.sleep, on_retry=None):

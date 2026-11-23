@@ -5,7 +5,6 @@ portal table, by first truncating the table, then re-adding the rows.
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 import re
@@ -23,9 +22,6 @@ COMPONENT = "DatasetView"
 
 # Manifest columns that are not model attributes but are passed through.
 MANIFEST_PASSTHROUGH = ("iconTags",)
-
-# Number of Synapse entity reads that run at the same time.
-MAX_READERS = 4
 
 def duo_code_to_id() -> dict[str, str]:
     """Short code (``RTN``) -> DUO ID (``DUO:0000029``).
@@ -93,8 +89,7 @@ def _fetch_entity(syn: Synapse, dataset_id: str):
 def _fetch_entities(syn: Synapse, dataset_ids) -> dict:
     """Read each distinct syn ID once, in parallel; return dict ID -> entity or None."""
     ids = list(dict.fromkeys(i for i in dataset_ids if re.match(r'syn\d{,9}', i) is not None))
-    with ThreadPoolExecutor(max_workers=MAX_READERS) as pool:
-        return dict(zip(ids, pool.map(lambda i: _fetch_entity(syn, i), ids)))
+    return dict(zip(ids, utils.parallel_map(lambda i: _fetch_entity(syn, i), ids)))
 
 
 def add_missing_info(
