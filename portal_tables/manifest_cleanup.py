@@ -3,14 +3,38 @@
 author: orion.banks
 """
 
+import json
 import re
 
 import pandas as pd
 
+import model_contract
+from cells import PENDING
+
+UNKNOWN = "Unknown"
+
+
+def _enums(prop: dict) -> list[list]:
+    """Every enum list of a schema property: its own, its array items' and those of its anyOf/oneOf branches."""
+    found = [prop["enum"]] if "enum" in prop else []
+    if isinstance(prop.get("items"), dict):
+        found += _enums(prop["items"])
+    for branch in prop.get("anyOf", []) + prop.get("oneOf", []):
+        found += _enums(branch)
+    return found
+
+
+def _fill_value(prop: dict | None) -> str:
+    """The value for an empty cell: ``PENDING`` if the property allows it or has no enum, else ``Unknown`` if allowed."""
+    enums = _enums(prop) if prop else []
+    if not enums or any(PENDING in e for e in enums):
+        return PENDING
+    return UNKNOWN if any(UNKNOWN in e for e in enums) else PENDING
+
 
 def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataFrame:
-    """Fill empty cells in the updated database with 'Pending Annotation' or 'Not Applicable' ('Unknown' for Species)."""
-    
+    """Fill empty cells in the updated database with 'Not Applicable' or, per the component's JSON schema, 'Pending Annotation' or 'Unknown'."""
+
     cols_to_fill = [
         "Assay",
         "Tumor Type",
@@ -28,15 +52,17 @@ def fill_empty_cells(updated_database: pd.DataFrame, data_type: str) -> pd.DataF
     if data_type == "EducationalResource":  # a resource's publication link stays empty rather than a placeholder
         current_cols_to_fill = [col for col in current_cols_to_fill if col != "PublicationView Key"]
 
+    labels = model_contract.label_map()
+    properties = json.loads(model_contract.fetch(f"json_schemas/{data_type}.json").read_text()).get("properties", {})
+    fill_values = {col: _fill_value(properties.get(labels.get(col))) for col in current_cols_to_fill}
+
     for _,row in updated_database.iterrows():
         for col in current_cols_to_fill:
             if pd.isna(row[col]) or row[col] == "" or re.match(r"^,+", row[col]):
                 if data_type == "PublicationView" and row["Publication Accessibility"] == "Open Access":
                     value = "Not Applicable"
-                elif col == "Species":  # the Species enum has no "Pending Annotation"
-                    value = "Unknown"
                 else:
-                    value = "Pending Annotation"
+                    value = fill_values[col]
                 updated_database.at[row.name, col] = value
 
     return updated_database

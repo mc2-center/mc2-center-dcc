@@ -352,3 +352,23 @@ def test_an_empty_component_is_skipped_and_the_summary_is_still_written(tmp_path
     assert (tmp_path / "out" / "DatasetView" / "DatasetView_merged_manifest.csv").exists()
     summary = (tmp_path / "out" / "summary.txt").read_text()
     assert "DatasetView: union rows=1" in summary and "ToolView: skipped" in summary
+
+
+def test_fill_value_comes_from_the_schema(tmp_path, monkeypatch):
+    import json
+
+    import manifest_cleanup
+    import model_contract
+
+    schema = {"properties": {"Tissue": {"items": {"enum": ["Lung", "Unknown"]}, "type": "array"},
+                             "Assay": {"anyOf": [{"enum": ["Pending Annotation", "RNA-seq"]}, {"type": "null"}]}}}
+    (tmp_path / "json_schemas").mkdir()
+    (tmp_path / "json_schemas" / "DatasetView.json").write_text(json.dumps(schema))
+    monkeypatch.setenv("MC2_MODEL_DIR", str(tmp_path))
+    monkeypatch.setattr(model_contract, "label_map", lambda: {"Tissue": "Tissue", "Assay": "Assay", "Species": "Species"})
+    frame = pd.DataFrame({"Tissue": [""], "Assay": [""], "Species": [""]})
+    out = manifest_cleanup.fill_empty_cells(frame, "DatasetView")
+    # Tissue allows only "Unknown"; Assay allows the placeholder; Species is not in this schema
+    assert out["Tissue"].iat[0] == "Unknown"
+    assert out["Assay"].iat[0] == "Pending Annotation"
+    assert out["Species"].iat[0] == "Pending Annotation"
