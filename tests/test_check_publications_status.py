@@ -1,7 +1,6 @@
 """check_publications_status / update_pending_annotations: crosswalk-based header maps."""
 import pandas as pd
 
-import header_maps
 import crosswalk
 from conftest import load_script
 
@@ -21,7 +20,7 @@ def test_to_manifest_uses_display_names_and_drops_derived():
     assert "Publication Grant Number" not in out.columns
     assert out.loc[0, "GrantView Key"] == "CA1,CA2"
     assert {"Assay", "Tumor Type", "Tissue", "Pubmed Id", "Publication Doi"} <= set(out.columns)
-    for derived in header_maps.derived_portal_columns("PublicationView"):
+    for derived in crosswalk.derived_portal_columns("PublicationView"):
         assert derived not in out.columns
     assert out.loc[0, "Component"] == "PublicationView"
 
@@ -45,7 +44,7 @@ def test_dryrun_flag_still_present():
 
 
 def test_pending_annotations_rename_matches_portal_columns():
-    mapping = header_maps.display_to_portal("PublicationView")
+    mapping = crosswalk.display_to_portal("PublicationView")
     assert mapping["Pubmed Id"] == "pubMedId"
     assert mapping["GrantView Key"] == "grantNumber"
     assert mapping["Assay"] == "assay"
@@ -61,7 +60,7 @@ def test_pending_annotations_accepts_legacy_manifest(tmp_path):
     ).to_csv(path, index=False)
     df = upa.get_updated_df(str(path))
     assert {"Assay", "GrantView Key"} <= set(df.columns)
-    renamed = df.rename(columns=header_maps.display_to_portal("PublicationView"))
+    renamed = df.rename(columns=crosswalk.display_to_portal("PublicationView"))
     assert {"assay", "grantNumber", "pubMedId"} <= set(renamed.columns)
 
 

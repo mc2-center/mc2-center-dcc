@@ -288,16 +288,6 @@ def _list_to_string(value):
     return value
 
 
-def portal_to_sources(curr_portal):
-    """Rename portal-table columns back to crosswalk source columns."""
-    renames = {
-        portal_col: crosswalk.source_column(source)
-        for source, portal_col, _ in crosswalk.CROSSWALK[COMPONENT]
-        if portal_col in curr_portal.columns
-    }
-    return curr_portal.rename(columns=renames)
-
-
 def process_new_grants(new = None, current = None, dryrun = None, synapse_client = None, live_types = None):
     """Create projects for new grants; return all grants in staging shape.
 
@@ -396,7 +386,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     manifest["grantId"] = ""
     manifest["grantSynapseTeam"] = manifest["GrantSynapseTeam"]
     manifest["grantSynapseProject"] = manifest["GrantSynapseProject"]
-    curr = portal_to_sources(curr_portal)
+    curr = crosswalk.portal_to_sources(curr_portal, COMPONENT)
 
     def assemble(info):
         """All grants in staging shape, new rows carrying ``info``'s IDs."""

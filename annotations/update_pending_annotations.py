@@ -13,7 +13,7 @@ import sys
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
-import header_maps
+import crosswalk
 import model_contract
 
 # portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
@@ -95,7 +95,7 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     # rename updated_df columns to match annots_df column and set index to pubMedId
     updated_df = (
         updated_df.rename(
-            columns=header_maps.display_to_portal("PublicationView")
+            columns=crosswalk.display_to_portal("PublicationView")
         )
         .drop(["Component"], axis=1)
         .set_index("pubMedId")

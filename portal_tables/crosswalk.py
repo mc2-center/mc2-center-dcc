@@ -21,6 +21,7 @@ import pandas as pd
 from synapseclient import Synapse
 from synapseclient.models import Table
 
+import model_contract
 import utils
 from cells import parse_list
 
@@ -237,6 +238,46 @@ def source_column(source: str) -> str:
 def table_id(component: str) -> str:
     """Portal table ID of ``component``, from ``utils.CONFIG``."""
     return utils.CONFIG[COMPONENT_RESOURCE[component]]["portal_table"]
+
+
+def _key_to_display() -> dict[str, str]:
+    reverse = {label: display for display, label in model_contract.label_map().items()}
+    reverse["Component"] = "Component"
+    return reverse
+
+
+def display_to_portal(component: str) -> dict[str, str]:
+    """14.0.0 display name -> portal column, for the crosswalk's non-derived columns."""
+    reverse = _key_to_display()
+    return {
+        reverse[source]: portal
+        for source, portal, _ in CROSSWALK[component]
+        if not source.startswith(DERIVED) and source in reverse
+    }
+
+
+def portal_to_display(component: str) -> dict[str, str]:
+    """Portal column -> 14.0.0 display name (inverse of ``display_to_portal``)."""
+    return {portal: display for display, portal in display_to_portal(component).items()}
+
+
+def derived_portal_columns(component: str) -> list[str]:
+    """Portal columns the sync scripts compute; they are not manifest attributes."""
+    return [
+        portal
+        for source, portal, _ in CROSSWALK[component]
+        if source.startswith(DERIVED)
+    ]
+
+
+def portal_to_sources(df: pd.DataFrame, component: str) -> pd.DataFrame:
+    """Rename portal-table columns back to crosswalk source columns."""
+    renames = {
+        portal_col: source_column(source)
+        for source, portal_col, _ in CROSSWALK[component]
+        if portal_col in df.columns
+    }
+    return df.rename(columns=renames)
 
 
 def _type_name(column_type) -> str:
