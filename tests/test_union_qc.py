@@ -87,15 +87,16 @@ def test_no_schematic_subprocess():
     assert not hasattr(uq, "trim_tables") and not hasattr(uq, "parse_out")
 
 
-def test_deprecated_sop_flags_are_accepted_but_ignored(caplog):
-    """CCKP SOP commands still pass -c (schematic config), -t (trim) and -bl (rows to trim)."""
-    with caplog.at_level("WARNING"):
-        args = uq.get_args(["-l", "syn1", "-c", "~/qc_config.yml", "-p", "m.csv", "-m", "-s", "-db"])
-        args2 = uq.get_args(["-tp", "x_updated.csv", "-c", "~/qc_config.yml", "-p", "m.csv", "-t", "-bl", "rows.csv"])
-    assert args.l == ["syn1"] and args.m and args.s and args.db and args2.tp == "x_updated.csv"
-    text = caplog.text
-    assert "-c is deprecated" in text and "-t is deprecated" in text and "-bl is deprecated" in text
-    assert "jsonschema" in text and "never trimmed" in text
+@pytest.mark.parametrize("argv", [
+    ["-l", "syn1", "-c", "~/qc_config.yml", "-p", "m.csv"],
+    ["-tp", "x_updated.csv", "-p", "m.csv", "-bl", "rows.csv"],
+    ["-tp", "x_updated.csv", "-t", "-p", "m.csv"],
+])
+def test_removed_sop_flags_are_refused(argv):
+    """-c (schematic config), -t (trim) and -bl (rows to trim) were ignored, and are now removed."""
+    with pytest.raises(SystemExit) as exc:
+        uq.get_args(argv)
+    assert exc.value.code == 2
 
 
 def test_headers_are_display_names_in_template_order(tmp_path, mapping_csv):
