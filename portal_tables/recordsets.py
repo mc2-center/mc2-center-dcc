@@ -967,10 +967,11 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
     :data:`REVALIDATE_RUN_SUFFIX` is a removal run's re-validation: it only exports, so all its versions are ``recovered``.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
+    pending = write_log.unresolved_pending(rs_id)  # a fresh read first: it also refreshes the cached history below
     logged = write_log.pipeline_map(rs_id)
     found = Recovered()
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
-    for row in write_log.unresolved_pending(rs_id):
+    for row in pending:
         if row["baseVersion"] is None:
             continue
         if run_id is not None and row["runId"] != run_id:

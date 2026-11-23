@@ -141,3 +141,14 @@ def test_upload_run_makes_fewer_write_log_queries(tmp_path, tables, monkeypatch)
     writes_after, log_after, rem_after = execute_run(tmp_path / "after", "r1")
     assert log_after < log_before and rem_after <= rem_before
     assert writes_before == writes_after == ["pending", "written", "done"]  # the same writes
+
+
+def test_recover_pending_reads_fresh_before_it_uses_the_history(tables):
+    log = rs.SynapseTableWriteLog("syn", "synLOG")
+    assert log.pipeline_map("synA") == {}  # a stale history is now cached
+    row = dict(other_pending("rX", pd.Timestamp.now(tz="UTC")), version=2, status="written")
+    tables.append_directly("synLOG", row)  # another process logs version 2
+    seen, history = [], log.pipeline_map
+    log.pipeline_map = lambda rs_id: seen.append(history(rs_id)) or seen[-1]
+    rs.recover_pending("syn", "synA", log, 2, meta=lambda v: ("42", pd.Timestamp.now(tz="UTC")))
+    assert 2 in seen[0]  # recovery decides from the fresh history, not the cached one
