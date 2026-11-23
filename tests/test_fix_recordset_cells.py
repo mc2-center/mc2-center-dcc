@@ -38,11 +38,12 @@ def run(tmp_path, *rows, extra=(), cur=None, projects=None, by_rs=None, reads=No
         return (by_rs[rs_id] if by_rs is not None else cur).copy()
 
     def folder(syn, project, component):
-        return None if folders is not None and project not in folders else "syn9" + project[3:]
+        if folders is not None and project not in folders:
+            return None, None
+        return "syn9" + project[3:], "synRS" + project[3:]
 
     with mock.patch.object(fx, "grant_projects", lambda syn: projects), \
-         mock.patch.object(fx, "find_folder", folder), \
-         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, folder, component: "synRS" + folder[-3:]), \
+         mock.patch.object(fx.merge_tables, "find_component_recordset", folder), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
          mock.patch.object(fx.recordsets, "read_recordset", read), \
          mock.patch.object(fx, "run_upload", lambda a, syn: calls.append(a) or 0):
@@ -187,8 +188,7 @@ def test_normal_path_does_not_search_and_reads_each_recordset_once(tmp_path):
 def run_search(tmp_path, projects, read, *rows):
     """A run whose RecordSets are read by ``read``; every grant has a folder and a RecordSet."""
     with mock.patch.object(fx, "grant_projects", lambda syn: projects), \
-         mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9" + p[3:]), \
-         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS" + f[-3:]), \
+         mock.patch.object(fx.merge_tables, "find_component_recordset", lambda syn, p, c: ("syn9" + p[3:], "synRS" + p[3:])), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
          mock.patch.object(fx.recordsets, "read_recordset", read), \
          mock.patch.object(fx, "run_upload", lambda a, syn: 0):
@@ -243,8 +243,7 @@ def run_tool(tmp_path, *rows, cur=None):
     cur = tool_current() if cur is None else cur
     argv = ["--changes", str(changes(tmp_path, *rows)), "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-fixcells-t"]
     with mock.patch.object(fx, "grant_projects", lambda syn: {"CA1": "syn100"}), \
-         mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9100"), \
-         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS100"), \
+         mock.patch.object(fx.merge_tables, "find_component_recordset", lambda syn, p, c: ("syn9100", "synRS100")), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [TOOL_K])), \
          mock.patch.object(fx.recordsets, "read_recordset", lambda syn, rs_id, version=None, cache_dir=None, list_cols=(), md5=None: cur.copy()), \
          mock.patch.object(fx, "run_upload", lambda a, syn: 0):
@@ -317,8 +316,7 @@ def test_unreadable_recordset_is_a_refusal_naming_the_grant(tmp_path):
         raise RuntimeError("403")
     argv = ["--changes", str(changes(tmp_path, tool_row())), "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-fixcells-t"]
     with mock.patch.object(fx, "grant_projects", lambda syn: {"CA1": "syn100"}), \
-         mock.patch.object(fx, "find_folder", lambda syn, p, c: "syn9100"), \
-         mock.patch.object(fx.recordsets, "find_recordset", lambda syn, f, c: "synRS100"), \
+         mock.patch.object(fx.merge_tables, "find_component_recordset", lambda syn, p, c: ("syn9100", "synRS100")), \
          mock.patch.object(fx.recordsets, "recordset_info", lambda syn, rs_id: (3, [TOOL_K])), \
          mock.patch.object(fx.recordsets, "read_recordset", boom):
         code = fx.main(argv, syn=object())

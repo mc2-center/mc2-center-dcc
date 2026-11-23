@@ -98,6 +98,13 @@ def test_parse_list():
     check(cells.parse_list)
 
 
+def test_first_item_is_the_first_list_item_or_empty():
+    assert cells.first_item("syn5, syn6") == "syn5"
+    assert cells.first_item(", syn5,syn6") == "syn5"
+    assert cells.first_item(["a", "b"]) == "a"
+    assert cells.first_item("") == "" and cells.first_item(None) == "" and cells.first_item(np.nan) == ""
+
+
 def test_value_maps_split_items_matches_split_cell():
     check(value_maps.split_items)
 

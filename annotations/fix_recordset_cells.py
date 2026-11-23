@@ -121,11 +121,6 @@ def grant_projects(syn) -> dict[str, str]:
     return dict(zip(df["grantNumber"], df["grantId"]))
 
 
-def find_folder(syn, project: str, component: str):
-    from synapseclient.operations import find_entity_id
-    return find_entity_id(name=merge_tables.folder_name(project, component), parent=project, synapse_client=syn)
-
-
 def resolve_column(name: str, columns) -> str | None:
     """The RecordSet column for a display name or a key name; None when unknown."""
     if name in columns:
@@ -186,8 +181,7 @@ def plan(syn, changes: pd.DataFrame, component: str):
         if grant not in loaded:
             project = projects[grant]
             try:
-                folder = find_folder(syn, project, component)
-                rs_id = recordsets.find_recordset(syn, folder, component) if folder else None
+                folder, rs_id = merge_tables.find_component_recordset(syn, project, component)
                 if rs_id is None:
                     loaded[grant] = f"no {component} folder or RecordSet in {project}"
                 else:

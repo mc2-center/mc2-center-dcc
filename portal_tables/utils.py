@@ -16,7 +16,7 @@ import pandas as pd
 import re
 import time
 
-from cells import is_placeholder, parse_list
+from cells import first_item, is_placeholder, parse_list
 
 logger = logging.getLogger(__name__)
 
@@ -663,7 +663,7 @@ def identify_download_type(row: pd.Series, source_repo: str, entity):
     fetch failed). No Synapse call is made.
     """
     key = "DatasetViewId" if "DatasetViewId" in row else "DatasetView_id"
-    entity_id = (parse_list(row[key]) or [""])[0]
+    entity_id = first_item(row[key])
 
     is_dataset = bool(entity_id) and isinstance(entity, Dataset)
 

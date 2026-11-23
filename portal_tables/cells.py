@@ -56,6 +56,11 @@ def parse_list(value, group=None, rejoined: list | None = None) -> list[str]:
     return out
 
 
+def first_item(value) -> str:
+    """The first item of a list cell (see :func:`parse_list`), or ``""`` when it has none."""
+    return (parse_list(value) or [""])[0]
+
+
 def _clean(items) -> list[str]:
     return [s for s in (str(i).strip() for i in items) if s]
 

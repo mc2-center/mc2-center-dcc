@@ -140,6 +140,13 @@ def _join_lists(df, key_col):
     return df
 
 
+def find_component_recordset(syn, project, component):
+    """``(folder id, RecordSet id)`` of the component under ``project``; None for what is missing."""
+    folder_id = operations.find_entity_id(name=folder_name(project, component), parent=project, synapse_client=syn)
+    rs_id = recordsets.find_recordset(syn, folder_id, component) if folder_id else None
+    return folder_id, rs_id
+
+
 def build_union(syn, component, grant_ids):
     """Read each grant's RecordSet and union them. Returns (frame, stats).
 
@@ -150,11 +157,9 @@ def build_union(syn, component, grant_ids):
 
     def read_grant(grant):
         """``(frame, None)`` for a grant with a RecordSet, else ``(None, warning)``; errors propagate."""
-        name = folder_name(grant, component)
-        folder_id = operations.find_entity_id(name=name, parent=grant, synapse_client=syn)
+        folder_id, rs_id = find_component_recordset(syn, grant, component)
         if folder_id is None:
-            return None, ("Skipping %s: folder '%s' not found", grant, name)
-        rs_id = recordsets.find_recordset(syn, folder_id, component)
+            return None, ("Skipping %s: folder '%s' not found", grant, folder_name(grant, component))
         if rs_id is None:
             return None, ("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
         # the latest version can be replaced in place: read it from Synapse, never through the cache

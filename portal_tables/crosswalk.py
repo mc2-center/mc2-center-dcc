@@ -23,7 +23,7 @@ from synapseclient.models import Table
 
 import model_contract
 import utils
-from cells import parse_list
+from cells import is_null, parse_list
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +353,7 @@ def _to_bool(value, component: str, column: str):
     """``True``/``False`` for a bool cell; ``pd.NA`` for a blank or null cell; anything else raises."""
     if isinstance(value, bool):
         return value
-    if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+    if is_null(value):
         return pd.NA
     text = str(value).strip().lower()
     if text == "":

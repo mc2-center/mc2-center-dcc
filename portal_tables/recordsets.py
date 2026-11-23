@@ -864,17 +864,13 @@ def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_
 
 # --- shared by the scripts ----------------------------------------------------
 
-DEFAULT_WRITE_LOG_TABLE = utils.WRITE_LOG_TABLE
-DEFAULT_REMOVALS_TABLE = utils.REMOVALS_TABLE
-
-
 def add_log_args(parser, write_log=True, removals=True) -> None:
     """Add ``--write-log-table`` and (with ``removals``) ``--removals-table``, defaulting to the production tables."""
     if write_log:
-        parser.add_argument("--write-log-table", default=DEFAULT_WRITE_LOG_TABLE,
+        parser.add_argument("--write-log-table", default=utils.WRITE_LOG_TABLE,
                             help="Synapse ID of the write-log table; default: %(default)s")
     if removals:
-        parser.add_argument("--removals-table", default=DEFAULT_REMOVALS_TABLE,
+        parser.add_argument("--removals-table", default=utils.REMOVALS_TABLE,
                             help="Synapse ID of the removals table; default: %(default)s")
 
 

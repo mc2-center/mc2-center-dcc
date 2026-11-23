@@ -48,7 +48,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
 import crosswalk
 import utils
-from cells import parse_list
+from cells import first_item
 
 logger = logging.getLogger(__name__)
 
@@ -388,7 +388,7 @@ def _build_grant_lookup(manifest: str) -> dict[tuple[str, str], str]:
             for _, mrow in df.iterrows():
                 alias = mrow.get("Dataset Alias", "")
                 # The split file is per grant; GrantView Key can list several.
-                grant = _file_grant(path) or (parse_list(mrow.get("GrantView Key", "")) or [""])[0]
+                grant = _file_grant(path) or first_item(mrow.get("GrantView Key", ""))
                 if alias:
                     lookup[(path, alias)] = grant
         except Exception:

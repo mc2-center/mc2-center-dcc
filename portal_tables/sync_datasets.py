@@ -12,7 +12,7 @@ import re
 import synapseclient
 from synapseclient import Synapse, operations
 from synapseclient.models import Table
-from cells import is_placeholder, parse_list
+from cells import first_item, is_placeholder, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -123,7 +123,7 @@ def add_missing_info(
 
     # Read all entities first, in parallel, instead of one call per row.
     entities = _fetch_entities(
-        syn, [(parse_list(v) or [""])[0] for v in datasets["DatasetViewId"]]
+        syn, [first_item(v) for v in datasets["DatasetViewId"]]
     )
 
     for _, row in datasets.iterrows():
@@ -146,7 +146,7 @@ def add_missing_info(
         # Use the actual Synapse entity ID (DatasetViewId), not DatasetAlias,
         # since DatasetAlias is often an external accession (e.g. a GEO
         # GSE ID) rather than a syn ID for externally-hosted datasets.
-        dataset_id = (parse_list(row["DatasetViewId"]) or [""])[0]
+        dataset_id = first_item(row["DatasetViewId"])
         entity = entities.get(dataset_id)
         # Prefer the Croissant-processed version so the portal button appears
         # correctly. Fall back to (version_number - 1) for datasets not yet

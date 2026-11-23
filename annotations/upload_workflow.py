@@ -563,10 +563,7 @@ def get_args(argv=None):
     p.add_argument("--type", required=True, choices=COMPONENTS)
     p.add_argument("--out-dir", required=True)
     p.add_argument("--target", choices=["recordset", "schematic-table"], default="recordset")
-    p.add_argument("--write-log-table", default=recordsets.DEFAULT_WRITE_LOG_TABLE,
-                   help="Synapse ID of the write-log table (recordset target; default: production)")
-    p.add_argument("--removals-table", default=recordsets.DEFAULT_REMOVALS_TABLE,
-                   help="Synapse ID of the RecordSet removals table (recordset target; default: production)")
+    recordsets.add_log_args(p)
     p.add_argument("--schematic-config", help="schematic config file (schematic-table target)")
     p.add_argument("--cv-file", help="all_valid_values.csv path/URL for split (default: pinned release)")
     p.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
