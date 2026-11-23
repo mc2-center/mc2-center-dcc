@@ -27,14 +27,15 @@ with its `review_app.py`. The result is one manifest CSV per component (`Publica
 
 ```bash
 python annotations/upload_workflow.py --manifest publication.csv --type PublicationView \
-    --out-dir runs/2026-11-publications --write-log-table syn78404341           # dry run
+    --out-dir runs/2026-11-publications                                         # dry run
 python annotations/upload_workflow.py --manifest publication.csv --type PublicationView \
-    --out-dir runs/2026-11-publications --write-log-table syn78404341 --execute  # write
+    --out-dir runs/2026-11-publications --execute                                # write
 ```
 
 Stages `split` -> `paths` -> `reshape` -> `links` (DatasetView/ToolView only; creates Synapse entities, so only with
-`--execute`) -> `upload`; each writes `<out-dir>/<NN>_<stage>/` and `<out-dir>/run.json`. `--removals-table` defaults
-to `syn78404342`. Resume a failed run with `--from-stage <stage>`; a different manifest or type in a used `--out-dir`
+`--execute`) -> `upload`; each writes `<out-dir>/<NN>_<stage>/` and `<out-dir>/run.json`. `--write-log-table` and
+`--removals-table` default to the production tables `syn78404341` and `syn78404342`; a dry run reads them and
+writes nothing to them. Resume a failed run with `--from-stage <stage>`; a different manifest or type in a used `--out-dir`
 needs `--force-new` (wipes the stage folders). Per-grant results are in
 `<out-dir>/05_upload/<run-id>/<grant>/` (`summary.txt`, `decisions.csv`, `conflicts.csv`, `removal_skipped.csv`,
 `merged.csv`, and `validation.csv` with `--execute`); `summary.csv` lists every grant.
@@ -77,14 +78,16 @@ python portal_tables/union_qc.py --regenerate --output-dir output/i6 --upload   
 
 Builds each component's union from the grants' RecordSets (grants from the staging Grants table), merges rows by alias key
 (publications and datasets only; tools and education keep one row per grant unless `--merge-components` names them),
-fills empty cells, computes `iconTags`, validates against the 14.x JSON Schemas, and writes
+fills empty cells, computes `iconTags` (publications and datasets), validates against the 14.x JSON Schemas, and writes
 `<output-dir>/<Component>/<Component>_merged_manifest.csv`, `validation.csv`, `validation_counts.csv`,
-`key_corrections.csv`, `id_conflicts.csv`, `report.txt`, plus `<output-dir>/summary.txt`. `--components` limits it.
+`key_corrections.csv`, `id_conflicts.csv`, `key_conflicts.csv`, `report.txt`, plus `<output-dir>/summary.txt`. `--components` limits it.
 `--upload` stores each manifest as a new version of the current manifest file (publications `syn53478776`, datasets
 `syn53478774`, tools `syn53479671`, education `syn53651540`); it is refused with `--input-dir` or `--grant-projects`,
-and while any alias has different ids in different grants (`id_conflicts.csv`: fix in the grant RecordSets and
-regenerate). Invalid rows are kept and reported, never dropped. Checkpoint: review the validation report
+and while any alias has different ids in different grants (`id_conflicts.csv`) or any unmerged id is twice in one
+grant or on different names (`key_conflicts.csv`): fix in the grant RecordSets and regenerate. Invalid rows are kept and reported, never dropped. Checkpoint: review the validation report
 (`validation_counts.csv`, `report.txt`, `id_conflicts.csv`) before `--upload`; `--upload` needs sign-off.
+Write each option in full: `union_qc.py` does not accept abbreviations. The old flags `-c`, `-t` and `-bl` are
+removed; a command with them stops with a usage error.
 
 **6. Sync to the staging portal tables.** `run_sync.sh` runs the publication, dataset, tool and education syncs,
 reading the merged manifests above (the same script runs in the `Sync manifests to portal tables` GitHub workflow,
@@ -216,7 +219,7 @@ removals table, so later uploads drop the old key. Cells that a curator owned un
 the new key.
 
 Check: `summary.csv` shows `rekeyed` for each RecordSet. The script reads the version back and compares it.
-On failure: fix the `refused.csv` rows and run again. For `locked` or `failed`, see
+On failure: fix the `refused.csv` rows and run again. For `locked`, `retry` or `failed`, see
 [Write log and locks](#write-log-and-locks). For `readback_mismatch`, do not run again: read the RecordSet.
 
 ### Remove a record
@@ -320,10 +323,10 @@ To clear a stuck lock by hand (no run is writing to the RecordSet):
 
 Each grant RecordSet is bound to one JSON Schema version (`MC2Center-<Component>-<version>`; now 14.1.2). After a new
 data-models release, re-bind the RecordSets to it, or Grid keeps validating against the old version. For the grant
-RecordSets, run `annotations/migrate_grant_tables_14.py --component <Component> --schema-version <version>` (dry run,
-then `--execute`): for each migrated RecordSet it binds the new schema and re-validates it with one logged Grid
+RecordSets, run `migration/migrate_grant_tables_14.py --component <Component> --schema-version <version>` (dry run,
+then `--execute`, which needs `--write-log-table syn78404341`): for each migrated RecordSet it binds the new schema and re-validates it with one logged Grid
 export; the data does not change. The admin RecordSets (grants, projects, people) have no re-bind step in
-`annotations/migrate_admin_manifests_14.py` yet. Also move the AI curation pipeline's `MODEL_REF` pin and
+`migration/migrate_admin_manifests_14.py` yet. Also move the AI curation pipeline's `MODEL_REF` pin and
 `portal_tables/model_contract.MODEL_REF` (the default schema version of `union_qc.py`) to the same version.
 
 ## Grid and list-cell caveats
@@ -334,7 +337,10 @@ export; the data does not change. The admin RecordSets (grants, projects, people
   keeps such rows out of an upload (`unsafe_list_items.csv`). To repair a RecordSet that already has one, run
   `annotations/repair_recordset.py`: it lists the invalid list cells (`broken_cells.csv`), applies a fixes CSV
   (`key`, `column`, `value` = the corrected cell as a JSON array), stores the result directly as a new version,
-  logs it in the write log and re-validates through one Grid export (dry run unless `--execute`):
+  logs it in the write log and re-validates through one Grid export (dry run unless `--execute`).
+  `summary.csv` shows `repaired` when the read-back matches. `locked` (another run holds the lock) and `retry`
+  (the RecordSet moved before the write) mean nothing was written: see [Write log and locks](#write-log-and-locks).
+  `refused`, `failed` and `mismatch` also give exit status 1:
 
   ```bash
   python annotations/repair_recordset.py --recordset syn... --component PublicationView --fixes fixes.csv \
@@ -349,11 +355,13 @@ export; the data does not change. The admin RecordSets (grants, projects, people
 | `upload_workflow.py` | all stages done, nothing dropped | a stage failed (including any grant needing attention in the upload) | done, but rows dropped or files excluded (see `run.json`) |
 | `upload_recordsets.py` | all grants ok | a grant `failed`, `missing_recordset`, `locked`, `retry` or `verification_mismatch` | - |
 | `remove_recordset_rows.py` | ok | a RecordSet `failed`, `locked`, `blocked` or `retry` | - |
+| `rekey_recordset_rows.py` | every RecordSet `dryrun` or `rekeyed` | a RecordSet `refused`, `locked`, `retry`, `failed` or `readback_mismatch` | - |
+| `repair_recordset.py` | `dryrun` or `repaired` | `locked`, `retry`, `refused`, `failed` or `mismatch` | - |
 | `union_qc.py --regenerate` | no validation failures | - | validation failures, or a component skipped (empty union) |
 
 `missing_recordset`: the grant has no `MC2Center_<Component>_RecordSet` in its data-type folder; the upload does not
 create it.
-`migrate_grant_tables_14.py` and `migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle) use
+`migration/migrate_grant_tables_14.py` and `migration/migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle) use
 0 ok, 1 a grant failed or the comparison differs, 2 unmapped values or validation failures.
 
 ## Synapse IDs
