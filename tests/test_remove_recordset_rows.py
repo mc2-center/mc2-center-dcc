@@ -363,3 +363,58 @@ def test_summary_line_text():
          "not_found": 0, "claimed": {"b": 2}, "owed_export": [2]}
     assert rs.summary_line(s, "recordset", cmd.SUMMARY_FIELDS) == (
         "synRS: removed base=1 version=2 remove=1 not_found=0 claimed={'b': 2} removed ['b']")
+
+
+def test_a_recordset_that_moved_before_the_write_is_aborted_and_not_written(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
+    info = fake.info
+
+    def moved(syn, rs_id):  # another version lands once our pending row is logged
+        if log.rows and len(fake.versions) == 1:
+            fake.versions.append(V1)
+        return info(syn, rs_id)
+    fake.info = moved
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "retry" and "moved from v1 to v2 before the write" in s["message"]
+    assert fake.events == [] and len(fake.versions) == 2  # only the foreign version
+    assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
+    assert removals.removed("synRS") == {} and set(removals.requested("synRS")) == {"b"}
+
+
+def owed_export(log, removals):
+    """A RecordSet whose removal v2 owes its Grid export (nothing else requested)."""
+    fake = setup(log, removals, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
+    log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
+    return fake
+
+
+def test_revalidation_refused_by_the_lock_race_aborts_its_row(tmp_path, log, removals):
+    fake = owed_export(log, removals)
+    with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "other"):
+        s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "locked" and "run other started its write first" in s["message"]
+    assert len(fake.versions) == 2 and fake.events == []
+    assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
+    assert log.unexported_removals("synRS") == [2]
+
+
+def test_revalidation_refused_when_the_recordset_moved_aborts_its_row(tmp_path, log, removals):
+    fake = owed_export(log, removals)
+    answers = iter([(2, [K]), (3, [K])])
+    fake.info = lambda syn, rs_id: next(answers)
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "retry" and "moved from v2 to v3 before the write" in s["message"]
+    assert len(fake.versions) == 2 and fake.events == []
+    assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
+    assert log.unexported_removals("synRS") == [2]
+
+
+def test_revalidation_refused_by_a_session_opened_after_the_lock_aborts_its_row(tmp_path, log, removals):
+    fake = owed_export(log, removals)
+    calls = iter([[], [SimpleNamespace(session_id="g2")]])
+    fake.open_sessions = lambda syn, rs_id: next(calls)
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "blocked" and "a Grid session was opened meanwhile" in s["message"]
+    assert len(fake.versions) == 2 and fake.events == []
+    assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
+    assert log.unexported_removals("synRS") == [2]

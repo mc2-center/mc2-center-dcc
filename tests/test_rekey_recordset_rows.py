@@ -228,3 +228,20 @@ def test_a_new_key_that_is_a_removed_key_is_refused(tmp_path, log, removals):
     assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn9\n", log=log) == 1
     refused = read_csv((tmp_path / "rep" / "dcc-rekey-1" / "synA" / "refused.csv").read_text())
     assert [r["reason"] for r in refused] == ["new_key is a removed key"]
+
+
+def test_a_recordset_that_moved_before_the_write_is_aborted_and_not_written(tmp_path, log, removals):
+    f = fake_rs(log=log)
+    info = f.info
+
+    def moved(syn, rs_id):  # another version lands once our pending row is logged
+        if log.rows and len(f.versions) == 1:
+            f.versions.append(V1)
+        return info(syn, rs_id)
+    f.info = moved
+    fake = FakeSynapse(log, synA=f)
+    assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log, execute=True) == 1
+    s = summary(tmp_path)["synA"]
+    assert s["status"] == "refused" and "moved from v1 to v2 before the write; nothing written" in s["message"]
+    assert f.events == [] and len(f.versions) == 2 and removals.rows == []  # only the foreign version
+    assert log._read("synA")["status"].tolist() == ["pending", "aborted"]

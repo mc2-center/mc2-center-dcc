@@ -923,3 +923,26 @@ def test_read_csv_str_keeps_text_and_reads_a_file_without_data_as_empty(tmp_path
     assert df.to_dict("records") == [{"a": "01", "b": ""}, {"a": "NA", "b": "x"}]
     path.write_text("")
     assert rs.read_csv_str(path).empty
+
+
+def test_locked_write_resolves_the_pending_row_on_keyboard_interrupt_and_propagates(log):
+    with mock.patch.object(rs, "recordset_info", lambda syn, rs_id: (1, [K])):
+        with pytest.raises(KeyboardInterrupt):
+            with rs.locked_write("syn", "syn1", log, "run-1", "42", 1):
+                assert log.unresolved_pending("syn1") != []  # the lock is held inside the body
+                raise KeyboardInterrupt
+    assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
+    assert log.unresolved_pending("syn1") == []
+
+
+def test_locked_write_logs_a_failed_recovery_and_raises_the_original_error(caplog, log):
+    def broken_recovery(*args, **kwargs):
+        raise RuntimeError("recovery failed")
+    with mock.patch.object(rs, "recordset_info", lambda syn, rs_id: (1, [K])), \
+         mock.patch.object(rs, "recover_pending", broken_recovery), caplog.at_level("ERROR"):
+        with pytest.raises(ValueError, match="body failed"):
+            with rs.locked_write("syn", "syn1", log, "run-1", "42", 1):
+                raise ValueError("body failed")
+    record = next(r for r in caplog.records if "could not resolve the pending write-log row" in r.getMessage())
+    assert record.getMessage().startswith("syn1:") and isinstance(record.exc_info[1], RuntimeError)
+    assert log._read("syn1")["status"].tolist() == ["pending"]  # recovery failed, so the row stays for the next run
