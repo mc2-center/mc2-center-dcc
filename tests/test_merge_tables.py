@@ -1,6 +1,5 @@
 """Offline tests for merge_tables.py (Synapse fully mocked)."""
 
-import hashlib
 import json
 import logging
 import threading
@@ -70,7 +69,6 @@ def _union(rs_by_grant, grants):
 
     with mock.patch.object(mt.operations, "find_entity_id", side_effect=find), \
          mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
-         mock.patch.object(mt.recordsets, "latest_version", return_value=(3, ["ToolViewId"], "md5x")), \
          mock.patch.object(
              mt.recordsets, "read_recordset",
              side_effect=lambda syn, rs, **kw: rs_by_grant[rs.removeprefix("rs-folder-")].copy(),
@@ -261,7 +259,6 @@ def test_build_union_keeps_grant_order_when_reads_finish_out_of_order(caplog):
     grants = ["syn1", "syn2", "syn3", "syn4"]
     with mock.patch.object(mt.operations, "find_entity_id", side_effect=find), \
          mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
-         mock.patch.object(mt.recordsets, "latest_version", return_value=(3, ["ToolViewId"], "md5x")), \
          mock.patch.object(mt.recordsets, "read_recordset", side_effect=read), \
          caplog.at_level(logging.WARNING):
         df, stats = mt.build_union(mock.MagicMock(), "ToolView", grants)
@@ -287,28 +284,17 @@ def test_build_union_reads_run_at_the_same_time_and_an_error_propagates():
 
     with mock.patch.object(mt.operations, "find_entity_id", side_effect=lambda **kw: "folder-" + kw["parent"]), \
          mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
-         mock.patch.object(mt.recordsets, "latest_version", return_value=(3, ["ToolViewId"], "md5x")), \
          mock.patch.object(mt.recordsets, "read_recordset", side_effect=read):
         with pytest.raises(RuntimeError, match="403"):
             mt.build_union(mock.MagicMock(), "ToolView", ["syn1", "syn2", "syn3"])
     assert 1 < peak <= mt.MAX_READERS
 
 
-def test_build_union_reads_the_latest_version_through_the_cache(tmp_path, monkeypatch):
-    cache = tmp_path / "cache"
-    monkeypatch.setattr(mt.recordsets, "DEFAULT_CACHE_DIR", cache)
-    download = tmp_path / "dl.csv"
-    download.write_text("ToolViewId,ToolName\nt1,A\n")
-    md5 = hashlib.md5(download.read_bytes()).hexdigest()
+def test_build_union_reads_the_latest_version_without_a_cache_dir():
     with mock.patch.object(mt.operations, "find_entity_id", side_effect=lambda **kw: "folder-" + kw["parent"]), \
          mock.patch.object(mt.recordsets, "find_recordset", side_effect=lambda syn, f, c: "rs-" + f), \
-         mock.patch.object(mt.recordsets, "latest_version", return_value=(7, ["ToolViewId"], md5)), \
-         mock.patch.object(mt.recordsets, "RecordSet") as cls:
-        cls.return_value.get.return_value = SimpleNamespace(path=str(download))
-        first, _ = mt.build_union(mock.MagicMock(), "ToolView", ["syn1"])
-        assert cls.return_value.get.call_count == 1
-        assert (cache / "rs-folder-syn1" / "v7.csv").exists()
-        second, _ = mt.build_union(mock.MagicMock(), "ToolView", ["syn1"])
-        assert cls.return_value.get.call_count == 1  # the second run is read from the cache
-    assert first.equals(second)
-    assert cls.call_args.kwargs["version_number"] == 7
+         mock.patch.object(mt.recordsets, "read_recordset", return_value=_rs(["t"], ["A"])) as read:
+        mt.build_union(mock.MagicMock(), "ToolView", ["syn1"])
+    kwargs = read.call_args.kwargs
+    assert read.call_args.args[1] == "rs-folder-syn1"
+    assert kwargs.get("version") is None and kwargs.get("cache_dir") is None

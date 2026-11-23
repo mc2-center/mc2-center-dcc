@@ -157,10 +157,8 @@ def build_union(syn, component, grant_ids):
         rs_id = recordsets.find_recordset(syn, folder_id, component)
         if rs_id is None:
             return None, ("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
-        latest, _, md5 = recordsets.latest_version(syn, rs_id)
-        frame = recordsets.read_recordset(
-            syn, rs_id, version=latest, cache_dir=recordsets.DEFAULT_CACHE_DIR, list_cols=list_cols, md5=md5)
-        return frame, None
+        # the latest version can be replaced in place: read it from Synapse, never through the cache
+        return recordsets.read_recordset(syn, rs_id, list_cols=list_cols), None
 
     frames, missing = [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_READERS) as pool:

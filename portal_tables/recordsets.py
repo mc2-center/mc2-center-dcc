@@ -301,23 +301,23 @@ def _load_csv(path, list_cols=()) -> pd.DataFrame:
 
 
 def read_recordset(
-    syn, rs_id: str, version: int | None = None, cache_dir=None, list_cols=(), md5: str | None = None
+    syn, rs_id: str, version: int | None = None, cache_dir=None, list_cols=()
 ) -> pd.DataFrame:
     """Read a RecordSet version (default: latest) with string dtype.
 
     JSON-array cells become Python lists only in ``list_cols`` (see
     :func:`list_columns`); every other cell stays a string, empty is ``""``.
     With ``cache_dir`` and an explicit ``version``, the CSV is cached on disk
-    as ``<cache_dir>/<rs_id>/v<version>.csv`` (versions are immutable, the
-    latest included) with ``v<version>.csv.md5`` beside it, and read from there on later calls
-    when the file still matches that md5 (else it is fetched, and checked, again). ``version=None`` is
-    never cached. With ``md5`` (the version's current file md5, see :func:`latest_version`), a cached file is
-    also used only when its ``.md5`` equals ``md5``; this catches a file replaced in place under the same version.
+    as ``<cache_dir>/<rs_id>/v<version>.csv`` with ``v<version>.csv.md5`` beside it, and read from there
+    on later calls when the file still matches that md5 (else it is fetched, and checked, again).
+    Only a version below the latest can be cached: it cannot change. The latest version can be replaced
+    in place, so pass ``cache_dir`` only for a version below the latest; read the latest with
+    ``version=None`` or without ``cache_dir``. ``version=None`` is never cached.
     """
     cached = None
     if cache_dir is not None and version is not None:
         cached = Path(cache_dir) / rs_id / f"v{version}.csv"
-        if _cache_hit(cached, md5):
+        if _cache_hit(cached):
             return _load_csv(cached, list_cols)
     entity = utils.retry(  # the file host sometimes answers 403 to a valid URL; the client does not retry it
         lambda: RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn),
@@ -351,17 +351,14 @@ def _md5_sidecar(cached: Path) -> Path:
     return cached.with_name(cached.name + ".md5")
 
 
-def _cache_hit(cached: Path, md5: str | None = None) -> bool:
+def _cache_hit(cached: Path) -> bool:
     """Whether the cached ``vN.csv`` can be used: its ``vN.csv.md5`` (the md5 the file handle gave when it
     was cached) matches the file. A file without the sidecar was cached before the md5 check existed and may
-    be another version's contents (a poisoned client cache): stale, fetched again. With ``md5``, the sidecar
-    must also equal it. Local read, no network."""
+    be another version's contents (a poisoned client cache): stale, fetched again. Local read, no network."""
     sidecar = _md5_sidecar(cached)
     if not cached.exists() or not sidecar.exists():
         return False
     recorded = sidecar.read_text().strip()
-    if md5 is not None and recorded != md5:
-        return False
     return recorded == synapse_utils.md5_for_file_hex(filename=str(cached))
 
 
@@ -429,20 +426,10 @@ def duplicate_keys(df: pd.DataFrame, key) -> list[str]:
     return sorted({k for k in keys if keys.count(k) > 1}) if len(set(keys)) != len(keys) else []
 
 
-def latest_version(syn, rs_id: str) -> tuple[int, list[str], str | None]:
-    """``(latest version number, upsert key columns, file md5 or None)``, without downloading the file.
-
-    The md5 is the file handle's ``content_md5`` from the same entity read; pass it to :func:`read_recordset`
-    to refuse a cached file that was replaced in place.
-    """
-    entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)
-    md5 = getattr(getattr(entity, "file_handle", None), "content_md5", None)
-    return entity.version_number, list(entity.upsert_keys or []), md5 if isinstance(md5, str) and md5 else None
-
-
 def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
     """``(latest version number, upsert key columns)``, without downloading the file."""
-    return latest_version(syn, rs_id)[:2]
+    entity = RecordSet(id=rs_id, download_file=False).get(synapse_client=syn)
+    return entity.version_number, list(entity.upsert_keys or [])
 
 
 def schema_binding(syn, rs_id: str) -> tuple[str | None, pd.Timestamp]:

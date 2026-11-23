@@ -105,11 +105,12 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
     """
     claimed: dict[str, int] = {}
     entries = []
+    latest, _ = recordsets.recordset_info(syn, rs_id)  # only a version below the latest is cached
     for v in sorted(versions):
         if v < 2:
             continue
         before = set(_keys_of(recordsets.read_recordset(syn, rs_id, v - 1, cache_dir), key_cols))
-        after = set(_keys_of(recordsets.read_recordset(syn, rs_id, v, cache_dir), key_cols))
+        after = set(_keys_of(recordsets.read_recordset(syn, rs_id, v, cache_dir if v < latest else None), key_cols))
         for k in sorted(set(requested) & before - after - set(claimed)):
             claimed[k] = v
             info = requested[k]
@@ -165,7 +166,7 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
     if locked:
         summary.update(status="locked", message=f"{locked}; skipped")
         return summary
-    latest, key_cols, latest_md5 = recordsets.latest_version(syn, rs_id)
+    latest, key_cols = recordsets.recordset_info(syn, rs_id)
     if not key_cols:
         summary.update(status="failed", message=f"{rs_id} has no upsert key")
         return summary
@@ -204,7 +205,7 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
             if refusal:
                 summary.update(status=refusal[0], message=refusal[1])
                 return summary
-            latest, _, latest_md5 = recordsets.latest_version(syn, rs_id)
+            latest, _ = recordsets.recordset_info(syn, rs_id)
             if not requested:
                 summary.update(status="revalidated", message=f"re-validated removal version(s) {owed} (Grid export)")
                 return summary
@@ -212,8 +213,8 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
             summary.update(status="dryrun", message=summary["message"] + "nothing written")
             return summary
 
-    current = recordsets.read_recordset(  # JSON-array cells stay text, lossless; md5: the file may be replaced in place
-        syn, rs_id, latest, args.cache_dir, md5=latest_md5)
+    # JSON-array cells stay text, lossless; the latest version can be replaced in place: no cache
+    current = recordsets.read_recordset(syn, rs_id, latest)
     if any(c not in current.columns for c in key_cols):
         summary.update(status="failed", message=f"v{latest} lacks key column(s) {key_cols}")
         return summary
