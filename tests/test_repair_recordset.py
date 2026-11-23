@@ -99,11 +99,12 @@ def test_a_fix_for_a_healthy_cell_is_allowed(tmp_path, log, capsys):
     assert "1 broken cells, 2 fixes" in capsys.readouterr().out
 
 
-def test_locked_recordset_is_refused(tmp_path, log, capsys):
+def test_locked_recordset_is_reported_locked(tmp_path, log, capsys):
     log.start("synRS", 1, "dcc-removal-other", "7")
     fake = fake_rs(log)
     assert run(tmp_path, fake, log=log, execute=True) == 1
-    assert "dcc-removal-other" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "synRS: locked " in out and "dcc-removal-other" in out
     assert_nothing_written(fake)
 
 
@@ -150,7 +151,7 @@ def test_a_recordset_that_moved_before_the_write_is_not_written(tmp_path, log, c
         return info(syn, rs_id)
     fake.info = moved
     assert run(tmp_path, fake, log=log, execute=True) == 1
-    assert ("synRS: refused synRS moved from v1 to v2 before the write; nothing written, rerun"
+    assert ("synRS: retry synRS moved from v1 to v2 before the write; nothing written, rerun"
             in capsys.readouterr().out)
     assert fake.events == [] and len(fake.versions) == 2  # only the foreign version; nothing stored or exported
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
@@ -161,6 +162,6 @@ def test_an_earlier_pending_row_of_another_run_aborts_our_row_and_stops_the_writ
     # another run's earlier row appears after the pre-check, once our own pending row is logged
     with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "dcc-other-1"):
         assert run(tmp_path, fake, log=log, execute=True) == 1
-    assert "synRS: refused run dcc-other-1 started its write first; skipped" in capsys.readouterr().out
+    assert "synRS: locked run dcc-other-1 started its write first; skipped" in capsys.readouterr().out
     assert_nothing_written(fake)
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]

@@ -138,7 +138,7 @@ def test_an_earlier_pending_row_of_another_run_stops_the_write(tmp_path, log, re
     with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "dcc-other-1"):
         assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log, execute=True) == 1
     s = summary(tmp_path)["synA"]
-    assert s["status"] == "refused" and s["message"] == "run dcc-other-1 started its write first; skipped"
+    assert s["status"] == "locked" and s["message"] == "run dcc-other-1 started its write first; skipped"
     assert f.events == [] and len(f.versions) == 1 and removals.rows == []
     assert log._read("synA")["status"].tolist() == ["pending", "aborted"]
 
@@ -242,6 +242,6 @@ def test_a_recordset_that_moved_before_the_write_is_aborted_and_not_written(tmp_
     fake = FakeSynapse(log, synA=f)
     assert run(tmp_path, fake, "recordset,old_key,new_key\nsynA,syn1,syn10\n", log=log, execute=True) == 1
     s = summary(tmp_path)["synA"]
-    assert s["status"] == "refused" and "moved from v1 to v2 before the write; nothing written" in s["message"]
+    assert s["status"] == "retry" and "moved from v1 to v2 before the write; nothing written" in s["message"]
     assert f.events == [] and len(f.versions) == 2 and removals.rows == []  # only the foreign version
     assert log._read("synA")["status"].tolist() == ["pending", "aborted"]

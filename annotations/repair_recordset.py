@@ -36,7 +36,8 @@ rejected). ``--write-log-table`` defaults to the production table; a dry run rea
 it and writes nothing to it.
 
 Exit status: 0 ok (dry run complete, or repaired and the read-back matches);
-1 refused (locked, no upsert key, broken cell without a fix, invalid fix,
+1 locked (another run holds the lock), retry (the RecordSet moved before the
+write), refused (no upsert key, broken cell without a fix, invalid fix,
 unexpected difference), failed, or the read-back does not match.
 
 author: orion.banks
@@ -145,7 +146,8 @@ def repair(syn, args, write_log, report_dir: Path, principal) -> dict:
 
     locked = recordsets.lock_message(write_log, rs_id, run_id, PROCESS_START)
     if locked:
-        raise Refused(locked)
+        summary.update(status="locked", message=locked)
+        return summary
     latest, key_cols = recordsets.recordset_info(syn, rs_id)
     if not key_cols:
         raise Refused(f"{rs_id} has no upsert key")
@@ -223,8 +225,9 @@ def repair(syn, args, write_log, report_dir: Path, principal) -> dict:
                 created.append(v)
 
             recordsets.export_via_grid(syn, rs_id, on_version=on_version)
-    except recordsets.WriteRefused as err:
-        raise Refused(err.message) from err
+    except recordsets.WriteRefused as err:  # locked or retry; nothing written
+        summary.update(status=err.status, message=err.message)
+        return summary
 
     final = recordsets.read_recordset(syn, rs_id, version=created[-1], list_cols=list_cols)
     mismatch = recordsets.differences(after, final[after.columns], key_cols)

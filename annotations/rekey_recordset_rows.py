@@ -44,15 +44,15 @@ version is read back and compared with ``rekeyed.csv``.
 
 Files are in ``<report-dir>/<run-id>/<recordset>/``; ``summary.csv`` in
 ``<report-dir>/<run-id>/`` has one row per RecordSet: recordset, status (dryrun,
-rekeyed, refused, locked, failed, readback_mismatch), changes, version, message.
+rekeyed, refused, locked, retry, failed, readback_mismatch), changes, version, message.
 
 The run id starts with ``dcc-rekey-`` (generated; a ``--run-id`` without it is
 rejected). ``--write-log-table`` and ``--removals-table`` default to the production
 tables; a dry run reads them and writes nothing to them.
 
 Exit status: 0 ok (every RecordSet dry-run complete, or rekeyed and the
-read-back matches); 1 if any RecordSet is refused, locked, failed, or its
-read-back does not match.
+read-back matches); 1 if any RecordSet is refused, locked, retry (it moved before
+the write), failed, or its read-back does not match.
 
 Example:
     python rekey_recordset_rows.py --changes rekey.csv --component DatasetView \\
@@ -235,8 +235,9 @@ def rekey(syn, args, rs_id, changes, write_log, removals, report_dir: Path, prin
                 created.append(v)
 
             recordsets.export_via_grid(syn, rs_id, on_version=on_version)
-    except recordsets.WriteRefused as err:
-        raise Refused(err.message) from err
+    except recordsets.WriteRefused as err:  # locked or retry; nothing written
+        summary.update(status=err.status, message=err.message)
+        return summary
     except Exception as err:
         if created:
             raise RuntimeError(f"v{created[0]} was stored, then: {err!r}") from err
