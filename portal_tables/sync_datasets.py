@@ -23,30 +23,6 @@ COMPONENT = "DatasetView"
 # Manifest columns that are not model attributes but are passed through.
 MANIFEST_PASSTHROUGH = ("iconTags",)
 
-def restore_display_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Undo space-stripped headers (``GrantViewKey`` -> ``GrantView Key``).
-
-    The live manifest (syn53478774) was written with the spaces removed from
-    its 13.1.0 display names, e.g. ``DatasetAssay`` and ``DataUseCodes``.
-    ``normalize_headers`` only accepts display names, so put the spaces back
-    for any header that is not already one. Headers that are already display
-    names (the 14.0.0 manifest) are left alone. Interim shim: the better home
-    is ``model_contract.rename_legacy_headers``.
-    """
-    known = set(model_contract.label_map())
-    known |= model_contract.PASSTHROUGH | set(MANIFEST_PASSTHROUGH)
-    known |= set(model_contract.RENAMES_13_TO_14[COMPONENT])
-    known |= set(model_contract.LEGACY_EXTRA_RENAMES)
-    known.add(model_contract.grant_column_legacy_name(COMPONENT))
-    by_stripped = {}
-    for name in sorted(known):
-        by_stripped.setdefault(name.replace(" ", ""), name)
-    renames = {
-        c: by_stripped[c] for c in df.columns if c not in known and c in by_stripped
-    }
-    return df.rename(columns=renames)
-
-
 def duo_code_to_id() -> dict[str, str]:
     """Short code (``RTN``) -> DUO ID (``DUO:0000029``).
 
@@ -308,7 +284,7 @@ def main():
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
     manifest = utils.fill_blank(utils.read_sync_manifest(syn, args))
-    manifest = restore_display_names(manifest)
+    manifest = model_contract.restore_display_names(manifest, COMPONENT, MANIFEST_PASSTHROUGH)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     manifest = model_contract.normalize_headers(
         manifest, to="keys", passthrough=MANIFEST_PASSTHROUGH

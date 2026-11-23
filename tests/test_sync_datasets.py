@@ -107,7 +107,9 @@ def prepare(rows, legacy, stripped=False):
         df = df.rename(columns=LEGACY_NAMES)
     if stripped:  # the live manifest: 13.1.0 names with spaces removed
         df = df.rename(columns=lambda c: c if c == "iconTags" else c.replace(" ", ""))
-    df = sync_datasets.restore_display_names(df)
+    df = model_contract.restore_display_names(
+        df, sync_datasets.COMPONENT, sync_datasets.MANIFEST_PASSTHROUGH
+    )
     df = model_contract.rename_legacy_headers(df, "DatasetView")
     return model_contract.normalize_headers(
         df, to="keys", passthrough=sync_datasets.MANIFEST_PASSTHROUGH
@@ -385,7 +387,7 @@ def _run_main_collecting_table_reads(monkeypatch, argv):
     monkeypatch.setattr(utils, "syn_login", lambda: mock.MagicMock())
     monkeypatch.setattr(utils, "read_sync_manifest", lambda syn, args: pd.DataFrame())
     monkeypatch.setattr(utils, "fill_blank", lambda df: df)
-    monkeypatch.setattr(sync_datasets, "restore_display_names", lambda df: df)
+    monkeypatch.setattr(model_contract, "restore_display_names", lambda df, *a, **kw: df)
     monkeypatch.setattr(model_contract, "rename_legacy_headers", lambda df, c: df)
     monkeypatch.setattr(model_contract, "normalize_headers", lambda df, **kw: df)
     monkeypatch.setattr(sync_datasets, "add_missing_info", lambda *a: None)

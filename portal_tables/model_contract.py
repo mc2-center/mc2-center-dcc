@@ -190,6 +190,30 @@ def _model() -> tuple[dict, dict]:
     return _load_model(fetch("mc2.model.jsonld"))
 
 
+def restore_display_names(df: pd.DataFrame, component: str, passthrough=()) -> pd.DataFrame:
+    """Undo space-stripped headers (``GrantViewKey`` -> ``GrantView Key``).
+
+    Use it for manifests written with the spaces removed from the display
+    names, for example the live dataset manifest (syn53478774), which has
+    ``DatasetAssay`` and ``DataUseCodes``. ``normalize_headers`` only accepts
+    display names, so put the spaces back for any header that is not already
+    one. Headers that are already display names (the 14.0.0 manifest) are
+    left alone.
+    """
+    known = set(label_map())
+    known |= PASSTHROUGH | set(passthrough)
+    known |= set(RENAMES_13_TO_14[component])
+    known |= set(LEGACY_EXTRA_RENAMES)
+    known.add(grant_column_legacy_name(component))
+    by_stripped = {}
+    for name in sorted(known):
+        by_stripped.setdefault(name.replace(" ", ""), name)
+    renames = {
+        c: by_stripped[c] for c in df.columns if c not in known and c in by_stripped
+    }
+    return df.rename(columns=renames)
+
+
 def label_map() -> dict[str, str]:
     """Display name -> class label, from ``mc2.model.jsonld``.
 
