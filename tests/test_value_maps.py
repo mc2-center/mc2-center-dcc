@@ -484,3 +484,11 @@ def test_for_component_maps_a_boolean_property_to_lowercase_and_it_validates_loc
     assert "ToolPackageDependenciesPresent" not in set(failures["field"])
     wrong = schema_validation.validate_frame(frame.iloc[[0]], "ToolView", key="ToolViewId")
     assert "ToolPackageDependenciesPresent" in set(wrong["field"])  # "True" is not a JSON boolean
+
+
+def test_the_column_rule_table_drives_the_dispatch(monkeypatch):
+    monkeypatch.setitem(vm._COLUMN_RULES, "PublicationTitle", lambda norm, value: (value.upper(), "shout"))
+    value, rule = normalizer()._value("PublicationTitle", "a title")
+    assert (value, rule) == ("A TITLE", "shout")
+    monkeypatch.setitem(vm._COLUMN_RULES, "PublicationTitle", lambda norm, value: None)  # "no change" falls through
+    assert normalizer()._value("PublicationTitle", "a title") == ("a title", None)
