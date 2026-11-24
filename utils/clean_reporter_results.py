@@ -20,7 +20,7 @@ def get_args():
 
 def extract_for_filtering(report_df):
 
-    column_info = [("grant", "CA\d{6}", "project_num"), ("year", "(?:-(\d{2}))", "project_num")]
+    column_info = [("grant", r"CA\d{6}", "project_num"), ("year", r"(?:-(\d{2}))", "project_num")]
     for tup in column_info:
         col_name = "_".join([tup[0], "num"])
         extract_name = "_".join([tup[0], "extracted"])
