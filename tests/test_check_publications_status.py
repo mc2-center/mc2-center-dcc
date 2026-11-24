@@ -100,7 +100,7 @@ def test_status_check_lists_each_row_once_when_a_doi_repeats(monkeypatch):
 
 
 def test_status_check_uses_colname_for_the_doi_list(monkeypatch):
-    mod = _load("utils/check_publications_status.py", "check_publications_status_colname")
+    mod = load_script("utils/check_publications_status.py", "check_publications_status_colname")
     rows = pd.concat([_portal_row()] * 2, ignore_index=True)
     rows["doi"] = ["wrong1", "wrong2"]
     rows["altDoi"] = ["d1", "d2"]
