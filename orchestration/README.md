@@ -8,8 +8,8 @@ the staging tables to the production portal tables. Every script that writes to 
 
 ## Before you start
 
-- Python 3.11 (what CI uses) in the conda env `mc2-center-dcc`:
-  `conda create -n mc2-center-dcc python=3.11 && conda activate mc2-center-dcc && pip install -r requirements.txt`
+- Python 3.13 (what CI uses) in the conda env `mc2-center-dcc`:
+  `conda create -n mc2-center-dcc python=3.13 && conda activate mc2-center-dcc && pip install -r requirements.txt`
   (`requirements.txt` includes `requirements-ci.txt`; `requirements-dev.txt` adds pytest). `geo-synapse`, a private
   repo, is only needed by `annotations/create_entity_links.py` (the `links` stage).
 - Synapse login: `export SYNAPSE_AUTH_TOKEN=<personal access token>` (or a `.synapseConfig`). Without either,
