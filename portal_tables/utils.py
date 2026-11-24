@@ -107,9 +107,6 @@ MANIFEST_SOURCES = ("table", "recordset")
 CENTRAL_PROJECT = "syn76986881"
 DATASET_COLLECTION = "syn77025587"
 
-# Folder where annotations/upload_validation.py stores its monthly upload report.
-VALIDATION_REPORT_FOLDER = "syn53461903"
-
 # Default tables of the write log and the removals log (recordsets.py).
 WRITE_LOG_TABLE = "syn78404341"
 REMOVALS_TABLE = "syn78404342"

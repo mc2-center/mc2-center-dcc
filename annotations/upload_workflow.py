@@ -1,8 +1,8 @@
 """
 upload_workflow.py
 
-Parameterized driver for Phase 2 of the orchestrator (orchestration/README.md);
-replaces upload-workflow.sh. Chains, for one component:
+Parameterized driver for Phase 2 of the orchestrator (orchestration/README.md).
+Chains, for one component:
 
   1. split    split_manifest_grants.py     (in-process main(argv))
   2. paths    gen-mp-csv.py                (in-process main(folder, csv, type); read-only Synapse query)

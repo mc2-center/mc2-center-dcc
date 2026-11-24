@@ -1,8 +1,8 @@
 # Manifest Processing and Upload Workflow
 
-## Recommended: `upload_workflow.py`
+## `upload_workflow.py`
 
-`upload_workflow.py` replaces `upload-workflow.sh` (broken). It chains, for one component:
+`upload_workflow.py` chains, for one component:
 `split` -> `paths` -> `reshape` -> `links` (DatasetView/ToolView only) -> `upload`.
 
 ```bash
@@ -24,4 +24,4 @@ python annotations/upload_workflow.py ... --from-stage reshape   # resume
 - `SYNAPSE_AUTH_TOKEN`, when set, is passed to subprocesses (never logged).
 
 The full cycle (AI pipeline output, RecordSet upload, curation, removals, merged manifests, portal sync) is in
-[`orchestration/README.md`](../orchestration/README.md). `upload-workflow.sh` is broken and legacy; use `upload_workflow.py`.
+[`orchestration/README.md`](../orchestration/README.md).

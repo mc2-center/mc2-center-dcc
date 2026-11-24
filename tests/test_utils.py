@@ -237,8 +237,6 @@ def test_write_atomic_replaces_the_file_and_leaves_no_temp_file(tmp_path):
 
 @pytest.mark.parametrize("module,option,resource", [
     ("create_grant_projects", "--portal_table", "grant"),
-    ("add_datasets_to_pub", "--dataset_table", "dataset"),
-    ("add_datasets_to_pub", "--pubs_table", "publication"),
 ])
 def test_scripts_refuse_a_production_table_id_when_parsing_arguments(monkeypatch, capsys, module, option, resource):
     import importlib
