@@ -7,9 +7,9 @@ This script will:
 - extract grant numbers from manifests
 - generate a CSV that contains manifest paths and target folder Synapse Ids, for use with upload-manifests.py
 
-Note that Synapse Ids to query are hardcoded:
-- grant_table = syn21918972 (Grants - Merged from CCKP database)
-- folder_table = syn27210848 (All Files V2 from CCKP database)
+Note that the Synapse Ids to query come from portal_tables/utils.py (CONFIG):
+- grant_table = CONFIG["grant"]["portal_table"] (Grants - Merged from CCKP database)
+- folder_table = CONFIG["grant_files"]["all_files_table"] (All Files V2 from CCKP database)
 
 author: aditi.gopalan
 author: orion.banks
@@ -19,29 +19,43 @@ import os
 import csv
 import pandas as pd
 import sys
-import synapseclient
+from synapseclient.models import Table
 from datetime import datetime
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import crosswalk
+import utils
+
+# lower-case data type -> folder ID column, from the shared per-component table
+_FOLDER_ID_COLUMNS = {v["folder"]: v["folder_id_column"] for v in crosswalk.COMPONENT_FOLDERS.values()}
 
 
 def query_synapse_for_folder_info(
     ref_path: str, data_type: str, folder_id_column_name: str, grant_id_column_name: str
 ) -> pd.DataFrame:
 
-    syn = synapseclient.login()
+    syn = utils.syn_login()
+    grants_table_id = utils.CONFIG["grant"]["portal_table"]
+    all_files_table_id = utils.CONFIG["grant_files"]["all_files_table"]
 
     grant_table = (
-        syn.tableQuery(
-            f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM syn21918972'
+        Table(id=grants_table_id)
+        .query(
+            query=f'SELECT "grantNumber", "grantId" AS {grant_id_column_name} FROM {grants_table_id}',
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
         )
-        .asDataFrame()
         .fillna("")
     )
 
     folder_table = (
-        syn.tableQuery(
-            f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM syn27210848 WHERE name='{data_type}' AND parentId=projectId"
+        Table(id=all_files_table_id)
+        .query(
+            query=f"SELECT id AS {folder_id_column_name}, name, projectId AS {grant_id_column_name}  FROM {all_files_table_id} WHERE name='{data_type}' AND parentId=projectId",
+            include_row_id_and_row_version=False,
+            synapse_client=syn,
         )
-        .asDataFrame()
         .fillna("")
     )
 
@@ -78,15 +92,12 @@ def get_folder_id_and_grant_id_from_csv(
 
         match = df[df["grantNumber"] == ca_number]
 
-        if not match.empty:
+        if mapping is not None and ca_number in mapping:
+            print(f"Entry {ca_number} contains values from mapping dictionary")
+            folder_id, grant_id = mapping[ca_number]
+        elif not match.empty:
             folder_id = match[folder_id_column_name].values[0]
             grant_id = match[grant_id_column_name].values[0]
-
-        if mapping is not None:
-            if ca_number in mapping.keys():
-                print(f"Entry {ca_number} contains values from mapping dictionary")
-                folder_id, grant_id = mapping[ca_number]
-            
         else:
             print(f"No match found for {ca_number}.")
             return None, None
@@ -143,7 +154,7 @@ def main(folder_path, output_csv_file, data_type):
 
     if data_type == "publications":
         file_suffix = "_publication.csv"
-        folder_id_column_name = "folderIdPublication"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["publications"]
         folder_map = {"CA209997": "syn32698150",
                       "CA209923": "syn43447063",
                       "CAfiliatedNon-GrantAssociated": "syn52963310",
@@ -152,7 +163,7 @@ def main(folder_path, output_csv_file, data_type):
 
     elif data_type == "datasets":
         file_suffix = "_dataset.csv"
-        folder_id_column_name = "folderIdDatasets"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["datasets"]
         folder_map = {"CA209997": "syn52744921",
                       "CA209923": "syn43447065",
                       "CAfiliatedNon-GrantAssociated": "syn52963225",
@@ -161,7 +172,7 @@ def main(folder_path, output_csv_file, data_type):
 
     elif data_type == "tools":
         file_suffix = "_tool.csv"
-        folder_id_column_name = "folderIdTools"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["tools"]
         folder_map = {"CA209997": "syn32698153",
                       "CA209923": "syn43447067",
                       "CAfiliatedNon-GrantAssociated": "syn52963223",
@@ -170,7 +181,7 @@ def main(folder_path, output_csv_file, data_type):
 
     elif data_type == "education":
         file_suffix = "_education.csv"
-        folder_id_column_name = "folderIdEducation"
+        folder_id_column_name = _FOLDER_ID_COLUMNS["education"]
         folder_map = {"CA209997": "syn53014160",
                       "CA209923": "syn53014271",
                       "CAfiliatedNon-GrantAssociated": "syn52963215",

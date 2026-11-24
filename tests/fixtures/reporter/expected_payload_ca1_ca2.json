@@ -1,0 +1,1 @@
+"{\"criteria\": {\"project_nums\": [\"CA1*\", \"CA2*\"], \"sub_project_only\": true, \"fiscal_years\": [2020, 2021]}, \"include_fields\": [\"ProjectTitle\", \"ProjectNum\", \"SubprojectId\", \"FiscalYear\", \"ProjectEndDate\"], \"offset\": 0, \"limit\": 400, \"sort_field\": \"fiscal_year\", \"sort_order\": \"desc\"}"

@@ -1,0 +1,18 @@
+enums:
+  DataUseModifierEnum:
+    permissible_values:
+      DUO:0000026:
+        description: >-
+          User Specific Restriction - This data use modifier indicates that use is limited to use by approved users. If providing this term, please describe the restrictions in column userSpecificRestriction.
+        meaning: DUO:0000026
+        annotations:
+          duo_shorthand: "US"
+      DUOPlus1:
+        description: >-
+          Source geography is relevant to governance decisions. If providing this term, please
+          describe it.
+        annotations:
+          sage_extension: true
+      Pending Annotation:
+        description: >-
+          Not yet annotated.

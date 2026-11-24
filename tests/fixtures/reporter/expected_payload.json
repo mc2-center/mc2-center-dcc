@@ -1,0 +1,23 @@
+{
+ "criteria": {
+  "fiscal_years": [
+   2020
+  ],
+  "project_nums": [
+   "CA209971*",
+   "CA214282*"
+  ],
+  "sub_project_only": true
+ },
+ "include_fields": [
+  "ProjectTitle",
+  "ProjectNum",
+  "SubprojectId",
+  "FiscalYear",
+  "ProjectEndDate"
+ ],
+ "limit": 400,
+ "offset": 0,
+ "sort_field": "fiscal_year",
+ "sort_order": "desc"
+}

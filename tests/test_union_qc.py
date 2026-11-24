@@ -1,0 +1,377 @@
+"""Offline tests for union_qc.py (I6): regeneration, jsonschema validation, corrections."""
+
+import inspect
+import subprocess
+from unittest import mock
+
+import pandas as pd
+import pytest
+
+import cells
+import model_contract
+import union_qc as uq
+import utils
+
+JOIN = '""","".join"'  # the CSV spelling of the legacy ",".join
+MAPPING = "\n".join([
+    "component,attribute,mapping,tag,filter",
+    "DatasetView,Dataset Alias,first,aliasColumn,all",
+    "DatasetView,Component,first,componentColumn,",
+    f"DatasetView,DatasetView_id,{JOIN},idColumn,all",
+    f"DatasetView,GrantView Key,{JOIN},grantColumn,",
+    f"DatasetView,PublicationView Key,{JOIN},pubsColumn,",
+    f"DatasetView,Data Use Codes,{JOIN},,",
+]) + "\n"
+
+
+def _row(i, alias, **over):
+    row = {
+        "DatasetViewId": i,
+        "GrantViewKey": "CA100001",
+        "StudyKey": "",
+        "PublicationViewKey": "11111111",
+        "DatasetName": f"Name {alias}",
+        "DatasetAlias": alias,
+        "DatasetDescription": "d",
+        "DatasetDesign": "d",
+        "Assay": '["RNA Sequencing", "ATAC-Seq"]',
+        "Species": '["Human"]',
+        "TumorType": '["Breast Carcinoma"]',
+        "Tissue": '["Breast"]',
+        "DatasetUrl": f"https://www.synapse.org/Synapse:{i}",
+        "DatasetDoi": f"https://doi.org/10.7303/{i}",
+        "DatasetFileFormats": '["CSV"]',
+        "DatasetDataUseCodes": '["DUO:0000042", "DUO:0000011"]',
+    }
+    row.update(over)
+    return row
+
+
+def _write_grants(tmp_path, grants):
+    """``<tmp>/DatasetView/<grant>/converted.csv`` as the I5a dry run writes them."""
+    for grant, rows in grants.items():
+        d = tmp_path / "DatasetView" / grant
+        d.mkdir(parents=True)
+        pd.DataFrame(rows).to_csv(d / "converted.csv", index=False)
+    return tmp_path
+
+
+@pytest.fixture
+def mapping_csv(tmp_path):
+    p = tmp_path / "mapping.csv"
+    p.write_text(MAPPING)
+    return str(p)
+
+
+def _regenerate(tmp_path, mapping_csv, grants, **kw):
+    root = _write_grants(tmp_path / "in", grants)
+    args = uq.get_args([
+        "--regenerate", "--components", "DatasetView", "--input-dir", str(root),
+        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv,
+        "--carry-columns", *kw.pop("carry", []),
+        *kw.pop("extra", []),
+    ])
+    with mock.patch.object(subprocess, "run", side_effect=AssertionError("subprocess must not run")):
+        code = uq.regenerate_main(args)
+    manifest = pd.read_csv(tmp_path / "out" / "DatasetView" / "DatasetView_merged_manifest.csv", dtype=str, keep_default_na=False)
+    return code, manifest, tmp_path / "out" / "DatasetView"
+
+
+def test_tools_are_merged_by_default():
+    assert "ToolView" in uq.DEFAULT_MERGE
+    assert set(uq.get_args(["--regenerate"]).merge_components) >= {"PublicationView", "DatasetView", "ToolView"}
+
+
+def test_no_schematic_subprocess():
+    assert not hasattr(uq, "subprocess")
+    assert not hasattr(uq, "trim_tables") and not hasattr(uq, "parse_out")
+
+
+@pytest.mark.parametrize("argv", [
+    ["-l", "syn1", "-c", "~/qc_config.yml", "-p", "m.csv"],
+    ["-tp", "x_updated.csv", "-p", "m.csv", "-bl", "rows.csv"],
+    ["-tp", "x_updated.csv", "-t", "-p", "m.csv"],
+    ["-l", "syn1", "-t", "x_updated.csv"],  # not read as an abbreviation of -tp
+])
+def test_removed_sop_flags_are_refused(argv):
+    """-c (schematic config), -t (trim) and -bl (rows to trim) were ignored, and are now removed."""
+    with pytest.raises(SystemExit) as exc:
+        uq.get_args(argv)
+    assert exc.value.code == 2
+
+
+def test_headers_are_display_names_in_template_order(tmp_path, mapping_csv):
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
+    assert list(manifest.columns) == model_contract.template_headers("DatasetView") + ["iconTags"]
+    assert "Dataset Data Use Codes" in manifest.columns and "DatasetViewId" not in manifest.columns
+
+
+def test_list_cells_parse_to_the_same_items_in_the_sync(tmp_path, mapping_csv):
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
+    cell = manifest["Assay"].iat[0]
+    assert cell == "RNA Sequencing, ATAC-Seq"
+    assert cells.parse_list(cell) == ["RNA Sequencing", "ATAC-Seq"]
+    codes = manifest["Dataset Data Use Codes"].iat[0]
+    assert [c.strip() for c in codes.split(",")] == ["DUO:0000042", "DUO:0000011"]
+    assert manifest["PublicationView Key"].iat[0] == "11111111"
+
+
+def test_rows_with_the_same_alias_merge_keys_and_keep_first_values(tmp_path, mapping_csv):
+    grants = {
+        "CA100001": [_row("syn1", "A", DatasetName="first")],
+        "CA100002": [_row("syn1", "A", GrantViewKey="CA100002", DatasetName="second", PublicationViewKey="22222222")],
+    }
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, grants)
+    assert len(manifest) == 1
+    row = manifest.iloc[0]
+    assert row["Dataset Name"] == "first"
+    assert row["GrantView Key"] == "CA100001, CA100002"
+    assert row["DatasetView_id"] == "syn1"  # identical ids are not repeated
+    assert row["PublicationView Key"] == "11111111, 22222222"
+
+
+def test_invalid_rows_are_kept_and_reported(tmp_path, mapping_csv):
+    grants = {"CA100001": [_row("syn1", "A"), _row("syn2", "B", Assay='["Not An Assay"]', DatasetDoi="")]}
+    code, manifest, out = _regenerate(tmp_path, mapping_csv, grants)
+    assert code == 2
+    assert manifest["DatasetView_id"].tolist() == ["syn1", "syn2"]  # nothing trimmed
+    report = pd.read_csv(out / "validation.csv")
+    assert list(report.columns) == ["key", "field", "validator", "message"]
+    assert set(report["key"]) == {"syn2"}
+    assert "Assay" in set(report["field"])
+    assert "DatasetDoi" not in set(report["field"])  # optional as of data-models 14.1.0
+    assert "enum" in set(report["validator"])
+    assert (out / "validation_counts.csv").exists()
+
+
+def test_valid_manifest_has_an_empty_report(tmp_path, mapping_csv):
+    code, _, out = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
+    assert code == 0
+    assert len(pd.read_csv(out / "validation.csv")) == 0
+
+
+def _fixes(tmp_path, rows):
+    p = tmp_path / "pmid.csv"
+    pd.DataFrame(rows, columns=["source_id", "row_key", "column", "current_value", "proposed_value", "basis", "needs_curator"]).to_csv(p, index=False)
+    return str(p)
+
+
+def test_mangled_publication_key_is_corrected(tmp_path, mapping_csv):
+    mangled = "3,811,083,638,110,830"
+    fixes = _fixes(tmp_path, [
+        ["syn53478774", "syn1,syn1", "PublicationViewKey", mangled, "38110836", "x", False],
+        ["syn53478774", "syn9", "PublicationViewKey", "1,2,3", "1", "x", False],
+        ["syn53478774", "syn2", "PublicationViewKey", "9,9,9", "9", "x", False],
+        ["syn53478774", "syn3", "PublicationViewKey", "7,7,7", "7", "x", False],
+    ])
+    grants = {"CA100001": [
+        _row("syn1", "A", PublicationViewKey=mangled),
+        _row("syn2", "B", PublicationViewKey="9"),  # already clean
+        _row("syn3", "C", PublicationViewKey="123"),  # something else entirely
+    ]}
+    _, manifest, out = _regenerate(tmp_path, mapping_csv, grants, extra=["--pmid-keys", fixes])
+    assert manifest.set_index("DatasetView_id")["PublicationView Key"].to_dict() == {
+        "syn1": "38110836", "syn2": "9", "syn3": "123"}
+    status = pd.read_csv(out / "key_corrections.csv", dtype=str).set_index("key")["status"].to_dict()
+    assert status == {"syn1,syn1": "applied", "syn9": "not_found", "syn2": "already_correct", "syn3": "cell_differs"}
+
+
+def test_icontags_are_computed_from_assay_not_carried(tmp_path, mapping_csv):
+    ref = tmp_path / "ref.csv"
+    pd.DataFrame({"DatasetAlias": ["A"], "iconTags": ["stale"]}).to_csv(ref, index=False)
+    grants = {"CA100001": [_row("syn1", "A"), _row("syn2", "B", Assay='["Western Blotting"]')]}
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, grants, carry=["iconTags"], extra=["--reference-csv", str(ref)])
+    terms = pd.read_csv(model_contract.fetch(uq.ICON_TAG_MAP)).set_index("term")["label"]
+    expected_a = ", ".join(dict.fromkeys(terms[t] for t in ["RNA Sequencing", "ATAC-Seq"] if t in terms))
+    assert manifest["iconTags"].tolist() == [expected_a, "bioChemicalPhysical"]  # every row, not the stale carry
+    assert "carried columns, rows left blank: none" in (tmp_path / "out" / "DatasetView" / "report.txt").read_text()
+
+
+def test_upload_is_refused_with_a_local_input_dir(tmp_path, mapping_csv):
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")]})
+    args = uq.get_args(["--regenerate", "--input-dir", str(root), "--upload", "--mapping", mapping_csv])
+    with pytest.raises(SystemExit):
+        uq.regenerate_main(args)
+
+
+def test_upload_is_refused_with_a_grant_subset(mapping_csv):
+    args = uq.get_args(["--regenerate", "--grant-projects", "syn1", "--upload", "--mapping", mapping_csv])
+    with pytest.raises(SystemExit, match="grant-projects"):
+        uq.regenerate_main(args, syn=mock.MagicMock())
+
+
+def test_dry_run_never_uploads(tmp_path, mapping_csv):
+    with mock.patch.object(uq, "upload_manifest") as upload:
+        _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A")]})
+    upload.assert_not_called()
+
+
+def test_upload_stores_a_new_version_of_the_manifest_file():
+    entity = mock.MagicMock()
+    entity.get.return_value = entity
+    entity.store.return_value = mock.MagicMock(id="syn53478774", version_number=9)
+    with mock.patch.object(uq, "File", return_value=entity) as file_cls:
+        out = uq.upload_manifest(mock.MagicMock(), "DatasetView", "/tmp/x.csv", "why")
+    assert file_cls.call_args.kwargs["id"] == "syn53478774"
+    assert entity.path == "/tmp/x.csv" and entity.version_comment == "why"
+    assert entity.data_file_handle_id is None and entity.content_md5 is None  # cache fix: a new handle is uploaded
+    assert out == "syn53478774 version 9"
+
+
+def test_empty_curated_cells_are_filled_like_merge_and_correct(tmp_path, mapping_csv):
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="", PublicationViewKey="")]})
+    assert manifest["Tissue"].iat[0] == "Pending Annotation"
+    assert manifest["PublicationView Key"].iat[0] == "Pending Annotation"
+
+
+def test_education_publication_key_is_not_filled():
+    import manifest_cleanup
+
+    frame = pd.DataFrame({"PublicationView Key": [""], "Assay": [""]})
+    edu = manifest_cleanup.fill_empty_cells(frame.copy(), "EducationalResource")
+    assert edu["PublicationView Key"].iat[0] == "" and edu["Assay"].iat[0] == "Pending Annotation"
+    tools = manifest_cleanup.fill_empty_cells(frame.copy(), "ToolView")
+    assert tools["PublicationView Key"].iat[0] == "Pending Annotation"
+
+
+def test_empty_species_is_filled_with_unknown():
+    import manifest_cleanup
+
+    frame = pd.DataFrame({"Species": [""], "Assay": [""]})
+    out = manifest_cleanup.fill_empty_cells(frame, "DatasetView")
+    assert out["Species"].iat[0] == "Unknown" and out["Assay"].iat[0] == "Pending Annotation"
+
+
+def test_no_fill_keeps_empty_cells(tmp_path, mapping_csv):
+    _, manifest, _ = _regenerate(tmp_path, mapping_csv, {"CA100001": [_row("syn1", "A", Tissue="")]}, extra=["--no-fill"])
+    assert manifest["Tissue"].iat[0] == ""
+
+
+def test_license_list_is_comma_joined_text_in_the_manifest(tmp_path):
+    """D-Q51: portal license stays STRING, so the manifest cell is plain comma-joined text."""
+    import merge_tables
+
+    d = tmp_path / "ToolView" / "CA100001"
+    d.mkdir(parents=True)
+    pd.DataFrame([{"ToolViewId": "t1", "ToolName": "A", "License": '["MIT", "Apache-2.0"]'}]).to_csv(d / "converted.csv", index=False)
+    union, _ = merge_tables.build_union_from_dir("ToolView", str(tmp_path))
+    assert union["License"].iat[0] == "MIT, Apache-2.0"
+
+
+def test_same_alias_different_ids_is_a_conflict_worklist(tmp_path, mapping_csv):
+    grants = {
+        "CA100001": [_row("syn1", "A"), _row("syn5", "B")],
+        "CA100002": [_row("syn2", "A", GrantViewKey="CA100002"), _row("syn5", "B", GrantViewKey="CA100002")],
+    }
+    _, manifest, out = _regenerate(tmp_path, mapping_csv, grants)
+    conflicts = pd.read_csv(out / "id_conflicts.csv", dtype=str, keep_default_na=False)
+    assert conflicts.to_dict("records") == [
+        {"alias": "A", "ids": "syn1,syn2", "grants": "CA100001,CA100002", "rows": "2"}]  # B agrees: not listed
+    assert "id conflicts (same alias, different ids; --upload is refused while any): 1" in (out / "report.txt").read_text()
+
+
+def test_upload_is_refused_while_id_conflicts_exist(tmp_path, mapping_csv):
+    import merge_tables
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")],
+                                           "CA100002": [_row("syn2", "A", GrantViewKey="CA100002")]})
+    union, stats = merge_tables.build_union_from_dir("DatasetView", str(root))
+    args = uq.get_args(["--regenerate", "--components", "DatasetView",
+                        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--upload"])
+    args.carry_columns = []
+    with mock.patch.object(merge_tables, "list_grant_projects", return_value=["syn1"]), \
+            mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
+            mock.patch.object(utils, "syn_login", return_value=mock.MagicMock()), \
+            mock.patch.object(uq, "upload_manifest") as upload:
+        with pytest.raises(SystemExit, match="id_conflicts"):
+            uq.regenerate_main(args)
+    upload.assert_not_called()
+
+
+def test_upload_is_refused_while_an_unmerged_manifest_holds_a_key_twice(tmp_path, mapping_csv):
+    import merge_tables
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")], "CA100002": [_row("syn1", "A")]})
+    union, stats = merge_tables.build_union_from_dir("DatasetView", str(root))
+    args = uq.get_args(["--regenerate", "--components", "DatasetView", "--merge-components",
+                        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--upload"])
+    args.carry_columns = []
+    with mock.patch.object(merge_tables, "list_grant_projects", return_value=["syn1"]), \
+            mock.patch.object(merge_tables, "build_union", return_value=(union, stats)), \
+            mock.patch.object(utils, "syn_login", return_value=mock.MagicMock()), \
+            mock.patch.object(uq, "upload_manifest") as upload:
+        with pytest.raises(SystemExit, match="an id twice in one grant"):
+            uq.regenerate_main(args)
+    upload.assert_not_called()
+    report = (tmp_path / "out" / "DatasetView" / "report.txt").read_text()
+    assert "--upload is refused while any): 1" in report
+    conflicts = pd.read_csv(tmp_path / "out" / "DatasetView" / "key_conflicts.csv", dtype=str)
+    assert conflicts[["key", "reason"]].to_dict("records") == [{"key": "syn1", "reason": "same grant twice"}]
+
+
+def test_an_id_in_two_grants_is_a_conflict_only_on_different_names():
+    def frame(names):
+        return pd.DataFrame({"ToolView_id": ["t1", "t1", "t2"], "GrantView Key": ["CA1", "CA2", "CA1"],
+                             "Tool Name": names})
+
+    assert uq.key_conflicts(frame(["A", "A", "B"]), "ToolView", "Tool Name").empty  # one tool under two grants
+    conflicts = uq.key_conflicts(frame(["A", "Z", "B"]), "ToolView", "Tool Name")
+    assert conflicts.to_dict("records") == [
+        {"key": "t1", "grants": "CA1,CA2", "names": "A | Z", "rows": "2", "reason": "different names"}]
+
+
+def test_merge_keeps_comma_terms_whole_and_joins_with_comma_space():
+    mapping = pd.DataFrame([
+        ("PublicationView", "Publication Alias", "first", "aliasColumn"),
+        ("PublicationView", "PublicationView_id", '",".join', "idColumn"),
+        ("PublicationView", "GrantView Key", '",".join', "grantColumn"),
+        ("PublicationView", "Publication Keywords", '",".join', ""),
+        ("PublicationView", "Assay", '",".join', ""),
+    ], columns=["component", "attribute", "mapping", "tag"])
+    union = pd.DataFrame([
+        {"Publication Alias": "P", "PublicationView_id": "syn1", "GrantView Key": "CA1",
+         "Publication Keywords": "Mammary Neoplasms, Experimental, Humans", "Assay": '["RNA Sequencing", "ATAC-Seq"]'},
+        {"Publication Alias": "P", "PublicationView_id": "syn1", "GrantView Key": "CA2",
+         "Publication Keywords": "Humans, Mammary Neoplasms, Experimental", "Assay": "ATAC-Seq, Imaging"},
+    ])
+    merged, stats = uq.merge_by_alias(union, "PublicationView", mapping)
+    row = merged.iloc[0]
+    assert row["Publication Keywords"] == "Mammary Neoplasms, Experimental, Humans"  # the term is not split and doubled
+    assert row["Assay"] == "RNA Sequencing, ATAC-Seq, Imaging"
+    assert row["GrantView Key"] == "CA1, CA2" and row["PublicationView_id"] == "syn1"
+    assert stats["id_conflicts"] == []
+
+
+def test_an_empty_component_is_skipped_and_the_summary_is_still_written(tmp_path, mapping_csv, caplog):
+    import merge_tables
+
+    root = _write_grants(tmp_path / "in", {"CA100001": [_row("syn1", "A")]})  
+    args = uq.get_args(["--regenerate", "--components", "ToolView", "DatasetView", "--input-dir", str(root),
+                        "--output-dir", str(tmp_path / "out"), "--mapping", mapping_csv, "--carry-columns"])
+    real = merge_tables.build_union_from_dir
+    empty = lambda component, d: (pd.DataFrame(), {}) if component == "ToolView" else real(component, d)
+    with caplog.at_level("WARNING"), mock.patch.object(merge_tables, "build_union_from_dir", side_effect=empty):
+        code = uq.regenerate_main(args)
+    assert code == 2  # something was skipped
+    assert "ToolView union is empty" in caplog.text
+    assert (tmp_path / "out" / "DatasetView" / "DatasetView_merged_manifest.csv").exists()
+    summary = (tmp_path / "out" / "summary.txt").read_text()
+    assert "DatasetView: union rows=1" in summary and "ToolView: skipped" in summary
+
+
+def test_fill_value_comes_from_the_schema(tmp_path, monkeypatch):
+    import json
+
+    import manifest_cleanup
+    import model_contract
+
+    schema = {"properties": {"Tissue": {"items": {"enum": ["Lung", "Unknown"]}, "type": "array"},
+                             "Assay": {"anyOf": [{"enum": ["Pending Annotation", "RNA-seq", "Unknown"]}, {"type": "null"}]}}}
+    (tmp_path / "json_schemas").mkdir()
+    (tmp_path / "json_schemas" / "DatasetView.json").write_text(json.dumps(schema))
+    monkeypatch.setenv("MC2_MODEL_DIR", str(tmp_path))
+    monkeypatch.setattr(model_contract, "label_map", lambda: {"Tissue": "Tissue", "Assay": "Assay", "Species": "Species"})
+    frame = pd.DataFrame({"Tissue": [""], "Assay": [""], "Species": [""]})
+    out = manifest_cleanup.fill_empty_cells(frame, "DatasetView")
+    # Tissue allows only "Unknown"; Assay allows both, and the placeholder wins; Species is not in this schema
+    assert out["Tissue"].iat[0] == "Unknown"
+    assert out["Assay"].iat[0] == "Pending Annotation"
+    assert out["Species"].iat[0] == "Pending Annotation"

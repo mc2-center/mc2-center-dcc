@@ -1,193 +1,131 @@
 """
 processing-splits.py
 
-Runs the Python script `processing-splits.py` to process split files from the specified output folder. 
-Adds missing columns required to match the schema, truncates any columns with 400+ words, and adds "Read more on Pubmed"
+Processes the split manifest files listed in the gen-mp-csv.py output.
+Renames legacy headers, adds missing template columns, truncates long
+schema free-text cells (never enum, list, pattern or format columns) with "(Read more on Pubmed)", and orders the columns to match
+templates/<component>.csv at the pinned data-models release. Every column that
+is dropped is logged.
 
 author: aditi.gopalan
 author: orion.banks
 
 """
 
-import pandas as pd
+import argparse
+import logging
+import os
 import sys
+
+import pandas as pd
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import model_contract
+
+logger = logging.getLogger(__name__)
+
+# Cells longer than MAX_LEN are cut to KEEP_LEN characters plus a note.
+MAX_LEN = 500
+KEEP_LEN = 400
+TRUNCATION_NOTE = "(Read more on Pubmed)"
+
+def is_id_or_key_column(name):
+    """ID and key columns hold identifiers and must never be truncated."""
+    return (
+        name in ("Component", "Id", "entityId")
+        or name.endswith("_id")
+        or name.endswith(" Key")
+        or name.endswith(" Id")
+    )
+
+
+def is_alias_column(name):
+    """Alias columns hold identifier lists (e.g. GEO accessions); never truncate them."""
+    return name.endswith(" Alias")
+
+
+def truncate_long_text(df, component):
+    """Apply the 500 -> 400 character cap to the component's free-text columns.
+
+    Only schema free-text columns are capped (see
+    ``model_contract.free_text_columns``). Any other column, such as a
+    multi-value enum cell, is never cut, even when over the limit; that is
+    logged as a warning instead.
+    """
+    free_text = model_contract.free_text_columns(component)
+    for column in df.columns:
+        is_long = df[column].map(lambda x: isinstance(x, str) and len(x) > MAX_LEN)
+        if not is_long.any():
+            continue
+        if column not in free_text or is_id_or_key_column(column) or is_alias_column(column):
+            for row in df.index[is_long]:
+                logger.warning(
+                    "Not truncating %r in row %s: %d characters, but it is not a free-text column",
+                    column, row, len(df.at[row, column]),
+                )
+            continue
+        df[column] = df[column].apply(
+            lambda x: (
+                x[:KEEP_LEN] + TRUNCATION_NOTE
+                if isinstance(x, str) and len(x) > MAX_LEN
+                else x
+            )
+        )
+    return df
+
+
+def process_df(df, component=None):
+    """Return df shaped exactly like templates/<component>.csv."""
+    if component is None:
+        component = str(df.iloc[0, 0])
+    col_order = model_contract.template_headers(component)
+
+    df = model_contract.rename_legacy_headers(df, component)
+
+    if "PublicationView_id" in col_order and "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
+        df["PublicationView_id"] = df["Pubmed Id"]
+
+    for column in col_order:
+        if column not in df.columns:
+            logger.info("Adding missing template column %r as empty", column)
+            df[column] = ""
+
+    dropped = [c for c in df.columns if c not in col_order]
+    if dropped:
+        logger.warning("Dropping columns not in the %s template: %s", component, dropped)
+
+    df = truncate_long_text(df, component)
+    return df[col_order]
 
 
 def process_csv(file_path):
-    # Read the CSV file into a DataFrame
+    """Process one split manifest CSV in place."""
     df = pd.read_csv(file_path, header=0)
-    data = str(df.iloc[0,0])
-    resource = data[:-4]
-
-    # 1. Change column names
-    col_mapping = [
-        (f"{resource} Grant Number", "GrantView Key"),
-        ("Publication TumorType", "Publication Tumor Type")
-        ]
-    
-    for old_col, new_col in col_mapping:
-        if old_col in df.columns:
-            df = df.rename(columns={old_col: new_col})
-
-    # 2. Add "PublicationView_id" as a column if not present, and fill it with values from "Pubmed Id" column
-    if "PublicationView_id" not in df.columns and "Pubmed Id" in df.columns:
-        df["PublicationView_id"] = df["Pubmed Id"]
-
-    # 3. Add Study Key column
-    if "Study Key" not in df.columns:
-        df["Study Key"] = ""
-
-    # 4. Drop 'Publication Theme Name' and 'Publication Consortium Name' columns
-    columns_to_drop = ["Publication Theme Name", "Publication Consortium Name"]
-    df = df.drop(columns=columns_to_drop, errors="ignore")
-
-    # 5. Modify each column content as per the second script
-    for column in df.columns:
-        if column in df.columns:
-            df[column] = df[column].apply(
-                lambda x: (
-                    x[:400] + "(Read more on Pubmed)"
-                    if isinstance(x, str) and len(x) > 500
-                    else x
-                )
-            )
-    # 6. Reorder columns to match the table order
-    if data == "PublicationView":
-        col_order = [
-            "Component",
-            "PublicationView_id",
-            "GrantView Key",
-            "Study Key",
-            "Publication Doi",
-            "Publication Journal",
-            "Pubmed Id",
-            "Pubmed Url",
-            "Publication Title",
-            "Publication Year",
-            "Publication Keywords",
-            "Publication Authors",
-            "Publication Abstract",
-            "Publication Assay",
-            "Publication Tumor Type",
-            "Publication Tissue",
-            "Publication Accessibility",
-            "Publication Dataset Alias"
-            ]
-
-    elif data == "DatasetView":
-        col_order = [
-            "Component",
-            "DatasetView_id",
-            "GrantView Key",
-            "Study Key",
-            "PublicationView Key",
-            "Dataset Name",
-            "Dataset Alias",
-            "Dataset Description",
-            "Dataset Design",
-            "Dataset Assay",
-            "Dataset Species",
-            "Dataset Tumor Type",
-            "Dataset Tissue",
-            "Dataset Url",
-            "Dataset Doi",
-            "Dataset File Formats",
-            "Data Use Codes"
-            ]
-
-    elif data == "ToolView":
-        col_order = [
-            "Component",
-            "ToolView_id",
-            "GrantView Key",
-            "Study Key",
-            "DatasetView Key",
-            "PublicationView Key",
-            "Tool Name",
-            "Tool Description",
-            "Tool Homepage",
-            "Tool Version",
-            "Tool Operation",
-            "Tool Input Data",
-            "Tool Output Data",
-            "Tool Input Format",
-            "Tool Output Format",
-            "Tool Function Note",
-            "Tool Cmd",
-            "Tool Type",
-            "Tool Topic",
-            "Tool Operating System",
-            "Tool Language",
-            "Tool License",
-            "Tool Cost",
-            "Tool Accessibility",
-            "Tool Download Url",
-            "Tool Download Type",
-            "Tool Download Note",
-            "Tool Download Version",
-            "Tool Documentation Url",
-            "Tool Documentation Type",
-            "Tool Documentation Note",
-            "Tool Link Url",
-            "Tool Link Type",
-            "Tool Link Note",
-            "Tool Doi",
-            "Tool Date Last Modified",
-            "Tool Release Date",
-            "Tool Package Dependencies",
-            "Tool Package Dependencies Present",
-            "Tool Compute Requirements",
-            "Tool Entity Name",
-            "Tool Entity Type",
-            "Tool Entity Role"
-            ]
-
-    elif data == "EducationalResource":
-        col_order = [
-            "Component",
-            "EducationalResource_id",
-            "GrantView Key",
-            "Study Key",
-            "DatasetView Key",
-            "PublicationView Key",
-            "ToolView Key",
-            "Resource Title",
-            "Resource Link",
-            "Resource Doi",
-            "Resource Topic",
-            "Resource Activity Type",
-            "Resource Primary Format",
-            "Resource Intended Use",
-            "Resource Primary Audience",
-            "Resource Educational Level",
-            "Resource Description",
-            "Resource Origin Institution",
-            "Resource Language",
-            "Resource Contributors",
-            "Resource Secondary Topic",
-            "Resource License",
-            "Resource Use Requirements",
-            "Resource Alias",
-            "Resource Internal Identifier",
-            "Resource Media Accessibility",
-            "Resource Access Hazard",
-            "Resource Dataset Alias",
-            "Resource Tool Link"
-        ]
-
-    df = df[col_order]
-
-    # Save the modified DataFrame back to the CSV file
+    df = process_df(df)
     df.to_csv(file_path, index=False)
 
 
-if __name__ == "__main__":
-    # Get the csv path from command-line arguments
-    file_path_csv = pd.read_csv(sys.argv[1])
+def get_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
+    parser.add_argument(
+        "input_csv",
+        help="CSV generated by gen-mp-csv.py, with a 'File Paths' column",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = get_args(argv)
+    file_paths = pd.read_csv(args.input_csv)["File Paths"]
 
     # Iterate over all files in gen-mp-csv.py output
-    for file_path in file_path_csv["File Paths"]:
-        process_csv(file_path) # Process each CSV file
-        
+    for file_path in file_paths:
+        process_csv(file_path)
 
     print("Processing completed.")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    main()
