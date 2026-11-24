@@ -250,3 +250,21 @@ def test_scripts_refuse_a_production_table_id_when_parsing_arguments(monkeypatch
     assert e.value.code == 2
     assert (f"{PRODUCTION_IDS[resource]} is a production portal table; only promote_staging.py writes "
             "production. Use the staging table.") in capsys.readouterr().err
+
+
+def test_utils_loads_by_path_without_portal_tables_on_sys_path():
+    """The utils/ scripts load portal_tables/utils.py by file path; its sibling imports must still work."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    code = (
+        "import importlib.util, sys\n"
+        f"spec = importlib.util.spec_from_file_location('portal_utils', {str(root / 'portal_tables' / 'utils.py')!r})\n"
+        "mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)\n"
+        "print(mod.first_item('a, b'))\n"
+    )
+    out = subprocess.run([sys.executable, "-I", "-c", code], cwd=root / "utils", capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "a"

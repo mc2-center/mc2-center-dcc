@@ -3,6 +3,7 @@
 import csv
 import logging
 import os
+import sys
 import argparse
 import uuid
 from getpass import getpass
@@ -17,7 +18,13 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from cells import first_item, is_placeholder, parse_list
+# Scripts in utils/ load this file by path (``utils`` is also a folder name), so this folder may not be on
+# sys.path; its sibling imports (cells here, crosswalk and model_contract below) need it.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from cells import first_item, is_placeholder, parse_list  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
