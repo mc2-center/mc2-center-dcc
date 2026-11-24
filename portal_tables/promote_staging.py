@@ -15,10 +15,24 @@ Steps:
   1. Compare the columns of every selected staging and production table (name,
      type, size, list length, enum values). If any table differs, write
      ``schema_diff.csv`` and stop. No table is written.
-  2. Diff the rows (``<resource>_diff.csv``) and write ``summary.csv``. The
-     rows are matched on a key column per resource. If the key is missing or
-     not unique in either table, the whole row is compared instead. The count
-     tables have no key column: their whole rows are compared.
+  2. Diff the rows and write the report files. Each resource has one key (a
+     column, or a tuple of columns). Key values are compared in canonical form.
+     Production rows that share a key are combined into one record (list cells:
+     union of the items; scalar cells: the distinct non-blank values). Staging
+     rows that share a key are a data problem: they go to ``duplicate_keys.csv``
+     and are combined the same way. Cells are compared in canonical form: blank
+     forms are equal, list cells are sets of items, text has its whitespace
+     collapsed, booleans ignore case, numbers compare by value. A cell whose raw
+     values differ but whose canonical values are equal is a format-only change
+     (``list_order``, ``empty_list_item``, ``whitespace`` or ``other``). Other
+     differences are content changes. Files:
+       summary.csv                one line per resource
+       <resource>_added.csv       staging rows whose key is not in production
+       <resource>_removed.csv     production rows whose key is not in staging
+       <resource>_changed.csv     one line per content-changed cell
+       format_changes.csv         format-only cells: count and one example
+       duplicate_keys.csv         staging duplicate keys
+     The added, removed, changed and duplicate files exist only when not empty.
   3. With ``--execute``, for each table in order: snapshot the staging table,
      replace the production rows (``utils.update_table``; it snapshots
      production and restores it on failure), read production back and compare
@@ -33,35 +47,45 @@ Example:
 """
 
 import argparse
+import ast
+import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from synapseclient.models import Table
 
-from cells import is_null
+from cells import is_null, json_list
 import utils
 
 RESOURCES = [r for r, c in utils.CONFIG.items() if "staging_table" in c]
 
-# Portal column used as the record key of each resource (from crosswalk.py).
-# Tool, education, project and people have no id column: use the column that
-# names the record (tool, project), or the one that identifies it (education
-# alias is a synID; people synapseProfileId). The count tables have no key.
+# Portal columns that make the record key of each resource.
 KEY_COLUMNS = {
-    "publication": "pubMedId",
-    "dataset": "datasetId",
-    "grant": "grantNumber",
-    "tool": "toolName",
-    "education": "alias",
-    "project": "projectName",
-    "people": "synapseProfileId",
+    "publication": ["pubMedId"],
+    "dataset": ["datasetAlias"],
+    "tool": ["toolName"],
+    "education": ["alias"],
+    "grant": ["grantNumber"],
+    "people": ["synapseProfileId"],
+    "project": ["projectName", "grant"],
+    "consortium_counts": ["consortium", "groupBy"],
+    "consortium_theme_counts": ["theme", "consortium", "groupBy"],
+    "theme_counts": ["theme", "groupBy"],
 }
 
 COLUMN_ATTRS = ["name", "column_type", "maximum_size", "maximum_list_length", "enum_values"]
 SYSTEM_COLUMNS = ["ROW_ID", "ROW_VERSION", "ROW_ETAG"]
-DIFF_COLUMNS = ["change", "key", "column", "staging", "production"]
+BLANK_TEXT = {"", "nan", "None"}
+NUMBER = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
+SUMMARY_COLUMNS = [
+    "resource", "staging_id", "production_id", "staging_rows", "production_rows", "key",
+    "production_keys_combined", "staging_duplicate_keys", "added", "removed",
+    "changed_records", "changed_cells", "format_only_cells", "status",
+]
 
 
 def _cell(value):
@@ -105,43 +129,156 @@ def read_table(syn, table_id: str) -> pd.DataFrame:
     return utils.fill_blank(df, numeric=False).reset_index(drop=True)
 
 
-def _usable_key(key: str, *frames) -> bool:
-    for df in frames:
-        if key not in df.columns:
-            return False
-        values = [_cell(v) for v in df[key]]
-        if any(v == "" for v in values) or len(set(values)) != len(values):
-            return False
-    return True
-
-
 def _signature(row) -> tuple:
     return tuple(_cell(v) for v in row)
 
 
-def diff_rows(staging: pd.DataFrame, production: pd.DataFrame, key: str | None):
-    """Return (diff rows, key used). Falls back to whole rows without a usable key."""
-    out = []
-    if key is not None and _usable_key(key, staging, production):
-        s = {_cell(r[key]): r for _, r in staging.iterrows()}
-        p = {_cell(r[key]): r for _, r in production.iterrows()}
-        for k in s.keys() - p.keys():
-            out.append({"change": "added", "key": k, "column": "", "staging": "", "production": ""})
-        for k in p.keys() - s.keys():
-            out.append({"change": "removed", "key": k, "column": "", "staging": "", "production": ""})
-        for k in s.keys() & p.keys():
-            for col in staging.columns:
-                if _cell(s[k][col]) != _cell(p[k][col]):
-                    out.append({"change": "changed", "key": k, "column": col,
-                                "staging": s[k][col], "production": p[k][col]})
-        return out, key
-    s_rows = Counter(_signature(r) for r in staging.itertuples(index=False))
-    p_rows = Counter(_signature(r) for r in production.itertuples(index=False))
-    for sig in (s_rows - p_rows).elements():
-        out.append({"change": "added", "key": " | ".join(map(str, sig)), "column": "", "staging": "", "production": ""})
-    for sig in (p_rows - s_rows).elements():
-        out.append({"change": "removed", "key": " | ".join(map(str, sig)), "column": "", "staging": "", "production": ""})
-    return out, "whole row"
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _number(value) -> str:
+    return str(int(value)) if float(value) == int(float(value)) else repr(float(value))
+
+
+def _scalar(value) -> str:
+    """Canonical text of a non-list cell: blank is "", numbers by value, booleans lower case."""
+    if is_null(value):
+        return ""
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value)).lower()
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return _number(value)
+    text = _squash(str(value))
+    if text in BLANK_TEXT:
+        return ""
+    if text.lower() in ("true", "false"):
+        return text.lower()
+    return _number(text) if NUMBER.fullmatch(text) else text
+
+
+def _python_list(text: str) -> list | None:
+    """The list a Python-repr array string (``['a', 'b']``) holds, or None."""
+    text = text.strip()
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = ast.literal_eval(text)
+        except (ValueError, SyntaxError):
+            return None
+        return parsed if isinstance(parsed, list) else None
+    return None
+
+
+def _raw_items(value) -> list | None:
+    """The items of a list cell (a list or a JSON-array string) as text; None for other cells."""
+    if isinstance(value, str):
+        value = json_list(value) or _python_list(value)
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return [str(v) for v in value]
+    return None
+
+
+def canon(value):
+    """Comparable form of a cell: "" for blank, a string, or a frozenset of items for a list."""
+    items = _raw_items(value)
+    if items is None:
+        return _scalar(value)
+    return frozenset(i for i in map(_scalar, items) if i) or ""
+
+
+def combine(values: list):
+    """One canonical value for the cells of the rows of one key."""
+    items, scalars = set(), set()
+    is_list = False
+    for c in map(canon, values):
+        if isinstance(c, frozenset):
+            is_list = True
+            items |= c
+        elif c:
+            scalars.add(c)
+    if is_list or len(scalars) > 1:
+        return frozenset(items | scalars) or ""
+    return next(iter(scalars), "")
+
+
+def _show(value) -> str:
+    """Text of a canonical or raw cell for a report."""
+    if isinstance(value, frozenset):
+        return json.dumps(sorted(value), ensure_ascii=False)
+    items = _raw_items(value)
+    if items is not None:
+        return json.dumps(items, ensure_ascii=False)
+    return "" if is_null(value) else str(value)
+
+
+def format_kind(production, staging) -> str:
+    """Why two cells with equal canonical values differ as written."""
+    p, s = _raw_items(production), _raw_items(staging)
+    if p is None and s is None:
+        both_text = isinstance(production, str) and isinstance(staging, str)
+        return "whitespace" if both_text and _squash(production) == _squash(staging) else "other"
+    if p is None or s is None:
+        # One side is a list; the other is a scalar. Equal canonical values: the scalar is blank.
+        return "empty_list_item"
+    p_full, s_full = [i for i in p if i.strip()], [i for i in s if i.strip()]
+    if (len(p_full) != len(p) or len(s_full) != len(s)) and set(p_full) == set(s_full):
+        return "empty_list_item"
+    if set(p_full) == set(s_full):
+        return "list_order"
+    return "whitespace" if {_squash(i) for i in p_full} == {_squash(i) for i in s_full} else "other"
+
+
+def _group(df: pd.DataFrame, key: list[str]) -> dict:
+    """Rows of ``df`` as dicts, grouped by canonical key (a tuple of canonical values)."""
+    groups = {}
+    for row in df.to_dict("records"):
+        groups.setdefault(tuple(canon(row[c]) for c in key), []).append(row)
+    return groups
+
+
+def _key_text(k: tuple) -> str:
+    return " | ".join(_show(v) for v in k)
+
+
+def _combined(rows: list[dict], column: str):
+    """(canonical value, raw value) of a column over the rows of one key.
+
+    Several rows have no single raw value: the raw value is the combined one.
+    """
+    value = combine([r[column] for r in rows])
+    if len(rows) == 1:
+        return value, rows[0][column]
+    return value, sorted(value) if isinstance(value, frozenset) else value
+
+
+def diff_tables(resource: str, staging: pd.DataFrame, production: pd.DataFrame, key: list[str]) -> dict:
+    """Compare two tables by key. Returns the report parts."""
+    s_groups, p_groups = _group(staging, key), _group(production, key)
+    columns = [c for c in staging.columns if c in production.columns and c not in key]
+    added = [k for k in s_groups if k not in p_groups]
+    removed = [k for k in p_groups if k not in s_groups]
+    changed, formats = [], []
+    for k in s_groups.keys() & p_groups.keys():
+        for c in columns:
+            (s_val, s_raw), (p_val, p_raw) = _combined(s_groups[k], c), _combined(p_groups[k], c)
+            if s_val != p_val:
+                changed.append({"key": _key_text(k), "column": c,
+                                "production": _show(p_val), "staging": _show(s_val)})
+            elif _show(p_raw) != _show(s_raw):
+                formats.append({"resource": resource, "column": c, "kind": format_kind(p_raw, s_raw),
+                                "example_key": _key_text(k), "example_production": _show(p_raw),
+                                "example_staging": _show(s_raw)})
+    return {
+        "added": pd.DataFrame([r for k in added for r in s_groups[k]], columns=list(staging.columns)),
+        "removed": pd.DataFrame([r for k in removed for r in p_groups[k]], columns=list(production.columns)),
+        "n_added": len(added), "n_removed": len(removed),
+        "changed": pd.DataFrame(sorted(changed, key=lambda d: (d["key"], d["column"])),
+                                columns=["key", "column", "production", "staging"]),
+        "formats": formats,
+        "duplicates": [{"resource": resource, "key": _key_text(k), "row_count": len(r)}
+                       for k, r in s_groups.items() if len(r) > 1],
+        "combined": sum(len(r) > 1 for r in p_groups.values()),
+    }
 
 
 def same_rows(a: pd.DataFrame, b: pd.DataFrame) -> bool:
@@ -191,22 +328,34 @@ def run(argv=None) -> int:
         return 1
 
     # Step 2: row diffs and summary.
-    summary, frames = [], {}
+    summary, frames, formats, duplicates = [], {}, [], []
     for resource in args.tables:
         staging_id, production_id = utils.portal_table(resource), utils.portal_table(resource, True)
         staging_df, production_df = read_table(syn, staging_id), read_table(syn, production_id)
         frames[resource] = staging_df
-        diff, key_used = diff_rows(staging_df, production_df, KEY_COLUMNS.get(resource))
-        pd.DataFrame(diff, columns=DIFF_COLUMNS).to_csv(out_dir / f"{resource}_diff.csv", index=False)
-        counts = Counter(d["change"] for d in diff)
-        # A changed row can list several columns: count rows, not cells.
-        changed_rows = len({d["key"] for d in diff if d["change"] == "changed"})
+        key = KEY_COLUMNS[resource]
+        result = diff_tables(resource, staging_df, production_df, key)
+        for name in ("added", "removed", "changed"):
+            if len(result[name]):
+                result[name].to_csv(out_dir / f"{resource}_{name}.csv", index=False)
+        formats += result["formats"]
+        duplicates += result["duplicates"]
         summary.append({
             "resource": resource, "staging_id": staging_id, "production_id": production_id,
-            "staging_rows": len(staging_df), "production_rows": len(production_df),
-            "added": counts["added"], "removed": counts["removed"], "changed": changed_rows,
-            "key_used": key_used, "status": "pending" if args.execute else "dry_run",
+            "staging_rows": len(staging_df), "production_rows": len(production_df), "key": "+".join(key),
+            "production_keys_combined": result["combined"], "staging_duplicate_keys": len(result["duplicates"]),
+            "added": result["n_added"], "removed": result["n_removed"],
+            "changed_records": result["changed"]["key"].nunique(), "changed_cells": len(result["changed"]),
+            "format_only_cells": len(result["formats"]), "status": "pending" if args.execute else "dry_run",
         })
+    format_df = pd.DataFrame(formats, columns=["resource", "column", "kind", "example_key",
+                                               "example_production", "example_staging"])
+    format_df.groupby(["resource", "column", "kind"], sort=False).agg(
+        count=("kind", "size"), example_key=("example_key", "first"),
+        example_production=("example_production", "first"), example_staging=("example_staging", "first"),
+    ).reset_index().to_csv(out_dir / "format_changes.csv", index=False)
+    if duplicates:
+        pd.DataFrame(duplicates).to_csv(out_dir / "duplicate_keys.csv", index=False)
 
     # Step 3: promote, in the order given, stopping at the first failure.
     code = 0
@@ -224,12 +373,9 @@ def run(argv=None) -> int:
             if row["status"] != "promoted":
                 failed, code = True, 1
 
-    summary_df = pd.DataFrame(summary)
+    summary_df = pd.DataFrame(summary, columns=SUMMARY_COLUMNS)
     summary_df.to_csv(out_dir / "summary.csv", index=False)
     print(summary_df.to_string(index=False))
-    for row in summary:
-        if row["key_used"] == "whole row" and row["resource"] in KEY_COLUMNS:
-            print(f"{row['resource']}: key column missing or not unique; compared whole rows.")
     return code
 
 

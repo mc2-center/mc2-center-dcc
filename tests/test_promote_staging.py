@@ -101,47 +101,144 @@ def test_schema_mismatch_writes_nothing(world, tmp_path):
     assert set(diff["table"]) == {"tool"} and "name" in set(diff["attribute"])
 
 
+def _csv(tmp_path, name):
+    return pd.read_csv(tmp_path / "r1" / name, keep_default_na=False)
+
+
 def test_dry_run_counts_and_no_writes(world, tmp_path):
     world.add("grant", False, [["G1", "same"], ["G2", "new name"], ["G3", "added"]])
     world.add("grant", True, [["G1", "same"], ["G2", "old name"], ["G4", "removed"]])
     assert _run(tmp_path, "--tables", "grant") == 0
     assert _writes(world) == []
     row = _summary(tmp_path).loc["grant"]
-    assert (row["added"], row["removed"], row["changed"]) == (1, 1, 1)
-    assert row["key_used"] == "grantNumber" and row["status"] == "dry_run"
-    diff = pd.read_csv(tmp_path / "r1" / "grant_diff.csv", keep_default_na=False)
-    assert sorted(diff["change"]) == ["added", "changed", "removed"]
-    changed = diff[diff["change"] == "changed"].iloc[0]
-    assert (changed["key"], changed["column"], changed["staging"], changed["production"]) == (
-        "G2", "grantName", "new name", "old name")
+    assert (row["added"], row["removed"], row["changed_records"], row["changed_cells"]) == (1, 1, 1, 1)
+    assert row["key"] == "grantNumber" and row["status"] == "dry_run"
+    assert list(_csv(tmp_path, "grant_added.csv").iloc[0]) == ["G3", "added"]
+    assert list(_csv(tmp_path, "grant_removed.csv").iloc[0]) == ["G4", "removed"]
+    changed = _csv(tmp_path, "grant_changed.csv").iloc[0]
+    assert (changed["key"], changed["column"], changed["production"], changed["staging"]) == (
+        "G2", "grantName", "old name", "new name")
+    assert not (tmp_path / "r1" / "duplicate_keys.csv").exists()
+    assert not (tmp_path / "r1" / "grant_diff.csv").exists()
 
 
-def test_duplicate_key_falls_back_to_whole_row(world, tmp_path, capsys):
+def test_empty_files_are_not_written(world, tmp_path):
+    world.add("grant", False, [["G1", "a"]])
+    world.add("grant", True, [["G1", "a"]])
+    assert _run(tmp_path, "--tables", "grant") == 0
+    names = {p.name for p in (tmp_path / "r1").iterdir()}
+    assert names == {"summary.csv", "format_changes.csv"}
+
+
+def test_list_order_and_empty_item_are_format_only(world, tmp_path):
+    world.add("tool", False, [["T1", ["a", "b"]], ["T2", ["x", ""]], ["T3", ["q"]]])
+    world.add("tool", True, [["T1", ["b", "a"]], ["T2", []], ["T3", '["q"]']])
+    world.tables[utils.portal_table("tool", True)][1].loc[1, "description"] = ["x"]
+    assert _run(tmp_path, "--tables", "tool") == 0
+    row = _summary(tmp_path).loc["tool"]
+    assert (row["changed_records"], row["changed_cells"], row["format_only_cells"]) == (0, 0, 2)
+    kinds = _csv(tmp_path, "format_changes.csv").set_index("kind")["count"].to_dict()
+    assert kinds == {"list_order": 1, "empty_list_item": 1}
+
+
+def test_blank_forms_are_equal(world, tmp_path):
+    world.add("tool", False, [["T1", [""]], ["T2", ""], ["T3", "nan"], ["T4", "[]"]])
+    world.add("tool", True, [["T1", []], ["T2", None], ["T3", "None"], ["T4", "['']"]])
+    assert _run(tmp_path, "--tables", "tool") == 0
+    row = _summary(tmp_path).loc["tool"]
+    assert (row["changed_records"], row["changed_cells"]) == (0, 0)
+
+
+def test_newline_vs_space_is_format_only(world, tmp_path):
+    world.add("grant", False, [["G1", "line one\nline  two"]])
+    world.add("grant", True, [["G1", "line one line two"]])
+    assert _run(tmp_path, "--tables", "grant") == 0
+    row = _summary(tmp_path).loc["grant"]
+    assert (row["changed_cells"], row["format_only_cells"]) == (0, 1)
+    assert list(_csv(tmp_path, "format_changes.csv")["kind"]) == ["whitespace"]
+
+
+def test_booleans_and_numbers_compare_by_value(world, tmp_path):
+    cols = ["toolName", "flag", "n"]
+    world.add("tool", False, [["T1", "True", 1], ["T2", True, "2"]], cols=cols)
+    world.add("tool", True, [["T1", "true", 1.0], ["T2", "true", 2.0]], cols=cols)
+    assert _run(tmp_path, "--tables", "tool") == 0
+    assert _summary(tmp_path).loc["tool", "changed_cells"] == 0
+
+
+def test_real_value_change_is_content(world, tmp_path):
+    world.add("tool", False, [["T1", ["a", "b"]]])
+    world.add("tool", True, [["T1", ["a", "c"]]])
+    assert _run(tmp_path, "--tables", "tool") == 0
+    row = _summary(tmp_path).loc["tool"]
+    assert (row["changed_records"], row["changed_cells"], row["format_only_cells"]) == (1, 1, 0)
+    changed = _csv(tmp_path, "tool_changed.csv").iloc[0]
+    assert (changed["production"], changed["staging"]) == ('["a", "c"]', '["a", "b"]')
+
+
+def test_production_duplicate_keys_are_combined(world, tmp_path):
+    cols = ["pubMedId", "grant", "title"]
+    world.add("publication", False, [["1", ["G1", "G2", "G3"], "t"], ["2", ["G1"], "u"]], cols=cols)
+    world.add("publication", True, [["1", ["G2"], "t"], ["1", ["G1"], "t"], ["1", ["G3"], "t"],
+                                    ["2", ["G1"], "u"]], cols=cols)
+    assert _run(tmp_path, "--tables", "publication") == 0
+    row = _summary(tmp_path).loc["publication"]
+    assert (row["production_keys_combined"], row["added"], row["removed"], row["changed_cells"]) == (1, 0, 0, 0)
+    assert row["production_rows"] == 4 and row["staging_rows"] == 2
+
+
+def test_production_duplicate_keys_missing_item_is_content(world, tmp_path):
+    cols = ["pubMedId", "grant"]
+    world.add("publication", False, [["1", ["G1", "G2", "G3"]]], cols=cols)
+    world.add("publication", True, [["1", ["G1"]], ["1", ["G2"]]], cols=cols)
+    assert _run(tmp_path, "--tables", "publication") == 0
+    assert _summary(tmp_path).loc["publication", "changed_cells"] == 1
+
+
+def test_staging_duplicate_keys_are_reported_not_whole_row(world, tmp_path, capsys):
     world.add("grant", False, [["G1", "a"], ["G1", "b"], ["G2", "c"]])
     world.add("grant", True, [["G1", "a"], ["G2", "x"]])
     assert _run(tmp_path, "--tables", "grant") == 0
     row = _summary(tmp_path).loc["grant"]
-    assert row["key_used"] == "whole row"
-    assert (row["added"], row["removed"], row["changed"]) == (2, 1, 0)
-    assert "compared whole rows" in capsys.readouterr().out
+    assert (row["staging_duplicate_keys"], row["added"], row["removed"], row["changed_records"]) == (1, 0, 0, 2)
+    dup = _csv(tmp_path, "duplicate_keys.csv").iloc[0]
+    assert (dup["resource"], dup["key"], dup["row_count"]) == ("grant", "G1", 2)
+    assert "whole row" not in capsys.readouterr().out
 
 
-def test_count_table_without_key_diffs_whole_rows_without_warning(world, tmp_path, capsys):
-    cols = ["theme", "totalCount"]
-    world.add("theme_counts", False, [["T1", 2], ["T2", 3]], cols=cols)
-    world.add("theme_counts", True, [["T1", 2], ["T2", 1]], cols=cols)
+def test_composite_and_list_valued_keys(world, tmp_path):
+    cols = ["projectName", "grant", "summary"]
+    world.add("project", False, [["P1", ["G2", "G1"], "a"], ["P1", "G9", "b"], ["P2", ["G1"], "new"]], cols=cols)
+    world.add("project", True, [["P1", ["G1", "G2"], "a"], ["P1", "G9", "b"], ["P3", ["G1"], "old"]], cols=cols)
+    assert _run(tmp_path, "--tables", "project") == 0
+    row = _summary(tmp_path).loc["project"]
+    assert row["key"] == "projectName+grant"
+    assert (row["added"], row["removed"], row["changed_cells"]) == (1, 1, 0)
+    assert _csv(tmp_path, "project_added.csv").iloc[0]["projectName"] == "P2"
+    assert _csv(tmp_path, "project_removed.csv").iloc[0]["projectName"] == "P3"
+
+
+def test_removed_lists_all_rows_of_a_combined_key(world, tmp_path):
+    cols = ["pubMedId", "grant"]
+    world.add("publication", False, [["9", ["G1"]]], cols=cols)
+    world.add("publication", True, [["9", ["G1"]], ["5", ["G1"]], ["5", ["G2"]]], cols=cols)
+    assert _run(tmp_path, "--tables", "publication") == 0
+    row = _summary(tmp_path).loc["publication"]
+    assert (row["added"], row["removed"]) == (0, 1)
+    assert len(_csv(tmp_path, "publication_removed.csv")) == 2
+
+
+def test_count_table_uses_composite_key(world, tmp_path):
+    cols = ["theme", "groupBy", "totalCount"]
+    world.add("theme_counts", False, [["T1", "g", 2], ["T2", "g", 3]], cols=cols)
+    world.add("theme_counts", True, [["T1", "g", 2], ["T2", "g", 1]], cols=cols)
     assert _run(tmp_path, "--tables", "theme_counts") == 0
     row = _summary(tmp_path).loc["theme_counts"]
-    assert row["key_used"] == "whole row"
-    assert (row["added"], row["removed"], row["changed"]) == (1, 1, 0)
-    assert "compared whole rows" not in capsys.readouterr().out
+    assert (row["added"], row["removed"], row["changed_records"]) == (0, 0, 1)
 
 
-def test_list_cells_compare_exactly(world, tmp_path):
-    world.add("tool", False, [["T1", ["a", "b"]]])
-    world.add("tool", True, [["T1", ["b", "a"]]])
-    assert _run(tmp_path, "--tables", "tool") == 0
-    assert _summary(tmp_path).loc["tool"]["changed"] == 1
+def test_every_resource_has_a_key():
+    assert set(promote_staging.KEY_COLUMNS) == set(promote_staging.RESOURCES)
 
 
 def test_execute_snapshots_staging_then_updates_production(world, tmp_path):

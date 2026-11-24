@@ -125,8 +125,13 @@ python portal_tables/promote_staging.py --run-id 2026-11-promote --report-dir ru
 
 It makes each production table an exact copy of its staging table (full replace; nothing is derived). `--tables`
 limits it to some tables. First it compares the columns of every selected table; if any table differs it writes
-`schema_diff.csv` and stops before it writes. Then it writes `<resource>_diff.csv` (rows added, removed and changed)
-and `summary.csv` to `<report-dir>/<run-id>/`. With `--execute`, for each table it snapshots the staging table,
+`schema_diff.csv` and stops before it writes. Then it matches the rows on a key per resource and writes the report
+to `<report-dir>/<run-id>/`: `summary.csv` (one line per table), `<resource>_added.csv` and `<resource>_removed.csv`
+(full rows), `<resource>_changed.csv` (one line per changed cell), `format_changes.csv` (cells that differ only in
+list order, blank list items or whitespace) and `duplicate_keys.csv` (staging rows that share a key). The
+added, removed, changed and duplicate files are written only when they have content. Production rows that share a key
+are combined before the compare. Read the `added`, `removed` and `changed_*` columns of `summary.csv` to see what
+`--execute` will change. With `--execute`, for each table it snapshots the staging table,
 replaces the production rows (production is snapshotted first and restored if the store fails), reads production
 back and compares. It stops at the first failure; tables promoted before the failure stay promoted. If the process
 stops between the delete and the store, restore the production table from its snapshot by hand.
