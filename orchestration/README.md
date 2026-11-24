@@ -17,6 +17,98 @@ the staging tables to the production portal tables. Every script that writes to 
   a member of the MC2 Admin team, which gives write access to the grant projects, the CCKP - MC2 Admin project (it
   holds the staging portal tables), the log tables and the production portal tables (step 7 only).
 
+## How each metadata type reaches the portal
+
+Each portal metadata type has one source of truth, one way to add records, and one staging table.
+Only `portal_tables/promote_staging.py` writes the production tables.
+
+| Portal type | Source of truth | How new records get in | Commands | Staging table | Production table |
+|---|---|---|---|---|---|
+| Publications | `MC2Center_PublicationView_RecordSet` in the `publications` folder of each grant project | AI curation pipeline, or a curator in Curator | `upload_workflow.py`, `union_qc.py --regenerate --upload`, `run_sync.sh` (`sync_publications.py`) | `syn78748028` | `syn21868591` |
+| Datasets | `MC2Center_DatasetView_RecordSet` in the `datasets` folder of each grant project | same as publications | same; `sync_datasets.py` | `syn78748031` | `syn21897968` |
+| Tools | `MC2Center_ToolView_RecordSet` in the `tools` folder of each grant project | same as publications | same; `sync_tools.py` | `syn78748036` | `syn26127427` |
+| Educational resources | `MC2Center_EducationalResource_RecordSet` in the `education` folder of each grant project | same as publications | same; `sync_education.py` | `syn78748037` | `syn51497305` |
+| Grants | `MC2Center_GrantView_RecordSet` (`syn78739961`, curation task 8557) in folder `admin_recordsets` of CCKP - MC2 Admin (`syn28742843`) | A curator adds a row in Curator | `sync_grants.py` | `syn78748038` | `syn21918972` |
+| Projects | `MC2Center_ProjectView_RecordSet` (`syn78739981`, task 8558), same folder | A curator adds a row in Curator | `sync_projects.py` | `syn78748039` | `syn21868602` |
+| People | `MC2Center_PersonView_RecordSet` (`syn78742852`, task 8559), same folder | A curator adds a row in Curator | `sync_people.py` | `syn78748040` | `syn28073190` |
+| Theme and consortium counts (consortium, consortium-theme, theme) | Derived from the staging tables. Nobody curates them. | None. `utils/tally_themes.py` calculates them. | `utils/tally_themes.py` | `syn78754152` / `syn78754154` / `syn78754168` | `syn21641485` / `syn21649281` / `syn21639584` |
+
+Publications, datasets, tools and education:
+
+1. Run `annotations/upload_workflow.py` to load the AI curation manifests into the grant RecordSets (step 2 of [The cycle](#the-cycle)).
+   It runs `annotations/upload_recordsets.py`. Curators can also add and edit rows in Curator (step 3).
+2. Run `portal_tables/union_qc.py --regenerate --upload` to build the merged manifest (step 5).
+3. Run `bash run_sync.sh` to write the staging tables (step 6).
+
+Grants, projects and people:
+
+1. Add the record in the admin RecordSet. A curator does this in Curator: in the Grid, by hand or by CSV import.
+   These records never go through `upload_workflow.py` or `upload_recordsets.py`.
+2. For a new grant, optionally collect its details from NIH RePORTER first (see below).
+3. Run `sync_grants.py`, then `sync_projects.py`, then `sync_people.py` (step 6). Run the grant sync first: the other two read the staging Grants table.
+4. The syncs read the admin RecordSets because `utils.MANIFEST_SOURCE` is `"recordset"`.
+   Pass `--manifest-source table` to read the legacy manifest tables instead.
+
+To collect grant details from NIH RePORTER, run `utils/reporter_grants.py`. It writes a CSV that a curator uses to fill the Grid:
+
+```bash
+python utils/reporter_grants.py run -g CA209971 CA214282 -c final.csv    # query, then clean; the raw CSV stays beside the final one
+python utils/reporter_grants.py query -g CA209971 -y 2023 2024 -c raw.csv
+python utils/reporter_grants.py clean -r raw.csv -c final.csv
+```
+
+Theme and consortium counts:
+
+1. Run `python utils/tally_themes.py [--dryrun]`. It reads the staging Grants, Publications, Datasets and Tools tables and writes the staging count tables.
+2. The GitHub workflow `update-theme-graphs.yml` runs the same script on the first day of each month.
+3. Run it again after the staging tables change and before you promote.
+
+For all types, promote with `portal_tables/promote_staging.py --tables ... --execute` after you check the staging tables
+(step 7 of [The cycle](#the-cycle)). Name the tables to promote, or give `--tables all`.
+
+### Adding a new grant
+
+A new grant needs a row in the admin GrantView RecordSet. `sync_grants.py` then builds the grant project.
+
+1. Add the grant row to `MC2Center_GrantView_RecordSet` in Curator (task 8557). The row needs a `GrantNumber`, a `GrantName` and a valid `ConsortiumKey`.
+   Optionally collect the details from NIH RePORTER first.
+2. Run the sync as a dry run: `python portal_tables/sync_grants.py --dryrun`.
+   It lists the grants that are not yet in the staging Grants table. It stops with an error, before it creates anything, if a new grant has no
+   `GrantNumber`, if an existing grant has a new `GrantNumber`, or if a `ConsortiumKey` is unknown.
+3. Run it again without `--dryrun`: `python portal_tables/sync_grants.py`. For each grant that is not yet in the Grants table, it does these steps in order:
+   1. It creates the Synapse project. It reuses a project of the same name that an earlier run left.
+   2. It gives the MC2 Admin team (`3450948`) admin access to the project.
+   3. It creates the wiki, if the project has none.
+   4. It creates the folders: `biospecimens`, `datasets`, `education`, `governance`, `individuals`, `models`, `publications`, `sharing_plans`, `studies` and `tools`.
+   5. It creates the four RecordSets `MC2Center_<Component>_RecordSet` in the `publications`, `datasets`, `tools` and `education` folders.
+      Each has a curation task `MC2Center_<Component>_CurationTask`. The schema of the current model version is bound to the RecordSet.
+      Each creation is logged in the write log. A RecordSet that exists gets only what is missing: the schema binding or the task.
+   6. It creates the grant team with edit access. It reuses a team of the same name only if the DCC owns it: the operator created it,
+      or an admin of the team is a member of the MC2 Admin team (`create_team`, `dcc_owns_team`).
+4. After all grants, the sync adds each new project to the scope of the All Files view (`syn27210848`) and the project-tables view (`syn52750482`) (`update_scopes`).
+5. The sync then writes the staging Grants table (`syn78748038`).
+6. Run `sync_projects.py` and `sync_people.py`, then check the staging tables.
+   Run `utils/tally_themes.py` if the theme counts must change. Then promote (step 7 of [The cycle](#the-cycle)).
+7. Add the first records for the grant. Use the upload ([When a grant has no RecordSet yet](#when-a-grant-has-no-recordset-yet)) or Curator.
+
+If a step fails for a grant (a Synapse error, or a team the DCC does not own), the sync skips that grant. It writes no row for the grant to the Grants table.
+It logs the error, and the command exits with code 1. Fix the cause and run the sync again. The next run finds the grant is still new.
+It reuses the project and the team, and it adds only the missing parts.
+
+### When a grant has no RecordSet yet
+
+`upload_recordsets.py` (also run by `upload_workflow.py`) handles the RecordSet of each grant. A grant that `sync_grants.py` creates gets its four RecordSets at creation.
+Older grant projects can lack a RecordSet or its parts (most lack the education and tools RecordSets). The upload creates a missing RecordSet only when the grant first has records of that type. The table shows what the upload does:
+
+| State of the grant | Dry run | `--execute` |
+|---|---|---|
+| The data-type folder exists, the RecordSet does not | Reports `dryrun` and `create_recordset` in the summary. Writes nothing. | Creates the RecordSet and its curation task, then writes the rows as a first write (`created_recordset`). |
+| The RecordSet has no curation task | Reports `create_task`. | Creates the task (`created_task`). |
+| The RecordSet has no schema bound | Reports `bind_schema`. | Binds the current schema (`bound_schema`). A RecordSet with another schema version bound is not changed. |
+| The data-type folder is missing | Status `missing_recordset`. | Status `missing_recordset`. Nothing is written. Create the folder first, then run the upload again. |
+
+See [Exit codes](#exit-codes) for the `missing_recordset` status and the exit code of each script.
+
 ## The cycle
 
 **1. AI curation pipeline (separate repo, `ai-curation-pipeline`).** Run `run-publication-pipeline`, then QC the output
@@ -406,7 +498,7 @@ bound is not changed.
 
 Remove this section after the first full cycle.
 
-- A real grant, project or people sync from the admin RecordSets.
-- A real sync into the staging tables, and `promote_staging.py --execute`.
-- `union_qc.py --regenerate --upload` from the RecordSets.
-- The first curator cycle through Curator.
+- A new grant created from a row of the admin GrantView RecordSet (with its four RecordSets). The grant, project and people
+  syncs have written the staging tables from the admin RecordSets, but no new grant was in them.
+- `promote_staging.py --execute` against the production tables. It was tested against scratch copies of three tables.
+- The first curator cycle through Curator: no person has yet edited a grant RecordSet in the Curator UI.
