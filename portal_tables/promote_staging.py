@@ -70,7 +70,7 @@ KEY_COLUMNS = {
     "tool": ["toolName"],
     "education": ["alias"],
     "grant": ["grantNumber"],
-    "people": ["synapseProfileId"],
+    "people": ["name"],  # synapseProfileId is blank for about half the people
     "project": ["projectName", "grant"],
     "consortium_counts": ["consortium", "groupBy"],
     "consortium_theme_counts": ["theme", "consortium", "groupBy"],
