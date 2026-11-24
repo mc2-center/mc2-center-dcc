@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 COMPONENT = "GrantView"
 
+DCC_ADMIN_TEAM = "3450948"  # MC2 Admin team: admin on every grant project
 PERMISSIONS = {
     "view": ["READ"],
     "download": ["READ", "DOWNLOAD"],
@@ -167,21 +168,36 @@ def create_folders(syn, project_id):
         syn.store(Folder(name, parent=project_id))
 
 
-def find_team_id(syn, team_name):
-    """ID of the team named exactly ``team_name``, or None if there isn't one."""
+def find_team(syn, team_name):
+    """The team named exactly ``team_name``, or None if there isn't one."""
     try:
-        return TeamModel.from_name(team_name, synapse_client=syn).id
+        return TeamModel.from_name(team_name, synapse_client=syn)
     except ValueError:  # "Can't find team"
         return None
 
 
+def dcc_owns_team(syn, team) -> bool:
+    """Whether the DCC owns ``team``: the operator created it, or one of its admins is in the MC2 Admin team.
+
+    Team names are public and anyone can create a team, so a team found by name is reused only when this is true.
+    """
+    if str(team.created_by) == str(syn.getUserProfile()["ownerId"]):
+        return True
+    dcc = {str(m.member.owner_id) for m in TeamModel(id=DCC_ADMIN_TEAM).members(synapse_client=syn)}
+    return any(m.is_admin and str(m.member.owner_id) in dcc for m in team.members(synapse_client=syn))
+
+
 def create_team(syn, project_id, grant, access_type="edit"):
-    """Create (or reuse, if one already has the name) the team for a grant."""
+    """Create the team for a grant, or reuse a team of that name that the DCC owns (see ``dcc_owns_team``)."""
     consortia = _join_listlike_col(grant["consortium"])
     center = _join_listlike_col(grant["GrantInstitutionAlias"])
     team_name = f"{consortia} {center} {grant['GrantType']} {grant['GrantNumber']}"
-    team_id = find_team_id(syn, team_name)
-    if team_id is not None:
+    team = find_team(syn, team_name)
+    if team is not None:
+        if not dcc_owns_team(syn, team):
+            print(f"Team {team_name!r} ({team.id}) exists but the DCC does not own it; not reusing it. Resolve it by hand.")
+            return None
+        team_id = team.id
         print(f"Reusing existing team: {team_name}")
     else:
         try:
@@ -229,7 +245,7 @@ def create_grant_projects(syn, grants):
             else:
                 project_id = syn.store(Project(name)).id
             syn.setPermissions(
-                project_id, principalId=3450948, accessType=PERMISSIONS.get("admin")
+                project_id, principalId=DCC_ADMIN_TEAM, accessType=PERMISSIONS.get("admin")
             )
 
             if not _has_wiki(syn, project_id):

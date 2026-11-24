@@ -229,7 +229,8 @@ def _syn_mock(wiki_exists=False):
 def test_existing_project_and_team_are_reused():
     syn = _syn_mock(wiki_exists=True)
     with patch.object(cgp, "find_entity_id", return_value="syn123") as find, \
-            patch.object(cgp, "find_team_id", return_value="999"):
+            patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=True):
         out = cgp.create_grant_projects(syn, _grant_row())
     assert out == {"N1": ("syn123", "999")}
     find.assert_called_once_with(name="New grant", parent=None, synapse_client=syn)
@@ -237,10 +238,56 @@ def test_existing_project_and_team_are_reused():
     assert "Project" not in stored and "Team" not in stored and "Wiki" not in stored
 
 
+def _member(owner_id, admin):
+    return MagicMock(member=MagicMock(owner_id=owner_id), is_admin=admin)
+
+
+def _owned_team_syn(created_by, team_members, mc2_admin_members=("77",)):
+    """A Synapse mock whose operator is 42, a team ``created_by`` with ``team_members``, and the MC2 Admin team."""
+    syn = MagicMock()
+    syn.getUserProfile.return_value = {"ownerId": "42"}
+    team = MagicMock(id="999", created_by=created_by)
+    team.members.return_value = list(team_members)
+    mc2 = MagicMock()
+    mc2.members.return_value = [_member(i, False) for i in mc2_admin_members]
+    return syn, team, mc2
+
+
+@pytest.mark.parametrize("created_by, members, owned", [
+    ("42", [], True),                                  # the operator created it
+    ("13", [_member("77", True)], True),               # an admin is in MC2 Admin
+    ("13", [_member("77", False), _member("13", True)], False),  # MC2 Admin member, but not a team admin
+    ("13", [_member("13", True)], False),              # an outsider's team
+])
+def test_dcc_owns_team(created_by, members, owned):
+    syn, team, mc2 = _owned_team_syn(created_by, members)
+    with patch.object(cgp, "TeamModel", side_effect=lambda **kw: mc2):
+        assert cgp.dcc_owns_team(syn, team) is owned
+
+
+def test_a_team_the_dcc_does_not_own_is_not_reused():
+    syn = MagicMock()
+    with patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=False):
+        assert cgp.create_team(syn, "syn7", _grant_row().iloc[0]) is None
+    syn.setPermissions.assert_not_called()  # no access for an outside team
+    syn.store.assert_not_called()
+
+
+def test_an_outside_team_makes_the_grant_fail():
+    syn = _syn_mock()
+    with patch.object(cgp, "find_entity_id", return_value=None), \
+            patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=False):
+        out = cgp.create_grant_projects(syn, _grant_row())
+    assert out == {"N1": ("None", "None")}
+    assert not any(c.kwargs.get("principalId") == "999" for c in syn.setPermissions.call_args_list)
+
+
 def test_new_project_is_created_when_not_found():
     syn = _syn_mock()
     with patch.object(cgp, "find_entity_id", return_value=None), \
-            patch.object(cgp, "find_team_id", return_value=None):
+            patch.object(cgp, "find_team", return_value=None):
         out = cgp.create_grant_projects(syn, _grant_row())
     assert out == {"N1": ("syn7", "55")}
 
