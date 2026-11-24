@@ -120,11 +120,11 @@ the GitHub workflow.
 
 ```bash
 python portal_tables/promote_staging.py --run-id 2026-11-promote --report-dir runs/promote            # dry run
-python portal_tables/promote_staging.py --run-id 2026-11-promote --report-dir runs/promote --execute  # LIVE WRITE
+python portal_tables/promote_staging.py --run-id 2026-11-promote --report-dir runs/promote --tables all --execute  # LIVE WRITE
 ```
 
 It makes each production table an exact copy of its staging table (full replace; nothing is derived). `--tables`
-limits it to some tables. First it compares the columns of every selected table; if any table differs it writes
+limits it to some tables. `--execute` needs `--tables`: name the tables, or give `--tables all`. First it compares the columns of every selected table; if any table differs it writes
 `schema_diff.csv` and stops before it writes. Then it matches the rows on a key per resource and writes the report
 to `<report-dir>/<run-id>/`: `summary.csv` (one line per table), `<resource>_added.csv` and `<resource>_removed.csv`
 (full rows), `<resource>_changed.csv` (one line per changed cell), `format_changes.csv` (cells that differ only in

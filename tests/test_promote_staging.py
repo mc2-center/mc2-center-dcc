@@ -278,3 +278,41 @@ def test_newlines_stripped_on_write_still_promote(world, tmp_path):
     world.add("grant", True, [["G1", "old"]])
     assert _run(tmp_path, "--tables", "grant", "--execute") == 0
     assert _summary(tmp_path).loc["grant", "status"] == "promoted"
+
+
+def test_text_decimals_do_not_crash_and_keep_version_changes(world, tmp_path):
+    cols = ["toolName", "version"]
+    world.add("tool", False, [["T1", "2020"], ["T2", "1.10"], ["T3", "2.0"]], cols=cols)
+    world.add("tool", True, [["T1", "2020.0"], ["T2", "1.1"], ["T3", "2"]], cols=cols)
+    assert _run(tmp_path, "--tables", "tool") == 0
+    changed = _csv(tmp_path, "tool_changed.csv")
+    assert list(changed["key"]) == ["T2"]  # 1.1 -> 1.10 is content; 2020.0 and 2.0 equal the integers
+
+
+def test_combined_production_rows_add_no_format_only_cells(world, tmp_path):
+    cols = ["pubMedId", "year", "flag"]
+    world.add("publication", False, [["1", 2020.0, True]], cols=cols)
+    world.add("publication", True, [["1", "2020", "true"], ["1", "2020", "true"]], cols=cols)
+    assert _run(tmp_path, "--tables", "publication") == 0
+    row = _summary(tmp_path).loc["publication"]
+    assert (row["changed_cells"], row["format_only_cells"]) == (0, 0)
+
+
+def test_execute_needs_tables(world, tmp_path):
+    world.add("tool", False, [["T1", "d"]])
+    world.add("tool", True, [["T1", "d"]])
+    with pytest.raises(SystemExit) as exc:
+        _run(tmp_path, "--execute")
+    assert exc.value.code == 2 and _writes(world) == []
+    with pytest.raises(SystemExit):
+        _run(tmp_path, "--tables", "all", "tool", "--execute")
+    assert _writes(world) == []
+
+
+def test_tables_all_selects_every_resource(world, tmp_path, monkeypatch):
+    monkeypatch.setattr(promote_staging, "RESOURCES", ["tool", "grant"])
+    for resource in ("tool", "grant"):
+        world.add(resource, False, [["X1", "a"]])
+        world.add(resource, True, [["X1", "a"]])
+    assert _run(tmp_path, "--tables", "all", "--execute") == 0
+    assert list(_summary(tmp_path)["status"]) == ["promoted", "promoted"]

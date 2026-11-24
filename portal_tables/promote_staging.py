@@ -43,7 +43,7 @@ Reports go to ``<report-dir>/<run-id>/``.
 
 Example:
     python portal_tables/promote_staging.py --run-id 2026-11-18 --tables tool
-    python portal_tables/promote_staging.py --run-id 2026-11-18 --execute
+    python portal_tables/promote_staging.py --run-id 2026-11-18 --tables all --execute
 """
 
 import argparse
@@ -80,7 +80,7 @@ KEY_COLUMNS = {
 COLUMN_ATTRS = ["name", "column_type", "maximum_size", "maximum_list_length", "enum_values"]
 SYSTEM_COLUMNS = ["ROW_ID", "ROW_VERSION", "ROW_ETAG"]
 BLANK_TEXT = {"", "nan", "None"}
-NUMBER = re.compile(r"-?(0|[1-9]\d*)(\.\d+)?")
+WHOLE_FLOAT = re.compile(r"(-?(?:0|[1-9]\d*))\.0+")
 SUMMARY_COLUMNS = [
     "resource", "staging_id", "production_id", "staging_rows", "production_rows", "key",
     "production_keys_combined", "staging_duplicate_keys", "added", "removed",
@@ -138,7 +138,10 @@ def _squash(text: str) -> str:
 
 
 def _number(value) -> str:
-    return str(int(value)) if float(value) == int(float(value)) else repr(float(value))
+    """Text of a number cell: a whole number without a fraction (2020.0 -> "2020")."""
+    if isinstance(value, (float, np.floating)) and (np.isnan(value) or np.isinf(value)):
+        return str(value)
+    return str(int(value)) if float(value).is_integer() else repr(float(value))
 
 
 def _scalar(value) -> str:
@@ -154,7 +157,10 @@ def _scalar(value) -> str:
         return ""
     if text.lower() in ("true", "false"):
         return text.lower()
-    return _number(text) if NUMBER.fullmatch(text) else text
+    # Only a whole number written as a float ("2020.0", as pandas reads it) equals the integer. Other numeric text
+    # stays text, so a version change such as "1.10" -> "1.1" is a content change.
+    whole = WHOLE_FLOAT.fullmatch(text)
+    return whole.group(1) if whole else text
 
 
 def _python_list(text: str) -> list | None:
@@ -240,17 +246,6 @@ def _key_text(k: tuple) -> str:
     return " | ".join(_show(v) for v in k)
 
 
-def _combined(rows: list[dict], column: str):
-    """(canonical value, raw value) of a column over the rows of one key.
-
-    Several rows have no single raw value: the raw value is the combined one.
-    """
-    value = combine([r[column] for r in rows])
-    if len(rows) == 1:
-        return value, rows[0][column]
-    return value, sorted(value) if isinstance(value, frozenset) else value
-
-
 def diff_tables(resource: str, staging: pd.DataFrame, production: pd.DataFrame, key: list[str]) -> dict:
     """Compare two tables by key. Returns the report parts."""
     s_groups, p_groups = _group(staging, key), _group(production, key)
@@ -260,11 +255,16 @@ def diff_tables(resource: str, staging: pd.DataFrame, production: pd.DataFrame, 
     changed, formats = [], []
     for k in s_groups.keys() & p_groups.keys():
         for c in columns:
-            (s_val, s_raw), (p_val, p_raw) = _combined(s_groups[k], c), _combined(p_groups[k], c)
+            s_rows, p_rows = s_groups[k], p_groups[k]
+            s_val, p_val = combine([r[c] for r in s_rows]), combine([r[c] for r in p_rows])
             if s_val != p_val:
                 changed.append({"key": _key_text(k), "column": c,
                                 "production": _show(p_val), "staging": _show(s_val)})
-            elif _show(p_raw) != _show(s_raw):
+                continue
+            if len(s_rows) > 1 or len(p_rows) > 1:
+                continue  # combined rows have no single written value to compare
+            s_raw, p_raw = s_rows[0][c], p_rows[0][c]
+            if _show(p_raw) != _show(s_raw):
                 formats.append({"resource": resource, "column": c, "kind": format_kind(p_raw, s_raw),
                                 "example_key": _key_text(k), "example_production": _show(p_raw),
                                 "example_staging": _show(s_raw)})
@@ -302,14 +302,19 @@ def promote(syn, resource: str, run_id: str, staging_df: pd.DataFrame) -> str:
 
 def run(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--tables", nargs="+", choices=RESOURCES, default=RESOURCES,
-                        help="resources to promote (default: all)")
+    parser.add_argument("--tables", nargs="+", choices=RESOURCES + ["all"],
+                        help="resources to promote, or 'all'. Required with --execute; a dry run defaults to all")
     parser.add_argument("--execute", action="store_true",
                         help="write the production tables (default: dry run)")
     parser.add_argument("--report-dir", default="./promote_report")
     parser.add_argument("--run-id", required=True,
                         help="label for snapshot comments and the report folder")
     args = parser.parse_args(argv)
+    if args.execute and not args.tables:
+        parser.error("--execute needs --tables: name the resources, or give --tables all")
+    if args.tables and "all" in args.tables and len(args.tables) > 1:
+        parser.error("--tables all cannot be combined with resource names")
+    tables = RESOURCES if not args.tables or args.tables == ["all"] else args.tables
 
     out_dir = Path(args.report_dir) / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -317,7 +322,7 @@ def run(argv=None) -> int:
 
     # Step 1: schemas of every table, before anything is written.
     mismatches = []
-    for resource in args.tables:
+    for resource in tables:
         staging = Table(id=utils.portal_table(resource)).get(include_columns=True, synapse_client=syn)
         production = Table(id=utils.portal_table(resource, True)).get(include_columns=True, synapse_client=syn)
         mismatches += schema_diff(resource, staging, production)
@@ -329,7 +334,7 @@ def run(argv=None) -> int:
 
     # Step 2: row diffs and summary.
     summary, frames, formats, duplicates = [], {}, [], []
-    for resource in args.tables:
+    for resource in tables:
         staging_id, production_id = utils.portal_table(resource), utils.portal_table(resource, True)
         staging_df, production_df = read_table(syn, staging_id), read_table(syn, production_id)
         frames[resource] = staging_df
