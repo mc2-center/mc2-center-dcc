@@ -3,6 +3,13 @@
 This script will create a new Synapse Project with pre-filled
 Wikis and Folders for each new grant found, as well as a Synapse
 team with "Can edit" permissions.
+
+Each data-type folder (publications, datasets, tools, education) also gets
+its RecordSet ``MC2Center_<Component>_RecordSet`` and its curation task
+``MC2Center_<Component>_CurationTask``. The JSON schema is bound to the
+RecordSet. The creation is logged in the write log. A project that an earlier
+run left half done gets only the parts that are missing. If a RecordSet or a
+task cannot be created, the grant fails and the next run tries it again.
 """
 
 import argparse
@@ -13,11 +20,14 @@ import pandas as pd
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
 from synapseclient.models import Table, Team as TeamModel
+from synapseclient.core.exceptions import SynapseError
 from synapseclient.operations import find_entity_id
 
 from cells import is_null, parse_list
 import crosswalk
+import merge_tables
 import model_contract
+import recordsets
 import utils
 
 logger = logging.getLogger(__name__)
@@ -168,6 +178,22 @@ def create_folders(syn, project_id):
         syn.store(Folder(name, parent=project_id))
 
 
+def create_recordsets(syn, project_id, write_log, run_id, principal):
+    """Give each data-type folder its RecordSet and curation task; add only what is missing."""
+    for component in crosswalk.COMPONENT_FOLDERS:
+        name = merge_tables.folder_name(project_id, component)
+        folder_id = find_entity_id(name=name, parent=project_id, synapse_client=syn)
+        if folder_id is None:
+            raise ValueError(f"folder {name!r} not found in {project_id}")
+        rs_id = recordsets.find_recordset(syn, folder_id, component)
+        if rs_id is None:
+            rs_id = recordsets.create_grant_recordset(
+                syn, project_id, folder_id, component, write_log, run_id, principal)
+            print(f"Created {component} RecordSet and curation task: {rs_id}")
+        elif recordsets.ensure_curation_task(syn, project_id, rs_id, component) is not None:
+            print(f"Created the missing {component} curation task for {rs_id}")
+
+
 def find_team(syn, team_name):
     """The team named exactly ``team_name``, or None if there isn't one."""
     try:
@@ -231,11 +257,15 @@ def create_grant_projects(syn, grants):
     A project that already exists under the grant's name (left by an earlier
     run that failed midway) is reused, and only the missing parts are added.
     Returns ``{GrantNumber: (project_id, team_id)}``; grants that could not
-    be created map to ``("None", "None")``.
+    be created map to ``("None", "None")``. The RecordSets and curation tasks are
+    created for a reused project too, if they are missing.
     """
 
     grants = utils.fill_blank(grants)
     grant_info_dict = {}
+    write_log = recordsets.SynapseTableWriteLog(syn, utils.WRITE_LOG_TABLE)
+    run_id = recordsets.new_run_id("grant-sync-")
+    principal = None
     for _, row in grants.iterrows():
         name = _syn_prettify(row["GrantName"])
         try:
@@ -251,13 +281,15 @@ def create_grant_projects(syn, grants):
             if not _has_wiki(syn, project_id):
                 create_wiki_pages(syn, project_id, row)
             create_folders(syn, project_id)
+            principal = principal or recordsets.principal_id(syn)
+            create_recordsets(syn, project_id, write_log, run_id, principal)
             team_id = create_team(syn, project_id, row)
             if team_id is None:
                 raise synapseclient.core.exceptions.SynapseHTTPError(
                     f"No team for {name}"
                 )
             grant_info_dict[row["GrantNumber"]] = (project_id, team_id)
-        except synapseclient.core.exceptions.SynapseHTTPError as err:
+        except (SynapseError, ValueError) as err:
             logger.error("Grant creation failed, skipping: %s (%s)", name, err)
             print(f"Skipping: {name}")
             grant_info_dict[row["GrantNumber"]] = ("None", "None")

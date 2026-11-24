@@ -112,7 +112,11 @@ syncs are not in `run_sync.sh`; run them directly when the admin RecordSets chan
 `--manifest-source table` reads the legacy manifest tables instead):
 `python portal_tables/sync_grants.py|sync_projects.py|sync_people.py [--dryrun]`. Sync grants first: the other syncs
 read the staging Grants table. `utils/tally_themes.py` reads the staging tables and writes the staging theme count
-tables. `sync_grants.py` creates a Synapse project for each new grant (not a dry run).
+tables. `sync_grants.py` creates a Synapse project for each new grant (not a dry run). For each new grant, it also creates
+the four data-type RecordSets (`MC2Center_<Component>_RecordSet`) and their curation tasks
+(`MC2Center_<Component>_CurationTask`). The schema is bound to the RecordSet, and each creation is logged in the
+write log. A project that an earlier run left half done gets only what is missing. If one creation fails, the grant
+is skipped and the next run tries it again.
 
 **7. Promote staging to production** (`portal_tables/promote_staging.py`). This is the only script that writes the
 production portal tables. A person starts it after the staging tables are validated; it is not in `run_sync.sh` or
@@ -370,8 +374,10 @@ export; the data does not change. The admin RecordSets (grants, projects, people
 | `repair_recordset.py` | `dryrun` or `repaired` | `locked`, `retry`, `refused`, `failed` or `mismatch` | - |
 | `union_qc.py --regenerate` | no validation failures | - | validation failures, or a component skipped (empty union) |
 
-`missing_recordset`: the grant has no `MC2Center_<Component>_RecordSet` in its data-type folder; the upload does not
-create it.
+`missing_recordset`: the grant has no data-type folder. Create the folder first. If only the RecordSet is missing,
+a dry run reports `dryrun` (`create_recordset` in the summary) and `--execute` creates the RecordSet and its
+curation task, then writes the rows as a first write (`created_recordset` in the summary). If the RecordSet exists
+but has no curation task, `--execute` creates the task (`created_task`); a dry run only reports it.
 `migration/migrate_grant_tables_14.py` and `migration/migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle;
 `--execute` needs `--write-log-table` in both) use
 0 ok, 1 a grant failed or the comparison differs, 2 unmapped values or validation failures.

@@ -3,10 +3,18 @@ upload_recordsets.py
 
 Uploads split manifests to the shared RecordSets listed in the gen-mp-csv.py
 output. For each grant it finds ``MC2Center_<Component>_RecordSet`` in the
-grant's data-type folder (a missing RecordSet stops that grant; creating it is
-a migration step), folds in contributor edits made since the pipeline's last
+grant's data-type folder, folds in contributor edits made since the pipeline's last
 write (``portal_tables/recordsets.py``: reconcile, then merge the upload), and
 writes the result through a Grid session so Synapse validates it.
+
+If the folder exists but the RecordSet does not, a dry run reports it (status
+``dryrun``, ``create_recordset`` in the summary) and writes nothing. With
+``--execute``, the script creates the RecordSet and its curation task
+(``recordsets.create_grant_recordset``, logged in the write log), then writes
+the rows as a first write. If the RecordSet exists but has no curation task,
+``--execute`` creates the task (``created_task`` in the summary); a dry run
+only reports it. If the folder itself is missing, the grant gets status
+``missing_recordset``.
 
 Dry run is the default: everything is computed and reported, nothing is
 written to Synapse and validation is skipped (the write-log and removals tables,
@@ -147,17 +155,38 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     folder_id = row[folder_column_name(row)]
     if folder_id in ("", "None", "nan"):
-        summary.update(status="failed", message="no data-type folder ID in the paths CSV")
-        return summary
-    rs_id = recordsets.find_recordset(syn, folder_id, component)
-    if rs_id is None:
         summary.update(status="missing_recordset", message=(
-            f"MC2Center_{component}_RecordSet not found in {folder_id}; "
-            "create it as a migration step"))
+            f"the data-type folder of {component} is missing (no folder ID in the paths CSV); "
+            "create the folder first"))
         return summary
-    summary["recordset"] = rs_id
+    project_id = row["grantId"]
+    rs_id = recordsets.find_recordset(syn, folder_id, component)
+    notes = []  # what this run created, or would create; added to the final message
+    new_rs = rs_id is None
+    if new_rs and args.execute:
+        rs_id = recordsets.create_grant_recordset(
+            syn, project_id, folder_id, component, write_log, args.run_id, recordsets.principal_id(syn))
+        summary["created_recordset"] = rs_id
+        notes.append(f"created {rs_id} and its curation task")
+        new_rs = False  # it exists now: continue as a first write into it
+    elif new_rs:
+        summary["create_recordset"] = True
+        notes.append(f"the RecordSet and its curation task would be created in {folder_id}")
+    elif args.execute:
+        task = recordsets.ensure_curation_task(syn, project_id, rs_id, component)
+        if task is not None:
+            summary["created_task"] = task
+            notes.append(f"created curation task {task}")
+    elif not recordsets.has_curation_task(syn, project_id, rs_id):
+        summary["create_task"] = True
+        notes.append("the curation task would be created")
+    if rs_id:
+        summary["recordset"] = rs_id
 
-    latest, key = recordsets.recordset_info(syn, rs_id)
+    if new_rs:  # dry run: treat the missing RecordSet as an empty first write; nothing is read or written
+        latest, key = 1, [recordsets.record_key(component)]
+    else:
+        latest, key = recordsets.recordset_info(syn, rs_id)
     if not key:
         summary.update(status="failed", message=f"{rs_id} has no upsert key")
         return summary
@@ -171,18 +200,18 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="failed", message=f"bad upload keys: {err}")
         return summary
 
-    locked = recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
+    locked = None if new_rs else recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
     if locked:
         summary.update(status="locked", message=f"{locked}; skipped")
         return summary
 
     # A run that died after exporting leaves a pending row; claim its versions.
-    recovered = recordsets.recover_pending(
+    recovered = {} if new_rs else recordsets.recover_pending(
         syn, rs_id, write_log, latest, record=args.execute, skip_younger_than=recordsets.LOCK_HOURS
     )
     if recovered:
         summary["recovered"] = sorted(recovered)
-    log_map = {**write_log.pipeline_map(rs_id), **recovered}
+    log_map = {} if new_rs else {**write_log.pipeline_map(rs_id), **recovered}
     if log_map and latest < max(log_map):
         summary.update(status="failed", message=f"write log has v{max(log_map)} but {rs_id} is at v{latest}")
         return summary
@@ -195,9 +224,13 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
             logger.warning("%s v%s has duplicate keys (the last row of each wins): %s", rs_id, v, dupes)
         return df
 
-    versions = [(v, read(v)) for v in range(1, latest + 1)]
+    if new_rs:
+        empty = pd.DataFrame(columns=sorted(recordsets.schema_columns(component) | set(key)))
+        versions = [(1, empty)]
+    else:
+        versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
-    removal_versions = write_log.removal_versions(rs_id) | set(recovered.removal)
+    removal_versions = set() if new_rs else write_log.removal_versions(rs_id) | set(recovered.removal)
     removed = recordsets.removed_keys(versions, {v: log_map[v] for v in removal_versions if v in log_map}, key)
     # a restore lifts only the removal it follows: not a later one whose removals rows are missing
     restored = removals.restored(rs_id, removed) if removals is not None else set()
@@ -233,11 +266,12 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     summary.update(rows=len(merged), decisions=len(decisions), conflicts=len(conflicts), mode=mode)
     # Nothing to write: every version adds to the history later runs read.
-    if not recordsets.differences(merged, _only(current, stored), key, set_like):
-        summary.update(status="unchanged", message=f"{mode}; RecordSet already matches; nothing written")
+    if not new_rs and not recordsets.differences(merged, _only(current, stored), key, set_like):
+        summary.update(status="unchanged", message="; ".join(
+            [f"{mode}; RecordSet already matches; nothing written", *notes]))
         return summary
     # An export from a curator's older Grid session would overwrite this upload (it writes the session's snapshot).
-    sessions = recordsets.open_grid_sessions(syn, rs_id)
+    sessions = [] if new_rs else recordsets.open_grid_sessions(syn, rs_id)
     if sessions:
         ids = [getattr(s, "session_id", "?") for s in sessions]
         summary.update(status="blocked", message=(
@@ -245,7 +279,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
             "close them first, an export from an older session overwrites this upload; nothing written"))
         return summary
     if not args.execute:
-        summary.update(status="dryrun", message=f"dry run: {mode}; nothing written")
+        summary.update(status="dryrun", message="; ".join([f"dry run: {mode}; nothing written", *notes]))
         return summary
 
     principal = recordsets.principal_id(syn)
@@ -267,7 +301,7 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     if validation is not None:
         validation.to_csv(report_dir / "validation.csv", index=False)
         summary["invalid_rows"] = int((~validation["is_valid"].astype(str).str.lower().eq("true")).sum())
-    notes = [f"wrote v{version}"]
+    notes = [*notes, f"wrote v{version}"]
     midwrite = [v for v in range(latest + 1, version) if v not in created]
     if midwrite:
         summary["foreign_midwrite"] = midwrite
@@ -307,7 +341,7 @@ def folder_column_name(row) -> str:
     return next(c for c in row.index if c.startswith("folderId"))
 
 
-SUMMARY_FIELDS = ("recordset", "version", "rows", "decisions", "conflicts", "overwritten", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped", "unsafe_rows")
+SUMMARY_FIELDS = ("recordset", "created_recordset", "create_recordset", "created_task", "create_task","version", "rows", "decisions", "conflicts", "overwritten", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped", "unsafe_rows")
 
 
 def main(argv=None, syn=None):

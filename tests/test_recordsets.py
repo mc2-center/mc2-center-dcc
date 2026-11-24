@@ -989,3 +989,43 @@ def test_read_recordset_does_not_retry_other_errors(tmp_path):
     for error in (_http_error(404), ValueError("boom")):
         err, calls = _read_with_get_errors(tmp_path, [error])
         assert err is error and calls == 1
+
+
+def _curator_mock():
+    record_set = SimpleNamespace(id="synRS")
+    return mock.patch.object(rs, "create_record_based_metadata_task", return_value=(record_set, object()))
+
+
+def test_create_grant_recordset_creates_names_key_schema_and_logs():
+    log = MemoryWriteLog()
+    with _curator_mock() as create, mock.patch.object(rs, "recordset_info", return_value=(1, ["ToolViewId"])):
+        out = rs.create_grant_recordset("syn", "syn1", "syn2", "ToolView", log, "run1", "42")
+    assert out == "synRS"
+    kw = create.call_args.kwargs
+    assert (kw["project_id"], kw["folder_id"]) == ("syn1", "syn2")
+    assert kw["record_set_name"] == "MC2Center_ToolView_RecordSet"
+    assert kw["curation_task_name"] == "MC2Center_ToolView_CurationTask"
+    assert kw["upsert_keys"] == ["ToolViewId"]
+    assert kw["schema_uri"] == "MC2Center-ToolView-14.1.2"
+    assert "MC2Center-ToolView-14.1.2" in kw["instructions"]
+    assert kw["bind_schema_to_record_set"] is True and kw["create_grid"] is False
+    assert log.created_version("synRS") == 1
+    assert [(r["status"], r["runId"], r["principalId"]) for r in log.rows] == [("created", "run1", "42")]
+
+
+def _tasks(*record_set_ids):
+    return [SimpleNamespace(task_properties=SimpleNamespace(record_set_id=i)) for i in record_set_ids]
+
+
+def test_ensure_curation_task_creates_only_when_missing():
+    with mock.patch.object(rs, "CurationTask") as task:
+        task.list.return_value = _tasks("synOther")
+        task.return_value.store.return_value = SimpleNamespace(task_id=77)
+        assert rs.ensure_curation_task("syn", "syn1", "synRS", "DatasetView") == 77
+    kw = task.call_args.kwargs
+    assert kw["data_type"] == "MC2Center_DatasetView_CurationTask" and kw["project_id"] == "syn1"
+    assert kw["task_properties"].record_set_id == "synRS"
+    with mock.patch.object(rs, "CurationTask") as task:
+        task.list.return_value = _tasks("synOther", "synRS")
+        assert rs.ensure_curation_task("syn", "syn1", "synRS", "DatasetView") is None
+        task.return_value.store.assert_not_called()

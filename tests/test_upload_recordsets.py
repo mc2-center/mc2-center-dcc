@@ -43,6 +43,22 @@ class FakeSynapse(FakeRS):
         self.drift = drift  # frame appended after our write: a foreign version landing later
         self.midwrite = midwrite  # frame appended before our write: landed between read and write
         self.extra_exports = 0
+        self.created = []  # (project, folder, component) of each RecordSet the upload created
+        self.task_calls = []  # RecordSet IDs for which ensure_curation_task ran
+        self.has_task = True
+
+    def create(self, syn, project_id, folder_id, component, write_log, run_id, principal):
+        self.created.append((project_id, folder_id, component))
+        self.versions = [stored()]  # the template: no rows
+        write_log.created("synNEW", 1, run_id, principal)
+        return "synNEW"
+
+    def ensure_task(self, syn, project_id, rs_id, component):
+        self.task_calls.append(rs_id)
+        return None if self.has_task else 77
+
+    def task_exists(self, syn, project_id, rs_id):
+        return self.has_task
 
     def find_recordset(self, syn, folder, component):
         return self.find(folder)
@@ -77,6 +93,9 @@ def run(tmp_path, fake, *extra, execute=True, grants=("syn100",), run_id="r1", p
          mock.patch.object(ur.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(ur.recordsets, "get_validation", fake.validation), \
          mock.patch.object(ur.recordsets, "open_grid_sessions", fake.open_sessions), \
+         mock.patch.object(ur.recordsets, "create_grant_recordset", fake.create), \
+         mock.patch.object(ur.recordsets, "ensure_curation_task", fake.ensure_task), \
+         mock.patch.object(ur.recordsets, "has_curation_task", fake.task_exists), \
          mock.patch.object(ur.recordsets, "principal_id", lambda syn: "42"):
         code = ur.main(argv, syn=object())
     return code, tmp_path / "reports" / run_id
@@ -127,12 +146,56 @@ def test_dry_run_writes_nothing_but_reports(tmp_path, log):
     assert status_of(rep) == "dryrun"
 
 
-def test_missing_recordset_stops_that_grant_only(tmp_path):
-    fake = FakeSynapse([stored(["p1", "Old", ""])], find=lambda folder: None if folder == "syn1009" else "synRS")
-    code, rep = run(tmp_path, fake, grants=("syn100", "syn200"))
+def test_missing_folder_stops_that_grant_only(tmp_path):
+    paths = make_inputs(tmp_path, ("syn100", "syn200"))
+    frame = pd.read_csv(paths, dtype=str)
+    frame.loc[0, "folderIdPublication"] = "None"
+    frame.to_csv(paths, index=False)
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    code, rep = run(tmp_path, fake, paths=paths)
     assert code == 1
     assert status_of(rep) == "missing_recordset" and status_of(rep, "syn200") == "written"
-    assert len(fake.writes) == 1
+    assert "folder" in (rep / "syn100" / "summary.txt").read_text()
+    assert len(fake.writes) == 1 and fake.created == []
+
+
+def test_dry_run_on_a_missing_recordset_writes_nothing(tmp_path, log):
+    fake = FakeSynapse([stored()], find=lambda folder: None)
+    code, rep = run(tmp_path, fake, execute=False)
+    assert code == 0 and status_of(rep) == "dryrun"
+    assert fake.created == [] and fake.writes == [] and log.rows == []
+    text = (rep / "syn100" / "summary.txt").read_text()
+    assert "would be created" in text and "create_recordset" in text
+    merged = pd.read_csv(rep / "syn100" / "merged.csv", dtype=str)
+    assert sorted(merged[KEY]) == ["p1", "p2"]
+
+
+def test_execute_creates_a_missing_recordset_then_writes_the_rows(tmp_path, log):
+    fake = FakeSynapse([stored()], find=lambda folder: None)
+    code, rep = run(tmp_path, fake)
+    assert code == 0 and status_of(rep) == "written"
+    assert fake.created == [("syn100", "syn1009", "PublicationView")]
+    assert sorted(fake.writes[0][KEY]) == ["p1", "p2"]
+    assert "created_recordset=synNEW" in (rep / "syn100" / "summary.txt").read_text()
+    statuses = log._read("synNEW")["status"].tolist()
+    assert statuses == ["created", "pending", "written", "done"]
+    assert log.pipeline_map("synNEW") == {2: 1}  # first write, no replay
+
+
+def test_execute_adds_a_missing_task_to_an_existing_recordset(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    fake.has_task = False
+    code, rep = run(tmp_path, fake)
+    assert code == 0 and fake.task_calls == ["synRS"] and fake.created == []
+    assert "created_task=77" in (rep / "syn100" / "summary.txt").read_text()
+
+
+def test_dry_run_reports_a_missing_task_without_creating_it(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    fake.has_task = False
+    code, rep = run(tmp_path, fake, execute=False)
+    assert code == 0 and fake.task_calls == [] and status_of(rep) == "dryrun"
+    assert "curation task would be created" in (rep / "syn100" / "summary.txt").read_text()
 
 
 def test_exception_in_one_grant_does_not_stop_others(tmp_path):

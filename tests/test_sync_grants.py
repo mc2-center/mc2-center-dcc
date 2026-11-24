@@ -8,6 +8,22 @@ import crosswalk as cw
 import sync_grants
 import utils
 
+REAL_CREATE_RECORDSETS = cgp.create_recordsets
+
+
+@pytest.fixture(autouse=True)
+def _no_recordsets(monkeypatch):
+    """The project tests do not create RecordSets; the tests of ``create_recordsets`` turn it back on."""
+    monkeypatch.setattr(cgp, "create_recordsets", MagicMock())
+    monkeypatch.setattr(cgp.recordsets, "SynapseTableWriteLog", lambda syn, table_id: MagicMock())
+    monkeypatch.setattr(cgp.recordsets, "principal_id", lambda syn: "42")
+
+
+@pytest.fixture
+def real_recordsets(monkeypatch):
+    monkeypatch.setattr(cgp, "create_recordsets", REAL_CREATE_RECORDSETS)
+
+
 CONSORTIA = ["CSBC", "PS-ON", "TEC", "ICBP"]
 V14 = [
     "Component", "GrantView_id", "Grant Name", "Grant Number", "Grant Abstract",
@@ -302,6 +318,57 @@ def test_creation_failure_maps_to_none_pair():
     with patch.object(cgp, "find_entity_id", side_effect=err):
         out = cgp.create_grant_projects(syn, _grant_row())
     assert out == {"N1": ("None", "None")}
+
+
+def _recordset_run(existing, create_error=None):
+    """Run ``create_grant_projects`` with RecordSets in ``existing`` ({component: RecordSet ID}) already there.
+
+    Returns ``(result, create mock, ensure mock)``; the folder IDs are ``fold-<folder name>``.
+    """
+    syn = _syn_mock(wiki_exists=True)
+    folders = {c["folder"]: f"fold-{c['folder']}" for c in cw.COMPONENT_FOLDERS.values()}
+    by_folder = {f"fold-{cw.COMPONENT_FOLDERS[c]['folder']}": rs_id for c, rs_id in existing.items()}
+
+    def find_entity(name, parent, synapse_client):
+        return "syn123" if parent is None else folders.get(name)
+
+    create = MagicMock(side_effect=create_error, return_value="synNEW")
+    ensure = MagicMock(return_value=None)
+    with patch.object(cgp, "find_entity_id", side_effect=find_entity), \
+            patch.object(cgp.recordsets, "find_recordset", side_effect=lambda syn, folder, c: by_folder.get(folder)), \
+            patch.object(cgp.recordsets, "create_grant_recordset", create), \
+            patch.object(cgp.recordsets, "ensure_curation_task", ensure), \
+            patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=True):
+        out = cgp.create_grant_projects(syn, _grant_row())
+    return out, create, ensure
+
+
+def test_new_project_gets_the_four_recordsets(real_recordsets):
+    out, create, ensure = _recordset_run({})
+    assert out == {"N1": ("syn123", "999")}
+    made = [(c.args[2], c.args[3]) for c in create.call_args_list]
+    assert made == [("fold-publications", "PublicationView"), ("fold-datasets", "DatasetView"),
+                    ("fold-tools", "ToolView"), ("fold-education", "EducationalResource")]
+    assert len({c.args[5] for c in create.call_args_list}) == 1  # one run ID for the call
+    assert all(c.args[1] == "syn123" for c in create.call_args_list)
+    ensure.assert_not_called()
+
+
+def test_reused_project_gets_only_the_missing_recordsets(real_recordsets):
+    out, create, ensure = _recordset_run({"PublicationView": "synP", "ToolView": "synT"})
+    assert out == {"N1": ("syn123", "999")}
+    assert [c.args[3] for c in create.call_args_list] == ["DatasetView", "EducationalResource"]
+    assert [(c.args[2], c.args[3]) for c in ensure.call_args_list] == [
+        ("synP", "PublicationView"), ("synT", "ToolView")]
+
+
+@pytest.mark.parametrize("error", [
+    cgp.SynapseError("boom"), ValueError("schema_uri is required")])
+def test_a_recordset_creation_error_fails_the_grant(real_recordsets, error):
+    out, create, _ = _recordset_run({}, create_error=error)
+    assert out == {"N1": ("None", "None")}
+    assert create.call_count == 1
 
 
 def test_nan_abstract_and_none_investigator_are_safe():

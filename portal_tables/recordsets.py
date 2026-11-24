@@ -100,9 +100,12 @@ from pathlib import Path
 import pandas as pd
 import requests
 from synapseclient import operations
+from synapseclient.extensions.curator import create_record_based_metadata_task
 from synapseclient.core import utils as synapse_utils
 from synapseclient.core.exceptions import SynapseHTTPError
-from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
+from synapseclient.models import (
+    Column, ColumnType, CurationTask, Grid, RecordBasedMetadataTaskProperties, RecordSet, Table,
+)
 
 from cells import is_null, is_placeholder, json_list, parse_list
 import comma_terms
@@ -464,6 +467,65 @@ def find_recordset(syn, folder_id: str, component: str) -> str | None:
     return operations.find_entity_id(
         name=f"MC2Center_{component}_RecordSet", parent=folder_id, synapse_client=syn
     )
+
+
+def record_key(component: str) -> str:
+    """Upsert key of the component's RecordSet (``<component>Id``)."""
+    return f"{component}Id"
+
+
+def schema_uri_for(component: str) -> str:
+    """JSON schema URI of ``component`` at the current model version (``MC2Center-<component>-14.1.2``)."""
+    return f"MC2Center-{component}-{model_contract.MODEL_REF.lstrip('v')}"
+
+
+def _task_instructions(component: str) -> str:
+    return f"Edit the {component} records in the grid. Rows are validated against {schema_uri_for(component)}."
+
+
+def create_grant_recordset(syn, project_id: str, folder_id: str, component: str, write_log, run_id: str,
+                           principal) -> str:
+    """Create the grant's RecordSet and curation task in ``folder_id``, log ``created``, return the RecordSet ID.
+
+    The schema is bound to the RecordSet, not to the folder. No Grid session is created.
+    """
+    record_set, _task = create_record_based_metadata_task(
+        synapse_client=syn,
+        project_id=project_id,
+        folder_id=folder_id,
+        record_set_name=f"MC2Center_{component}_RecordSet",
+        record_set_description=f"{component} metadata of grant project {project_id}.",
+        curation_task_name=f"MC2Center_{component}_CurationTask",
+        upsert_keys=[record_key(component)],
+        instructions=_task_instructions(component),
+        schema_uri=schema_uri_for(component),
+        bind_schema_to_record_set=True,
+        create_grid=False,
+    )
+    latest, _key = recordset_info(syn, record_set.id)
+    write_log.created(record_set.id, latest, run_id, principal)
+    return record_set.id
+
+
+def has_curation_task(syn, project_id: str, rs_id: str) -> bool:
+    """True if a curation task of the project points at the RecordSet ``rs_id``."""
+    return any(
+        getattr(task.task_properties, "record_set_id", None) == rs_id
+        for task in CurationTask.list(project_id=project_id, synapse_client=syn)
+    )
+
+
+def ensure_curation_task(syn, project_id: str, rs_id: str, component: str) -> int | None:
+    """Create the curation task of an existing RecordSet if it has none. Return its ID, or None if it exists."""
+    if has_curation_task(syn, project_id, rs_id):
+        return None
+    task = CurationTask(
+        data_type=f"MC2Center_{component}_CurationTask",
+        project_id=project_id,
+        instructions=_task_instructions(component),
+        task_properties=RecordBasedMetadataTaskProperties(record_set_id=rs_id),
+    ).store(synapse_client=syn)
+    return task.task_id
 
 
 # --- write log --------------------------------------------------------------
