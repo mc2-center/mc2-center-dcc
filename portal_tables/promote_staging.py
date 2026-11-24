@@ -81,11 +81,6 @@ COLUMN_ATTRS = ["name", "column_type", "maximum_size", "maximum_list_length", "e
 SYSTEM_COLUMNS = ["ROW_ID", "ROW_VERSION", "ROW_ETAG"]
 BLANK_TEXT = {"", "nan", "None"}
 WHOLE_FLOAT = re.compile(r"(-?(?:0|[1-9]\d*))\.0+")
-SUMMARY_COLUMNS = [
-    "resource", "staging_id", "production_id", "staging_rows", "production_rows", "key",
-    "production_keys_combined", "staging_duplicate_keys", "added", "removed",
-    "changed_records", "changed_cells", "format_only_cells", "status",
-]
 
 
 def _cell(value):
@@ -139,8 +134,6 @@ def _squash(text: str) -> str:
 
 def _number(value) -> str:
     """Text of a number cell: a whole number without a fraction (2020.0 -> "2020")."""
-    if isinstance(value, (float, np.floating)) and (np.isnan(value) or np.isinf(value)):
-        return str(value)
     return str(int(value)) if float(value).is_integer() else repr(float(value))
 
 
@@ -209,9 +202,7 @@ def combine(values: list):
 
 def _show(value) -> str:
     """Text of a canonical or raw cell for a report."""
-    if isinstance(value, frozenset):
-        return json.dumps(sorted(value), ensure_ascii=False)
-    items = _raw_items(value)
+    items = sorted(value) if isinstance(value, frozenset) else _raw_items(value)
     if items is not None:
         return json.dumps(items, ensure_ascii=False)
     return "" if is_null(value) else str(value)
@@ -254,17 +245,14 @@ def diff_tables(resource: str, staging: pd.DataFrame, production: pd.DataFrame, 
     removed = [k for k in p_groups if k not in s_groups]
     changed, formats = [], []
     for k in s_groups.keys() & p_groups.keys():
+        s_rows, p_rows = s_groups[k], p_groups[k]
+        single = len(s_rows) == len(p_rows) == 1  # combined rows have no single written value to compare
         for c in columns:
-            s_rows, p_rows = s_groups[k], p_groups[k]
             s_val, p_val = combine([r[c] for r in s_rows]), combine([r[c] for r in p_rows])
             if s_val != p_val:
                 changed.append({"key": _key_text(k), "column": c,
                                 "production": _show(p_val), "staging": _show(s_val)})
-                continue
-            if len(s_rows) > 1 or len(p_rows) > 1:
-                continue  # combined rows have no single written value to compare
-            s_raw, p_raw = s_rows[0][c], p_rows[0][c]
-            if _show(p_raw) != _show(s_raw):
+            elif single and _show(p_raw := p_rows[0][c]) != _show(s_raw := s_rows[0][c]):
                 formats.append({"resource": resource, "column": c, "kind": format_kind(p_raw, s_raw),
                                 "example_key": _key_text(k), "example_production": _show(p_raw),
                                 "example_staging": _show(s_raw)})
@@ -312,9 +300,11 @@ def run(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.execute and not args.tables:
         parser.error("--execute needs --tables: name the resources, or give --tables all")
-    if args.tables and "all" in args.tables and len(args.tables) > 1:
-        parser.error("--tables all cannot be combined with resource names")
-    tables = RESOURCES if not args.tables or args.tables == ["all"] else args.tables
+    tables = args.tables or ["all"]
+    if "all" in tables:
+        if len(tables) > 1:
+            parser.error("--tables all cannot be combined with resource names")
+        tables = RESOURCES
 
     out_dir = Path(args.report_dir) / args.run_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -378,7 +368,7 @@ def run(argv=None) -> int:
             if row["status"] != "promoted":
                 failed, code = True, 1
 
-    summary_df = pd.DataFrame(summary, columns=SUMMARY_COLUMNS)
+    summary_df = pd.DataFrame(summary)
     summary_df.to_csv(out_dir / "summary.csv", index=False)
     print(summary_df.to_string(index=False))
     return code
