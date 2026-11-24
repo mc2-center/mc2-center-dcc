@@ -39,7 +39,7 @@ writes nothing to them. Resume a failed run with `--from-stage <stage>`; a diffe
 needs `--force-new` (wipes the stage folders). Per-grant results are in
 `<out-dir>/05_upload/<run-id>/<grant>/` (`summary.txt`, `decisions.csv`, `conflicts.csv`, `removal_skipped.csv`,
 `merged.csv`, and `validation.csv` with `--execute`); `summary.csv` lists every grant.
-Check: no grant in `summary.csv` is `failed`, `missing_recordset`, `locked`, `retry` or `verification_mismatch`;
+Check: no grant in `summary.csv` is `failed`, `missing_recordset`, `locked`, `blocked`, `retry` or `verification_mismatch`;
 read `conflicts.csv` (cells a curator owns are never overwritten by the upload) and `validation.csv`; in a dry run
 read `decisions.csv` and `merged.csv`. Run the dry run first and proceed to `--execute` only once it is clean.
 Also check `04_links/dropped_rows.csv` and `04_links/reused_entities.csv`.
@@ -202,6 +202,8 @@ On failure:
 - `failed` with `SynapseTimeoutError`: Synapse did not answer. Run the command again for that grant only. If a
   version was stored, the next run logs it as `recovered`. Read the RecordSet back to check.
 - `locked` or `retry`: see [Write log and locks](#write-log-and-locks).
+- `blocked`: a Grid session is open on the RecordSet. Nothing was written. Ask the curator to close the session,
+  then run again.
 
 ### Change a record id
 
@@ -362,7 +364,7 @@ export; the data does not change. The admin RecordSets (grants, projects, people
 | Script | 0 | 1 | 2 |
 |---|---|---|---|
 | `upload_workflow.py` | all stages done, nothing dropped | a stage failed (including any grant needing attention in the upload) | done, but rows dropped or files excluded (see `run.json`) |
-| `upload_recordsets.py` | all grants ok | a grant `failed`, `missing_recordset`, `locked`, `retry` or `verification_mismatch` | - |
+| `upload_recordsets.py` | all grants ok | a grant `failed`, `missing_recordset`, `locked`, `blocked`, `retry` or `verification_mismatch` | - |
 | `remove_recordset_rows.py` | ok | a RecordSet `failed`, `locked`, `blocked` or `retry` | - |
 | `rekey_recordset_rows.py` | every RecordSet `dryrun` or `rekeyed` | a RecordSet `refused`, `locked`, `retry`, `failed` or `readback_mismatch` | - |
 | `repair_recordset.py` | `dryrun` or `repaired` | `locked`, `retry`, `refused`, `failed` or `mismatch` | - |

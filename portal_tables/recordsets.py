@@ -1509,14 +1509,14 @@ def locked_write(syn, rs_id: str, write_log, run_id: str, principal, base: int,
 
 
 def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, rows: int, base: int,
-                 retry_note: str = "the next run replays it") -> list[int]:
+                 retry_note: str = "the next run replays it", extra_refusal=None) -> list[int]:
     """Write ``csv_path`` through a Grid session behind a write-log ``pending`` row.
 
     With no ``csv_path`` the session only exports (:func:`export_via_grid`, a re-validation).
     ``base`` is the RecordSet version the content was computed against. Logs
     ``start``, one ``written`` row per exported version, then ``done``, and
     returns the versions created. Raises :class:`WriteRefused` as
-    :func:`locked_write` does. If the write fails, exports that completed are
+    :func:`locked_write` does (``extra_refusal`` is passed to it). If the write fails, exports that completed are
     already logged; the failure is resolved as :func:`locked_write` does.
     """
     created: list[int] = []
@@ -1525,7 +1525,8 @@ def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, r
         write_log.record(rs_id, v, run_id, rows, base=base, principal=principal)
         created.append(v)
 
-    with locked_write(syn, rs_id, write_log, run_id, principal, base, retry_note=retry_note):
+    with locked_write(syn, rs_id, write_log, run_id, principal, base, retry_note=retry_note,
+                      extra_refusal=extra_refusal):
         if csv_path is None:
             export_via_grid(syn, rs_id, on_version=on_version)
         else:

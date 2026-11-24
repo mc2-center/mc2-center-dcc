@@ -37,8 +37,8 @@ class FakeSynapse(FakeRS):
     can land before or after it).
     """
 
-    def __init__(self, versions, find=None, key=(KEY,), drift=None, midwrite=None, invalid=0):
-        super().__init__(versions, key, invalid=invalid, list_cols={"Assay", "PublicationAuthors"})
+    def __init__(self, versions, find=None, key=(KEY,), drift=None, midwrite=None, invalid=0, sessions=()):
+        super().__init__(versions, key, sessions=sessions, invalid=invalid, list_cols={"Assay", "PublicationAuthors"})
         self.find = find if find is not None else (lambda folder: "synRS")
         self.drift = drift  # frame appended after our write: a foreign version landing later
         self.midwrite = midwrite  # frame appended before our write: landed between read and write
@@ -76,6 +76,7 @@ def run(tmp_path, fake, *extra, execute=True, grants=("syn100",), run_id="r1", p
          mock.patch.object(ur.recordsets, "read_recordset", fake.read), \
          mock.patch.object(ur.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(ur.recordsets, "get_validation", fake.validation), \
+         mock.patch.object(ur.recordsets, "open_grid_sessions", fake.open_sessions), \
          mock.patch.object(ur.recordsets, "principal_id", lambda syn: "42"):
         code = ur.main(argv, syn=object())
     return code, tmp_path / "reports" / run_id
@@ -460,3 +461,35 @@ def test_older_versions_are_read_through_the_cache_and_the_latest_without_it(tmp
         syn, rs_id, version=version, cache_dir=cache_dir, **kw)
     run(tmp_path, fake, execute=False)
     assert (1, str(tmp_path / "cache")) in seen and (2, None) in seen
+
+
+def test_an_open_grid_session_blocks_the_upload(tmp_path, log):
+    session = type("S", (), {"session_id": "g1"})()
+    fake = FakeSynapse([stored(["p1", "Old", ["RNA Sequencing"]])], sessions=[session])
+    code, rep = run(tmp_path, fake)
+    assert code == 1 and fake.writes == []
+    assert status_of(rep) == "blocked"
+    assert "g1" in (rep / "syn100" / "summary.txt").read_text()
+
+
+def test_a_grid_session_opened_during_the_run_blocks_the_write(tmp_path, log):
+    fake = FakeSynapse([stored(["p1", "Old", ["RNA Sequencing"]])])
+    checks = []
+
+    def sessions(syn, rs_id):
+        checks.append(rs_id)
+        return [] if len(checks) == 1 else [object()]  # none at the first check, one by the write
+
+    fake.open_sessions = sessions
+    code, rep = run(tmp_path, fake)
+    assert code == 1 and fake.writes == []
+    assert status_of(rep) == "blocked"
+    assert "opened meanwhile" in (rep / "syn100" / "summary.txt").read_text()
+    assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]  # the lock is released
+
+
+def test_an_open_session_does_not_block_an_unchanged_grant(tmp_path, log):
+    fake = FakeSynapse([stored(["p1", "Pipeline title", ["RNA Sequencing", "Mass Spectrometry"]],
+                              ["p2", "Second", ""])], sessions=[object()])
+    code, rep = run(tmp_path, fake)
+    assert code == 0 and status_of(rep) == "unchanged"

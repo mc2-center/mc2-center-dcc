@@ -27,7 +27,7 @@ the removals table doesn't list yet counts) and from the removals table's
 normally.
 
 The exit status is 1 if any grant needs attention (failed, missing_recordset,
-locked, retry or verification_mismatch), so a workflow does not treat the
+locked, blocked, retry or verification_mismatch), so a workflow does not treat the
 upload as done; the other grants still run. If foreign versions landed during a
 write, the grant is replayed and written once more immediately (the report goes
 to a ``rerun`` subfolder).
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 # Statuses that make the exit code non-zero, so a workflow does not mark the upload done.
 NEEDS_ATTENTION = frozenset(
-    {"failed", "missing_recordset", "locked", "retry", "verification_mismatch"}
+    {"failed", "missing_recordset", "locked", "blocked", "retry", "verification_mismatch"}
 )
 
 PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older than this is not ours
@@ -105,6 +105,13 @@ def load_overwrite(path) -> dict[str, frozenset]:
     for r in df.itertuples():
         out.setdefault(r.grantId.strip(), set()).add((r.key.strip(), r.column.strip()))
     return {g: frozenset(c) for g, c in out.items()}
+
+
+def _open_session_refusal(syn, rs_id):
+    """``("blocked", message)`` when a Grid session opened since the first check (best effort), else None."""
+    if recordsets.open_grid_sessions(syn, rs_id):
+        return ("blocked", "a Grid session was opened meanwhile (visible to the runner; best effort); nothing written")
+    return None
 
 
 def stored_keys(df: pd.DataFrame, key_cols: list[str]) -> list[str]:
@@ -229,6 +236,14 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     if not recordsets.differences(merged, _only(current, stored), key, set_like):
         summary.update(status="unchanged", message=f"{mode}; RecordSet already matches; nothing written")
         return summary
+    # An export from a curator's older Grid session would overwrite this upload (it writes the session's snapshot).
+    sessions = recordsets.open_grid_sessions(syn, rs_id)
+    if sessions:
+        ids = [getattr(s, "session_id", "?") for s in sessions]
+        summary.update(status="blocked", message=(
+            f"open Grid session(s) {ids} visible to the runner (best effort: others' sessions may not be listed); "
+            "close them first, an export from an older session overwrites this upload; nothing written"))
+        return summary
     if not args.execute:
         summary.update(status="dryrun", message=f"dry run: {mode}; nothing written")
         return summary
@@ -236,7 +251,8 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     principal = recordsets.principal_id(syn)
     try:
         created = recordsets.write_logged(
-            syn, rs_id, merged_path, write_log, args.run_id, principal, len(merged), latest
+            syn, rs_id, merged_path, write_log, args.run_id, principal, len(merged), latest,
+            extra_refusal=lambda: _open_session_refusal(syn, rs_id),
         )
     except recordsets.WriteRefused as refused:
         summary.update(status=refused.status, message=refused.message)

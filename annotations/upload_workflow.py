@@ -531,7 +531,7 @@ def stage_upload(run, args):
         if args.execute:
             argv.append("--execute")
         code = call_main(_load("upload_recordsets.py").main, argv)
-        # non-zero (1) covers failures and locked/retry/verification_mismatch grants
+        # non-zero (1) covers failures and locked/blocked/retry/verification_mismatch grants
         if code:
             raise RuntimeError(f"upload_recordsets.py reported failures (exit {code})")
         return {"paths_csv": paths_csv, "run_id": args.run_id, "reports": str(d / args.run_id)}
