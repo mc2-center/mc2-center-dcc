@@ -258,11 +258,15 @@ def _owned_team_syn(created_by, team_members, mc2_admin_members=("77",)):
     ("13", [_member("77", True)], True),               # an admin is in MC2 Admin
     ("13", [_member("77", False), _member("13", True)], False),  # MC2 Admin member, but not a team admin
     ("13", [_member("13", True)], False),              # an outsider's team
+    (42, [], True),                                    # ids compare as text (int from one API, str from another)
+    ("13", [_member(77, True)], True),
 ])
 def test_dcc_owns_team(created_by, members, owned):
     syn, team, mc2 = _owned_team_syn(created_by, members)
-    with patch.object(cgp, "TeamModel", side_effect=lambda **kw: mc2):
+    teams = []
+    with patch.object(cgp, "TeamModel", side_effect=lambda **kw: teams.append(kw) or mc2):
         assert cgp.dcc_owns_team(syn, team) is owned
+    assert all(kw == {"id": "3450948"} for kw in teams)  # the MC2 Admin team, when it is read
 
 
 def test_a_team_the_dcc_does_not_own_is_not_reused():
