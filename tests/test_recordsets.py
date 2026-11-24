@@ -4,8 +4,10 @@ from unittest import mock
 
 import pandas as pd
 import pytest
+import requests
 
 import recordsets as rs
+from fakes import MemoryWriteLog
 
 K = "PublicationViewId"
 
@@ -29,6 +31,19 @@ def test_merge_upload_updates_appends_and_reports_conflicts():
     assert conflicts.to_dict("records") == [
         {"key": "a", "column": "Title", "contributor_value": "Edited", "upload_value": "Pipeline"}
     ]
+
+
+def test_merge_upload_overwrite_allows_only_listed_cells():
+    reconciled = df(["a", "Edited", ["x"]])
+    upload = df(["a", "Pipeline", ["y"]])
+    owned = {("a", "Title"), ("a", "Assay")}
+    lost = []
+    merged, conflicts = rs.merge_upload(reconciled, upload, K, owned, overwrite={("a", "Title")}, overwritten=lost)
+    assert merged.loc[0, "Title"] == "Pipeline" and merged.loc[0, "Assay"] == ["x"]
+    assert list(conflicts["column"]) == ["Assay"]
+    assert lost == [{"key": "a", "column": "Title", "contributor_value": "Edited", "upload_value": "Pipeline"}]
+    merged, conflicts = rs.merge_upload(reconciled, upload, K, owned)  # default: the contributor wins
+    assert merged.loc[0, "Title"] == "Edited" and len(conflicts) == 2
 
 
 def test_merge_upload_edit_equal_to_upload_is_no_conflict():
@@ -381,12 +396,25 @@ def test_composite_key_uses_unit_separator():
 # --- cells and keys ---
 
 
-def test_numeric_strings_compare_equal_but_not_leading_zeros():
-    assert rs._cells_equal("2020", "2020.0", False)
-    assert rs._cells_equal("-1.50", "-1.5", False)
-    assert not rs._cells_equal("007", "7", False)
-    assert not rs._cells_equal("2020", "2021", False)
-    assert not rs._cells_equal("abc", "ABC", False)
+BIG = "12345678901234567890"
+CELLS_EQUAL = [
+    ("2020", "2020.0", True),  # numeric strings compare as numbers ...
+    ("-1.50", "-1.5", True),
+    ("0.10", "0.1", True),
+    (" 2020", "2020.0", True),  # a leading space does not matter
+    ("007", "7", False),  # ... but not with leading zeros
+    ("2020", "2021", False),
+    ("abc", "ABC", False),
+    (BIG, "12345678901234567891", False),  # numbers compare exactly
+    (BIG, BIG, True),
+    ("0.1", "0.10000000000000000001", False),
+    ("1e3", "1000", False),  # not a plain number
+]
+
+
+@pytest.mark.parametrize("a,b,expected", CELLS_EQUAL)
+def test_cells_equal(a, b, expected):
+    assert rs._cells_equal(a, b, False) is expected
 
 
 def test_check_upload_keys_rejects_blank_and_duplicate_and_strips():
@@ -428,11 +456,18 @@ def test_read_recordset_cache_miss_then_hit(tmp_path):
         assert cls.return_value.get.call_count == 3
 
 
+def test_recordset_info_gives_the_latest_version_and_the_key_without_the_file():
+    entity = SimpleNamespace(version_number=5, upsert_keys=[K])
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.return_value = entity
+        assert rs.recordset_info("syn", "syn1") == (5, [K])
+    assert cls.call_args.kwargs["download_file"] is False
+
+
 # --- write log v2 ---
 
 
-def test_csv_write_log_v2(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "sub" / "log.csv")
+def test_write_log_v2(log):
     assert log.pipeline_map("syn1") == {} and log.last_version("syn1") is None
     log.start("syn1", 4, "run1", "42")
     assert log.pipeline_map("syn1") == {}  # pending has no version
@@ -441,16 +476,13 @@ def test_csv_write_log_v2(tmp_path):
     log.record("syn2", 9, "run2", 1)
     assert log.pipeline_map("syn1") == {5: 4, 7: 6}
     assert log.pipeline_versions("syn1") == [5, 7] and log.last_version("syn1") == 7
-    header = (tmp_path / "sub" / "log.csv").read_text().splitlines()[0]
-    assert header == ",".join(rs.WRITE_LOG_COLUMNS)
     # a written row doesn't close the write (more exports may follow); done does
     assert [r["runId"] for r in log.unresolved_pending("syn1")] == ["run1"]
     log.finish("syn1", 4, "run1", "42")
     assert log.unresolved_pending("syn1") == []
 
 
-def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_lock_from_unresolved_pending_row_younger_than_two_hours(log):
     log.start("syn1", 3, "other", "7")
     assert log.locked_by("syn1", "me") == "other"
     assert log.locked_by("syn1", "other") is None  # a run is not locked by itself
@@ -463,8 +495,7 @@ def test_lock_from_unresolved_pending_row_younger_than_two_hours(tmp_path):
     assert log.locked_by("syn1", "me") is None
 
 
-def test_crash_recovery_by_principal_and_time_from_the_pending_row(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_crash_recovery_by_principal_and_time_from_the_pending_row(log):
     log.record("syn1", 1, "r0", 3, base=0, principal="42")
     log.start("syn1", 1, "dead", "42")
     pending_on = log.unresolved_pending("syn1")[0]["writtenOn"]
@@ -484,8 +515,7 @@ def test_crash_recovery_by_principal_and_time_from_the_pending_row(tmp_path):
     assert rs.recover_pending("syn", "syn1", log, 5, meta=lambda v: meta[v]) == {}
 
 
-def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(log):
     log.start("syn1", 1, "dead", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     meta = lambda v: ("42", on + pd.Timedelta(minutes=1))
@@ -496,28 +526,25 @@ def test_recovery_dry_run_records_nothing_and_empty_recovery_aborts(tmp_path):
     assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
 
 
-def test_recovery_accepts_clock_skew_within_the_tolerance(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recovery_accepts_clock_skew_within_the_tolerance(log):
     log.start("syn1", 1, "dead", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     skewed = lambda v: ("42", on - pd.Timedelta(minutes=9))  # server clock 9 min behind
     assert rs.recover_pending("syn", "syn1", log, 2, meta=skewed) == {2: 1}
-    log2 = rs.CsvWriteLog(tmp_path / "log2.csv")
+    log2 = MemoryWriteLog()
     log2.start("syn1", 1, "dead", "42")
     on = log2.unresolved_pending("syn1")[0]["writtenOn"]
     assert rs.recover_pending("syn", "syn1", log2, 2, meta=lambda v: ("42", on - pd.Timedelta(minutes=11))) == {}
 
 
-def test_recovery_covers_a_pending_row_of_the_same_run_id(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recovery_covers_a_pending_row_of_the_same_run_id(log):
     log.start("syn1", 1, "same", "42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"]
     found = rs.recover_pending("syn", "syn1", log, 2, meta=lambda v: ("42", on + pd.Timedelta(seconds=5)))
     assert found == {2: 1} and log.pipeline_map("syn1") == {2: 1}
 
 
-def test_lock_counts_a_same_run_id_row_older_than_this_process(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_lock_counts_a_same_run_id_row_older_than_this_process(log):
     log.start("syn1", 1, "same", "42")
     started_before = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=1)
     started_after = pd.Timestamp.now(tz="UTC") + pd.Timedelta(minutes=1)
@@ -526,8 +553,7 @@ def test_lock_counts_a_same_run_id_row_older_than_this_process(tmp_path):
     assert log.locked_by("syn1", "same") is None
 
 
-def test_earlier_pending_row_wins_the_lock_race(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_earlier_pending_row_wins_the_lock_race(log):
     log.start("syn1", 1, "first", "7")
     log.start("syn1", 1, "second", "8")
     assert log.earlier_pending("syn1", "second") == "first"
@@ -538,8 +564,7 @@ def test_earlier_pending_row_wins_the_lock_race(tmp_path):
     assert log.earlier_pending("syn1", "second") is None
 
 
-def test_no_recovered_warning_for_an_aborted_row(tmp_path, caplog):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_no_recovered_warning_for_an_aborted_row(caplog, log):
     log.start("syn1", 1, "dead", "42")
     with caplog.at_level("WARNING"):
         rs.recover_pending("syn", "syn1", log, 1, meta=lambda v: 1 / 0)
@@ -751,16 +776,6 @@ def test_incremental_session_base_matches_the_brute_force_rule():
             assert rs._session_base(cf, diffs, fps, v) == _reference_base(frames, v, list(W)), (trial, v)
 
 
-def test_numbers_compare_exactly():
-    a, b = "12345678901234567890", "12345678901234567891"
-    assert not rs._cells_equal(a, b, False)
-    assert rs._cells_equal(a, a, False)
-    assert rs._cells_equal("2020", "2020.0", False)
-    assert rs._cells_equal("0.10", "0.1", False)
-    assert not rs._cells_equal("0.1", "0.10000000000000000001", False)
-    assert not rs._cells_equal("1e3", "1000", False)  # not a plain number
-
-
 @pytest.mark.slow
 def test_replay_benchmark_200_versions_500_rows_18_columns():
     import random
@@ -785,10 +800,9 @@ def test_replay_benchmark_200_versions_500_rows_18_columns():
     assert len(state) == 500 and elapsed < 5
 
 
-def test_rerun_and_reused_run_id_keep_their_lock(tmp_path):
+def test_rerun_and_reused_run_id_keep_their_lock(log):
     # Same runId writes v6 (base 4) and finishes, then a rerun starts at base 6:
     # its pending row must not be resolved by the first write's rows.
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     log.start("syn1", 4, "RUN", "42")
     log.record("syn1", 6, "RUN", 3, base=4, principal="42")
     log.finish("syn1", 4, "RUN", "42")
@@ -799,9 +813,8 @@ def test_rerun_and_reused_run_id_keep_their_lock(tmp_path):
     assert log.earlier_pending("syn1", "OTHER") == "RUN"
 
 
-def test_second_export_crash_is_recovered(tmp_path):
+def test_second_export_crash_is_recovered(log):
     # A write exported v2 (logged) and v3, then died before logging v3 or done.
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     log.start("syn1", 1, "R", "42")
     log.record("syn1", 2, "R", 3, base=1, principal="42")
     on = log.unresolved_pending("syn1")[0]["writtenOn"] + pd.Timedelta(minutes=1)
@@ -810,26 +823,169 @@ def test_second_export_crash_is_recovered(tmp_path):
     assert log.unresolved_pending("syn1") == []
 
 
-def test_pre_start_recovery_leaves_a_young_live_row_alone(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_pre_start_recovery_leaves_a_young_live_row_alone(log):
     log.start("syn1", 5, "B", "42")  # run B just started; nothing exported yet
     found = rs.recover_pending(None, "syn1", log, 5, meta=lambda v: ("42", pd.NaT),
                                skip_younger_than=rs.LOCK_HOURS)
     assert found == {} and [r["runId"] for r in log.unresolved_pending("syn1")] == ["B"]
 
 
-def test_leading_space_number_compares_as_number():
-    assert rs._cells_equal(" 2020", "2020.0", False)
-
-
 # --- D-Q49 removals ---
 
 
-def test_write_log_removed_status_is_a_pipeline_version(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_write_log_removed_status_is_a_pipeline_version(log):
     log.start("syn1", 4, "run1", "42")
     log.removed("syn1", 5, 4, "run1", "42", 9)
     log.record("syn1", 6, "run1", 9, base=5, principal="42")
     assert log.pipeline_map("syn1") == {5: 4, 6: 5}
     assert log.removal_versions("syn1") == {5} and log.removal_versions("syn2") == set()
     assert [r["runId"] for r in log.unresolved_pending("syn1")] == ["run1"]  # removed doesn't close the lock
+
+
+class _Resp:
+    def __init__(self, status, content=b"a,b\n"):
+        self.status_code, self.content = status, content
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
+
+
+def _download_syn(statuses):
+    syn = mock.MagicMock()
+    syn.restGET.side_effect = lambda uri: f"https://files.example/{len(syn.restGET.call_args_list)}"
+    syn._requests_session.get.side_effect = [_Resp(s) for s in statuses]
+    return syn
+
+
+def test_download_version_file_retries_a_403_with_a_fresh_url(tmp_path):
+    syn = _download_syn([403, 200])
+    out = rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
+    assert out.read_bytes() == b"a,b\n"
+    assert syn.restGET.call_count == 2  # a fresh pre-signed URL for the second try
+    urls = [c.args[0] for c in syn._requests_session.get.call_args_list]
+    assert urls[0] != urls[1]
+
+
+def test_download_version_file_gives_up_after_the_last_403(tmp_path):
+    syn = _download_syn([403] * rs.DOWNLOAD_TRIES)
+    with pytest.raises(requests.HTTPError, match="403"):
+        rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
+    assert syn._requests_session.get.call_count == rs.DOWNLOAD_TRIES
+
+
+def test_download_version_file_does_not_retry_other_errors(tmp_path):
+    syn = _download_syn([404])
+    with pytest.raises(requests.HTTPError, match="404"):
+        rs._download_version_file(syn, "syn1", 2, tmp_path / "v2.csv")
+    assert syn._requests_session.get.call_count == 1
+
+
+# --- helpers shared by the scripts ---
+
+
+def test_add_log_args_defaults_and_options():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    rs.add_log_args(parser)
+    args = parser.parse_args([])
+    assert (args.write_log_table, args.removals_table) == ("syn78404341", "syn78404342")
+    assert parser.parse_args(["--write-log-table", "synL", "--removals-table", "synR"]).removals_table == "synR"
+    only_log = argparse.ArgumentParser()
+    rs.add_log_args(only_log, removals=False)
+    assert not hasattr(only_log.parse_args([]), "removals_table")
+    only_removals = argparse.ArgumentParser()
+    rs.add_log_args(only_removals, write_log=False)
+    assert not hasattr(only_removals.parse_args([]), "write_log_table")
+
+
+def test_open_logs_builds_the_tables_named_in_args():
+    from types import SimpleNamespace
+
+    write_log, removals = rs.open_logs("syn", SimpleNamespace(write_log_table="synL", removals_table="synR"))
+    assert isinstance(write_log, rs.SynapseTableWriteLog) and write_log.table_id == "synL"
+    assert isinstance(removals, rs.SynapseTableRemovals) and removals.table_id == "synR"
+    # a table that is not given (or an option the script does not have) is None
+    assert rs.open_logs("syn", SimpleNamespace(write_log_table=None)) == (None, None)
+
+
+def test_new_run_id_is_the_prefix_and_a_timestamp():
+    import re
+
+    assert re.fullmatch(r"\d{8}T\d{6}", rs.new_run_id())
+    assert re.fullmatch(r"dcc-rekey-\d{8}T\d{6}", rs.new_run_id("dcc-rekey-"))
+
+
+def test_summary_line_lists_the_set_fields_in_order_then_the_message():
+    fields = ("recordset", "version", "rows")
+    s = {"grant": "g1", "status": "written", "rows": 3, "recordset": "synRS", "other": 1, "message": "wrote v2"}
+    assert rs.summary_line(s, "grant", fields) == "g1: written recordset=synRS rows=3 wrote v2"
+    assert rs.summary_line({"grant": "g1", "status": "dryrun", "message": ""}, "grant", fields) == "g1: dryrun"
+    assert rs.summary_line({"grant": "g2", "status": "failed"}, "grant", fields) == "g2: failed"  # no message key
+
+
+def test_read_csv_str_keeps_text_and_reads_a_file_without_data_as_empty(tmp_path):
+    path = tmp_path / "a.csv"
+    path.write_text("a,b\n01,\nNA,x\n")
+    df = rs.read_csv_str(path)
+    assert df.to_dict("records") == [{"a": "01", "b": ""}, {"a": "NA", "b": "x"}]
+    path.write_text("")
+    assert rs.read_csv_str(path).empty
+
+
+def test_locked_write_resolves_the_pending_row_on_keyboard_interrupt_and_propagates(log):
+    with mock.patch.object(rs, "recordset_info", lambda syn, rs_id: (1, [K])):
+        with pytest.raises(KeyboardInterrupt):
+            with rs.locked_write("syn", "syn1", log, "run-1", "42", 1):
+                assert log.unresolved_pending("syn1") != []  # the lock is held inside the body
+                raise KeyboardInterrupt
+    assert log._read("syn1")["status"].tolist() == ["pending", "aborted"]
+    assert log.unresolved_pending("syn1") == []
+
+
+def test_locked_write_logs_a_failed_recovery_and_raises_the_original_error(caplog, log):
+    def broken_recovery(*args, **kwargs):
+        raise RuntimeError("recovery failed")
+    with mock.patch.object(rs, "recordset_info", lambda syn, rs_id: (1, [K])), \
+         mock.patch.object(rs, "recover_pending", broken_recovery), caplog.at_level("ERROR"):
+        with pytest.raises(ValueError, match="body failed"):
+            with rs.locked_write("syn", "syn1", log, "run-1", "42", 1):
+                raise ValueError("body failed")
+    record = next(r for r in caplog.records if "could not resolve the pending write-log row" in r.getMessage())
+    assert record.getMessage().startswith("syn1:") and isinstance(record.exc_info[1], RuntimeError)
+    assert log._read("syn1")["status"].tolist() == ["pending"]  # recovery failed, so the row stays for the next run
+
+
+def _http_error(status):
+    from synapseclient.core.exceptions import SynapseHTTPError
+
+    return SynapseHTTPError(f"{status} error", response=SimpleNamespace(status_code=status))
+
+
+def _read_with_get_errors(tmp_path, errors):
+    path = tmp_path / "rs.csv"
+    path.write_text(f"{K},Title\na,x\n")
+    outcomes = list(errors) + [SimpleNamespace(path=str(path))]
+    with mock.patch.object(rs, "RecordSet") as cls:
+        cls.return_value.get.side_effect = outcomes
+        try:
+            return rs.read_recordset("syn", "syn1", version=3), cls.return_value.get.call_count
+        except Exception as err:
+            return err, cls.return_value.get.call_count
+
+
+def test_read_recordset_retries_a_403_from_the_file_host(tmp_path):
+    out, calls = _read_with_get_errors(tmp_path, [_http_error(403)])
+    assert out.loc[0, "Title"] == "x" and calls == 2
+
+
+def test_read_recordset_gives_up_after_download_tries_403s(tmp_path):
+    err, calls = _read_with_get_errors(tmp_path, [_http_error(403)] * rs.DOWNLOAD_TRIES)
+    assert getattr(err.response, "status_code", None) == 403 and calls == rs.DOWNLOAD_TRIES
+
+
+def test_read_recordset_does_not_retry_other_errors(tmp_path):
+    for error in (_http_error(404), ValueError("boom")):
+        err, calls = _read_with_get_errors(tmp_path, [error])
+        assert err is error and calls == 1

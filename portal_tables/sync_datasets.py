@@ -11,6 +11,7 @@ import re
 import synapseclient
 from synapseclient import Synapse, operations
 from synapseclient.models import Table
+from cells import first_item, is_placeholder, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -21,30 +22,6 @@ COMPONENT = "DatasetView"
 
 # Manifest columns that are not model attributes but are passed through.
 MANIFEST_PASSTHROUGH = ("iconTags",)
-
-def restore_display_names(df: pd.DataFrame) -> pd.DataFrame:
-    """Undo space-stripped headers (``GrantViewKey`` -> ``GrantView Key``).
-
-    The live manifest (syn53478774) was written with the spaces removed from
-    its 13.1.0 display names, e.g. ``DatasetAssay`` and ``DataUseCodes``.
-    ``normalize_headers`` only accepts display names, so put the spaces back
-    for any header that is not already one. Headers that are already display
-    names (the 14.0.0 manifest) are left alone. Interim shim: the better home
-    is ``model_contract.rename_legacy_headers``.
-    """
-    known = set(model_contract.label_map())
-    known |= model_contract.PASSTHROUGH | set(MANIFEST_PASSTHROUGH)
-    known |= set(model_contract.RENAMES_13_TO_14[COMPONENT])
-    known |= set(model_contract.LEGACY_EXTRA_RENAMES)
-    known.add(model_contract.grant_column_legacy_name(COMPONENT))
-    by_stripped = {}
-    for name in sorted(known):
-        by_stripped.setdefault(name.replace(" ", ""), name)
-    renames = {
-        c: by_stripped[c] for c in df.columns if c not in known and c in by_stripped
-    }
-    return df.rename(columns=renames)
-
 
 def duo_code_to_id() -> dict[str, str]:
     """Short code (``RTN``) -> DUO ID (``DUO:0000029``).
@@ -71,7 +48,7 @@ def translate_access(code: str, code_to_id: dict) -> str | None:
     no entry is logged as a warning and dropped.
     """
     code = code.strip()
-    if code == "Pending Annotation":
+    if is_placeholder(code):
         return PENDING_ACCESS_TEXT
     key = code_to_id.get(code, code)
     try:
@@ -83,11 +60,36 @@ def translate_access(code: str, code_to_id: dict) -> str | None:
 
 def _get_croissant_versions(syn: Synapse) -> dict:
     """Return a dict mapping dataset synID -> latest Croissant dataset_version."""
-    df = Table(id="syn65903895").query(
-        query="SELECT dataset, dataset_version FROM syn65903895",
+    croissant_table = utils.CONFIG["croissant"]["table"]
+    df = Table(id=croissant_table).query(
+        query=f"SELECT dataset, dataset_version FROM {croissant_table}",
         synapse_client=syn,
     )
     return df.groupby("dataset")["dataset_version"].max().to_dict()
+
+
+def _fetch_entity(syn: Synapse, dataset_id: str):
+    """Read one entity without its file; return None if Synapse refuses."""
+    try:
+        # operations.get() looks up the entity's actual type on Synapse
+        # first and dispatches to the matching model (File, Folder,
+        # Dataset, etc.), unlike the Dataset model's .get() directly,
+        # which errors out on DatasetViewIds that reference non-Dataset
+        # entities.
+        return operations.get(
+            dataset_id,
+            file_options=operations.FileOptions(download_file=False),
+            synapse_client=syn,
+        )
+    except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
+        print(f"Encountered error: {e}")
+        return None
+
+
+def _fetch_entities(syn: Synapse, dataset_ids) -> dict:
+    """Read each distinct syn ID once, in parallel; return dict ID -> entity or None."""
+    ids = list(dict.fromkeys(i for i in dataset_ids if re.match(r'syn\d{,9}', i) is not None))
+    return dict(zip(ids, utils.parallel_map(lambda i: _fetch_entity(syn, i), ids)))
 
 
 def add_missing_info(
@@ -114,11 +116,16 @@ def add_missing_info(
     # version the Croissant DAG actually processed, not just the latest snapshot.
     croissant_versions = _get_croissant_versions(syn)
 
+    # Read all entities first, in parallel, instead of one call per row.
+    entities = _fetch_entities(
+        syn, [first_item(v) for v in datasets["DatasetViewId"]]
+    )
+
     for _, row in datasets.iterrows():
         grant_names = []
         themes = []
         consortia = []
-        for g in row["GrantViewKey"].split(","):
+        for g in parse_list(row["GrantViewKey"]):
             if g != "Affiliated/Non-Grant Associated":
                 grant_names.append(
                     grants[grants.grantNumber == g]["grantName"].values[0]
@@ -134,25 +141,8 @@ def add_missing_info(
         # Use the actual Synapse entity ID (DatasetViewId), not DatasetAlias,
         # since DatasetAlias is often an external accession (e.g. a GEO
         # GSE ID) rather than a syn ID for externally-hosted datasets.
-        dataset_id = row["DatasetViewId"].split(",")[0]
-        try:
-            # operations.get() looks up the entity's actual type on Synapse
-            # first and dispatches to the matching model (File, Folder,
-            # Dataset, etc.), unlike the Dataset model's .get() directly,
-            # which errors out on DatasetViewIds that reference non-Dataset
-            # entities.
-            entity = (
-                operations.get(
-                    dataset_id,
-                    file_options=operations.FileOptions(download_file=False),
-                    synapse_client=syn,
-                )
-                if re.match(r'syn\d{,9}', dataset_id) is not None
-                else None
-            )
-        except (synapseclient.core.exceptions.SynapseUnmetAccessRestrictions, synapseclient.core.exceptions.SynapseHTTPError) as e:
-            print(f"Encountered error: {e}")
-            entity = None
+        dataset_id = first_item(row["DatasetViewId"])
+        entity = entities.get(dataset_id)
         # Prefer the Croissant-processed version so the portal button appears
         # correctly. Fall back to (version_number - 1) for datasets not yet
         # in the Croissant table.
@@ -173,7 +163,7 @@ def add_missing_info(
         pub_titles = []
         pub_doi = []
         pub_years = []
-        for p in row["PublicationViewKey"].split(","):
+        for p in parse_list(row["PublicationViewKey"]):
             p = p.strip()  # Remove leading/trailing whitespace, if any
             if len(p) < 4:
                 pmid_list = [e for elem in "".join(row["PublicationViewKey"].split(",")) for e in elem.split()]
@@ -204,7 +194,7 @@ def add_missing_info(
             datasets.at[_, "DatasetDoi"] = usable[0].strip() if usable else utils.DOI_NOT_AVAILABLE
         if str(datasets.at[_, "DatasetDoi"]).strip() == utils.NO_DOI_LISTED:
             datasets.at[_, "DatasetDoi"] = utils.DOI_NOT_AVAILABLE
-        d = [t for code in row["DatasetDataUseCodes"].split(",") if (t := translate_access(code, code_to_id))]
+        d = [t for code in parse_list(row["DatasetDataUseCodes"]) if (t := translate_access(code, code_to_id))]
         d = d or [NO_ACCESS_TEXT]
         d = ["Open Access available through GEO"] if "GSE" in row["DatasetAlias"] else d
         # Keep the texts as a list: several contain commas, so joining them
@@ -213,7 +203,7 @@ def add_missing_info(
 
         source_repo = utils.extract_map_repository(row["DatasetUrl"], row["DatasetAlias"])
         download_type, download_id = utils.identify_download_type(
-            syn, row, source_repo
+            row, source_repo, entity
         )
         
         datasets.at[_, "sourceRepository"] = source_repo
@@ -240,7 +230,7 @@ def clean_table(df: pd.DataFrame, live_types: dict) -> pd.DataFrame:
     ]
 
     for col in cols:
-        df[col] = utils.convert_to_stringlist(df[col])
+        df[col] = df[col].map(parse_list)
 
     # DatasetDataUseCodes already holds a list of access texts (which may
     # contain commas), so it is deduped below but never string-split.
@@ -279,9 +269,7 @@ def clean_table(df: pd.DataFrame, live_types: dict) -> pd.DataFrame:
 
     def _is_incomplete(value) -> bool:
         """A field is incomplete if it's empty or only holds 'Pending Annotation'."""
-        if isinstance(value, list):
-            return not [v for v in value if v not in ("", "Pending Annotation")]
-        return value in (None, "", "Pending Annotation") or pd.isna(value)
+        return not parse_list(value) or is_placeholder(value)
 
     df["_incompleteCount"] = df[content_cols].apply(
         lambda row: sum(_is_incomplete(v) for v in row), axis=1
@@ -309,7 +297,7 @@ def main():
         print("\n❗❗❗ WARNING:", "dryrun is enabled (no updates will be done)\n")
 
     manifest = utils.fill_blank(utils.read_sync_manifest(syn, args))
-    manifest = restore_display_names(manifest)
+    manifest = model_contract.restore_display_names(manifest, COMPONENT, MANIFEST_PASSTHROUGH)
     manifest = model_contract.rename_legacy_headers(manifest, COMPONENT)
     manifest = model_contract.normalize_headers(
         manifest, to="keys", passthrough=MANIFEST_PASSTHROUGH
@@ -320,12 +308,12 @@ def main():
         print()
 
     print("Processing dataset staging database...")
-    grants = Table(id="syn21918972").query(
-        query="SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantId, grantNumber, grantName, theme, consortium FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
-    pubs = Table(id="syn21868591").query(
-        query="SELECT doi, pubMedId, publicationTitle, publicationYear FROM syn21868591",
+    pubs = Table(id=utils.portal_table("publication")).query(
+        query=f"SELECT doi, pubMedId, publicationTitle, publicationYear FROM {utils.portal_table('publication')}",
         synapse_client=syn,
     )
 

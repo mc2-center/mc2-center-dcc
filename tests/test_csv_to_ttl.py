@@ -1,12 +1,12 @@
 """Offline tests for utils/csv_to_ttl.py using a vendored slice of the v14.1.0 model."""
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
+from conftest import ROOT, load_script
+
 SCRIPT = ROOT / "utils" / "csv_to_ttl.py"
 SLICE = Path(__file__).parent / "fixtures" / "csv_to_ttl" / "mc2_slice.model.csv"
 
@@ -15,10 +15,7 @@ pytest.importorskip("pandas", reason="pandas is required")
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("csv_to_ttl", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script("utils/csv_to_ttl.py", "csv_to_ttl")
 
 
 @pytest.fixture(scope="module")
@@ -70,10 +67,7 @@ def test_get_reference_id_key_classification():
 
 
 def test_template_mask_falls_back_to_dependson():
-    import importlib.util
     import pandas as pd
-    spec = importlib.util.spec_from_file_location("csv_to_ttl", ROOT / "utils" / "csv_to_ttl.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = _load_module()
     df = pd.DataFrame({"Attribute": ["T", "a"], "DependsOn": ["Component, a", ""]})
     assert list(mod.is_template_mask(df)) == [True, False]

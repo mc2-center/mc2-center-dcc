@@ -1,21 +1,11 @@
 """utils/table_to_annotations.py and utils/merge_and_correct_manifests.py, offline."""
-import importlib.util
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 
 import model_contract
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def _load(relpath, name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / relpath)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+from conftest import ROOT, load_script
 
 
 class FakeEntity:
@@ -63,14 +53,14 @@ def _patch(tta, monkeypatch, df):
 
 def test_keys_to_drop_empty_list_does_not_raise(monkeypatch):
     # main() used to pass keys_to_drop=None here, so `key not in None` raised.
-    tta = _load("utils/table_to_annotations.py", "tta")
+    tta = load_script("utils/table_to_annotations.py", "tta")
     entity, _ = _patch(tta, monkeypatch, pd.DataFrame())
     tta.apply_annotations_to_entity(entity.syn, "DatasetView", "syn1", [("Dataset Name", "n")], [])
     assert entity.annotations == {"DatasetName": "n"} and entity.stored
 
 
 def test_dataset_columns_come_from_template():
-    tta = _load("utils/table_to_annotations.py", "tta")
+    tta = load_script("utils/table_to_annotations.py", "tta")
     src = (ROOT / "utils" / "table_to_annotations.py").read_text()
     assert "template_headers(\"DatasetView\")" in src
     headers = [h for h in model_contract.template_headers("DatasetView") if h != "Component"]
@@ -79,7 +69,7 @@ def test_dataset_columns_come_from_template():
 
 
 def _run_dataset(monkeypatch, source_headers):
-    tta = _load("utils/table_to_annotations.py", "tta")
+    tta = load_script("utils/table_to_annotations.py", "tta")
     df = _dataset_df(source_headers)
     df.loc[0, [c for c in source_headers if c.endswith("Assay")][0]] = "scRNA-seq"
     entity, fake = _patch(tta, monkeypatch, df)
@@ -105,7 +95,7 @@ def test_dataset_annotations_from_legacy_table(monkeypatch):
 
 
 def test_merge_and_correct_accepts_legacy_and_new_headers(tmp_path, monkeypatch):
-    mc = _load("utils/merge_and_correct_manifests.py", "mc")
+    mc = load_script("utils/merge_and_correct_manifests.py", "mc")
     legacy = pd.DataFrame([{
         "Component": "PublicationView", "Pubmed Id": "1", "Publication Doi": "10.1/x",
         "Publication Assay": "", "Publication Tumor Type": " a ", "Publication Tissue": "t",

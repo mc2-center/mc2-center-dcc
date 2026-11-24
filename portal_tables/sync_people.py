@@ -7,10 +7,11 @@ portal table, by first truncating the table, then re-adding the rows.
 import pandas as pd
 from synapseclient.models import Table
 
+from cells import parse_list
 import crosswalk
 import model_contract
 import utils
-from sync_projects import NO_GRANT, resolve_consortium_keys, split_cell
+from sync_projects import NO_GRANT, resolve_consortium_keys
 
 COMPONENT = "PersonView"
 LIST_TO_STRING_COLS = ["PersonPublications", "PersonDatasets", "PersonTools"]
@@ -47,7 +48,7 @@ def add_missing_info(
             else ""
         )
     )
-    people["GrantViewKey"] = [split_cell(v) for v in people["GrantViewKey"]]
+    people["GrantViewKey"] = [parse_list(v) for v in people["GrantViewKey"]]
     people["consortium"] = pd.Series(consortia, index=people.index, dtype=object)
     people["grantName"] = ""
     for idx, row in people.iterrows():
@@ -86,8 +87,8 @@ def main():
         print()
 
     print("Processing people staging database...")
-    grants = Table(id="syn21918972").query(
-        query="SELECT grantNumber, grantName FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantNumber, grantName FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
 

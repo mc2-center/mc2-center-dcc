@@ -85,7 +85,6 @@ a 20-digit string never equals a different one; no float); leading zeros
 
 from __future__ import annotations
 
-import csv
 import json
 import logging
 import re
@@ -93,16 +92,19 @@ import shutil
 import os
 import tempfile
 import time
-import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
+import requests
 from synapseclient import operations
 from synapseclient.core import utils as synapse_utils
+from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.models import Column, ColumnType, Grid, RecordSet, Table
 
+from cells import is_null, is_placeholder, json_list, parse_list
 import comma_terms
 import model_contract
 import utils
@@ -118,6 +120,7 @@ WRITE_LOG_COLUMNS = [
     "recordSetId", "version", "baseVersion", "runId", "principalId", "status", "writtenOn", "rowsWritten",
 ]
 LOCK_HOURS = 2
+DOWNLOAD_TRIES = 3  # read_recordset and _download_version_file: tries on a 403 from the file host
 REMOVAL_RUN_PREFIX = "dcc-removal-"  # runId of a DCC removal run (D-Q49); recover_pending keys on it
 # A removal run's re-validation (Grid export only, no direct store) opens its pending row under
 # ``<run id><suffix>``: the write log has no kind column, and the runId is what it can hold. recover_pending
@@ -139,19 +142,14 @@ _GRID_ESCAPE = re.compile(r"\\(?:u(00[89][0-9a-fA-F]|20[0-9a-fA-F]{2})|/)")
 
 def parse_cell(value):
     """A stored CSV cell as a list (JSON array) or string; empty is ``""``."""
-    if value is None or (not isinstance(value, (str, list)) and pd.isna(value)):
+    if is_null(value):
         return ""
     if isinstance(value, list):
         return value
     text = str(value)
-    stripped = text.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        try:
-            parsed = json.loads(stripped)
-        except ValueError:
-            return text
-        if isinstance(parsed, list):
-            return [grid_unescape(str(v)) for v in parsed]
+    parsed = json_list(text)
+    if parsed is not None:
+        return [grid_unescape(str(v)) for v in parsed]
     return text
 
 
@@ -172,6 +170,14 @@ def cell_to_csv(value) -> str:
     if isinstance(value, list):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":")) if value else ""
     return "" if value is None else str(value)
+
+
+def has_unsafe_item(value) -> bool:
+    """True when ``value`` is a list with an item that holds a quote or backslash.
+
+    Grid cannot open a RecordSet whose list cell holds such an item.
+    """
+    return isinstance(value, list) and any('"' in i or "\\" in i for i in value)
 
 
 def _norm(value, set_like: bool = False):
@@ -270,7 +276,7 @@ def _split_list_cell(value: str, column: str = "") -> list[str]:
         return parsed
     if comma_terms.is_keyword_column(column):
         return comma_terms.split_keyword_cell(value)
-    return utils.split_cell(value)
+    return parse_list(value)
 
 
 # --- reading ----------------------------------------------------------------
@@ -279,11 +285,16 @@ def _split_list_cell(value: str, column: str = "") -> list[str]:
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "mc2-center-dcc" / "recordsets"
 
 
-def _load_csv(path, list_cols=()) -> pd.DataFrame:
+def read_csv_str(path) -> pd.DataFrame:
+    """Read a CSV with every cell as a string (empty is ``""``); a file with no data at all is an empty frame."""
     try:
-        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        return pd.read_csv(path, dtype=str, keep_default_na=False)
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
+
+
+def _load_csv(path, list_cols=()) -> pd.DataFrame:
+    df = read_csv_str(path)
     for column in df.columns:
         if column in list_cols:
             df[column] = df[column].map(parse_cell)
@@ -298,17 +309,22 @@ def read_recordset(
     JSON-array cells become Python lists only in ``list_cols`` (see
     :func:`list_columns`); every other cell stays a string, empty is ``""``.
     With ``cache_dir`` and an explicit ``version``, the CSV is cached on disk
-    as ``<cache_dir>/<rs_id>/v<version>.csv`` (versions are immutable, the
-    latest included) with ``v<version>.csv.md5`` beside it, and read from there on later calls
-    when the file still matches that md5 (else it is fetched, and checked, again). ``version=None`` is
-    never cached.
+    as ``<cache_dir>/<rs_id>/v<version>.csv`` with ``v<version>.csv.md5`` beside it, and read from there
+    on later calls when the file still matches that md5 (else it is fetched, and checked, again).
+    Only a version below the latest can be cached: it cannot change. The latest version can be replaced
+    in place, so pass ``cache_dir`` only for a version below the latest; read the latest with
+    ``version=None`` or without ``cache_dir``. ``version=None`` is never cached.
     """
     cached = None
     if cache_dir is not None and version is not None:
         cached = Path(cache_dir) / rs_id / f"v{version}.csv"
         if _cache_hit(cached):
             return _load_csv(cached, list_cols)
-    entity = RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn)
+    entity = utils.retry(  # the file host sometimes answers 403 to a valid URL; the client does not retry it
+        lambda: RecordSet(id=rs_id, version_number=version, download_file=True).get(synapse_client=syn),
+        DOWNLOAD_TRIES, _is_403,
+        on_retry=lambda _: logger.warning("%s v%s: download answered 403; retrying", rs_id, version),
+    )
     path, fresh_dir = entity.path, None
     try:
         if _md5_mismatch(entity):
@@ -322,9 +338,7 @@ def read_recordset(
                 raise ValueError(f"{rs_id} v{version}: the downloaded file does not match its file handle's md5")
         if cached is not None:
             cached.parent.mkdir(parents=True, exist_ok=True)
-            tmp = cached.with_name(f"{cached.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
-            shutil.copyfile(path, tmp)
-            tmp.replace(cached)
+            utils.write_atomic(cached, lambda tmp: shutil.copyfile(path, tmp))
             want = getattr(getattr(entity, "file_handle", None), "content_md5", None)
             _md5_sidecar(cached).write_text(
                 want if isinstance(want, str) and want else synapse_utils.md5_for_file_hex(filename=str(cached)))
@@ -345,14 +359,30 @@ def _cache_hit(cached: Path) -> bool:
     sidecar = _md5_sidecar(cached)
     if not cached.exists() or not sidecar.exists():
         return False
-    return sidecar.read_text().strip() == synapse_utils.md5_for_file_hex(filename=str(cached))
+    recorded = sidecar.read_text().strip()
+    return recorded == synapse_utils.md5_for_file_hex(filename=str(cached))
+
+
+def _is_403(err) -> bool:
+    """True for an HTTP error whose response is a 403 (the client's ``SynapseHTTPError`` is one), and for no other error."""
+    return isinstance(err, requests.HTTPError) and getattr(err.response, "status_code", None) == 403
 
 
 def _download_version_file(syn, rs_id: str, version: int, dest: Path) -> Path:
-    """Download one version's file through its pre-signed URL, bypassing the client's file cache."""
-    url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
-    response = syn._requests_session.get(url, timeout=120)
-    response.raise_for_status()
+    """Download one version's file through its pre-signed URL, bypassing the client's file cache.
+
+    The file host sometimes answers 403 to a valid URL (seen on about 1 in 6 downloads); each try gets a fresh URL.
+    """
+    def fetch():
+        url = syn.restGET(f"/entity/{rs_id}/version/{version}/file?redirect=false")
+        response = syn._requests_session.get(url, timeout=120)
+        response.raise_for_status()
+        return response
+
+    response = utils.retry(
+        fetch, DOWNLOAD_TRIES, _is_403,
+        on_retry=lambda _: logger.warning("%s v%s: download answered 403; retrying with a fresh URL", rs_id, version),
+    )
     dest.write_bytes(response.content)
     return dest
 
@@ -404,6 +434,31 @@ def recordset_info(syn, rs_id: str) -> tuple[int, list[str]]:
     return entity.version_number, list(entity.upsert_keys or [])
 
 
+def schema_binding(syn, rs_id: str) -> tuple[str | None, pd.Timestamp]:
+    """``(bound schema URI, when the binding was created)``; ``(None, NaT)`` for an unbound RecordSet.
+
+    Synapse answers ``GET /entity/{id}/schema/binding`` with a 404 (``SynapseHTTPError``) when nothing is bound.
+    """
+    try:
+        binding = RecordSet(id=rs_id).get_schema(synapse_client=syn)
+    except SynapseHTTPError as err:
+        if getattr(getattr(err, "response", None), "status_code", None) == 404:
+            return None, pd.NaT
+        raise
+    info = getattr(binding, "json_schema_version_info", None)
+    return getattr(info, "id", None), _to_dt(getattr(binding, "created_on", None))
+
+
+def bound_schema_uri(syn, rs_id: str) -> str | None:
+    """The JSON schema URI bound to the RecordSet (``MC2Center-<component>-<version>``), or None."""
+    return schema_binding(syn, rs_id)[0]
+
+
+def bind_schema(syn, rs_id: str, uri: str) -> None:
+    """Bind ``uri`` to the RecordSet. It does not re-validate the stored version; a Grid export does."""
+    RecordSet(id=rs_id).bind_schema(json_schema_uri=uri, enable_derived_annotations=False, synapse_client=syn)
+
+
 def find_recordset(syn, folder_id: str, component: str) -> str | None:
     """ID of ``MC2Center_<component>_RecordSet`` among the folder's children, or None."""
     return operations.find_entity_id(
@@ -416,7 +471,7 @@ def find_recordset(syn, folder_id: str, component: str) -> str | None:
 
 def _to_dt(value):
     """A write-log time (datetime, epoch milliseconds or ISO text) as a UTC Timestamp."""
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return pd.NaT
     if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
         return pd.to_datetime(int(value), unit="ms", utc=True)
@@ -424,7 +479,7 @@ def _to_dt(value):
 
 
 def _int_or_none(value):
-    return None if value is None or (not isinstance(value, str) and pd.isna(value)) else int(value)
+    return None if is_null(value) else int(value)
 
 
 class WriteLog:
@@ -442,11 +497,16 @@ class WriteLog:
     keeps its lock and stays recoverable until it finishes. The migration also
     logs ``created`` (the RecordSet's creation version) and ``verified`` (a
     version read back and matched); neither is a pipeline version nor closes a
-    ``pending`` row. Subclasses implement ``_read`` and ``_append``.
+    ``pending`` row. Subclasses implement ``_read`` and ``_append``. A subclass may
+    cache ``_read``; the lock checks (:meth:`unresolved_pending` and the methods
+    that use it) call :meth:`refresh` first, so they always read the table.
     """
 
     def _read(self, rs_id: str) -> pd.DataFrame:
         raise NotImplementedError
+
+    def refresh(self, rs_id: str) -> None:
+        """Make the next read of ``rs_id`` fresh (a subclass that caches reads drops its entry)."""
 
     def _append(self, row: dict) -> None:
         raise NotImplementedError
@@ -532,7 +592,8 @@ class WriteLog:
 
     def unresolved_pending(self, rs_id: str) -> list[dict]:
         """``pending`` rows not yet resolved by a later ``done``/``recovered``/``aborted``
-        row of the same runId and baseVersion."""
+        row of the same runId and baseVersion. Always reads fresh (every lock check uses it)."""
+        self.refresh(rs_id)
         df = self._read(rs_id)
         closers = [
             (r["runId"], _int_or_none(r["baseVersion"]), _to_dt(r["writtenOn"]))
@@ -588,49 +649,32 @@ class SynapseTableWriteLog(WriteLog):
     def __init__(self, syn, table_id: str):
         self.syn = syn
         self.table_id = table_id
+        self._cache: dict[str, pd.DataFrame] = {}
 
-    def _read(self, rs_id: str) -> pd.DataFrame:
+    def _query(self, rs_id: str) -> pd.DataFrame:
         return Table(id=self.table_id).query(
             query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
             include_row_id_and_row_version=False,
             synapse_client=self.syn,
         )
 
+    def _read(self, rs_id: str) -> pd.DataFrame:
+        """History reads use a cached frame; an append or :meth:`refresh` drops it."""
+        if rs_id not in self._cache:
+            self._cache[rs_id] = self._query(rs_id)
+        return self._cache[rs_id].copy()
+
+    def refresh(self, rs_id: str) -> None:
+        self._cache.pop(rs_id, None)
+
     def _append(self, row: dict) -> None:
+        self._cache.pop(row["recordSetId"], None)
         values = dict(row)
         values["writtenOn"] = int(values["writtenOn"].timestamp() * 1000)
         frame = pd.DataFrame([values], columns=WRITE_LOG_COLUMNS)
         for column in ("version", "baseVersion", "rowsWritten"):
             frame[column] = frame[column].astype("Int64")
         Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
-
-
-class CsvWriteLog(WriteLog):
-    """The same log as a local CSV, for tests and dry runs."""
-
-    def __init__(self, path):
-        self.path = Path(path)
-
-    def _read(self, rs_id: str) -> pd.DataFrame:
-        if not self.path.exists():
-            return pd.DataFrame(columns=WRITE_LOG_COLUMNS)
-        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
-        df = df[df["recordSetId"] == rs_id].copy()
-        for column in ("version", "baseVersion", "rowsWritten"):
-            df[column] = pd.to_numeric(df[column].replace("", pd.NA))
-        return df
-
-    def _append(self, row: dict) -> None:
-        new = not self.path.exists()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
-            if new:
-                writer.writerow(WRITE_LOG_COLUMNS)
-            writer.writerow(
-                ["" if row[c] is None else (row[c].isoformat() if c == "writtenOn" else row[c])
-                 for c in WRITE_LOG_COLUMNS]
-            )
 
 
 def create_write_log_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_WriteLog") -> str:
@@ -679,6 +723,9 @@ class Removals:
     def _append_rows(self, rows: list[dict]) -> None:
         """Append every row in one write (one transaction in Synapse)."""
         raise NotImplementedError
+
+    def refresh(self, rs_id: str) -> None:
+        """Make the next read of ``rs_id`` fresh (a subclass that caches reads drops its entry)."""
 
     def append_many(self, rs_id, entries, run_id="", principal="") -> None:
         """Append rows in one write; ``entries`` are dicts with ``key``, ``status`` and optional
@@ -764,13 +811,20 @@ class SynapseTableRemovals(Removals):
     def __init__(self, syn, table_id: str):
         self.syn = syn
         self.table_id = table_id
+        self._cache: dict[str, pd.DataFrame] = {}
 
     def _read(self, rs_id: str) -> pd.DataFrame:
-        return Table(id=self.table_id).query(
-            query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
-            include_row_id_and_row_version=False,
-            synapse_client=self.syn,
-        )
+        """Cached per RecordSet; an append drops the entry."""
+        if rs_id not in self._cache:
+            self._cache[rs_id] = Table(id=self.table_id).query(
+                query=f"SELECT * FROM {self.table_id} WHERE recordSetId = '{rs_id}'",
+                include_row_id_and_row_version=False,
+                synapse_client=self.syn,
+            )
+        return self._cache[rs_id].copy()
+
+    def refresh(self, rs_id: str) -> None:
+        self._cache.pop(rs_id, None)
 
     def recordset_ids(self) -> list[str]:
         df = Table(id=self.table_id).query(
@@ -781,43 +835,12 @@ class SynapseTableRemovals(Removals):
         return sorted(df["recordSetId"])
 
     def _append_rows(self, rows: list[dict]) -> None:
+        for rs_id in {r["recordSetId"] for r in rows}:
+            self._cache.pop(rs_id, None)
         frame = pd.DataFrame(rows, columns=REMOVALS_COLUMNS)
         frame["changedOn"] = frame["changedOn"].map(lambda t: int(t.timestamp() * 1000))
         frame["removedInVersion"] = frame["removedInVersion"].astype("Int64")
         Table(id=self.table_id).store_rows(values=frame, synapse_client=self.syn)
-
-
-class CsvRemovals(Removals):
-    """The same table as a local CSV, for tests and dry runs."""
-
-    def __init__(self, path):
-        self.path = Path(path)
-
-    def _read(self, rs_id: str) -> pd.DataFrame:
-        if not self.path.exists():
-            return pd.DataFrame(columns=REMOVALS_COLUMNS)
-        df = pd.read_csv(self.path, dtype=str, keep_default_na=False)
-        df = df[df["recordSetId"] == rs_id].copy()
-        df["removedInVersion"] = pd.to_numeric(df["removedInVersion"].replace("", pd.NA))
-        return df
-
-    def recordset_ids(self) -> list[str]:
-        if not self.path.exists():
-            return []
-        return sorted(set(pd.read_csv(self.path, dtype=str, keep_default_na=False)["recordSetId"]))
-
-    def _append_rows(self, rows: list[dict]) -> None:
-        new = not self.path.exists()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
-            if new:
-                writer.writerow(REMOVALS_COLUMNS)
-            for row in rows:
-                writer.writerow(
-                    ["" if row[c] is None else (row[c].isoformat() if c == "changedOn" else row[c])
-                     for c in REMOVALS_COLUMNS]
-                )
 
 
 def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_Removals") -> str:
@@ -838,6 +861,41 @@ def create_removals_table(syn, parent_id: str, name: str = "MC2Center_RecordSet_
     ]
     table = Table(name=name, parent_id=parent_id, columns=columns).store(synapse_client=syn)
     return table.id
+
+
+# --- shared by the scripts ----------------------------------------------------
+
+def add_log_args(parser, write_log=True, removals=True) -> None:
+    """Add ``--write-log-table`` and (with ``removals``) ``--removals-table``, defaulting to the production tables."""
+    if write_log:
+        parser.add_argument("--write-log-table", default=utils.WRITE_LOG_TABLE,
+                            help="Synapse ID of the write-log table; default: %(default)s")
+    if removals:
+        parser.add_argument("--removals-table", default=utils.REMOVALS_TABLE,
+                            help="Synapse ID of the removals table; default: %(default)s")
+
+
+def open_logs(syn, args):
+    """``(write_log, removals)`` for the tables named in ``args``; one is None when its table is not given."""
+    write_log = SynapseTableWriteLog(syn, args.write_log_table) if getattr(args, "write_log_table", None) else None
+    removals = SynapseTableRemovals(syn, args.removals_table) if getattr(args, "removals_table", None) else None
+    return write_log, removals
+
+
+def new_run_id(prefix: str = "") -> str:
+    """``prefix`` plus the time now (``YYYYmmddTHHMMSS``). The write log keeps run IDs in this form."""
+    return prefix + datetime.now().strftime("%Y%m%dT%H%M%S")
+
+
+def summary_line(s: dict, key: str, fields) -> str:
+    """One line for a summary dict: ``<s[key]>: <status>``, each of ``fields`` that is set as ``name=value``, then the message."""
+    parts = [f"{s[key]}: {s['status']}"]
+    for field in fields:
+        if field in s:
+            parts.append(f"{field}={s[field]}")
+    if s.get("message"):
+        parts.append(s["message"])
+    return " ".join(parts)
 
 
 def removed_keys(versions, removal_bases, key) -> dict[str, int]:
@@ -910,10 +968,11 @@ def recover_pending(syn, rs_id, write_log, latest, meta=None, record=True,
     :data:`REVALIDATE_RUN_SUFFIX` is a removal run's re-validation: it only exports, so all its versions are ``recovered``.
     """
     meta = meta or (lambda v: recordset_version_meta(syn, rs_id, v))
+    pending = write_log.unresolved_pending(rs_id)  # it refreshes the log first, so the cached history below is fresh too
     logged = write_log.pipeline_map(rs_id)
     found = Recovered()
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
-    for row in write_log.unresolved_pending(rs_id):
+    for row in pending:
         if row["baseVersion"] is None:
             continue
         if run_id is not None and row["runId"] != run_id:
@@ -974,16 +1033,6 @@ def _all_columns(frames, key_cols) -> list[str]:
 
 def _is_blank(value) -> bool:
     return _norm(value) == ""
-
-
-def _is_pending(value) -> bool:
-    """The ``Pending Annotation`` placeholder (case and surrounding space ignored).
-
-    A list cell counts only if every item is the placeholder.
-    """
-    n = _norm(value)
-    items = n if isinstance(n, tuple) else (n,)
-    return all(isinstance(i, str) and i.strip().casefold() == "pending annotation" for i in items)
 
 
 def _session_base(cf, diffs, fingerprints, v) -> int:
@@ -1151,7 +1200,7 @@ def replay(versions, log_map, key, set_like=(), removal_versions=(), restored=()
             snapshot = cf[_session_base(cf, diffs, fingerprints, v)] if v > 1 else {}
             for k, row in frame.items():
                 if k not in state:
-                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) or _is_pending(x) else C)
+                    state[k] = fresh(k, v, lambda x: P if _is_blank(x) or is_placeholder(x) else C)
                     if k in gone:
                         gone.discard(k)
                         srow = snapshot.get(k)
@@ -1211,7 +1260,7 @@ def _version_diffs(cf, latest) -> dict[int, dict]:
     return diffs
 
 
-def merge_upload(reconciled, upload, key, edited, set_like=()):
+def merge_upload(reconciled, upload, key, edited, set_like=(), overwrite=frozenset(), overwritten=None):
     """Upsert ``upload`` rows into ``reconciled`` (a replayed state); contributors win.
 
     Existing keys are updated cell by cell, new keys appended, keys absent from
@@ -1219,6 +1268,11 @@ def merge_upload(reconciled, upload, key, edited, set_like=()):
     cells) where the upload value differs, the state value is kept
     and a conflict recorded. Returns ``(merged DataFrame, conflicts DataFrame)``
     with columns ``key, column, contributor_value, upload_value``.
+
+    ``overwrite`` is a set of ``(key, column)`` cells that may replace a
+    contributor-owned value (default: none, so the contributor always wins).
+    Each such replacement is appended to the ``overwritten`` list (same fields
+    as a conflict) when a list is given, and is not a conflict.
     """
     key_cols = key_columns(key)
     set_like = set(set_like)
@@ -1238,7 +1292,13 @@ def merge_upload(reconciled, upload, key, edited, set_like=()):
             new, old = up_row[column], row[column]
             if _cells_equal(new, old, column in set_like):
                 continue
-            if (k, column) in edited:
+            if (k, column) in edited and (k, column) in overwrite:
+                if overwritten is not None:
+                    overwritten.append(
+                        {"key": k, "column": column, "contributor_value": old, "upload_value": new}
+                    )
+                row[column] = new
+            elif (k, column) in edited:
                 conflicts.append(
                     {"key": k, "column": column, "contributor_value": old, "upload_value": new}
                 )
@@ -1380,7 +1440,7 @@ def principal_id(syn) -> str:
 
 
 class WriteRefused(Exception):
-    """A logged write was not started: ``status`` is ``locked`` or ``retry``."""
+    """A logged write was not started: ``status`` is ``locked`` or ``retry`` (a script may add its own)."""
 
     def __init__(self, status: str, message: str):
         super().__init__(message)
@@ -1388,52 +1448,88 @@ class WriteRefused(Exception):
         self.message = message
 
 
-def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, rows: int, base: int,
-                 retry_note: str = "the next run replays it") -> list[int]:
-    """Write ``csv_path`` through a Grid session behind a write-log ``pending`` row.
+def lock_message(write_log, rs_id: str, run_id: str, since) -> str | None:
+    """Why another run's unfinished write blocks this one (``since``: this process's start), or None."""
+    locker = write_log.locked_by(rs_id, run_id, since=since)
+    if locker:
+        return f"run {locker} has an unfinished write (pending row under {LOCK_HOURS} h old)"
+    return None
 
-    ``base`` is the RecordSet version the content was computed against. Logs
-    ``start``, one ``written`` row per exported version, then ``done``, and
-    returns the versions created. Raises :class:`WriteRefused` (nothing
-    written, the pending row aborted) when another run's earlier pending row
-    holds the lock, or when the RecordSet moved past ``base`` since it was read.
-    If the write fails, exports that completed are already logged; a version
-    whose export raised after it was created is claimed through
-    :func:`recover_pending`, or the run's pending row is resolved as aborted,
-    and the original exception propagates.
+
+@contextmanager
+def locked_write(syn, rs_id: str, write_log, run_id: str, principal, base: int,
+                 retry_note: str = "the next run replays it", extra_refusal=None, after_recover=None):
+    """Hold the write-log lock around the ``with`` body: a ``pending`` row, then ``done`` when the body ends.
+
+    ``base`` is the RecordSet version the content was computed against. Raises
+    :class:`WriteRefused` (nothing written, the pending row aborted) when another
+    run's earlier pending row holds the lock (``locked``), or when the RecordSet
+    moved past ``base`` since it was read (``retry``). ``extra_refusal()``, if
+    given, runs between these two checks and returns ``(status, message)`` to
+    refuse, or None. The body logs the versions it creates. It may raise
+    :class:`WriteRefused` itself, after it resolved the pending row; it must not
+    return early unless the write is complete. If the body fails, a version whose
+    write raised after it was created is claimed through :func:`recover_pending`,
+    or the run's pending row is resolved as aborted; ``after_recover(recovered)``,
+    if given, then runs, and the original exception propagates.
     """
     write_log.start(rs_id, base, run_id, principal)
-    created: list[int] = []
-
-    def on_version(v):
-        write_log.record(rs_id, v, run_id, rows, base=base, principal=principal)
-        created.append(v)
-
     try:
+        refusal = None
         # Lock race: another run may have started between the caller's check and
         # our pending row. The earlier pending row (ties by runId) keeps the lock.
         winner = write_log.earlier_pending(rs_id, run_id)
         if winner:
-            write_log.abort(rs_id, base, run_id, principal)
-            raise WriteRefused("locked", f"run {winner} started its write first; skipped")
+            refusal = ("locked", f"run {winner} started its write first; skipped")
+        elif extra_refusal is not None:
+            refusal = extra_refusal()
         # The content was computed against ``base``; if the RecordSet moved, recompute next run.
-        now_latest, _ = recordset_info(syn, rs_id)
-        if now_latest != base:
+        if not refusal:
+            now_latest, _ = recordset_info(syn, rs_id)
+            if now_latest != base:
+                refusal = ("retry", (
+                    f"{rs_id} moved from v{base} to v{now_latest} before the write; nothing written, "
+                    f"{retry_note}"))
+        if refusal:
             write_log.abort(rs_id, base, run_id, principal)
-            raise WriteRefused("retry", (
-                f"{rs_id} moved from v{base} to v{now_latest} before the write; nothing written, "
-                f"{retry_note}"))
-        write_via_grid(syn, rs_id, csv_path, on_version=on_version)
+            raise WriteRefused(*refusal)
+        yield
         write_log.finish(rs_id, base, run_id, principal)
     except WriteRefused:
         raise
     except BaseException:
         try:
             newest, _ = recordset_info(syn, rs_id)
-            recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
+            recovered = recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
+            if after_recover is not None:
+                after_recover(recovered)
         except Exception:
             logger.exception("%s: could not resolve the pending write-log row", rs_id)
         raise
+
+
+def write_logged(syn, rs_id: str, csv_path, write_log, run_id: str, principal, rows: int, base: int,
+                 retry_note: str = "the next run replays it") -> list[int]:
+    """Write ``csv_path`` through a Grid session behind a write-log ``pending`` row.
+
+    With no ``csv_path`` the session only exports (:func:`export_via_grid`, a re-validation).
+    ``base`` is the RecordSet version the content was computed against. Logs
+    ``start``, one ``written`` row per exported version, then ``done``, and
+    returns the versions created. Raises :class:`WriteRefused` as
+    :func:`locked_write` does. If the write fails, exports that completed are
+    already logged; the failure is resolved as :func:`locked_write` does.
+    """
+    created: list[int] = []
+
+    def on_version(v):
+        write_log.record(rs_id, v, run_id, rows, base=base, principal=principal)
+        created.append(v)
+
+    with locked_write(syn, rs_id, write_log, run_id, principal, base, retry_note=retry_note):
+        if csv_path is None:
+            export_via_grid(syn, rs_id, on_version=on_version)
+        else:
+            write_via_grid(syn, rs_id, csv_path, on_version=on_version)
     return created
 
 

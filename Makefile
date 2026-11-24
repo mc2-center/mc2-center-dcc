@@ -4,9 +4,9 @@
 # registry under the MC2Center organization, without binding it to an entity.
 # This WRITES to Synapse; preview with `make -n register-json ...` first.
 #
-#   make register-json SCHEMAS=../data-models/json_schemas VERSION=14.1.1
+#   make register-json SCHEMAS=../data-models/json_schemas VERSION=14.1.2
 #
-# VERSION  Release number, with or without a leading "v" (default: 14.1.1).
+# VERSION  Release number, with or without a leading "v" (default: 14.1.2).
 #          synapse_json_schema_bind.py wants "-v v<number>" and splits on "v".
 # SCHEMAS  Path to the data-models `json_schemas` directory, checked out at the
 #          tag that matches VERSION (default: ../data-models/json_schemas).
@@ -14,7 +14,7 @@
 # Each schema is its own target, so make stops at the first failed registration
 # (do not pass -k) and `make -n` lists one command per schema.
 
-VERSION ?= 14.1.1
+VERSION ?= 14.1.2
 SCHEMAS ?= ../data-models/json_schemas
 ORG_NAME ?= MC2Center
 PYTHON ?= python

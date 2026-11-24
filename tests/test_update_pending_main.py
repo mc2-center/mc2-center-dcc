@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from conftest import load_script
 
@@ -41,3 +42,25 @@ def test_real_run_uploads(monkeypatch, tmp_path):
     monkeypatch.setattr(upa, "manifest_upload", lambda *a: uploads.append(a))
     upa.main()
     assert len(uploads) == 1
+
+
+def test_get_args_defaults_to_the_staging_publications_table(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["update_pending_annotations.py"])
+    assert upa.get_args().table_id == "syn78748028"
+
+
+def test_get_args_rejects_a_production_table(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["update_pending_annotations.py", "-t", "syn21868591"])
+    with pytest.raises(SystemExit):
+        upa.get_args()
+
+
+def test_help_exits_before_the_question(monkeypatch):
+    def no_input(*_):
+        raise AssertionError("input() was called")
+
+    monkeypatch.setattr("sys.argv", ["update_pending_annotations.py", "--help"])
+    monkeypatch.setattr("builtins.input", no_input)
+    with pytest.raises(SystemExit) as exc:
+        upa.main()
+    assert exc.value.code == 0

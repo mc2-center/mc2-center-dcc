@@ -15,6 +15,7 @@ from synapseclient import Project, Wiki, Folder, Team
 from synapseclient.models import Table, Team as TeamModel
 from synapseclient.operations import find_entity_id
 
+from cells import is_null, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 COMPONENT = "GrantView"
 
+DCC_ADMIN_TEAM = "3450948"  # MC2 Admin team: admin on every grant project
 PERMISSIONS = {
     "view": ["READ"],
     "download": ["READ", "DOWNLOAD"],
@@ -69,23 +71,30 @@ def get_args():
         "-m",
         "--manifest",
         type=str,
-        default="syn53259587",
-        help=("Synapse ID to the manifest table/fileview." "(Default: syn53259587)"),
+        default=utils.CONFIG["grant"]["manifest"],
+        help=("Synapse ID to the manifest table/fileview." f"(Default: {utils.CONFIG['grant']['manifest']})"),
     )
     parser.add_argument(
         "-t",
         "--portal_table",
         type=str,
-        default="syn21918972",
-        help=("Add grants to this specified table. " "(Default: syn21918972)"),
+        default=None,
+        help=(
+            "Add grants to this specified table. (Default: the staging grants table)"
+        ),
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    try:
+        utils.refuse_production(args.portal_table)
+    except ValueError as e:
+        parser.error(str(e))
+    return args
 
 
 def _text(value):
     """Cell value as text: ``None`` and NaN become the empty string."""
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return ""
     return str(value)
 
@@ -93,10 +102,8 @@ def _text(value):
 def _split_people(value):
     """Comma-separated people cell to a list; missing or empty gives ``[]``."""
     if isinstance(value, (list, tuple, set)):
-        names = [_text(v) for v in value]
-    else:
-        names = _text(value).split(",")
-    return [n.strip() for n in names if n.strip()]
+        value = [v for v in value if not is_null(v)]
+    return parse_list(value)
 
 
 def create_wiki_pages(syn, project_id, grant):
@@ -161,21 +168,36 @@ def create_folders(syn, project_id):
         syn.store(Folder(name, parent=project_id))
 
 
-def find_team_id(syn, team_name):
-    """ID of the team named exactly ``team_name``, or None if there isn't one."""
+def find_team(syn, team_name):
+    """The team named exactly ``team_name``, or None if there isn't one."""
     try:
-        return TeamModel.from_name(team_name, synapse_client=syn).id
+        return TeamModel.from_name(team_name, synapse_client=syn)
     except ValueError:  # "Can't find team"
         return None
 
 
+def dcc_owns_team(syn, team) -> bool:
+    """Whether the DCC owns ``team``: the operator created it, or one of its admins is in the MC2 Admin team.
+
+    Team names are public and anyone can create a team, so a team found by name is reused only when this is true.
+    """
+    if str(team.created_by) == str(syn.getUserProfile()["ownerId"]):
+        return True
+    dcc = {str(m.member.owner_id) for m in TeamModel(id=DCC_ADMIN_TEAM).members(synapse_client=syn)}
+    return any(m.is_admin and str(m.member.owner_id) in dcc for m in team.members(synapse_client=syn))
+
+
 def create_team(syn, project_id, grant, access_type="edit"):
-    """Create (or reuse, if one already has the name) the team for a grant."""
+    """Create the team for a grant, or reuse a team of that name that the DCC owns (see ``dcc_owns_team``)."""
     consortia = _join_listlike_col(grant["consortium"])
     center = _join_listlike_col(grant["GrantInstitutionAlias"])
     team_name = f"{consortia} {center} {grant['GrantType']} {grant['GrantNumber']}"
-    team_id = find_team_id(syn, team_name)
-    if team_id is not None:
+    team = find_team(syn, team_name)
+    if team is not None:
+        if not dcc_owns_team(syn, team):
+            print(f"Team {team_name!r} ({team.id}) exists but the DCC does not own it; not reusing it. Resolve it by hand.")
+            return None
+        team_id = team.id
         print(f"Reusing existing team: {team_name}")
     else:
         try:
@@ -208,7 +230,7 @@ def create_grant_projects(syn, grants):
 
     A project that already exists under the grant's name (left by an earlier
     run that failed midway) is reused, and only the missing parts are added.
-    Returns ``{GrantViewId: (project_id, team_id)}``; grants that could not
+    Returns ``{GrantNumber: (project_id, team_id)}``; grants that could not
     be created map to ``("None", "None")``.
     """
 
@@ -223,7 +245,7 @@ def create_grant_projects(syn, grants):
             else:
                 project_id = syn.store(Project(name)).id
             syn.setPermissions(
-                project_id, principalId=3450948, accessType=PERMISSIONS.get("admin")
+                project_id, principalId=DCC_ADMIN_TEAM, accessType=PERMISSIONS.get("admin")
             )
 
             if not _has_wiki(syn, project_id):
@@ -234,11 +256,11 @@ def create_grant_projects(syn, grants):
                 raise synapseclient.core.exceptions.SynapseHTTPError(
                     f"No team for {name}"
                 )
-            grant_info_dict[row["GrantViewId"]] = (project_id, team_id)
+            grant_info_dict[row["GrantNumber"]] = (project_id, team_id)
         except synapseclient.core.exceptions.SynapseHTTPError as err:
             logger.error("Grant creation failed, skipping: %s (%s)", name, err)
             print(f"Skipping: {name}")
-            grant_info_dict[row["GrantViewId"]] = ("None", "None")
+            grant_info_dict[row["GrantNumber"]] = ("None", "None")
 
     return grant_info_dict
 
@@ -260,7 +282,7 @@ def resolve_consortium(syn, values):
     See ``utils.resolve_consortium_keys``; unknown values raise ``ValueError``.
     """
     cells = list(values)
-    if not any(utils.split_cell(c) for c in cells):
+    if not any(parse_list(c) for c in cells):
         return pd.Series([""] * len(cells), index=values.index, dtype=object)
     names = utils.resolve_consortium_keys(syn, cells)
     return pd.Series([", ".join(n) for n in names], index=values.index, dtype=object)
@@ -280,16 +302,6 @@ def _list_to_string(value):
     if isinstance(value, (list, tuple, set)):
         return ", ".join(str(v) for v in value)
     return value
-
-
-def portal_to_sources(curr_portal):
-    """Rename portal-table columns back to crosswalk source columns."""
-    renames = {
-        portal_col: crosswalk.source_column(source)
-        for source, portal_col, _ in crosswalk.CROSSWALK[COMPONENT]
-        if portal_col in curr_portal.columns
-    }
-    return curr_portal.rename(columns=renames)
 
 
 def process_new_grants(new = None, current = None, dryrun = None, synapse_client = None, live_types = None):
@@ -315,6 +327,8 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     # own CLI flags when this is used as a library function.
     if new is None or current is None or dryrun is None:
         args = get_args()
+        if args.portal_table is None:
+            args.portal_table = utils.portal_table("grant")
         manifest_id = new if new is not None else args.manifest
         portal_table = current if current is not None else args.portal_table
         dryrun = dryrun if dryrun is not None else args.dryrun
@@ -322,6 +336,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         manifest_id = new
         portal_table = current
 
+    utils.refuse_production(portal_table)
     manifest = read_manifest(syn, manifest_id)
     curr_portal = Table(id=portal_table).query(
         query=f"SELECT * FROM {portal_table}",
@@ -329,6 +344,40 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         synapse_client=syn,
     )
     is_new = ~manifest["GrantNumber"].isin(curr_portal.grantNumber.to_list())
+
+    # A new-looking grant that cannot be told apart from an existing one, or
+    # that has no number, would get a duplicate project or a bare KeyError.
+    # Fail before anything is created (also on a dry run).
+    def _text(value):
+        return "" if is_null(value) else str(value).strip()
+
+    def _describe(row):
+        name = _text(row["GrantName"]) if "GrantName" in row.index else ""
+        return (f"GrantViewId={_text(row['GrantViewId'])!r}, "
+                f"GrantNumber={_text(row['GrantNumber'])!r}"
+                + (f", GrantName={name!r}" if name else ""))
+
+    new_rows = manifest[is_new]
+    blank = new_rows[new_rows["GrantNumber"].map(_text) == ""]
+    portal_views = {_text(v) for v in curr_portal.grantViewId} - {""}
+    renumbered = new_rows[
+        (new_rows["GrantNumber"].map(_text) != "")
+        & new_rows["GrantViewId"].map(_text).isin(portal_views)
+    ]
+    problems = []
+    if not blank.empty:
+        problems.append(
+            "GrantNumber is required; fill it in for: "
+            + "; ".join(_describe(r) for _, r in blank.iterrows())
+        )
+    if not renumbered.empty:
+        problems.append(
+            "the grant number changed for an existing grant (its GrantViewId is already "
+            "in the portal table); reconcile the manifest or the portal table by hand for: "
+            + "; ".join(_describe(r) for _, r in renumbered.iterrows())
+        )
+    if problems:
+        raise ValueError(" | ".join(problems))
 
     # Grants already on the portal keep their portal values, so an unknown
     # consortium there is only worth a warning. New grants must resolve.
@@ -347,20 +396,20 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
     new_grants = manifest[is_new]
     failed_grants = []
     grant_info_dict = {
-        grant: ("None", "None") for grant in new_grants["GrantViewId"].to_list() if grant
+        grant: ("None", "None") for grant in new_grants["GrantNumber"].to_list() if grant
     }
 
     manifest["grantId"] = ""
     manifest["grantSynapseTeam"] = manifest["GrantSynapseTeam"]
     manifest["grantSynapseProject"] = manifest["GrantSynapseProject"]
-    curr = portal_to_sources(curr_portal)
+    curr = crosswalk.portal_to_sources(curr_portal, COMPONENT)
 
     def assemble(info):
         """All grants in staging shape, new rows carrying ``info``'s IDs."""
         # Add new Grant info to the current portal rows (which win on conflict).
         frame = (
             pd.concat([curr, manifest])
-            .drop_duplicates(subset=["GrantViewId"])
+            .drop_duplicates(subset=["GrantNumber"])
             .reset_index(drop=True)
         )
         # Flatten list-like cells; add Project and Team info to new rows.
@@ -368,7 +417,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
             frame[col] = frame[col].map(_list_to_string)
         for idx, row in frame.iterrows():
             if row["grantId"] == "":  # If row was added via new manifest
-                grantId, teamId = info[row["GrantViewId"]]
+                grantId, teamId = info[row["GrantNumber"]]
                 frame.at[idx, "grantId"] = grantId
                 frame.at[idx, "grantSynapseTeam"] = f"https://www.synapse.org/#!Team:{teamId}"
                 frame.at[idx, "grantSynapseProject"] = f"https://www.synapse.org/Synapse:{grantId}"
@@ -401,7 +450,7 @@ def process_new_grants(new = None, current = None, dryrun = None, synapse_client
         # permanent "None" row and never be retried.
         for g in failed_grants:
             logger.error("Grant %s was not created; leaving it out of the table", g)
-        new_manifest = new_manifest[~new_manifest["GrantViewId"].isin(failed_grants)]
+        new_manifest = new_manifest[~new_manifest["GrantNumber"].isin(failed_grants)]
         new_manifest = new_manifest.reset_index(drop=True)
     new_manifest.attrs["failed_grants"] = failed_grants
 

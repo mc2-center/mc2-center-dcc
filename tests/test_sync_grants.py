@@ -68,7 +68,7 @@ def _live_types():
 
 def _table_factory(manifest):
     consortium = pd.DataFrame({"consortiumDisplayName": CONSORTIA})
-    frames = {"syn53259587": manifest, "syn21918972": _portal(), "syn36345930": consortium}
+    frames = {"syn53259587": manifest, "syn78748038": _portal(), "syn36345930": consortium}
 
     def table(id):
         m = MagicMock()
@@ -86,7 +86,7 @@ def _run(manifest, dryrun=True, create_result=None, live_types=None):
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = create_result or {"NEW1": ("syn99", "123")}
         staged = cgp.process_new_grants(
-            "syn53259587", "syn21918972", dryrun, MagicMock(), live_types=live_types
+            "syn53259587", "syn78748038", dryrun, MagicMock(), live_types=live_types
         )
     return cw.to_portal(staged, "GrantView", _live_types()), create
 
@@ -177,7 +177,7 @@ def test_conversion_error_creates_nothing():
             patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         with pytest.raises(ValueError, match="60 months"):
-            cgp.process_new_grants("syn53259587", "syn21918972", False, MagicMock(),
+            cgp.process_new_grants("syn53259587", "syn78748038", False, MagicMock(),
                                    live_types=_live_types())
     create.assert_not_called()
 
@@ -189,7 +189,7 @@ def test_failed_grant_is_left_out_and_reported():
             patch.object(cgp.model_contract, "read_manifest", lambda syn, entity_id, component=None: manifest.copy()), \
             patch.object(cgp, "create_grant_projects") as create:
         create.return_value = {"NEW1": ("None", "None")}
-        staged = cgp.process_new_grants("syn53259587", "syn21918972", False, MagicMock(),
+        staged = cgp.process_new_grants("syn53259587", "syn78748038", False, MagicMock(),
                                         live_types=_live_types())
     assert list(staged.GrantViewId) == ["OLD1"]
     assert staged.attrs["failed_grants"] == ["NEW1"]
@@ -229,20 +229,71 @@ def _syn_mock(wiki_exists=False):
 def test_existing_project_and_team_are_reused():
     syn = _syn_mock(wiki_exists=True)
     with patch.object(cgp, "find_entity_id", return_value="syn123") as find, \
-            patch.object(cgp, "find_team_id", return_value="999"):
+            patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=True):
         out = cgp.create_grant_projects(syn, _grant_row())
-    assert out == {"NEW1": ("syn123", "999")}
+    assert out == {"N1": ("syn123", "999")}
     find.assert_called_once_with(name="New grant", parent=None, synapse_client=syn)
     stored = [type(c.args[0]).__name__ for c in syn.store.call_args_list]
     assert "Project" not in stored and "Team" not in stored and "Wiki" not in stored
 
 
+def _member(owner_id, admin):
+    return MagicMock(member=MagicMock(owner_id=owner_id), is_admin=admin)
+
+
+def _owned_team_syn(created_by, team_members, mc2_admin_members=("77",)):
+    """A Synapse mock whose operator is 42, a team ``created_by`` with ``team_members``, and the MC2 Admin team."""
+    syn = MagicMock()
+    syn.getUserProfile.return_value = {"ownerId": "42"}
+    team = MagicMock(id="999", created_by=created_by)
+    team.members.return_value = list(team_members)
+    mc2 = MagicMock()
+    mc2.members.return_value = [_member(i, False) for i in mc2_admin_members]
+    return syn, team, mc2
+
+
+@pytest.mark.parametrize("created_by, members, owned", [
+    ("42", [], True),                                  # the operator created it
+    ("13", [_member("77", True)], True),               # an admin is in MC2 Admin
+    ("13", [_member("77", False), _member("13", True)], False),  # MC2 Admin member, but not a team admin
+    ("13", [_member("13", True)], False),              # an outsider's team
+    (42, [], True),                                    # ids compare as text (int from one API, str from another)
+    ("13", [_member(77, True)], True),
+])
+def test_dcc_owns_team(created_by, members, owned):
+    syn, team, mc2 = _owned_team_syn(created_by, members)
+    teams = []
+    with patch.object(cgp, "TeamModel", side_effect=lambda **kw: teams.append(kw) or mc2):
+        assert cgp.dcc_owns_team(syn, team) is owned
+    assert all(kw == {"id": "3450948"} for kw in teams)  # the MC2 Admin team, when it is read
+
+
+def test_a_team_the_dcc_does_not_own_is_not_reused():
+    syn = MagicMock()
+    with patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=False):
+        assert cgp.create_team(syn, "syn7", _grant_row().iloc[0]) is None
+    syn.setPermissions.assert_not_called()  # no access for an outside team
+    syn.store.assert_not_called()
+
+
+def test_an_outside_team_makes_the_grant_fail():
+    syn = _syn_mock()
+    with patch.object(cgp, "find_entity_id", return_value=None), \
+            patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
+            patch.object(cgp, "dcc_owns_team", return_value=False):
+        out = cgp.create_grant_projects(syn, _grant_row())
+    assert out == {"N1": ("None", "None")}
+    assert not any(c.kwargs.get("principalId") == "999" for c in syn.setPermissions.call_args_list)
+
+
 def test_new_project_is_created_when_not_found():
     syn = _syn_mock()
     with patch.object(cgp, "find_entity_id", return_value=None), \
-            patch.object(cgp, "find_team_id", return_value=None):
+            patch.object(cgp, "find_team", return_value=None):
         out = cgp.create_grant_projects(syn, _grant_row())
-    assert out == {"NEW1": ("syn7", "55")}
+    assert out == {"N1": ("syn7", "55")}
 
 
 def test_creation_failure_maps_to_none_pair():
@@ -250,7 +301,7 @@ def test_creation_failure_maps_to_none_pair():
     err = cgp.synapseclient.core.exceptions.SynapseHTTPError("boom", response=MagicMock(status_code=500))
     with patch.object(cgp, "find_entity_id", side_effect=err):
         out = cgp.create_grant_projects(syn, _grant_row())
-    assert out == {"NEW1": ("None", "None")}
+    assert out == {"N1": ("None", "None")}
 
 
 def test_nan_abstract_and_none_investigator_are_safe():
@@ -307,3 +358,59 @@ def test_main_checks_live_grant_ids_before_creating_anything(dryrun):
             sync_grants.main()
     process.assert_not_called()
     assert "FROM t" in table.return_value.query.call_args.kwargs["query"]
+
+
+@pytest.mark.parametrize("view_id", ["DIFFERENT", ""])
+def test_existing_grant_with_another_view_id_is_deduplicated_by_grant_number(view_id):
+    manifest = _manifest(False)
+    manifest.loc[0, "GrantView_id"] = view_id  # OLD1 on the portal has grantViewId "OLD1"
+    out, create = _run(manifest, dryrun=False, live_types=_live_types())
+    assert list(out.grantNumber) == ["OLD1", "NEW1"]
+    assert out.iloc[0].grantId == "syn1"  # the portal row wins
+    assert list(create.call_args.args[1].GrantNumber) == ["NEW1"]
+
+
+def _run_expecting_error(manifest, match, dryrun=False):
+    factory = _table_factory(manifest)
+    with patch.object(cgp, "Table", factory), patch.object(utils, "Table", factory), \
+            patch.object(cgp.model_contract, "read_manifest",
+                         lambda syn, entity_id, component=None: manifest.copy()), \
+            patch.object(cgp, "create_grant_projects") as create:
+        with pytest.raises(ValueError, match=match) as err:
+            cgp.process_new_grants("syn53259587", "syn78748038", dryrun, MagicMock(),
+                                   live_types=_live_types())
+    create.assert_not_called()
+    return str(err.value)
+
+
+@pytest.mark.parametrize("dryrun", [False, True])
+def test_changed_grant_number_for_existing_view_id_is_refused(dryrun):
+    manifest = _manifest(False)
+    manifest.loc[0, "Grant Number"] = "OLD1-CORRECTED"  # GrantView_id still "OLD1"
+    message = _run_expecting_error(manifest, "grant number changed", dryrun)
+    assert "OLD1-CORRECTED" in message and "Old grant" in message
+    assert "NEW1" not in message
+
+
+def test_view_id_match_ignores_whitespace_and_blank_view_ids():
+    manifest = _manifest(False)
+    manifest.loc[0, "Grant Number"] = "OLD1-CORRECTED"
+    manifest.loc[0, "GrantView_id"] = " OLD1 "
+    _run_expecting_error(manifest, "grant number changed")
+    manifest.loc[0, "GrantView_id"] = ""
+    out, _ = _run(manifest)  # blank view ids never count as a match
+    assert len(out) == 3
+
+
+@pytest.mark.parametrize("number", ["", "  ", float("nan"), None])
+def test_blank_grant_number_is_refused(number):
+    manifest = _manifest(False)
+    manifest["Grant Number"] = manifest["Grant Number"].astype(object)
+    manifest.loc[1, "Grant Number"] = number
+    message = _run_expecting_error(manifest, "GrantNumber is required")
+    assert "NEW1" in message and "New grant" in message
+
+
+def test_ordinary_new_and_unchanged_existing_grants_still_pass():
+    out, _ = _run(_manifest(False), live_types=_live_types())
+    assert list(out.grantNumber) == ["OLD1", "NEW1"]

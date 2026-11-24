@@ -17,7 +17,7 @@ from synapseclient.models import File, Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
-import header_maps
+import crosswalk
 
 import importlib.util
 # removed when the mc2dcc package (CLI consolidation plan) lands
@@ -42,8 +42,8 @@ def get_args():
         "-p",
         "--portal_table",
         type=str,
-        default="syn21868591",
-        help="Synapse ID of the publications table. " "(Default: syn21868591)",
+        default=_portal_utils.portal_table("publication"),
+        help="Synapse ID of the publications table. (Default: the staging publications table)",
     )
     parser.add_argument(
         "-c",
@@ -117,8 +117,8 @@ def to_manifest(portal_df: pd.DataFrame) -> pd.DataFrame:
     ``consortium``, ``dataType``) are dropped.
     """
     component = "PublicationView"
-    df = portal_df.drop(columns=header_maps.derived_portal_columns(component), errors="ignore")
-    df = df.rename(columns=header_maps.portal_to_display(component))
+    df = portal_df.drop(columns=crosswalk.derived_portal_columns(component), errors="ignore")
+    df = df.rename(columns=crosswalk.portal_to_display(component))
     df["Component"] = component
     # Convert grant number from list type to string
     df["GrantView Key"] = [

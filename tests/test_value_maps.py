@@ -326,6 +326,18 @@ def test_bibtex_umlauts_in_author_names_become_the_letters():
     assert unmapped.empty
 
 
+def test_backslash_and_brace_bibtex_umlauts_are_consumed():
+    row, changes, _ = run(normalizer(), PublicationAuthors=['M\\"ockl L', '{\\"o}z K', 'K\\"{u}hn P', 'L{\\"{a}}ng Q'])
+    assert row["PublicationAuthors"] == ["Möckl L", "öz K", "Kühn P", "Läng Q"]
+    assert set(changes["rule"]) == {"umlaut"}
+
+
+def test_author_with_a_quote_that_is_not_an_umlaut_is_left_alone():
+    row, changes, _ = run(normalizer(), PublicationAuthors=['Smith "Andy" J', 'M"ockl "Andy" L'])
+    assert row["PublicationAuthors"] == ['Smith "Andy" J', 'M"ockl "Andy" L']
+    assert "umlaut" not in changes["rule"].tolist()
+
+
 def test_override_beats_truncated():
     norm = normalizer({("Assay", "Sin(Read more on Pubmed)"): "RNA Sequencing"})
     row, changes, _ = run(norm, Assay="Sin(Read more on Pubmed)")
@@ -456,3 +468,27 @@ def test_two_accepted_rows_for_one_target_with_different_values_raise(tmp_path):
                                                  ["PublicationTitle", "p1", "", "A", "CA1", "yes"],
                                                  ["PublicationTitle", "p1", "", "B", "CA1", ""]], columns=columns)
     assert vm.load_overrides(same) == {("PublicationTitle", "p1", vm.ROW, "CA1"): "A"}
+
+
+def test_for_component_maps_a_boolean_property_to_lowercase_and_it_validates_locally():
+    import pandas as pd
+    import schema_validation
+
+    norm = vm.Normalizer.for_component("ToolView")
+    frame = pd.DataFrame({"ToolViewId": ["a", "b", "c", "d"],
+                          "ToolPackageDependenciesPresent": ["True", "TRUE", "false", ""]})
+    out, changes, unmapped = norm.normalize_frame(frame, "ToolViewId")[:3]
+    assert out["ToolPackageDependenciesPresent"].tolist() == ["true", "true", "false", ""]
+    assert unmapped.empty
+    failures = schema_validation.validate_frame(out.iloc[:3], "ToolView", key="ToolViewId")
+    assert "ToolPackageDependenciesPresent" not in set(failures["field"])
+    wrong = schema_validation.validate_frame(frame.iloc[[0]], "ToolView", key="ToolViewId")
+    assert "ToolPackageDependenciesPresent" in set(wrong["field"])  # "True" is not a JSON boolean
+
+
+def test_the_column_rule_table_drives_the_dispatch(monkeypatch):
+    monkeypatch.setitem(vm._COLUMN_RULES, "PublicationTitle", lambda norm, value: (value.upper(), "shout"))
+    value, rule = normalizer()._value("PublicationTitle", "a title")
+    assert (value, rule) == ("A TITLE", "shout")
+    monkeypatch.setitem(vm._COLUMN_RULES, "PublicationTitle", lambda norm, value: None)  # "no change" falls through
+    assert normalizer()._value("PublicationTitle", "a title") == ("a title", None)

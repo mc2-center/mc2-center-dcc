@@ -22,16 +22,16 @@ _spec.loader.exec_module(_portal_utils)
 syn_login = _portal_utils.syn_login
 
 # Source table IDs
-GRANTS = "syn21918972"
+GRANTS = _portal_utils.portal_table("grant")
 THEMES = "syn35369899"
-PUBS = "syn21868591"
-DATASETS = "syn21897968"
-TOOLS = "syn26127427"
+PUBS = _portal_utils.portal_table("publication")
+DATASETS = _portal_utils.portal_table("dataset")
+TOOLS = _portal_utils.portal_table("tool")
 
 # Destination table IDs
-CONSORTIUM_CTS = "syn21641485"
-CON_THEME_CTS = "syn21649281"
-THEME_CTS = "syn21639584"
+CONSORTIUM_CTS = _portal_utils.portal_table("consortium_counts")
+CON_THEME_CTS = _portal_utils.portal_table("consortium_theme_counts")
+THEME_CTS = _portal_utils.portal_table("theme_counts")
 
 
 def _add_missing_themes(themes, df, label):

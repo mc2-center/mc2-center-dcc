@@ -13,7 +13,7 @@ import sys
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
-import header_maps
+import crosswalk
 import model_contract
 
 # portal_tables/utils.py (loaded by path; "utils" would collide with utils/ package)
@@ -36,15 +36,23 @@ def get_args():
         "-t",
         "--table_id",
         type=str,
-        default="syn21868591",
+        default=None,
         help="Synapse table id where annotations will be updated. "
-        "Probably the Publications Merged table.",
+        "(Default: the staging Publications table)",
     )
     parser.add_argument(
         "-m", "--manifest_path", type=str, help="Path where updated manifest is stored."
     )
     parser.add_argument("--dryrun", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.table_id is None:
+        args.table_id = _portal_utils.portal_table("publication")
+    else:
+        try:
+            _portal_utils.refuse_production(args.table_id)
+        except ValueError as e:
+            parser.error(str(e))
+    return args
 
 
 def get_updated_df(manifest):
@@ -87,7 +95,7 @@ def edit_annotations(updated_df, annots_query, syn, table_id, dryrun):
     # rename updated_df columns to match annots_df column and set index to pubMedId
     updated_df = (
         updated_df.rename(
-            columns=header_maps.display_to_portal("PublicationView")
+            columns=crosswalk.display_to_portal("PublicationView")
         )
         .drop(["Component"], axis=1)
         .set_index("pubMedId")
@@ -174,6 +182,7 @@ def manifest_upload(syn, table_id, final_df):
     columns = final_df.columns
     print(columns)
 
+    _portal_utils.refuse_production(table_id)
     Table(id=table_id).store_rows(values=final_df, synapse_client=syn)
 
     print("\nAnnotations Updated")
@@ -183,6 +192,7 @@ def manifest_upload(syn, table_id, final_df):
 
 def main():
 
+    args = get_args()
     choice = input(
         "\n\nDid you validate the manifest using Schematic before running this script?"
         " Type 'y' for yes, 'n' for no"
@@ -190,7 +200,6 @@ def main():
     if choice == "y":
 
         syn = _portal_utils.syn_login()
-        args = get_args()
         update_df = get_updated_df(args.manifest_path)
         annots_results = get_annotations(args.table_id, update_df, syn)
         final_df = edit_annotations(

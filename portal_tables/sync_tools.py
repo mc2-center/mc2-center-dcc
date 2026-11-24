@@ -7,6 +7,7 @@ table, by first truncating the table, then re-adding the rows.
 import pandas as pd
 import re
 from synapseclient.models import Table
+from cells import PENDING, parse_list
 import crosswalk
 import model_contract
 import utils
@@ -23,7 +24,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
     for _, row in tools.iterrows():
         themes = []
         consortium = []
-        for g in row["GrantViewKey"].split(","):
+        for g in parse_list(row["GrantViewKey"]):
             if g not in ["", "Affiliated/Non-Grant Associated"]:
                 themes.extend(grants[grants.grantNumber == g]["theme"].values[0])
                 consortium.extend(
@@ -39,7 +40,7 @@ def add_missing_info(tools: pd.DataFrame, grants: pd.DataFrame) -> pd.DataFrame:
                 synapse_links.append("".join(["[Link](", s , ")"]))
         tools.at[_, "synapseLink"] = ", ".join(dict.fromkeys(synapse_links))
         
-        tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or "Pending Annotation"
+        tools.at[_,"PublicationViewKey"] = tools.at[_,"PublicationViewKey"] or PENDING
         
     return tools
 
@@ -78,8 +79,8 @@ def main():
         print()
 
     print("Processing tool staging database...")
-    grants = Table(id="syn21918972").query(
-        query="SELECT grantId, grantNumber, grantName, theme, consortium FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantId, grantNumber, grantName, theme, consortium FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
 

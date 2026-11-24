@@ -7,10 +7,11 @@ table, by first truncating the table, then re-adding the rows.
 import pandas as pd
 from synapseclient.models import Table
 
+from cells import parse_list
 import crosswalk
 import model_contract
 import utils
-from utils import resolve_consortium_keys, split_cell
+from utils import resolve_consortium_keys
 
 COMPONENT = "ProjectView"
 NO_GRANT = "Affiliated/Non-Grant Associated"
@@ -37,7 +38,7 @@ def add_missing_info(
         themes = []
         grant_consortia = []
         grant_type = ""
-        for g in split_cell(row["GrantViewKey"]):
+        for g in parse_list(row["GrantViewKey"]):
             if g != NO_GRANT:
                 match = grants[grants.grantNumber == g]
                 grant_names.append(match["grantName"].values[0])
@@ -77,8 +78,8 @@ def main():
         print()
 
     print("Processing project staging database...")
-    grants = Table(id="syn21918972").query(
-        query="SELECT grantId, grantNumber, grantName, theme, consortium, grantType FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantId, grantNumber, grantName, theme, consortium, grantType FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
 

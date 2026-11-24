@@ -23,11 +23,14 @@ from pathlib import Path
 
 import pandas as pd
 from synapseclient.core.constants import concrete_types
-from synapseclient.models import File, Table
+from synapseclient.models import File
+
+from cells import json_list
+import utils
 
 logger = logging.getLogger(__name__)
 
-MODEL_REF = "v14.1.1"
+MODEL_REF = "v14.1.2"
 RAW = f"https://raw.githubusercontent.com/mc2-center/data-models/{MODEL_REF}"
 ALL_VALID_VALUES_URL = f"{RAW}/all_valid_values.csv"
 
@@ -146,10 +149,9 @@ def fetch(path: str, ref: str | None = None) -> Path:
     cached = (CACHE_DIR if ref == MODEL_REF else CACHE_DIR.parent / ref) / path
     if not cached.exists():
         cached.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cached.with_name(cached.name + ".part")
         with urllib.request.urlopen(f"{RAW.rsplit('/', 1)[0]}/{ref}/{path}", timeout=60) as resp:
-            tmp.write_bytes(resp.read())
-        tmp.replace(cached)
+            data = resp.read()
+        utils.write_atomic(cached, lambda tmp: tmp.write_bytes(data))
     return cached
 
 
@@ -186,6 +188,30 @@ def _load_model(jsonld_path: Path) -> tuple[dict, dict]:
 
 def _model() -> tuple[dict, dict]:
     return _load_model(fetch("mc2.model.jsonld"))
+
+
+def restore_display_names(df: pd.DataFrame, component: str, passthrough=()) -> pd.DataFrame:
+    """Undo space-stripped headers (``GrantViewKey`` -> ``GrantView Key``).
+
+    Use it for manifests written with the spaces removed from the display
+    names, for example the live dataset manifest (syn53478774), which has
+    ``DatasetAssay`` and ``DataUseCodes``. ``normalize_headers`` only accepts
+    display names, so put the spaces back for any header that is not already
+    one. Headers that are already display names (the 14.0.0 manifest) are
+    left alone.
+    """
+    known = set(label_map())
+    known |= PASSTHROUGH | set(passthrough)
+    known |= set(RENAMES_13_TO_14[component])
+    known |= set(LEGACY_EXTRA_RENAMES)
+    known.add(grant_column_legacy_name(component))
+    by_stripped = {}
+    for name in sorted(known):
+        by_stripped.setdefault(name.replace(" ", ""), name)
+    renames = {
+        c: by_stripped[c] for c in df.columns if c not in known and c in by_stripped
+    }
+    return df.rename(columns=renames)
 
 
 def label_map() -> dict[str, str]:
@@ -308,16 +334,11 @@ def array_columns(component: str) -> set[str]:
 def _parse_json_list(value):
     """A JSON-array cell as a list of strings; any other cell unchanged."""
     if isinstance(value, str):
-        text = value.strip()
-        if text.startswith("[") and text.endswith("]"):
-            try:
-                parsed = json.loads(text)
-            except ValueError:
-                return value
-            if isinstance(parsed, list):
-                import recordsets  # here, not at the top: recordsets imports this module
+        parsed = json_list(value)
+        if parsed is not None:
+            import recordsets  # here, not at the top: recordsets imports this module
 
-                return [recordsets.grid_unescape(str(v)) for v in parsed]
+            return [recordsets.grid_unescape(str(v)) for v in parsed]
     return value
 
 
@@ -361,11 +382,7 @@ def read_manifest(syn, entity_id: str, component: str | None = None, version: in
     """
     concrete = syn.restGET(f"/entity/{entity_id}").get("concreteType")
     if concrete in _TABLE_TYPES:
-        return Table(id=entity_id).query(
-            query=f"SELECT * FROM {entity_id}",
-            include_row_id_and_row_version=False,
-            synapse_client=syn,
-        )
+        return utils.read_table(syn, entity_id)
     if concrete == concrete_types.RECORD_SET_ENTITY:
         import recordsets  # here, not at the top: recordsets imports this module
 

@@ -6,6 +6,7 @@ table, by first truncating the table, then re-adding the rows.
 
 import pandas as pd
 import re
+from cells import parse_list
 import crosswalk
 import model_contract
 import utils
@@ -21,9 +22,9 @@ def add_missing_info(
         education["iconTags"] = ""
     
     for _, row in education.iterrows():
-        alias_list = [alias for alias in row["ResourceAlias"].split(",") if alias_pattern.match(alias)]
+        alias_list = [alias for alias in parse_list(row["ResourceAlias"]) if alias_pattern.match(alias)]
         if len(alias_list) < 1:
-            url_list = [url for url in row["ResourceLink"].split(",") if url_pattern.match(url)]
+            url_list = [url for url in parse_list(row["ResourceLink"]) if url_pattern.match(url)]
             formatted_syn_link_list = ["".join(["[Link](", url, ")"]) for url in url_list]
         else:
             syn_link_tuples = [("".join(["https://www.synapse.org/Synapse:", alias]), alias) for alias in alias_list]
@@ -32,11 +33,11 @@ def add_missing_info(
         syn_links = ", ".join(formatted_syn_link_list)
         education.at[_, "synapseLink"] = syn_links
 
-        education.at[_, "ResourceTopic"] = ", ".join(dict.fromkeys(topic for topic in row["ResourceTopic"].split(", ") if topic != "Diversity/Equity/Inclusion"))
+        education.at[_, "ResourceTopic"] = ", ".join(dict.fromkeys(topic for topic in parse_list(row["ResourceTopic"]) if topic != "Diversity/Equity/Inclusion"))
         
         for key_col, external_link_col in zip(["DatasetViewKey", "ToolViewKey"], ["ResourceDatasetAlias", "ResourceToolLink"]):
-            key_links = [f"[{key}](https://www.synapse.org/#!Synapse:{key})" for key in row[key_col].split(", ") if row[key_col]]
-            external_links = [external_link for external_link in row[external_link_col].split(", ") if row[external_link_col]]
+            key_links = [f"[{key}](https://www.synapse.org/#!Synapse:{key})" for key in parse_list(row[key_col])]
+            external_links = [external_link for external_link in parse_list(row[external_link_col])]
             education.at[_, external_link_col] = ", ".join(external_links + key_links)
     
     return education

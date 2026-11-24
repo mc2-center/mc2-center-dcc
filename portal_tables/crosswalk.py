@@ -7,7 +7,7 @@ ordered list of ``(source, portal_column, kind)`` for one portal table:
 * ``source`` is a class-label key, or ``derived:<name>`` for an enrichment
   column the sync script computes. The DataFrame handed to :func:`to_portal`
   holds a column called ``<name>`` for those.
-* ``kind`` is ``string``, ``list`` or ``int``.
+* ``kind`` is ``string``, ``list``, ``int`` or ``bool``.
 
 ``check_crosswalk`` compares the crosswalk with the live table (read-only);
 ``to_portal`` renames, orders and converts a DataFrame for upload.
@@ -21,7 +21,9 @@ import pandas as pd
 from synapseclient import Synapse
 from synapseclient.models import Table
 
+import model_contract
 import utils
+from cells import is_null, parse_list
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,17 @@ COMPONENT_RESOURCE = {
     "GrantView": "grant",
     "EducationalResource": "education",
     "ProjectView": "project",
+}
+
+# Component -> the facts the folder and upload scripts share: the data-type
+# folder under a grant project ("folder"), the paths-CSV column that holds the
+# folder ID ("folder_id_column"), and the ID column of the manifest
+# ("primary_key"). Name and link columns differ between scripts and stay local.
+COMPONENT_FOLDERS = {
+    "PublicationView": {"folder": "publications", "folder_id_column": "folderIdPublication", "primary_key": "PublicationView_id"},
+    "DatasetView": {"folder": "datasets", "folder_id_column": "folderIdDatasets", "primary_key": "DatasetView_id"},
+    "ToolView": {"folder": "tools", "folder_id_column": "folderIdTools", "primary_key": "ToolView_id"},
+    "EducationalResource": {"folder": "education", "folder_id_column": "folderIdEducation", "primary_key": "EducationalResource_id"},
 }
 
 CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
@@ -128,13 +141,13 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("ToolLinkUrl", "linkUrl", "string"),
         ("ToolLinkType", "linkType", "string"),
         ("ToolLinkNote", "linkNote", "string"),
-        ("derived:portalDisplay", "portalDisplay", "string"),
+        ("derived:portalDisplay", "portalDisplay", "bool"),
         ("ToolDoi", "doi", "string"),
         ("derived:synapseLink", "synapseLink", "string"),
         ("ToolDateLastModified", "toolDateLastModified", "string"),
         ("ToolReleaseDate", "toolReleaseDate", "string"),
         ("ToolPackageDependencies", "toolPackageDependencies", "string"),
-        ("ToolPackageDependenciesPresent", "toolPackageDependenciesPresent", "string"),
+        ("ToolPackageDependenciesPresent", "toolPackageDependenciesPresent", "bool"),
         ("ToolComputeRequirements", "toolComputeRequirements", "string"),
         ("ToolEntityName", "toolEntityName", "string"),
         ("ToolEntityType", "toolEntityType", "string"),
@@ -159,7 +172,7 @@ CROSSWALK: dict[str, list[tuple[str, str, str]]] = {
         ("PersonDatasets", "datasetId", "list"),  # STRING live
         ("PersonTools", "toolId", "list"),  # STRING live
         ("ConsentForPortalDisplay", "consentForPortalDisplay", "string"),
-        ("PortalDisplay", "portalDisplay", "string"),
+        ("PortalDisplay", "portalDisplay", "bool"),
     ],
     "GrantView": [
         ("derived:grantId", "grantId", "string"),
@@ -238,6 +251,46 @@ def table_id(component: str) -> str:
     return utils.CONFIG[COMPONENT_RESOURCE[component]]["portal_table"]
 
 
+def _key_to_display() -> dict[str, str]:
+    reverse = {label: display for display, label in model_contract.label_map().items()}
+    reverse["Component"] = "Component"
+    return reverse
+
+
+def display_to_portal(component: str) -> dict[str, str]:
+    """14.0.0 display name -> portal column, for the crosswalk's non-derived columns."""
+    reverse = _key_to_display()
+    return {
+        reverse[source]: portal
+        for source, portal, _ in CROSSWALK[component]
+        if not source.startswith(DERIVED) and source in reverse
+    }
+
+
+def portal_to_display(component: str) -> dict[str, str]:
+    """Portal column -> 14.0.0 display name (inverse of ``display_to_portal``)."""
+    return {portal: display for display, portal in display_to_portal(component).items()}
+
+
+def derived_portal_columns(component: str) -> list[str]:
+    """Portal columns the sync scripts compute; they are not manifest attributes."""
+    return [
+        portal
+        for source, portal, _ in CROSSWALK[component]
+        if source.startswith(DERIVED)
+    ]
+
+
+def portal_to_sources(df: pd.DataFrame, component: str) -> pd.DataFrame:
+    """Rename portal-table columns back to crosswalk source columns."""
+    renames = {
+        portal_col: source_column(source)
+        for source, portal_col, _ in CROSSWALK[component]
+        if portal_col in df.columns
+    }
+    return df.rename(columns=renames)
+
+
 def _type_name(column_type) -> str:
     """``ColumnType.STRING_LIST`` / enum / ``"STRING_LIST"`` -> ``"STRING_LIST"``."""
     return str(getattr(column_type, "value", column_type)).split(".")[-1]
@@ -296,6 +349,20 @@ def check_crosswalk(syn: Synapse, table_id: str, component: str) -> dict[str, st
     return check_live_columns(table_id, component, live_column_types(syn, table_id))
 
 
+def _to_bool(value, component: str, column: str):
+    """``True``/``False`` for a bool cell; ``pd.NA`` for a blank or null cell; anything else raises."""
+    if isinstance(value, bool):
+        return value
+    if is_null(value):
+        return pd.NA
+    text = str(value).strip().lower()
+    if text == "":
+        return pd.NA
+    if text in ("true", "false"):
+        return text == "true"
+    raise ValueError(f"{component}.{column}: {value!r} is not a boolean (true or false)")
+
+
 def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> pd.DataFrame:
     """Rename, order and convert ``df`` into the portal table's shape.
 
@@ -305,6 +372,8 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
     are converted: cells that are already lists pass through untouched.
     ``int``-kind columns become nullable integers where the live type is
     ``INTEGER`` (empty string means missing; any other non-integer raises).
+    ``bool``-kind columns become nullable booleans where the live type is ``BOOLEAN`` (``true``/``false`` in
+    any case or a Python bool; empty means missing; any other value raises).
     An optional column that exists live but has no source column in ``df``
     (the manifest does not carry it yet) is filled with empty strings.
     """
@@ -333,10 +402,14 @@ def to_portal(df: pd.DataFrame, component: str, live_types: dict[str, str]) -> p
             is_str = col.map(lambda v: isinstance(v, str))
             if is_str.any():
                 col = col.astype(object).copy()
-                col[is_str] = utils.convert_to_stringlist(col[is_str])
+                col[is_str] = col[is_str].map(parse_list)
         elif kind == "int" and live_type == "INTEGER":
             col = pd.to_numeric(col.replace("", pd.NA), errors="raise").astype("Int64")
-        if kind != "int" and not (kind == "list" and live_type == "STRING_LIST"):
+        elif kind == "bool" and live_type == "BOOLEAN":
+            col = col.map(lambda v: _to_bool(v, component, portal_col)).astype("boolean")
+        if kind != "int" and not (kind == "list" and live_type == "STRING_LIST") and not (
+            kind == "bool" and live_type == "BOOLEAN"
+        ):
             # A STRING column (a list kind live as STRING, or a string kind such as chairRoles) cannot hold a
             # list: list cells (RecordSet manifests) are joined with ", "; string cells stay.
             col = col.map(lambda v: ", ".join(str(i) for i in v) if isinstance(v, (list, tuple)) else v)

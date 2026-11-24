@@ -84,11 +84,15 @@ def offline(monkeypatch):
     monkeypatch.setattr(sync_datasets, "_get_croissant_versions", lambda syn: {})
     monkeypatch.setattr(sync_datasets.operations, "get", lambda *a, **k: None)
 
-    def fake_download(syn, row, repo):
+    received = {}  # first DatasetViewId -> the entity add_missing_info passed
+
+    def fake_download(row, repo, entity):
         assert "DatasetViewId" in row  # the 14.0.0 key, passed straight through
+        received[row["DatasetViewId"].split(",")[0]] = entity
         return "Open Access", row["DatasetViewId"].split(",")[0]
 
     monkeypatch.setattr(utils, "identify_download_type", fake_download)
+    return received
 
 
 def live_types():
@@ -107,7 +111,9 @@ def prepare(rows, legacy, stripped=False):
         df = df.rename(columns=LEGACY_NAMES)
     if stripped:  # the live manifest: 13.1.0 names with spaces removed
         df = df.rename(columns=lambda c: c if c == "iconTags" else c.replace(" ", ""))
-    df = sync_datasets.restore_display_names(df)
+    df = model_contract.restore_display_names(
+        df, sync_datasets.COMPONENT, sync_datasets.MANIFEST_PASSTHROUGH
+    )
     df = model_contract.rename_legacy_headers(df, "DatasetView")
     return model_contract.normalize_headers(
         df, to="keys", passthrough=sync_datasets.MANIFEST_PASSTHROUGH
@@ -227,6 +233,16 @@ LEGACY_CODE_IDS = {
 }
 
 
+def test_placeholder_cells_count_as_incomplete_in_the_sort():
+    # B: 4 placeholder cells; C: the same row with those 4 annotated but 2 other cells blank
+    b = dict(MANIFEST_14[1], **{"Dataset Name": "Set B", "Dataset Alias": "setB"})
+    c = dict(b, **{"Dataset Name": "Set C", "Dataset Alias": "setC", "DatasetView_id": "syn333",
+                   "Assay": "RNA-seq", "Species": "Human", "Tumor Type": "Breast Cancer", "Tissue": "Breast",
+                   "Dataset Description": "", "Dataset Design": ""})
+    out = run([b, c])
+    assert out["datasetName"].tolist() == ["Set C", "Set B"]
+
+
 def test_legacy_short_codes_resolve_to_their_id_text():
     code_to_id = sync_datasets.duo_code_to_id()
     for code, duo_id in LEGACY_CODE_IDS.items():
@@ -261,14 +277,24 @@ def test_duo_dict_keys_are_ids_or_manifest_sentinels():
         assert key.startswith("DUO:") or key.startswith("DUOPlus") or key == "Pending Annotation", key
 
 
-def test_identify_download_type_accepts_both_keys(monkeypatch):
-    seen = []
-    monkeypatch.setattr(
-        utils.operations, "get", lambda eid, **k: seen.append(eid) or None
-    )
+def test_identify_download_type_accepts_both_keys():
     for key in ("DatasetViewId", "DatasetView_id"):
-        REAL_IDENTIFY(None, pd.Series({key: "syn5, syn6"}), "Synapse")
-    assert seen == ["syn5", "syn5"]
+        row = pd.Series({key: "syn5, syn6"})
+        assert REAL_IDENTIFY(row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
+
+
+def test_identify_download_type_skips_a_leading_comma():
+    row = pd.Series({"DatasetViewId": ", syn5,syn6"})
+    assert REAL_IDENTIFY(row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
+
+
+def test_identify_download_type_uses_the_given_entity():
+    row = pd.Series({"DatasetViewId": "syn5, syn6"})
+    assert REAL_IDENTIFY(row, "Synapse", entity=utils.Dataset(id="syn5")) == ("Synapse Hosted", "syn5")
+    assert REAL_IDENTIFY(row, "GEO", entity=utils.Dataset(id="syn5")) == ("Synapse Indexed", "syn5")
+    assert REAL_IDENTIFY(row, "Synapse", entity=None) == ("Not Available for Download", None)
+    assert REAL_IDENTIFY(row, "GEO", entity=None) == ("Externally Hosted", None)
+    assert REAL_IDENTIFY(pd.Series({"DatasetViewId": ""}), "GEO", entity=None) == ("Externally Hosted", None)
 
 
 def test_access_texts_containing_commas_are_not_split():
@@ -277,6 +303,30 @@ def test_access_texts_containing_commas_are_not_split():
     rows = [dict(MANIFEST_14[0], **{"Dataset Data Use Codes": "RTN, NPUNCU"})]
     out = run(rows)
     assert out["accessInformation"].iloc[0] == [utils.DUO_DICT["DUO:0000029"], npuncu]
+
+
+def _access_texts(cell):
+    """The accessInformation add_missing_info gives for one DatasetDataUseCodes cell (NaN kept as it is)."""
+    df = prepare([dict(MANIFEST_14[0])], legacy=False)
+    df["DatasetDataUseCodes"] = pd.Series([cell], index=df.index, dtype=object)
+    out = sync_datasets.add_missing_info(None, df, GRANTS, PUBS)
+    return out["DatasetDataUseCodes"].iloc[0]
+
+
+def test_data_use_codes_json_array_gives_its_items():
+    rtn, npuncu = utils.DUO_DICT["DUO:0000029"], utils.DUO_DICT["DUO:0000018"]
+    assert _access_texts('["RTN","NPUNCU"]') == [rtn, npuncu]  # was split on the commas inside the brackets
+    assert _access_texts("RTN,NPUNCU") == [rtn, npuncu]
+
+
+def test_data_use_codes_trailing_comma_gives_no_empty_item(caplog):
+    with caplog.at_level(logging.WARNING):
+        assert _access_texts("RTN,") == [utils.DUO_DICT["DUO:0000029"]]
+    assert caplog.text == ""  # the empty piece is not looked up, so it logs no unmapped code
+
+
+def test_data_use_codes_nan_cell_gives_no_access_text():
+    assert _access_texts(float("nan")) == [sync_datasets.NO_ACCESS_TEXT]  # raised AttributeError on .split before
 
 
 def test_no_doi_listed_is_standardized_for_datasets():
@@ -310,3 +360,125 @@ def test_blank_first_publication_doi_falls_through_to_first_non_blank():
 
 def test_all_blank_publication_dois_give_not_available():
     assert _doi_for([float("nan"), ""]) == utils.DOI_NOT_AVAILABLE
+
+
+def test_joined_grant_cell_with_comma_space_resolves_every_grant():
+    grants = pd.DataFrame(
+        {
+            "grantNumber": ["CA1", "CA2"],
+            "grantName": ["One", "Two"],
+            "theme": [["T1"], ["T2"]],
+            "consortium": [["C1"], ["C2"]],
+        }
+    )
+    row = dict(MANIFEST_14[1], **{"GrantView Key": "CA1, CA2, Affiliated/Non-Grant Associated"})
+    out = sync_datasets.add_missing_info(None, prepare([row], legacy=False), grants, PUBS)
+    assert out.at[0, "grantName"] == ["One", "Two"]
+    assert out.at[0, "theme"] == ["T1", "T2"]
+    assert out.at[0, "consortium"] == ["C1", "C2"]
+
+
+def _run_main_collecting_table_reads(monkeypatch, argv):
+    """Run ``sync_datasets.main`` offline; return the (Table id, query) pairs it reads."""
+    from unittest import mock
+
+    reads = []
+
+    def fake_table(id):
+        table = mock.MagicMock()
+        table.query.side_effect = lambda query, **kw: reads.append((id, query))
+        return table
+
+    monkeypatch.setattr("sys.argv", ["sync_datasets.py", "--dryrun", "--noprint", *argv])
+    monkeypatch.setattr(sync_datasets, "Table", fake_table)
+    monkeypatch.setattr(utils, "syn_login", lambda: mock.MagicMock())
+    monkeypatch.setattr(utils, "read_sync_manifest", lambda syn, args: pd.DataFrame())
+    monkeypatch.setattr(utils, "fill_blank", lambda df: df)
+    monkeypatch.setattr(model_contract, "restore_display_names", lambda df, *a, **kw: df)
+    monkeypatch.setattr(model_contract, "rename_legacy_headers", lambda df, c: df)
+    monkeypatch.setattr(model_contract, "normalize_headers", lambda df, **kw: df)
+    monkeypatch.setattr(sync_datasets, "add_missing_info", lambda *a: None)
+    monkeypatch.setattr(crosswalk, "check_crosswalk", lambda *a: None)
+    monkeypatch.setattr(sync_datasets, "clean_table", lambda *a: pd.DataFrame())
+    sync_datasets.main()
+    return reads
+
+
+def test_main_reads_staging_grants_and_publications_by_default(monkeypatch):
+    reads = _run_main_collecting_table_reads(monkeypatch, [])
+    assert [r[0] for r in reads] == ["syn78748038", "syn78748028"]
+    assert reads[0][1].endswith("FROM syn78748038")
+    assert reads[1][1].endswith("FROM syn78748028")
+
+
+def test_main_has_no_production_flag(monkeypatch):
+    with pytest.raises(SystemExit):
+        _run_main_collecting_table_reads(monkeypatch, ["--production"])
+
+
+def test_a_leading_comma_in_the_dataset_id_does_not_hide_the_first_id(monkeypatch):
+    seen = []
+    monkeypatch.setattr(sync_datasets.operations, "get", lambda eid, **k: seen.append(eid) or None)
+    df = prepare([dict(MANIFEST_14[0], **{"DatasetView_id": ",syn111, syn112"})], legacy=False)
+    sync_datasets.add_missing_info(None, df, GRANTS, PUBS)
+    assert seen == ["syn111"]
+
+
+class FakeEntity:
+    def __init__(self, version_number):
+        self.version_number = version_number
+
+
+def test_each_distinct_id_is_read_once_when_rows_share_it(monkeypatch):
+    seen = []
+    monkeypatch.setattr(sync_datasets.operations, "get", lambda eid, **k: seen.append(eid) or None)
+    rows = [dict(MANIFEST_14[0], **{"DatasetView_id": "syn111"}),
+            dict(MANIFEST_14[1], **{"DatasetView_id": "syn111"}),
+            dict(MANIFEST_14[1], **{"DatasetView_id": "syn222"})]
+    sync_datasets.add_missing_info(None, prepare(rows, legacy=False), GRANTS, PUBS)
+    assert sorted(seen) == ["syn111", "syn222"]
+
+
+def test_a_failed_read_gives_the_same_version_as_no_entity(monkeypatch, capsys):
+    import synapseclient
+
+    def fail(eid, **k):
+        raise synapseclient.core.exceptions.SynapseHTTPError("boom")
+
+    monkeypatch.setattr(sync_datasets.operations, "get", fail)
+    out = sync_datasets.add_missing_info(None, prepare(MANIFEST_14, legacy=False), GRANTS, PUBS)
+    assert list(out["version"]) == [1, 1]
+    assert "Encountered error: boom" in capsys.readouterr().out
+
+
+def test_entities_go_to_the_right_rows_when_reads_finish_out_of_order(monkeypatch, offline):
+    import time
+
+    delays = {"syn111": 0.3, "syn222": 0.0}
+    versions = {"syn111": 5, "syn222": 9}
+
+    def slow_get(eid, **k):
+        time.sleep(delays[eid])
+        return FakeEntity(versions[eid])
+
+    monkeypatch.setattr(sync_datasets.operations, "get", slow_get)
+    out = sync_datasets.add_missing_info(None, prepare(MANIFEST_14, legacy=False), GRANTS, PUBS)
+    assert list(out["version"]) == [4, 8]
+    assert {k: e.version_number for k, e in offline.items()} == versions  # identify_download_type got the same entities
+
+
+def test_a_json_array_in_the_publication_key_gives_its_items():
+    pubs = pd.DataFrame(
+        {"pubMedId": [11111111, 22222222], "publicationTitle": ["T1", "T2"], "doi": ["d1", "d2"],
+         "publicationYear": [2020, 2021]}
+    )
+    row = dict(MANIFEST_14[1], **{"PublicationView Key": '["11111111", "22222222"]'})
+    out = sync_datasets.add_missing_info(None, prepare([row], legacy=False), GRANTS, pubs)
+    assert out.at[0, "pub"] == ["T1", "T2"]
+
+
+def test_list_columns_drop_empty_pieces_and_read_a_json_array():
+    row = dict(MANIFEST_14[0], **{"Assay": "RNA-seq,,ATAC-seq", "Tissue": '["Breast", "Lung"]'})
+    out = run([row])
+    assert sorted(out["assay"].iloc[0]) == ["ATAC-seq", "RNA-seq"]
+    assert sorted(out["tissue"].iloc[0]) == ["Breast", "Lung"]

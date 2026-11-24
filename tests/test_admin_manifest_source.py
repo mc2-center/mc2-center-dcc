@@ -4,20 +4,12 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-from synapseclient.core.constants import concrete_types
 
 import model_contract as mc
 import sync_people
 import sync_projects
 import utils
-
-
-class FakeSyn:
-    def __init__(self, concrete):
-        self.concrete = concrete
-
-    def restGET(self, uri):
-        return {"concreteType": self.concrete}
+from fakes import FakeRestSyn
 
 
 def test_constants_name_one_folder_and_one_recordset_per_component():
@@ -28,26 +20,16 @@ def test_constants_name_one_folder_and_one_recordset_per_component():
         "MC2Center_GrantView_RecordSet", "MC2Center_ProjectView_RecordSet", "MC2Center_PersonView_RecordSet"]
 
 
-def test_the_source_defaults_to_the_legacy_tables():
-    assert utils.MANIFEST_SOURCE == "table"
-
-
-def test_the_flip_is_documented_as_waiting_for_the_admin_migration(monkeypatch, capsys):
-    source = inspect.getsource(utils).split("MANIFEST_SOURCE = ")[0].rsplit("# Where the grant", 1)[1]
-    assert "migrate_admin_manifests_14.py --execute" in source
-    monkeypatch.setattr("sys.argv", ["prog", "--help"])
-    with pytest.raises(SystemExit):
-        utils.get_args("project")
-    help_text = " ".join(capsys.readouterr().out.split())
-    assert "only after the admin migration" in help_text
+def test_the_source_defaults_to_the_admin_recordsets():
+    assert utils.MANIFEST_SOURCE == "recordset"
 
 
 @pytest.mark.parametrize("resource", ["grant", "project", "people"])
-def test_get_args_defaults_to_table_and_accepts_recordset(resource, monkeypatch):
+def test_get_args_defaults_to_recordset_and_accepts_table(resource, monkeypatch):
     monkeypatch.setattr("sys.argv", ["prog"])
-    assert utils.get_args(resource).manifest_source == "table"
-    monkeypatch.setattr("sys.argv", ["prog", "--manifest-source", "recordset"])
     assert utils.get_args(resource).manifest_source == "recordset"
+    monkeypatch.setattr("sys.argv", ["prog", "--manifest-source", "table"])
+    assert utils.get_args(resource).manifest_source == "table"
 
 
 def test_other_resources_have_no_source_switch(monkeypatch):
@@ -100,7 +82,7 @@ def _recordset(monkeypatch, tmp_path, text):
 
     # model_contract.read_manifest reads a RecordSet through recordsets.read_recordset (md5-checked)
     monkeypatch.setattr(recordsets, "read_recordset", lambda syn, rs_id, version=None, **kw: recordsets._load_csv(path))
-    return FakeSyn(concrete_types.RECORD_SET_ENTITY)
+    return FakeRestSyn()
 
 
 def test_read_manifest_recordset_with_component_gives_the_table_shape(monkeypatch, tmp_path):

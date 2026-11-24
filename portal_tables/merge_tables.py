@@ -23,19 +23,22 @@ from datetime import datetime
 import logging
 import os
 import pandas as pd
+import crosswalk
 import model_contract
 import recordsets
 import utils
 
-GRANTS_TABLE = "syn21918972"
+GRANTS_TABLE = utils.CONFIG["grant"]["portal_table"]
 # Projects that hold grant-level tables but are not in the Grants table, labelled in reports.
 UNLISTED_LABELS = {"syn52963211": "Affiliated/Non-Grant Associated"}  # MC2 Center Affiliate Resources Project
-FOLDER_MAP = {
-    "PublicationView": "publications",
-    "DatasetView": "datasets",
-    "ToolView": "tools",
-    "EducationalResource": "education",
-}
+FOLDER_MAP = {component: v["folder"] for component, v in crosswalk.COMPONENT_FOLDERS.items()}
+FOLDER_OVERRIDES = {("syn9772917", "ToolView"): "tool_curation"}  # CA184898 keeps tool metadata in tool_curation
+
+
+def folder_name(project_id, component):
+    """Name of the data-type folder for ``component`` under a grant project."""
+    return FOLDER_OVERRIDES.get((project_id, component)) or FOLDER_MAP[component]
+
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +106,16 @@ def build_query(table_ids):
     return " UNION ".join([f"SELECT * FROM {id}" for id in table_ids])
 
 
-def list_grant_projects(syn, source=GRANTS_TABLE):
-    """Every project that holds resource RecordSets: the Grants table's projects plus ``UNLISTED_LABELS``."""
+def list_grant_projects(syn, source=None):
+    """Every project that holds resource RecordSets: the Grants table's projects plus ``UNLISTED_LABELS``.
+
+    ``source`` defaults to the staging Grants table.
+    """
+    if source is None:
+        source = utils.portal_table("grant")
     df = Table(id=source).query(query=f"SELECT grantId FROM {source}", synapse_client=syn)
-    grants = [g for g in df["grantId"].tolist() if g]
+    # dict.fromkeys: a project shared by two grants (a renewal) is listed, and read, once
+    grants = list(dict.fromkeys(g for g in df["grantId"].tolist() if isinstance(g, str) and g.strip()))
     return grants + [p for p in UNLISTED_LABELS if p not in grants]
 
 
@@ -129,26 +138,38 @@ def _join_lists(df, key_col):
     return df
 
 
+def find_component_recordset(syn, project, component):
+    """``(folder id, RecordSet id)`` of the component under ``project``; None for what is missing."""
+    folder_id = operations.find_entity_id(name=folder_name(project, component), parent=project, synapse_client=syn)
+    rs_id = recordsets.find_recordset(syn, folder_id, component) if folder_id else None
+    return folder_id, rs_id
+
+
 def build_union(syn, component, grant_ids):
     """Read each grant's RecordSet and union them. Returns (frame, stats).
 
     ``frame`` has display-name headers in template order; list cells are
     ", "-joined. ``stats`` holds grants scanned/found/missing, rows and duplicate keys.
     """
-    folder_name = FOLDER_MAP[component]
-    frames, missing = [], []
-    for grant in grant_ids:
-        folder_id = operations.find_entity_id(name=folder_name, parent=grant, synapse_client=syn)
+    list_cols = recordsets.list_columns(component)
+
+    def read_grant(grant):
+        """``(frame, None)`` for a grant with a RecordSet, else ``(None, warning)``; errors propagate."""
+        folder_id, rs_id = find_component_recordset(syn, grant, component)
         if folder_id is None:
-            logger.warning("Skipping %s: folder '%s' not found", grant, folder_name)
-            missing.append(grant)
-            continue
-        rs_id = recordsets.find_recordset(syn, folder_id, component)
+            return None, ("Skipping %s: folder '%s' not found", grant, folder_name(grant, component))
         if rs_id is None:
-            logger.warning("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
+            return None, ("Skipping %s: RecordSet for %s not found in %s", grant, component, folder_id)
+        # the latest version can be replaced in place: read it from Synapse, never through the cache
+        return recordsets.read_recordset(syn, rs_id, list_cols=list_cols), None
+
+    frames, missing = [], []
+    for grant, (frame, warning) in zip(grant_ids, utils.parallel_map(read_grant, grant_ids)):
+        if frame is None:
+            logger.warning(*warning)
             missing.append(grant)
-            continue
-        frames.append(recordsets.read_recordset(syn, rs_id, list_cols=recordsets.list_columns(component)))
+        else:
+            frames.append(frame)
 
     return assemble_union(component, frames, len(grant_ids), len(missing))
 
@@ -259,9 +280,7 @@ def publish_union(syn, component, union, target):
             f"fixed {component} schema; refusing to publish.\n  existing: {have}\n  expected: {want}"
         )
     existing.snapshot(label=f"pre-union-{datetime.now():%Y-%m-%d-%H-%M-%S}", synapse_client=syn)
-    previous = existing.query(
-        query=f"SELECT * FROM {existing_id}", include_row_id_and_row_version=False, synapse_client=syn
-    )
+    previous = utils.read_table(syn, existing_id)
     existing.delete_rows(query=f"SELECT ROW_ID, ROW_VERSION FROM {existing_id}", synapse_client=syn)
     try:
         existing.store_rows(values=values, synapse_client=syn)
@@ -275,7 +294,7 @@ def publish_union(syn, component, union, target):
 def run_recordset_mode(syn, component, output_dir, grant_ids=None, target=None, publish=False,
                        allow_empty=False):
     if grant_ids is None:
-        grant_ids = list_grant_projects(syn)
+        grant_ids = list_grant_projects(syn, utils.portal_table("grant"))
     union, stats = build_union(syn, component, grant_ids)
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"{component}_UNION.csv")
@@ -302,6 +321,8 @@ def main():
     args = get_args()
     if args.publish and not (args.target_record_set and args.t):
         raise SystemExit("--publish requires --target_record_set and -t")
+    if args.publish and args.grant_projects:
+        raise SystemExit("--publish is refused with --grant-projects: a subset of grants would replace the whole table")
     if args.target_record_set and not args.n:
         raise SystemExit("--target_record_set requires -n")
     syn = utils.syn_login()

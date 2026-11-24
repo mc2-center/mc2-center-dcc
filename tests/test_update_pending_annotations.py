@@ -1,29 +1,13 @@
 import pandas as pd
-from types import SimpleNamespace
 
 from conftest import load_script
+from fakes import make_stub_table
 
 upa = load_script("annotations/update_pending_annotations.py", "upa_mod")
 
 
-class StubTable:
-    column_types = {}
-    stored = None
-
-    def __init__(self, id=None):
-        self.id = id
-
-    def get(self, include_columns=True, synapse_client=None):
-        cols = {n: SimpleNamespace(column_type=t) for n, t in self.column_types.items()}
-        return SimpleNamespace(columns=cols)
-
-    def store_rows(self, values, synapse_client=None):
-        StubTable.stored = values
-
-
 def _edit(monkeypatch, types, annots, updated, dryrun=False):
-    StubTable.column_types = types
-    monkeypatch.setattr(upa, "Table", StubTable)
+    monkeypatch.setattr(upa, "Table", make_stub_table(column_types=types))
     return upa.edit_annotations(updated, annots, None, "syn1", dryrun)
 
 

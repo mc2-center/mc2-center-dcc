@@ -20,8 +20,14 @@ Before ``links`` the driver (a) excludes split files whose grant has no target
 folder (every type, logged), (b) for DatasetView, reuses Dataset entities that
 already exist in the central project for a row's GEO/SRA accession instead of
 creating a second one (only an indexed Dataset for the same grant; see
-``reuse_existing_datasets``), then (c) drops rows whose link column is empty
-(logged), dropping any split file left empty. The dropped rows and excluded
+``reuse_existing_datasets``), then (c) drops DatasetView rows whose link column
+is empty (logged), dropping any split file left empty; ToolView rows with an empty
+homepage are kept (they get a Folder in the shared tools folder). A tool row whose name
+conflicts with a different entity in the shared tools folder is skipped by the links stage, listed
+in ``04_links/tool_conflicts.csv`` and dropped like an empty-link row. A DatasetView row whose
+placeholder folder name is taken by a non-Folder entity or a Folder that is not empty, whose alias has different Dataset Url values
+across files, or whose Dataset Url is a Synapse URL with no Synapse ID is handled the same way
+(``04_links/dataset_conflicts.csv``). A Dataset Url that names a Synapse entity gives that ID, with no new entity. The dropped rows and excluded
 files are listed in run.json (``dropped_rows``, ``unresolved_folder_files``).
 
 Each stage starts with an empty directory (``--from-stage`` keeps the earlier
@@ -54,6 +60,8 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, str(HERE.parent / "portal_tables"))
+import recordsets
+import utils
 
 logger = logging.getLogger("upload_workflow")
 
@@ -80,10 +88,10 @@ DATASET_NAME_COLUMN = "Dataset Alias"
 # there: create_synapse_dataset(syn, accession, _CENTRAL_PROJECT_SYNID) creates a
 # Dataset named after the accession directly under the central project, next to
 # the "datasets" folder holding its "<accession>_links" folder) and the
-# DatasetCollection it adds them to (_COLLECTION_SYNID there). A test keeps these
-# copies equal to create_entity_links.py's.
-CENTRAL_PROJECT_SYNID = "syn76986881"
-COLLECTION_SYNID = "syn77025587"
+# DatasetCollection it adds them to (_COLLECTION_SYNID there). Both scripts read
+# the IDs from utils.
+CENTRAL_PROJECT_SYNID = utils.CENTRAL_PROJECT
+COLLECTION_SYNID = utils.DATASET_COLLECTION
 DATASETS_FOLDER = "datasets"
 
 _modules = {}
@@ -176,19 +184,12 @@ class Run:
 
 
 def subprocess_env():
-    """Environment for every subprocess: inherits, and passes SYNAPSE_AUTH_TOKEN
-    explicitly when set (never logged). The running interpreter's bin/ goes first
-    on PATH so ``schematic`` resolves when invoked by absolute venv path."""
+    """Environment for every subprocess: a copy of this process's environment, so
+    SYNAPSE_AUTH_TOKEN passes when set (never logged). The running interpreter's bin/
+    goes first on PATH so ``schematic`` resolves when invoked by absolute venv path."""
     env = dict(os.environ)
-    token = os.environ.get("SYNAPSE_AUTH_TOKEN")
-    if token:
-        env["SYNAPSE_AUTH_TOKEN"] = token
     env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
     return env
-
-
-def read_csv(path):
-    return pd.read_csv(path, dtype=str, keep_default_na=False)
 
 
 def write_paths_csv(paths: pd.DataFrame, path: Path):
@@ -278,10 +279,13 @@ def grant_of(path):
 
 def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
     """Drop rows with an empty link column from each split file (rewritten in
-    place); drop files left empty from `paths`. Returns the filtered paths."""
+    place); drop files left empty from `paths`. Returns the filtered paths.
+    ToolView rows are kept: a tool without a homepage gets a Folder."""
+    if link_column == LINK_COLUMNS["ToolView"][0]:
+        return paths
     keep = []
     for _, prow in paths.iterrows():
-        df = read_csv(prow["File Paths"])
+        df = recordsets.read_csv_str(prow["File Paths"])
         empty = df[link_column].str.strip() == ""
         for i in df.index[empty]:
             label = df.iloc[i].get("Tool Name") or df.iloc[i].get(DATASET_NAME_COLUMN) or f"row {i}"
@@ -290,6 +294,31 @@ def drop_empty_link_rows(paths: pd.DataFrame, link_column, report: list):
         df = df[~empty]
         if df.empty:
             logger.warning("Dropping %s: no rows left", Path(prow["File Paths"]).name)
+            continue
+        df.to_csv(prow["File Paths"], index=False)
+        keep.append(prow)
+    return pd.DataFrame(keep, columns=paths.columns)
+
+
+CONFLICT_COLUMNS = ["file", "name", "homepage", "existing_id", "existing_type", "existing_url", "message"]
+
+
+def drop_conflict_rows(paths: pd.DataFrame, pk, conflicts: list, report: list, name_column="Tool Name", kind="tool"):
+    """Drop the tool or dataset rows create_entity_links skipped for a conflict (they come back with
+    a blank ID) from each split file (rewritten in place), so they never reach the upload;
+    drop files left empty. Returns the filtered paths."""
+    if not conflicts:
+        return paths
+    keep = []
+    for _, prow in paths.iterrows():
+        df = recordsets.read_csv_str(prow["File Paths"])
+        blank = df[pk].str.strip() == ""
+        for i in df.index[blank]:
+            label = df.iloc[i].get(name_column) or f"row {i}"
+            logger.warning("Dropping %s row %d (%s): %s conflict in the central folder", Path(prow["File Paths"]).name, i, label, kind)
+            report.append({"file": prow["File Paths"], "row": int(i), "name": label, "reason": f"{kind} conflict"})
+        df = df[~blank]
+        if df.empty:
             continue
         df.to_csv(prow["File Paths"], index=False)
         keep.append(prow)
@@ -319,7 +348,7 @@ def reuse_existing_datasets(syn, paths: pd.DataFrame, pk, link_column, dir_: Pat
     for _, prow in paths.iterrows():
         path = prow["File Paths"]
         grant = grant_of(path)
-        df = read_csv(path)
+        df = recordsets.read_csv_str(path)
         matched = {}
         for i, row in df.iterrows():
             acc = parse_accession(row[DATASET_NAME_COLUMN], row[link_column])
@@ -355,10 +384,10 @@ def merge_reused(paths_after: pd.DataFrame, original_paths: pd.DataFrame, dir_: 
         parts = []
         created = dir_ / name
         if created.exists() and str(created) in set(paths_after["File Paths"]):
-            parts.append(read_csv(created))
+            parts.append(recordsets.read_csv_str(created))
         reused = dir_ / "reused" / name
         if reused.exists():
-            parts.append(read_csv(reused))
+            parts.append(recordsets.read_csv_str(reused))
         if not parts:
             continue
         dest = final_dir / name
@@ -392,7 +421,7 @@ def stage_paths(run, args):
     out = d / "paths.csv"
     split_dir = run.output("split", "dir")
     call_main(_load("gen-mp-csv.py").main, split_dir, str(out), dtype)
-    paths = read_csv(out)
+    paths = recordsets.read_csv_str(out)
     missing = paths[paths[folder_col].str.strip() == ""]["File Paths"].tolist()
     for m in missing:
         logger.warning("No target folder resolved for %s", m)
@@ -401,7 +430,7 @@ def stage_paths(run, args):
 
 def stage_reshape(run, args):
     d = run.stage_dir("reshape")
-    paths = retarget(read_csv(run.output("paths", "paths_csv")), d)
+    paths = retarget(recordsets.read_csv_str(run.output("paths", "paths_csv")), d)
     out = write_paths_csv(paths, d / "paths.csv")
     call_main(_load("processing-splits.py").main, [out])
     return {"paths_csv": out, "files": paths["File Paths"].tolist()}
@@ -418,7 +447,7 @@ def exclude_unresolved_folders(paths: pd.DataFrame, folder_col):
 
 
 def stage_links(run, args, syn=None):
-    reshaped = read_csv(run.output("reshape", "paths_csv"))
+    reshaped = recordsets.read_csv_str(run.output("reshape", "paths_csv"))
     folder_col = CONFIG[args.type][3]
     # Resuming at links keeps created_ids.csv: it is how finished rows are skipped.
     d = run.stage_dir("links", keep=("created_ids.csv",) if args.from_stage == "links" else ())
@@ -462,10 +491,18 @@ def stage_links(run, args, syn=None):
         outputs["paths_csv"] = write_paths_csv(final, d / "paths.csv")
         return "skipped", outputs, "dry run: link entities not created (needs --execute)"
 
+    conflicts = []
     if len(paths):
         # created_ids.csv lets an interrupted run resume without re-storing finished rows
-        call_main(_load("create_entity_links.py").main,
-                  ["-m", pending, "-t", args.type, "--created-ids", str(d / "created_ids.csv")])
+        conflicts = call_main(_load("create_entity_links.py").main,
+                              ["-m", pending, "-t", args.type, "--created-ids", str(d / "created_ids.csv")]) or []
+    name_column, kind = ("Dataset Alias", "dataset") if args.type == "DatasetView" else ("Tool Name", "tool")
+    paths = drop_conflict_rows(paths, pk, conflicts, dropped, name_column, kind)
+    run.state["dropped_rows"] = dropped
+    pd.DataFrame(dropped, columns=["file", "row", "name", "reason"]).to_csv(d / "dropped_rows.csv", index=False)
+    pd.DataFrame(conflicts, columns=CONFLICT_COLUMNS).to_csv(d / f"{kind}_conflicts.csv", index=False)
+    outputs[f"{kind}_conflicts"] = len(conflicts)
+    outputs["dropped"] = len(dropped)
     final = merge_reused(paths, original, d, d / "final")
     outputs["paths_csv"] = write_paths_csv(final, d / "paths.csv")
     return "done", outputs, None
@@ -483,16 +520,14 @@ def stage_upload(run, args):
     if args.execute and "dry run" in links.get("note", ""):
         raise RuntimeError("links was skipped in a dry run; resume with --from-stage links --execute")
     paths_csv = links["outputs"]["paths_csv"]
-    if not len(read_csv(paths_csv)):
+    if not len(recordsets.read_csv_str(paths_csv)):
         logger.warning("No split files left to upload")
         return {"paths_csv": paths_csv, "uploaded": 0}
 
     if args.target == "recordset":
         argv = ["--paths-csv", paths_csv, "--component", args.type, "--report-dir", str(d),
                 "--run-id", args.run_id]
-        argv += (["--write-log-table", args.write_log_table] if args.write_log_table
-                 else ["--write-log-csv", args.write_log_csv])
-        argv += ["--removals-table", args.removals_table]
+        argv += ["--write-log-table", args.write_log_table, "--removals-table", args.removals_table]
         if args.execute:
             argv.append("--execute")
         code = call_main(_load("upload_recordsets.py").main, argv)
@@ -528,10 +563,7 @@ def get_args(argv=None):
     p.add_argument("--type", required=True, choices=COMPONENTS)
     p.add_argument("--out-dir", required=True)
     p.add_argument("--target", choices=["recordset", "schematic-table"], default="recordset")
-    p.add_argument("--write-log-table", help="Synapse ID of the write-log table (recordset target)")
-    p.add_argument("--write-log-csv", help="local CSV write log instead of a table (tests, dry runs)")
-    p.add_argument("--removals-table", default="syn78404342",
-                   help="Synapse ID of the RecordSet removals table (recordset target; default: production)")
+    recordsets.add_log_args(p)
     p.add_argument("--schematic-config", help="schematic config file (schematic-table target)")
     p.add_argument("--cv-file", help="all_valid_values.csv path/URL for split (default: pinned release)")
     p.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
@@ -544,14 +576,6 @@ def get_args(argv=None):
     args = p.parse_args(argv)
     if args.force_new and args.from_stage:
         p.error("--force-new cannot be combined with --from-stage")
-    if args.target == "recordset" and not (args.write_log_table or args.write_log_csv):
-        p.error("--target recordset needs --write-log-table (or --write-log-csv)")
-    if args.target == "recordset":
-        # Fail before `links` creates any entity, not at the upload stage.
-        if args.execute and not args.write_log_table:
-            p.error("--execute with --target recordset needs --write-log-table (a CSV log is for dry runs only)")
-        if args.write_log_table and args.write_log_csv:
-            p.error("--write-log-table and --write-log-csv are mutually exclusive")
     if args.target == "schematic-table" and args.execute and not args.schematic_config:
         p.error("--target schematic-table with --execute needs --schematic-config")
     return args
@@ -598,7 +622,7 @@ def main(argv=None, syn=None):
     args.manifest = Path(args.manifest).resolve()
     args.manifest_sha256 = sha256_of(args.manifest)
     run = Run(out_dir, args)
-    args.run_id = args.run_id or f"{re.sub(r'[^A-Za-z0-9._-]', '_', out_dir.name)}-{datetime.now():%Y%m%dT%H%M%S}"
+    args.run_id = args.run_id or recordsets.new_run_id(re.sub(r"[^A-Za-z0-9._-]", "_", out_dir.name) + "-")
 
     start = STAGES.index(args.from_stage) if args.from_stage else 0
     if args.from_stage:

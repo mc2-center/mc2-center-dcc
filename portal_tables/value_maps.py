@@ -43,10 +43,10 @@ import re
 
 import pandas as pd
 
+from cells import is_null, parse_list
 import comma_terms
 import model_contract
 import recordsets
-import utils
 
 logger = logging.getLogger(__name__)
 CHANGE_COLUMNS = ["key", "column", "from", "to", "rule"]
@@ -57,7 +57,8 @@ DOI_PLACEHOLDERS = frozenset({"no doi listed", "doi not available"})
 TRUNCATED_SUFFIX = "(Read more on Pubmed)"
 DOI_PREFIX = "https://doi.org/"
 _DUO_VALID = re.compile(r"^(DUO:\d{7,8}|DUOPlus\d+|Pending Annotation)$")
-_BIBTEX_UMLAUT = re.compile(r'"([aouAOU])')
+# ``"o``, ``\"o``, ``\"{o}``, ``{\"o}`` and ``{\"{o}}``: the backslash and braces go with the quote
+_BIBTEX_UMLAUT = re.compile(r'\{\\?"\{?([aouAOU])\}?\}|\\?"\{([aouAOU])\}|\\?"([aouAOU])')
 _UMLAUTS = {"a": "ä", "o": "ö", "u": "ü", "A": "Ä", "O": "Ö", "U": "Ü"}
 
 
@@ -71,8 +72,7 @@ def split_items(text: str, keyword: bool = False, rejoined: list | None = None) 
 
     With ``keyword``, comma text keeps known comma terms whole (pieces appended to ``rejoined``).
     """
-    text = "" if text is None else text
-    return comma_terms.split_keyword_cell(text, rejoined) if keyword else utils.split_cell(text)
+    return comma_terms.split_keyword_cell(text, rejoined) if keyword else parse_list(text)
 
 
 def _squash(text: str) -> str:
@@ -168,6 +168,9 @@ def load_enum_maps(component: str, rejected: list | None = None, ref: str | None
         properties = json.load(fh)["properties"]
     maps = {}
     for column, prop in properties.items():
+        if prop.get("type") == "boolean":  # a JSON boolean: ``TRUE`` -> ``true``
+            maps[column] = EnumMap(["false", "true"])
+            continue
         enum = prop.get("enum") or prop.get("items", {}).get("enum")
         if not enum:
             continue
@@ -318,6 +321,29 @@ def write_override_template(differences_csv, path) -> int:
     return len(template)
 
 
+def _authors_rule(norm, value: str):
+    """Fix BibTeX umlauts; None when nothing is fixed or another quote stays (the unsafe-item guard catches it)."""
+    if not _BIBTEX_UMLAUT.search(value):
+        return None
+    fixed = _BIBTEX_UMLAUT.sub(lambda m: _UMLAUTS[next(g for g in m.groups() if g)], value)
+    return (fixed, "umlaut") if '"' not in fixed else None
+
+
+def _duo_rule(norm, value: str):
+    """A DUO value is valid, or a short code maps to its id, or it is unmapped."""
+    if _DUO_VALID.match(value):
+        return value, None
+    if value in norm.code_to_id:
+        return norm.code_to_id[value], "duo_code"
+    return value, "unmapped"
+
+
+# column name -> rule(normalizer, value); a rule returns (new, rule), or None to go on to the generic checks
+_COLUMN_RULES = {"PublicationAuthors": _authors_rule, "DatasetDataUseCodes": _duo_rule}
+# columns where a value that is not in its list becomes blank and is reported
+_BLANK_IF_UNMAPPED = {"License"}
+
+
 class Normalizer:
     """Apply every rule to a frame of one component."""
 
@@ -364,29 +390,25 @@ class Normalizer:
             return self.overrides[(column, value)], "override"
         if value.endswith(TRUNCATED_SUFFIX) and (column in self.enum_maps or column in self.list_cols):
             return value, "truncated"
-        if column == "PublicationAuthors" and _BIBTEX_UMLAUT.search(value):
-            return _BIBTEX_UMLAUT.sub(lambda m: _UMLAUTS[m.group(1)], value), "umlaut"
+        column_rule = _COLUMN_RULES.get(column)
+        result = column_rule(self, value) if column_rule else None
+        if result is not None:
+            return result
         if column.endswith("Doi"):
             return normalize_doi(value)
         if column in self.date_cols:
             return normalize_date(value)
-        if column == "DatasetDataUseCodes":
-            if _DUO_VALID.match(value):
-                return value, None
-            if value in self.code_to_id:
-                return self.code_to_id[value], "duo_code"
-            return value, "unmapped"
         enum = self.enum_maps.get(column)
         if enum is None:
             return value, None
         new, rule = enum.lookup(value)
-        if rule == "unmapped" and column == "License":
+        if rule == "unmapped" and column in _BLANK_IF_UNMAPPED:
             return "", "license_blanked"
         return new, rule
 
     def normalize_cell(self, key, column: str, cell, changes: list, unmapped: list, grant: str = ""):
         """The normalized cell: a list for list columns, else a string."""
-        text = "" if cell is None or (not isinstance(cell, (str, list)) and pd.isna(cell)) else cell
+        text = "" if is_null(cell) else cell
         target = next((t for t in ((column, str(key), ROW, grant), (column, str(key), ROW)) if t in self.overrides), None)
         row_override = self.overrides[target] if target is not None else None
         if row_override is not None:

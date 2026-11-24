@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 import model_contract as mc
+from fakes import FakeRestSyn
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TEMPLATES = sorted((FIXTURES / "templates").glob("*.csv"))
@@ -16,8 +17,8 @@ def _header(path):
 
 
 def test_model_ref_pinned():
-    assert mc.MODEL_REF == "v14.1.1"
-    assert mc.RAW.endswith("/v14.1.1")
+    assert mc.MODEL_REF == "v14.1.2"
+    assert mc.RAW.endswith("/v14.1.2")
 
 
 def test_fixture_set_is_all_33_templates():
@@ -159,16 +160,6 @@ def test_renames_13_to_14_targets_exist():
         assert set(renames.values()) <= allowed, component
 
 
-class _FakeSyn:
-    def __init__(self, concrete):
-        self.concrete = concrete
-        self.calls = []
-
-    def restGET(self, uri):
-        self.calls.append(uri)
-        return {"id": "syn1", "concreteType": self.concrete}
-
-
 def _csv(tmp_path):
     path = tmp_path / "m.csv"
     path.write_text("Component,Year,Name\nGrantView,2020,A\nGrantView,,B\n")
@@ -194,8 +185,8 @@ def test_read_manifest_table(monkeypatch, concrete):
             seen.update(kwargs)
             return frame
 
-    monkeypatch.setattr(mc, "Table", FakeTable)
-    syn = _FakeSyn(concrete)
+    monkeypatch.setattr(mc.utils, "Table", FakeTable)
+    syn = FakeRestSyn(concrete)
     out = mc.read_manifest(syn, "syn1")
     assert out is frame
     assert seen["id"] == "syn1"
@@ -224,8 +215,8 @@ def test_read_manifest_file_entity(monkeypatch, tmp_path):
             raise AssertionError("a CSV entity must not be queried")
 
     monkeypatch.setattr(mc, attr, FakeEntity)
-    monkeypatch.setattr(mc, "Table", NoTable)
-    syn = _FakeSyn(concrete)
+    monkeypatch.setattr(mc.utils, "Table", NoTable)
+    syn = FakeRestSyn(concrete)
     out = mc.read_manifest(syn, "syn1")
     assert seen["id"] == "syn1" and seen["get"] == {"synapse_client": syn}
     assert list(out.columns) == ["Component", "Year", "Name"]
@@ -249,7 +240,7 @@ def test_read_manifest_recordset_goes_through_read_recordset(monkeypatch, tmp_pa
     monkeypatch.setattr(recordsets, "read_recordset", stub)
     monkeypatch.setattr(mc, "File", NoBareGet, raising=False)
     monkeypatch.setattr("synapseclient.models.RecordSet", NoBareGet)
-    syn = _FakeSyn("org.sagebionetworks.repo.model.RecordSet")
+    syn = FakeRestSyn("org.sagebionetworks.repo.model.RecordSet")
     out = mc.read_manifest(syn, "synRS", version=4)
     assert calls == [(syn, "synRS", 4)]
     assert out["PersonViewId"].tolist() == ["p1", "p2"] and pd.isna(out["Name"].tolist()[1])  # empty cells NaN
@@ -258,7 +249,7 @@ def test_read_manifest_recordset_goes_through_read_recordset(monkeypatch, tmp_pa
 
 
 def test_read_manifest_unsupported_type():
-    syn = _FakeSyn("org.sagebionetworks.repo.model.Folder")
+    syn = FakeRestSyn("org.sagebionetworks.repo.model.Folder")
     with pytest.raises(ValueError, match="unsupported entity type"):
         mc.read_manifest(syn, "syn1")
 

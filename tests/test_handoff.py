@@ -6,7 +6,6 @@ headers). gen-mp-csv's Synapse query is replaced with a canned grant/folder
 table; everything else in it runs as written.
 """
 
-import importlib.util
 import logging
 import shutil
 from pathlib import Path
@@ -15,8 +14,8 @@ import pandas as pd
 import pytest
 
 import model_contract
+from conftest import load_script
 
-ANNOTATIONS = Path(__file__).resolve().parent.parent / "annotations"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "handoff"
 CV = FIXTURES / "all_valid_values.csv"
 
@@ -34,26 +33,19 @@ COMPONENTS = {
 GRANTS = ["CA209997", "CA209923", "CA184898"]
 
 
-def load(name, filename):
-    spec = importlib.util.spec_from_file_location(name, ANNOTATIONS / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 @pytest.fixture(scope="module")
 def split_mod():
-    return load("split_manifest_grants", "split_manifest_grants.py")
+    return load_script("annotations/split_manifest_grants.py", "split_manifest_grants")
 
 
 @pytest.fixture(scope="module")
 def genmp_mod():
-    return load("gen_mp_csv", "gen-mp-csv.py")
+    return load_script("annotations/gen-mp-csv.py", "gen_mp_csv")
 
 
 @pytest.fixture(scope="module")
 def proc_mod():
-    return load("processing_splits", "processing-splits.py")
+    return load_script("annotations/processing-splits.py", "processing_splits")
 
 
 def run_workflow(split_mod, genmp_mod, proc_mod, monkeypatch, tmp_path, source, data_type, manifest_type):

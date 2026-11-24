@@ -1,7 +1,5 @@
 """annotations/remove_recordset_rows.py with every Synapse call stubbed (D-Q49)."""
 import argparse
-import importlib.util
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -9,11 +7,11 @@ import pandas as pd
 import pytest
 
 import recordsets as rs
+from conftest import load_script
+from fakes import FakeRS, assert_nothing_written
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("remove_recordset_rows", ROOT / "annotations" / "remove_recordset_rows.py")
-cmd = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cmd)
+cmd = load_script("annotations/remove_recordset_rows.py", "remove_recordset_rows")
+pytestmark = pytest.mark.usefixtures("synapse_tables")
 
 K = "PublicationViewId"
 COLS = [K, "Title", "Assay"]
@@ -23,48 +21,10 @@ def frame(*rows):
     return pd.DataFrame(list(rows), columns=COLS)
 
 
-class FakeRS:
-    """One RecordSet's versions; store and export append versions, calls are ordered in ``events``."""
-
-    def __init__(self, versions, sessions=(), log=None):
-        self.versions = list(versions)
-        self.sessions = list(sessions)
-        self.events = []
-        self.log = log
-        self.crash_after_store = False
-
-    def info(self, syn, rs_id):
-        return len(self.versions), [K]
-
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
-        return self.versions[(version or len(self.versions)) - 1].copy()
-
-    def store(self, syn, rs_id, path):
-        self.events.append(("store", list(self.log._read(rs_id)["status"]) if self.log else None))
-        self.versions.append(rs._load_csv(path))
-        return len(self.versions)
-
-    def export(self, syn, rs_id, on_version=None, **kw):
-        self.events.append(("export", None))
-        self.versions.append(self.versions[-1].copy())
-        if on_version:
-            on_version(len(self.versions))
-        return [len(self.versions)]
-
-    def open_sessions(self, syn, rs_id):
-        return list(self.sessions)
-
-    def meta(self, syn, rs_id, v):
-        return "42", pd.Timestamp.now(tz="UTC")
-
-
-def setup(tmp_path, versions, requested=("b",), **kw):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
-    removals = rs.CsvRemovals(tmp_path / "removals.csv")
+def setup(log, removals, versions, requested=("b",), **kw):
     for k in requested:
         removals.append("synRS", k, "requested", reason="dup", requested_by="u1")
-    fake = FakeRS(versions, log=log, **kw)
-    return fake, log, removals
+    return FakeRS(versions, [K], log=log, **kw)
 
 
 def process(tmp_path, fake, log, removals, execute=True, run_id="dcc-removal-1"):
@@ -82,37 +42,37 @@ def process(tmp_path, fake, log, removals, execute=True, run_id="dcc-removal-1")
 V1 = frame(["a", "T", '["x","y"]'], ["b", "T", ""], ["c", "T", ""])
 
 
-def test_dry_run_reports_keys_and_writes_nothing(tmp_path, capsys):
-    fake, log, removals = setup(tmp_path, [V1], requested=("b", "zzz"))
+def test_dry_run_reports_keys_and_writes_nothing(tmp_path, capsys, log, removals):
+    fake = setup(log, removals, [V1], requested=("b", "zzz"))
     s = process(tmp_path, fake, log, removals, execute=False)
     assert s["status"] == "dryrun" and s["remove"] == 1 and s["not_found"] == 1
     assert "would remove ['b']; not found ['zzz']" in s["message"]
-    assert len(fake.versions) == 1 and fake.events == []
-    assert not (tmp_path / "log.csv").exists()
-    assert set(removals.requested("synRS")) == {"b", "zzz"}  # unchanged
+    assert_nothing_written(fake, log)
+    assert len(removals.rows) == 2 and set(removals.requested("synRS")) == {"b", "zzz"}  # unchanged
 
 
-def test_dry_run_reports_a_blocking_session(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1], sessions=[SimpleNamespace(session_id="g1")])
+def test_dry_run_reports_a_blocking_session(tmp_path, log, removals):
+    fake = setup(log, removals, [V1], sessions=[SimpleNamespace(session_id="g1")])
     s = process(tmp_path, fake, log, removals, execute=False)
     assert s["status"] == "blocked" and "g1" in s["message"]
 
 
-def test_main_dry_run_exit_code_and_output(tmp_path, capsys):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_main_dry_run_exit_code_and_output(tmp_path, capsys, log, removals):
+    fake = setup(log, removals, [V1])
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
          mock.patch.object(cmd.recordsets, "read_recordset", fake.read), \
          mock.patch.object(cmd.recordsets, "open_grid_sessions", fake.open_sessions), \
          mock.patch.object(cmd.recordsets, "recordset_version_meta", fake.meta):
-        code = cmd.main(["--removals-csv", str(tmp_path / "removals.csv"), "--write-log-csv", str(tmp_path / "log.csv"),
+        code = cmd.main(["--removals-table", "synREM", "--write-log-table", "synLOG",
                          "--report-dir", str(tmp_path / "rep"), "--run-id", "dcc-removal-1"], syn=object())
     out = capsys.readouterr().out
     assert code == 0 and "dry run" in out and "would remove ['b']" in out
-    assert len(fake.versions) == 1
+    assert_nothing_written(fake, log)
+    assert len(removals.rows) == 1  # the one requested row
 
 
-def test_execute_stores_then_exports_then_logs_in_order(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1], requested=("b", "zzz"))
+def test_execute_stores_then_exports_then_logs_in_order(tmp_path, log, removals):
+    fake = setup(log, removals, [V1], requested=("b", "zzz"))
     s = process(tmp_path, fake, log, removals)
     assert s["status"] == "removed" and s["version"] == 2
     # the lock (pending) is taken before the store; the export comes after
@@ -138,59 +98,65 @@ def test_execute_stores_then_exports_then_logs_in_order(tmp_path):
     assert set(state[K]) == {"a", "c"}
 
 
-def test_open_grid_session_refuses_and_writes_nothing(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1], sessions=[SimpleNamespace(session_id="g1")])
+def test_open_grid_session_refuses_and_writes_nothing(tmp_path, log, removals):
+    fake = setup(log, removals, [V1], sessions=[SimpleNamespace(session_id="g1")])
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "blocked" and fake.events == [] and len(fake.versions) == 1
+    assert s["status"] == "blocked"
+    assert_nothing_written(fake)
     assert set(removals.requested("synRS")) == {"b"}
 
 
-def test_session_opened_after_the_lock_aborts_the_pending_row(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_session_opened_after_the_lock_aborts_the_pending_row(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
     calls = iter([[], [SimpleNamespace(session_id="g2")]])
     fake.open_sessions = lambda syn, rs_id: next(calls)
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "blocked" and fake.events == []
+    assert s["status"] == "blocked"
+    assert_nothing_written(fake)
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
 
 
-def test_another_runs_pending_row_locks_the_recordset(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_another_runs_pending_row_locks_the_recordset(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
     log.start("synRS", 1, "other", "7")
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "locked" and fake.events == []
+    assert s["status"] == "locked"
+    assert_nothing_written(fake)
 
 
-def test_lock_race_loser_aborts(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
-    with mock.patch.object(rs.CsvWriteLog, "earlier_pending", lambda self, rs_id, run_id, now=None: "other"):
+def test_lock_race_loser_aborts(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
+    with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "other"):
         s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "locked" and fake.events == []
+    assert s["status"] == "locked"
+    assert_nothing_written(fake)
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
 
 
-def test_recordset_moving_after_the_read_retries(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_recordset_moving_after_the_read_retries(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
     answers = iter([(1, [K]), (2, [K])])
     fake.info = lambda syn, rs_id: next(answers)
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "retry" and fake.events == []
+    assert s["status"] == "retry"
+    assert_nothing_written(fake)
 
 
-def test_keys_not_found_are_logged_and_the_pending_row_is_resolved(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1], requested=("nope",))
+def test_keys_not_found_are_logged_and_the_pending_row_is_resolved(tmp_path, log, removals):
+    fake = setup(log, removals, [V1], requested=("nope",))
     s = process(tmp_path, fake, log, removals)
-    assert s["status"] == "nothing_to_remove" and fake.events == []
+    assert s["status"] == "nothing_to_remove"
+    assert_nothing_written(fake)
     assert removals._latest("synRS").set_index("key").loc["nope", "status"] == "not_found"
     assert removals.requested("synRS") == {}
     assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
     assert log.unresolved_pending("synRS") == []
 
 
-def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
 
-    class Dying(rs.CsvWriteLog):
+    class Dying(type(log)):
         calls = 0
 
         def removed(self, *a, **k):
@@ -199,7 +165,8 @@ def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path):
                 raise RuntimeError("died after the store")
             super().removed(*a, **k)
 
-    dying = Dying(tmp_path / "log.csv")
+    dying = Dying()
+    dying.rows = log.rows
     with pytest.raises(RuntimeError):
         process(tmp_path, fake, dying, removals)
     assert [e[0] for e in fake.events] == ["store"] and len(fake.versions) == 2
@@ -216,52 +183,61 @@ def test_crash_between_the_store_and_the_log_is_recovered_and_claimed(tmp_path):
     assert set(state[K]) == {"a", "c"}
 
 
-def test_crash_recovery_by_the_next_run_when_the_handler_could_not_run(tmp_path):
+def test_crash_recovery_by_the_next_run_when_the_handler_could_not_run(tmp_path, log, removals):
     # the process died outright: a pending row and a stored version, nothing else
-    fake, log, removals = setup(tmp_path, [V1])
+    fake = setup(log, removals, [V1])
     log.start("synRS", 1, "dcc-removal-dead", "42")
     fake.versions.append(frame(["a", "T", '["x","y"]'], ["c", "T", ""]))
     old = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
-    text = (tmp_path / "log.csv").read_text().splitlines()
-    text[1] = text[1].replace(text[1].split(",")[-2], old.isoformat())
-    (tmp_path / "log.csv").write_text("\n".join(text) + "\n")
+    log.rows[0]["writtenOn"] = old
     s = process(tmp_path, fake, log, removals, run_id="dcc-removal-2")
     assert s["status"] == "revalidated" and s["claimed"] == {"b": 2} and s["owed_export"] == [2]
     assert log.pipeline_map("synRS") == {2: 1, 3: 2}
     assert removals.removed("synRS") == {"b": 2}
-    assert [e[0] for e in fake.events] == ["export"]  # nothing stored again; the owed export is made
+    assert [e[0] for e in fake.events] == ["export"] and len(fake.versions) == 3  # nothing stored again; the owed export is made
 
 
-def test_removed_version_without_removals_rows_is_claimed(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_dry_run_after_a_crashed_removal_recovers_and_claims_in_memory_only(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
+    log.start("synRS", 1, "dcc-removal-dead", "42")
+    fake.versions.append(frame(["a", "T", '["x","y"]'], ["c", "T", ""]))
+    log.rows[0]["writtenOn"] = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
+    log_rows, removals_rows = list(log.rows), list(removals.rows)
+    s = process(tmp_path, fake, log, removals, execute=False, run_id="dcc-removal-2")
+    assert s["status"] == "dryrun" and s["claimed"] == {"b": 2} and s["owed_export"] == [2]
+    assert log.rows == log_rows and removals.rows == removals_rows  # a dry run appends to neither table
+    assert len(fake.versions) == 2 and fake.events == []
+
+
+def test_removed_version_without_removals_rows_is_claimed(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
     fake.versions.append(frame(["a", "T", '["x","y"]'], ["c", "T", ""]))
     log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)  # logged, but the removals rows were never written
     s = process(tmp_path, fake, log, removals)
     assert s["claimed"] == {"b": 2} and removals.removed("synRS") == {"b": 2}
 
 
-def test_main_skips_recordsets_without_requested_keys(tmp_path, capsys):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_main_skips_recordsets_without_requested_keys(tmp_path, capsys, log, removals):
+    fake = setup(log, removals, [V1])
     removals.append("synDONE", "x", "removed", removed_in_version=3)
     assert removals.recordset_ids() == ["synDONE", "synRS"]
     with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
          mock.patch.object(cmd.recordsets, "read_recordset", fake.read), \
          mock.patch.object(cmd.recordsets, "open_grid_sessions", fake.open_sessions):
-        cmd.main(["--removals-csv", str(tmp_path / "removals.csv"), "--write-log-csv", str(tmp_path / "log.csv"),
+        cmd.main(["--removals-table", "synREM", "--write-log-table", "synLOG",
                   "--report-dir", str(tmp_path / "rep"), "--recordset", "synRS"], syn=object())
     out = capsys.readouterr().out
     assert "synRS: dryrun" in out and "synDONE" not in out
 
 
-def test_run_id_without_the_removal_prefix_is_rejected(tmp_path):
+def test_run_id_without_the_removal_prefix_is_rejected():
+    tables = ["--removals-table", "synREM", "--write-log-table", "synLOG", "--report-dir", "x"]
     with pytest.raises(SystemExit):
-        cmd.get_args(["--removals-csv", "r.csv", "--write-log-csv", "l.csv", "--report-dir", "x", "--run-id", "mine"])
-    assert cmd.get_args(["--removals-csv", "r.csv", "--write-log-csv", "l.csv",
-                         "--report-dir", "x"]).run_id.startswith("dcc-removal-")
+        cmd.get_args(tables + ["--run-id", "mine"])
+    assert cmd.get_args(tables).run_id.startswith("dcc-removal-")
 
 
-def test_recover_pending_logs_a_removal_runs_store_as_removed_and_its_export_as_recovered(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_recover_pending_logs_a_removal_runs_store_as_removed_and_its_export_as_recovered(log):
     log.start("synRS", 1, "dcc-removal-x", "42")
     log.start("synRS2", 1, "pipeline-run", "42")
     meta = lambda v: ("42", pd.Timestamp.now(tz="UTC"))
@@ -278,17 +254,17 @@ def test_recover_pending_logs_a_removal_runs_store_as_removed_and_its_export_as_
     assert log.removal_versions("synRS3") == {2}
 
 
-def test_removals_rows_are_appended_in_one_write_each(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1], requested=("a", "b", "zzz"))
+def test_removals_rows_are_appended_in_one_write_each(tmp_path, log, removals):
+    fake = setup(log, removals, [V1], requested=("a", "b", "zzz"))
     writes = []
-    orig = rs.CsvRemovals._append_rows
-    with mock.patch.object(rs.CsvRemovals, "_append_rows", lambda self, rows: (writes.append(len(rows)), orig(self, rows))):
+    orig = type(removals)._append_rows
+    with mock.patch.object(type(removals), "_append_rows", lambda self, rows: (writes.append(len(rows)), orig(self, rows))):
         process(tmp_path, fake, log, removals)
     assert writes == [1, 2]  # not_found (zzz), then both removed keys together
 
 
-def test_crash_after_the_removals_rows_but_before_the_export_owes_a_revalidation(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1])
+def test_crash_after_the_removals_rows_but_before_the_export_owes_a_revalidation(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
 
     def dying_export(syn, rs_id, on_version=None, **kw):
         fake.events.append(("export-died", None))
@@ -300,59 +276,50 @@ def test_crash_after_the_removals_rows_but_before_the_export_owes_a_revalidation
     assert log.removal_versions("synRS") == {2} and removals.removed("synRS") == {"b": 2}
     assert log.unexported_removals("synRS") == [2]
     # a later run with nothing requested makes the export and logs it written, base = the removal version
-    fake2 = FakeRS(fake.versions, log=log)
+    fake2 = FakeRS(fake.versions, [K], log=log)
     s = process(tmp_path, fake2, log, removals, run_id="dcc-removal-2")
-    assert s["status"] == "revalidated" and [e[0] for e in fake2.events] == ["export"]
+    assert s["status"] == "revalidated" and [e[0] for e in fake2.events] == ["export"] and len(fake2.versions) == 3
     assert log.unexported_removals("synRS") == [] and log.pipeline_map("synRS") == {2: 1, 3: 2}
     assert log.unresolved_pending("synRS") == []
     # and the next run finds nothing to do
-    assert process(tmp_path, FakeRS(fake2.versions, log=log), log, removals, run_id="dcc-removal-3")["message"] == "no requested keys"
+    assert process(tmp_path, FakeRS(fake2.versions, [K], log=log), log, removals, run_id="dcc-removal-3")["message"] == "no requested keys"
 
 
-def test_dry_run_reports_an_owed_export_and_writes_nothing(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
+def test_dry_run_reports_an_owed_export_and_writes_nothing(tmp_path, log, removals):
+    fake = setup(log, removals, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
     log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
     s = process(tmp_path, fake, log, removals, execute=False)
     assert s["owed_export"] == [2] and "would re-validate" in s["message"] and fake.events == []
     assert log.pipeline_map("synRS") == {2: 1}
 
 
-def test_open_session_blocks_the_owed_export_too(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1, V1], requested=(), sessions=[SimpleNamespace(session_id="g1")])
+def test_open_session_blocks_the_owed_export_too(tmp_path, log, removals):
+    fake = setup(log, removals, [V1, V1], requested=(), sessions=[SimpleNamespace(session_id="g1")])
     log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
     s = process(tmp_path, fake, log, removals)
     assert s["status"] == "blocked" and "best effort" in s["message"] and fake.events == []
 
 
-def request(tmp_path, *argv, key_cols=(K,), execute=False):
-    base = ["request", "--removals-csv", str(tmp_path / "removals.csv"), "--recordset", "synRS", "--reason", "dup"]
+def request(*argv, key_cols=(K,)):
+    base = ["request", "--removals-table", "synREM", "--recordset", "synRS", "--reason", "dup"]
     with mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, list(key_cols))), \
          mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
         return cmd.main(base + list(argv), syn=object())
 
 
-def test_request_dry_run_writes_nothing_and_execute_appends_requested_rows(tmp_path, capsys):
-    assert request(tmp_path, "--key", "a", "--key", "b") == 0
-    assert "dry run" in capsys.readouterr().out and not (tmp_path / "removals.csv").exists()
-    # --execute needs the table; the CSV is test-only, so write through the backend directly
-    removals = rs.CsvRemovals(tmp_path / "removals.csv")
-    with mock.patch.object(cmd.recordsets, "SynapseTableRemovals", lambda syn, tid: removals), \
-         mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
-         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
-        code = cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "a", "--key", " b ",
-                         "--key", "a", "--reason", "dup", "--execute"], syn=object())
-        again = cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "a",
-                          "--reason", "dup", "--execute"], syn=object())
+def test_request_dry_run_writes_nothing_and_execute_appends_requested_rows(removals, capsys):
+    assert request("--key", "a", "--key", "b") == 0
+    assert "dry run" in capsys.readouterr().out and removals.rows == []
+    code = request("--key", "a", "--key", " b ", "--key", "a", "--execute")
+    again = request("--key", "a", "--execute")
     assert code == 0 and again == 0
     assert removals.requested("synRS") == {"a": {"reason": "dup", "requestedBy": "42"},
                                            "b": {"reason": "dup", "requestedBy": "42"}}
-    assert len(pd.read_csv(tmp_path / "removals.csv")) == 2  # the repeat of a was skipped both times
+    assert len(removals.rows) == 2  # the repeat of a was skipped both times
 
 
-def test_request_composite_key_values_are_joined_per_key_column(tmp_path):
-    removals = rs.CsvRemovals(tmp_path / "removals.csv")
-    with mock.patch.object(cmd.recordsets, "SynapseTableRemovals", lambda syn, tid: removals), \
-         mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, ["g", "t"])), \
+def test_request_composite_key_values_are_joined_per_key_column(removals):
+    with mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, ["g", "t"])), \
          mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
         assert cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "G1", "T1",
                          "--reason", "dup", "--requested-by", "me", "--execute"], syn=object()) == 0
@@ -362,24 +329,19 @@ def test_request_composite_key_values_are_joined_per_key_column(tmp_path):
     assert removals.requested("synRS")[rs.KEY_SEP.join(["G1", "T1"])]["requestedBy"] == "me"
 
 
-def test_request_skips_a_key_that_is_already_removed(tmp_path, capsys):
-    removals = rs.CsvRemovals(tmp_path / "removals.csv")
+def test_request_skips_a_key_that_is_already_removed(removals, capsys):
     removals.append("synRS", "a", "requested")
     removals.append("synRS", "a", "removed", removed_in_version=2)
-    assert request(tmp_path, "--key", "a", "--key", "b") == 0  # dry run
+    assert request("--key", "a", "--key", "b") == 0  # dry run
     out = capsys.readouterr().out
     assert "already removed (v2)" in out and "request 1 key(s) ['b']" in out
-    with mock.patch.object(cmd.recordsets, "SynapseTableRemovals", lambda syn, tid: removals), \
-         mock.patch.object(cmd.recordsets, "recordset_info", lambda syn, rs_id: (3, [K])), \
-         mock.patch.object(cmd.recordsets, "principal_id", lambda syn: "42"):
-        cmd.main(["request", "--removals-table", "synREM", "--recordset", "synRS", "--key", "a",
-                  "--reason", "dup", "--execute"], syn=object())
+    request("--key", "a", "--execute")
     assert removals.removed("synRS") == {"a": 2} and removals.requested("synRS") == {}
-    assert len(pd.read_csv(tmp_path / "removals.csv")) == 2  # nothing appended
+    assert len(removals.rows) == 2  # nothing appended
 
 
-def test_a_crashed_revalidation_export_is_recovered_as_written_not_removed(tmp_path):
-    fake, log, removals = setup(tmp_path, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
+def test_a_crashed_revalidation_export_is_recovered_as_written_not_removed(tmp_path, log, removals):
+    fake = setup(log, removals, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
     log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)  # a removal whose export is owed
 
     def export_then_die(syn, rs_id, on_version=None, **kw):
@@ -394,3 +356,93 @@ def test_a_crashed_revalidation_export_is_recovered_as_written_not_removed(tmp_p
     status = dict(zip(log._read("synRS")["version"], log._read("synRS")["status"]))
     assert status[3] == "recovered" and log.unresolved_pending("synRS") == []
     assert log.unexported_removals("synRS") == []
+
+
+def test_summary_line_text():
+    s = {"recordset": "synRS", "status": "removed", "message": "removed ['b']", "base": 1, "version": 2, "remove": 1,
+         "not_found": 0, "claimed": {"b": 2}, "owed_export": [2]}
+    assert rs.summary_line(s, "recordset", cmd.SUMMARY_FIELDS) == (
+        "synRS: removed base=1 version=2 remove=1 not_found=0 claimed={'b': 2} removed ['b']")
+
+
+def test_a_recordset_that_moved_before_the_write_is_aborted_and_not_written(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
+    info = fake.info
+
+    def moved(syn, rs_id):  # another version lands once our pending row is logged
+        if log.rows and len(fake.versions) == 1:
+            fake.versions.append(V1)
+        return info(syn, rs_id)
+    fake.info = moved
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "retry" and "moved from v1 to v2 before the write" in s["message"]
+    assert fake.events == [] and len(fake.versions) == 2  # only the foreign version
+    assert log._read("synRS")["status"].tolist() == ["pending", "aborted"]
+    assert removals.removed("synRS") == {} and set(removals.requested("synRS")) == {"b"}
+
+
+def owed_export(log, removals):
+    """A RecordSet whose removal v2 owes its Grid export (nothing else requested)."""
+    fake = setup(log, removals, [V1, frame(["a", "T", '["x","y"]'], ["c", "T", ""])], requested=())
+    log.removed("synRS", 2, 1, "dcc-removal-dead", "42", 2)
+    return fake
+
+
+def test_revalidation_refused_by_the_lock_race_aborts_its_row(tmp_path, log, removals):
+    fake = owed_export(log, removals)
+    with mock.patch.object(type(log), "earlier_pending", lambda self, rs_id, run_id, now=None: "other"):
+        s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "locked" and "run other started its write first" in s["message"]
+    assert len(fake.versions) == 2 and fake.events == []
+    assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
+    assert log.unexported_removals("synRS") == [2]
+
+
+def test_revalidation_refused_when_the_recordset_moved_aborts_its_row(tmp_path, log, removals):
+    fake = owed_export(log, removals)
+    answers = iter([(2, [K]), (2, [K]), (3, [K])])  # start, claim_removed, after the export
+    fake.info = lambda syn, rs_id: next(answers)
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "retry" and "moved from v2 to v3 before the write" in s["message"]
+    assert len(fake.versions) == 2 and fake.events == []
+    assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
+    assert log.unexported_removals("synRS") == [2]
+
+
+def test_revalidation_refused_by_a_session_opened_after_the_lock_aborts_its_row(tmp_path, log, removals):
+    fake = owed_export(log, removals)
+    calls = iter([[], [SimpleNamespace(session_id="g2")]])
+    fake.open_sessions = lambda syn, rs_id: next(calls)
+    s = process(tmp_path, fake, log, removals)
+    assert s["status"] == "blocked" and "a Grid session was opened meanwhile" in s["message"]
+    assert len(fake.versions) == 2 and fake.events == []
+    assert log._read("synRS")["status"].tolist() == ["removed", "pending", "aborted"]
+    assert log.unexported_removals("synRS") == [2]
+
+
+def test_claim_unclaimed_refreshes_the_removals_before_it_reads(log, removals, monkeypatch):
+    calls, events = [], removals.removal_events
+    monkeypatch.setattr(removals, "refresh", lambda rs_id: calls.append(("refresh", rs_id)), raising=False)
+    monkeypatch.setattr(removals, "removal_events", lambda rs_id: calls.append(("events", rs_id)) or events(rs_id))
+    assert cmd.claim_unclaimed("syn", "synRS", removals, log, {}, {}, ["key"], None, "run-1", "42") == {}
+    assert calls == [("refresh", "synRS"), ("events", "synRS")]  # a claim decides from fresh removals rows
+
+
+def test_the_latest_version_is_read_without_the_cache(tmp_path, log, removals):
+    fake = setup(log, removals, [V1])
+    seen, read = [], fake.read
+    fake.read = lambda syn, rs_id, version=None, cache_dir=None, **kw: seen.append((version, cache_dir)) or read(
+        syn, rs_id, version, cache_dir, **kw)
+    process(tmp_path, fake, log, removals, execute=False)
+    assert (1, None) in seen
+
+
+def test_claim_removed_caches_the_version_before_the_latest_but_not_the_latest(tmp_path, log, removals):
+    fake = setup(log, removals, [V1, V1])
+    seen, read = [], fake.read
+    fake.read = lambda syn, rs_id, version=None, cache_dir=None, **kw: seen.append((version, cache_dir)) or read(
+        syn, rs_id, version, cache_dir, **kw)
+    with mock.patch.object(cmd.recordsets, "recordset_info", fake.info), \
+         mock.patch.object(cmd.recordsets, "read_recordset", fake.read):
+        cmd.claim_removed(object(), "synRS", removals, {2}, {}, [K], "cache", "dcc-removal-1", "42")
+    assert seen == [(1, "cache"), (2, None)]

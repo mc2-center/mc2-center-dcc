@@ -12,6 +12,18 @@ from synapseclient.models import Folder
 import argparse
 import pandas as pd
 import numpy as np
+import os
+import sys
+
+# removed when the mc2dcc package (CLI consolidation plan) lands
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+import crosswalk
+
+_NAME_COLUMNS = {  # component -> name column of its manifest
+    "DatasetView": "Dataset Name",
+    "ToolView": "Tool Name",
+    "EducationalResource": "Resource Title",
+}
 
 
 def get_args():
@@ -103,20 +115,8 @@ def main():
 
     manifest, data_type = args.m, args.t
 
-    if data_type == "DatasetView":
-
-        name_column = "Dataset Name"
-        primary_key = "DatasetView_id"
-
-    elif data_type == "ToolView":
-
-        name_column = "Tool Name"
-        primary_key = "ToolView_id"
-
-    elif data_type == "EducationalResource":
-
-        name_column = "Resource Title"
-        primary_key = "EducationalResource_id"
+    name_column = _NAME_COLUMNS[data_type]
+    primary_key = crosswalk.COMPONENT_FOLDERS[data_type]["primary_key"]
 
     print("Capturing information from " + data_type + " manifests...")
     pnt = get_names(manifest, name_column)

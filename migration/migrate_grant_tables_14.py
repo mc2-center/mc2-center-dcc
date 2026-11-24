@@ -67,7 +67,6 @@ import re
 import sys
 import urllib.error
 from collections import Counter
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -79,6 +78,7 @@ from synapseclient.models import Folder, MaterializedView, Table
 
 # removed when the mc2dcc package (CLI consolidation plan) lands
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "portal_tables"))
+from cells import is_null
 import crosswalk
 import merge_tables
 import model_contract
@@ -139,7 +139,7 @@ def get_args(argv=None):
     parser.add_argument("--grants", nargs="+", help="grant numbers to migrate (default: every grant)")
     parser.add_argument("--limit", type=int, help="stop after N grants")
     parser.add_argument(
-        "--schema-version", default="14.1.1",
+        "--schema-version", default="14.1.2",
         help="registered MC2Center-<Component>-<version> schema to bind (default: %(default)s)",
     )
     parser.add_argument("--write-log-table", help="Synapse ID of the write-log table (required with --execute)")
@@ -175,7 +175,7 @@ def get_args(argv=None):
         "(read-only NCBI calls; default: on for PublicationView)",
     )
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
-    parser.add_argument("--run-id", default=datetime.now().strftime("%Y%m%dT%H%M%S"), help="default: a timestamp")
+    parser.add_argument("--run-id", default=recordsets.new_run_id(), help="default: a timestamp")
     parser.add_argument("--redo", nargs="+", default=[], help="grant numbers to repeat although done (dry run only)")
     parser.add_argument(
         "--union-id",
@@ -229,9 +229,7 @@ def project_of(syn, entity_id: str) -> tuple[str | None, str | None]:
 
 
 def read_source(syn, table_id: str) -> pd.DataFrame:
-    return Table(id=table_id).query(
-        query=f"SELECT * FROM {table_id}", include_row_id_and_row_version=False, synapse_client=syn
-    )
+    return utils.read_table(syn, table_id)
 
 
 def safe_name(label: str) -> str:
@@ -286,7 +284,7 @@ def _as_text(series: pd.Series) -> pd.Series:
     """String cells; an integral float (a numeric column holding blanks) loses its ``.0``."""
     if pd.api.types.is_float_dtype(series):
         return series.map(lambda v: "" if pd.isna(v) else (str(int(v)) if float(v).is_integer() else str(v)))
-    return series.map(lambda v: "" if v is None or (not isinstance(v, (str, list)) and pd.isna(v)) else v)
+    return series.map(lambda v: "" if is_null(v) else v)
 
 
 def legacy_renames(component: str) -> dict[str, str]:
@@ -326,17 +324,14 @@ def read_reference(syn, component: str, version: int | None = None) -> pd.DataFr
 
 def read_portal(syn, component: str) -> pd.DataFrame:
     """The live portal table of the component (read-only)."""
-    table_id = utils.CONFIG[REFERENCE_RESOURCE[component]]["portal_table"]
-    return Table(id=table_id).query(
-        query=f"SELECT * FROM {table_id}", include_row_id_and_row_version=False, synapse_client=syn
-    )
+    return utils.read_table(syn, utils.CONFIG[REFERENCE_RESOURCE[component]]["portal_table"])
 
 
 def _flat(value) -> str:
     """A cell as comparable text: lists ", "-joined, blank for missing."""
     if isinstance(value, (list, tuple)):
         return ", ".join(str(v).strip() for v in value)
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
+    if is_null(value):
         return ""
     text = str(value).strip()
     if text.startswith("[") and text.endswith("]"):
@@ -611,7 +606,7 @@ def _id_value(value) -> tuple[int, int, str]:
 def load_duplicate_choices(path) -> dict[tuple[str, str], str]:
     """``{(grant, key): legacy Id to keep}`` from a CSV with columns ``key, keep_legacy_id`` and an
     optional ``grant`` (blank: any grant)."""
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df = recordsets.read_csv_str(path)
     missing = {"key", "keep_legacy_id"} - set(df.columns)
     if missing:
         raise ValueError(f"{path} lacks column(s) {sorted(missing)}")
@@ -875,10 +870,6 @@ def validate_frame(frame: pd.DataFrame, component: str, ref: str | None = None) 
 # --- one grant ----------------------------------------------------------------
 
 
-def _write(df: pd.DataFrame, path: Path) -> None:
-    recordsets.to_csv(df, path)
-
-
 def find_or_create_folder(syn, project_id: str, name: str) -> str:
     folder_id = operations.find_entity_id(name=name, parent=project_id, synapse_client=syn)
     if folder_id is None:
@@ -926,6 +917,34 @@ def verify_version(syn, rs_id, version, args, converted, key, stored, list_cols,
     return problems
 
 
+def rebind_and_export(syn, rs_id, bound, schema_uri, args, write_log, principal, rows, latest) -> list[int]:
+    """Bind ``schema_uri`` to the RecordSet, then re-validate it with one logged Grid export (same data).
+
+    Binding alone does not re-validate the stored version. If the export does not run (or fails), the old
+    binding is restored so that a rerun still sees the RecordSet as needing the re-bind.
+    """
+    if bound != schema_uri:  # already bound (a run died before exporting): only the export is missing
+        recordsets.bind_schema(syn, rs_id, schema_uri)
+    try:
+        return recordsets.write_logged(syn, rs_id, None, write_log, args.run_id, principal, rows, latest,
+                                       retry_note="rerun the migration")
+    except BaseException:
+        if bound and bound != schema_uri:
+            try:
+                recordsets.bind_schema(syn, rs_id, bound)
+            except Exception:
+                logger.exception("%s: could not restore the schema binding %s", rs_id, bound)
+        raise
+
+
+def _bound_after_version(syn, rs_id, version, bound_on) -> bool:
+    """True when the schema binding was created after RecordSet ``version``, so nothing validated that version against it."""
+    if pd.isna(bound_on):
+        return False
+    _, modified_on = recordsets.recordset_version_meta(syn, rs_id, version)
+    return bool(pd.notna(modified_on) and modified_on <= bound_on)
+
+
 def migrate_recordset(syn, entry, args, write_log, converted, converted_path, report_dir, summary, list_cols, set_like):
     """``--execute`` for one grant; updates ``summary`` (status, message, ...).
 
@@ -937,7 +956,7 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
     """
     component, key = args.component, KEYS[args.component]
     stored = recordsets.schema_columns(component) | {key}
-    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or FOLDER_MAP[component])
+    folder_id = find_or_create_folder(syn, entry["project"], entry.get("folder_name") or merge_tables.folder_name(entry["project"], component))
     rs_id = recordsets.find_recordset(syn, folder_id, component)
     principal = recordsets.principal_id(syn)
     recovered = {}
@@ -958,14 +977,41 @@ def migrate_recordset(syn, entry, args, write_log, converted, converted_path, re
         if logged:
             version = max(logged)
             base = logged[version]
-            if version in write_log.verified_versions(rs_id):
+            schema_uri = f"MC2Center-{component}-{args.schema_version}"
+            bound, bound_on = recordsets.schema_binding(syn, rs_id)
+            # A hard kill between the bind and its export leaves the target bound with no version validated against it.
+            bound_after = bound == schema_uri and _bound_after_version(syn, rs_id, version, bound_on)
+            if bound != schema_uri or bound_after:
+                if latest != version:
+                    summary.update(status="failed", message=(
+                        f"{rs_id} is bound to {bound}, not {schema_uri}, but v{latest} is newer than the last "
+                        f"pipeline version v{version} (edited since); not re-bound, nothing written"
+                        if bound != schema_uri else
+                        f"{rs_id} was bound to {schema_uri} after v{version}, but v{latest} is newer than the last "
+                        f"pipeline version (edited since); not re-exported, nothing written"))
+                    return
+                try:
+                    exported = rebind_and_export(syn, rs_id, bound, schema_uri, args, write_log, principal, len(converted), latest)
+                except recordsets.WriteRefused as refused:
+                    summary.update(status=refused.status, message=refused.message)
+                    return
+                if not exported:
+                    summary.update(status="failed", message=f"{rs_id}: the re-validating export created no version; nothing to verify")
+                    return
+                base_version = version
+                version, base = exported[-1], latest
+                summary["version"] = version
+                note = (f"re-exported as v{version} to re-validate against {schema_uri} (bound after v{base_version})"
+                        if bound_after else f"re-bound from {bound} to {schema_uri}, re-exported as v{version}")
+            elif version in write_log.verified_versions(rs_id):
                 summary.update(status="already_migrated", message=f"{rs_id} already migrated (v{version} verified)")
                 return
-            summary["version"] = version
-            if recovered:
-                summary["recovered"] = sorted(recovered)
-            note = (f"verified v{version}, recovered from an earlier run" if recovered
-                    else f"verified v{version}, logged by an earlier run but never verified")
+            else:
+                summary["version"] = version
+                if recovered:
+                    summary["recovered"] = sorted(recovered)
+                note = (f"verified v{version}, recovered from an earlier run" if recovered
+                        else f"verified v{version}, logged by an earlier run but never verified")
         else:
             created_at = write_log.created_version(rs_id)
             if created_at is None:
@@ -1031,6 +1077,26 @@ def _noted(summary: dict, absent: list) -> dict:
     return summary
 
 
+def _would_rebind(syn, entry, args, write_log=None):
+    """``(RecordSet ID, bound schema URI or None, re-export only)`` when a dry run would re-bind or re-export the grant's RecordSet, else None.
+
+    ``re-export only`` is set when it is already bound to the target, but after its newest logged version
+    (needs the write log, which a dry run may not have).
+    """
+    folder_id = operations.find_entity_id(name=entry.get("folder_name") or merge_tables.folder_name(entry["project"], args.component),
+                                          parent=entry["project"], synapse_client=syn)
+    rs_id = recordsets.find_recordset(syn, folder_id, args.component) if folder_id else None
+    if rs_id is None:
+        return None
+    bound, bound_on = recordsets.schema_binding(syn, rs_id)
+    if bound != f"MC2Center-{args.component}-{args.schema_version}":
+        return rs_id, bound, False
+    logged = write_log.pipeline_map(rs_id) if write_log is not None else {}
+    if logged and _bound_after_version(syn, rs_id, max(logged), bound_on):
+        return rs_id, bound, True
+    return None
+
+
 def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, list_cols, set_like, reference=lambda: None, portal=lambda: None,
                   recover=None, choices=None):
     """Convert (and with ``--execute`` migrate) one grant table.
@@ -1067,18 +1133,18 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
     differences, not_in_manifest = manifest_differences(converted, reference(), component, entry["grant"], recovered_keys, known)
     validation = validate_frame(converted, component, args.model_ref)
     converted_path = report_dir / "converted.csv"
-    _write(converted, converted_path)
-    _write(changes, report_dir / "changes.csv")
-    _write(unmapped, report_dir / "unmapped.csv")
-    _write(validation, report_dir / "validation.csv")
-    _write(validation_counts(validation), report_dir / "validation_counts.csv")
+    recordsets.to_csv(converted, converted_path)
+    recordsets.to_csv(changes, report_dir / "changes.csv")
+    recordsets.to_csv(unmapped, report_dir / "unmapped.csv")
+    recordsets.to_csv(validation, report_dir / "validation.csv")
+    recordsets.to_csv(validation_counts(validation), report_dir / "validation_counts.csv")
     if len(resolutions):
-        _write(resolutions, report_dir / "duplicates_resolved.csv")
+        recordsets.to_csv(resolutions, report_dir / "duplicates_resolved.csv")
     if len(recovered):
-        _write(recovered, report_dir / "recovered.csv")
-    _write(differences, report_dir / "manifest_differences.csv")
+        recordsets.to_csv(recovered, report_dir / "recovered.csv")
+    recordsets.to_csv(differences, report_dir / "manifest_differences.csv")
     if info.get("id_worklist"):
-        _write(pd.DataFrame(info["id_worklist"]).assign(grant=entry["grant"], grant_table=entry["table"])[ID_WORKLIST_COLUMNS],
+        recordsets.to_csv(pd.DataFrame(info["id_worklist"]).assign(grant=entry["grant"], grant_table=entry["table"])[ID_WORKLIST_COLUMNS],
                report_dir / "manifest_id_worklist.csv")
     authors_recovered = int((recovered["reason"] == "").sum())
     summary.update(
@@ -1095,21 +1161,22 @@ def process_grant(syn, entry, args, normalizer, write_log, report_dir: Path, lis
         return _noted(summary, absent), converted, source_keys
     if not args.execute:
         summary.update(status="dryrun", message="dry run: nothing written")
+        rebind = _would_rebind(syn, entry, args, write_log)
+        if rebind and rebind[2]:
+            summary["message"] += (f"; would re-export {rebind[0]} to re-validate against {rebind[1]} "
+                                   "(bound after its newest pipeline version)")
+        elif rebind:
+            summary["message"] += (f"; would re-bind {rebind[0]} from {rebind[1]} to MC2Center-{component}-{args.schema_version} and re-export it"
+                                   if rebind[1] else
+                                   f"; would bind {rebind[0]} (no schema bound) to MC2Center-{component}-{args.schema_version} and re-export it")
         return _noted(summary, absent), converted, source_keys
     migrate_recordset(syn, entry, args, write_log, converted, converted_path, report_dir, summary, list_cols, set_like)
     return _noted(summary, absent), converted, source_keys
 
 
-def summary_line(s: dict) -> str:
-    parts = [f"{s['grant']}: {s['status']}"]
-    for field in ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
+SUMMARY_FIELDS = ("table", "recordset", "version", "source_rows", "rows", "changes", "unmapped",
                   "validation_failures", "duplicates_resolved", "manifest_id_remapped", "manifest_id_ambiguous",
-                  "manifest_id_unmatched", "manifest_id_collision", "manifest_id_other_grant", "manifest_differences", "not_in_manifest", "authors_recovered", "truncated", "invalid_rows", "recovered"):
-        if field in s:
-            parts.append(f"{field}={s[field]}")
-    if s.get("message"):
-        parts.append(s["message"])
-    return " ".join(parts)
+                  "manifest_id_unmatched", "manifest_id_collision", "manifest_id_other_grant", "manifest_differences", "not_in_manifest", "authors_recovered", "truncated", "invalid_rows", "recovered")
 
 
 # --- state --------------------------------------------------------------------
@@ -1123,9 +1190,7 @@ def load_state(path: Path) -> dict:
 
 def save_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
-    tmp.replace(path)
+    utils.write_atomic(path, lambda tmp: tmp.write_text(json.dumps(state, indent=2, sort_keys=True)))
 
 
 # --- comparison ---------------------------------------------------------------
@@ -1416,7 +1481,7 @@ def main(argv=None, syn=None):
     args = get_args(argv)
     syn = syn or utils.syn_login()
     component = args.component
-    write_log = recordsets.SynapseTableWriteLog(syn, args.write_log_table) if args.write_log_table else None
+    write_log, _ = recordsets.open_logs(syn, args)  # None without --write-log-table
     list_cols = recordsets.list_columns(component)
     set_like = recordsets.set_like_columns(component)
     overrides = value_maps.load_overrides(args.overrides) if args.overrides else None
@@ -1488,8 +1553,8 @@ def main(argv=None, syn=None):
                        f"project {entry['project']} has more than one {component} table ({', '.join(ids)}); "
                        "one RecordSet per grant, none migrated"}
             report_dir.mkdir(parents=True, exist_ok=True)
-            (report_dir / "summary.txt").write_text(summary_line(summary) + "\n")
-            print(summary_line(summary))
+            (report_dir / "summary.txt").write_text(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS) + "\n")
+            print(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS))
             summaries.append(summary)
             continue
         previous = state["grants"].get(grant, {})
@@ -1508,7 +1573,7 @@ def main(argv=None, syn=None):
             legacy_keys[grant] = [str(k).strip() for k in converted[KEYS[component]]]
             source_keys[grant] = previous.get("source_keys", legacy_keys[grant])
             summaries.append(summary)
-            print(summary_line(summary))
+            print(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS))
             continue
         try:
             summary, converted, s_keys = process_grant(
@@ -1520,8 +1585,8 @@ def main(argv=None, syn=None):
                 {"grant": grant, "table": entry["table"], "status": "failed", "message": repr(err)}, None, [],
             )
         report_dir.mkdir(parents=True, exist_ok=True)
-        (report_dir / "summary.txt").write_text(summary_line(summary) + "\n")
-        print(summary_line(summary))
+        (report_dir / "summary.txt").write_text(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS) + "\n")
+        print(recordsets.summary_line(summary, "grant", SUMMARY_FIELDS))
         summaries.append(summary)
         if converted is not None:
             frames[grant] = _frames_from(report_dir)
@@ -1597,7 +1662,7 @@ def _frames_from(report_dir: Path) -> dict:
     out = {}
     for name in ("changes", "unmapped", "validation", "converted", "recovered", "manifest_differences", "manifest_id_worklist"):
         path = report_dir / f"{name}.csv"
-        out[name] = pd.read_csv(path, dtype=str, keep_default_na=False) if path.exists() else None
+        out[name] = recordsets.read_csv_str(path) if path.exists() else None
     return out
 
 

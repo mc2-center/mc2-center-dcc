@@ -1,7 +1,5 @@
-"""annotations/migrate_grant_tables_14.py with every Synapse call mocked."""
-import importlib.util
+"""migration/migrate_grant_tables_14.py with every Synapse call mocked."""
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -9,11 +7,11 @@ import pandas as pd
 import pytest
 
 import recordsets as rs
+from conftest import load_script
+from fakes import FakeProjectSynapse
 
-ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("migrate_grant_tables_14", ROOT / "annotations" / "migrate_grant_tables_14.py")
-mig = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mig)
+mig = load_script("migration/migrate_grant_tables_14.py", "migrate_grant_tables_14")
+pytestmark = pytest.mark.usefixtures("synapse_tables")
 
 KEY = "PublicationViewId"
 HEADERS = ["Component", "PublicationView_id", "GrantView Key", "Publication Title", "Publication Doi",
@@ -28,20 +26,14 @@ def source_table(rows=None, headers=HEADERS):
     return pd.DataFrame(rows, columns=headers)
 
 
-class FakeSynapse:
-    """Grant tables, projects, folders and RecordSets (versions as DataFrames)."""
+class FakeSynapse(FakeProjectSynapse):
+    """The grant tables and projects, on top of the folders and RecordSets (versions as DataFrames)."""
 
     def __init__(self, tables=None, existing=None, grants=None):
+        super().__init__(KEY, {"Assay", "TumorType"}, existing)
         # tables: {table id: (grant number, project, frame)}
         self.tables = tables or {"synT1": ("CA1", "synP1", source_table())}
         self.grants = grants or {p: g for g, p, _ in self.tables.values()}
-        self.folders = {}        # (project, name) -> folder id
-        self.rs = dict(existing or {})  # recordset id -> list of version frames
-        self.rs_folder = {}      # folder id -> recordset id
-        self.created = []        # kwargs of every create_record_based_metadata_task call
-        self.created_folders = []
-        self.writes = []
-        self.next_id = 100
         self.reference_source = None  # merged-manifest frame (13.1.0 headers) or None
         self.reference_reads = 0
         self.reference_versions = []  # the version each read asked for
@@ -49,6 +41,11 @@ class FakeSynapse:
         self.pubmed_authors = {}      # PMID -> author list PubMed returns
         self.pubmed_calls = []
         self.pubmed_failed = set()    # PMIDs whose request fails
+        self.bound = {}               # recordset id -> bound schema URI (default: the current one; None = unbound)
+        self.bound_on = {}            # recordset id -> binding creation time (default: long ago)
+        self.binds = []               # (recordset id, URI) of every bind_schema call
+        self.exports = 0
+        self.export_fails = False
 
     def fetch_authors(self, pmids, cache_dir=None, failed=None, **kw):
         self.pubmed_calls.append((list(pmids), cache_dir))
@@ -83,55 +80,23 @@ class FakeSynapse:
     def read_source(self, syn, table_id):
         return self.tables[table_id][2].copy()
 
-    # folders / recordsets
-    def find_entity_id(self, name, parent, synapse_client=None):
-        return self.folders.get((parent, name))
+    def export(self, syn, rs_id, on_version=None, **kw):
+        if self.export_fails:
+            raise RuntimeError("grid down")
+        self.exports += 1
+        return super().export(syn, rs_id, on_version, **kw)  # a re-validating export: same data, new version
 
-    def Folder(self, name, parent_id):
-        outer = self
+    def bind(self, syn, rs_id, uri):
+        self.binds.append((rs_id, uri))
+        self.bound[rs_id] = uri
+        self.bound_on[rs_id] = pd.Timestamp.now(tz="UTC")  # versions read later (fake.meta) are newer
 
-        class _F:
-            def store(self, synapse_client=None):
-                outer.next_id += 1
-                fid = f"synF{outer.next_id}"
-                outer.folders[(parent_id, name)] = fid
-                outer.created_folders.append((parent_id, name))
-                return SimpleNamespace(id=fid)
-
-        return _F()
-
-    def find_recordset(self, syn, folder, component):
-        return self.rs_folder.get(folder)
-
-    def create_task(self, **kw):
-        self.created.append(kw)
-        self.next_id += 1
-        rs_id = f"synRS{self.next_id}"
-        self.rs[rs_id] = [pd.DataFrame(columns=[KEY])]
-        self.rs_folder[kw["folder_id"]] = rs_id
-        return SimpleNamespace(id=rs_id), SimpleNamespace(task_id=1)
-
-    def info(self, syn, rs_id):
-        return len(self.rs[rs_id]), [KEY]
-
-    def read(self, syn, rs_id, version=None, cache_dir=None, list_cols=()):
-        return self.rs[rs_id][(version or len(self.rs[rs_id])) - 1].copy()
-
-    def write(self, syn, rs_id, csv_path, on_version=None, **kw):
-        written = rs._load_csv(csv_path, {"Assay", "TumorType"})
-        self.writes.append(written)
-        self.rs[rs_id].append(written)
-        if on_version:
-            on_version(len(self.rs[rs_id]))
-        return [len(self.rs[rs_id])]
-
-    def validation(self, syn, rs_id, version, loc, keys):
-        return pd.DataFrame({"key": keys, "row_index": range(len(keys)), "is_valid": [True] * len(keys),
-                             "validation_error_message": [""] * len(keys), "all_validation_messages": [""] * len(keys)})
+    def binding(self, syn, rs_id, component="PublicationView"):
+        uri = self.bound.get(rs_id, f"MC2Center-{component}-14.1.2")
+        return uri, (self.bound_on.get(rs_id, pd.Timestamp("2000-01-01", tz="UTC")) if uri else pd.NaT)
 
 
-def run(tmp_path, fake, *extra, execute=False, log=None, run_id="r1", component="PublicationView", out="out"):
-    log = log or tmp_path / "log.csv"
+def run(tmp_path, fake, *extra, execute=False, run_id="r1", component="PublicationView", out="out"):
     argv = ["--component", component, "--out-dir", str(tmp_path / out), "--run-id", run_id,
             "--cache-dir", str(tmp_path / "cache"), *extra]
     if execute:
@@ -151,7 +116,10 @@ def run(tmp_path, fake, *extra, execute=False, log=None, run_id="r1", component=
          mock.patch.object(mig.recordsets, "read_recordset", fake.read), \
          mock.patch.object(mig.recordsets, "write_via_grid", fake.write), \
          mock.patch.object(mig.recordsets, "get_validation", fake.validation), \
-         mock.patch.object(mig.recordsets, "SynapseTableWriteLog", lambda syn, tid: rs.CsvWriteLog(log)), \
+         mock.patch.multiple(mig.recordsets, recordset_version_meta=fake.meta,
+                             schema_binding=lambda syn, rs_id: fake.binding(syn, rs_id, component)), \
+         mock.patch.object(mig.recordsets, "bind_schema", fake.bind), \
+         mock.patch.object(mig.recordsets, "export_via_grid", fake.export), \
          mock.patch.object(mig.recordsets, "principal_id", lambda syn: "42"), \
          mock.patch.object(mig.merge_tables, "build_union", lambda syn, comp, grants: fake.union(grants)):
         code = mig.main(argv, syn=object())
@@ -166,7 +134,7 @@ def union_of(fake):
             folder = fake.folders.get((g, "publications"))
             rs_id = fake.rs_folder.get(folder)
             if rs_id:
-                frames.append(fake.rs[rs_id][-1])
+                frames.append(fake.rs[rs_id].versions[-1])
         union = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=[KEY])
         union = union.rename(columns={KEY: "PublicationView_id"})
         return union, {"grants_scanned": len(grants), "recordsets_found": len(frames),
@@ -322,11 +290,11 @@ def test_local_validation_flags_a_non_enum_value_and_a_bad_uri():
 # --- dry run ----------------------------------------------------------------------
 
 
-def test_dry_run_writes_nothing_to_synapse_and_writes_the_reports(tmp_path):
+def test_dry_run_writes_nothing_to_synapse_and_writes_the_reports(tmp_path, log):
     fake = FakeSynapse()
     code, rep = run(tmp_path, fake)
     assert fake.writes == [] and fake.created == [] and fake.created_folders == []
-    assert not (tmp_path / "log.csv").exists()
+    assert log.rows == []
     grant = rep / "CA1"
     for name in ("converted.csv", "changes.csv", "unmapped.csv", "validation.csv", "summary.txt"):
         assert (grant / name).exists(), name
@@ -437,22 +405,22 @@ def test_unlisted_grant_can_be_selected_by_its_label(tmp_path):
 # --- execute ----------------------------------------------------------------------
 
 
-def test_execute_creates_folder_and_recordset_loads_through_grid_and_logs(tmp_path):
+def test_execute_creates_folder_and_recordset_loads_through_grid_and_logs(tmp_path, log):
     fake = FakeSynapse()
     code, rep = run(tmp_path, fake, execute=True)
     assert fake.created_folders == [("synP1", "publications")]
     kw = fake.created[0]
     assert kw["create_grid"] is False and kw["bind_schema_to_record_set"] is True
     assert kw["record_set_name"] == "MC2Center_PublicationView_RecordSet"
-    assert kw["upsert_keys"] == [KEY] and kw["schema_uri"] == "MC2Center-PublicationView-14.1.1"
+    assert kw["upsert_keys"] == [KEY] and kw["schema_uri"] == "MC2Center-PublicationView-14.1.2"
     assert kw["project_id"] == "synP1" and kw["folder_id"] == fake.folders[("synP1", "publications")]
     rs_id = next(iter(fake.rs))
-    assert len(fake.writes) == 1 and len(fake.rs[rs_id]) == 2
-    log = rs.CsvWriteLog(tmp_path / "log.csv")._read(rs_id)
-    assert log["status"].tolist() == ["created", "pending", "written", "done", "verified"]
-    assert log["baseVersion"].tolist() == [1, 1, 1, 1, 1]
-    assert log["version"].dropna().astype(int).tolist() == [1, 2, 2]  # created v1, written v2, verified v2
-    assert rs.CsvWriteLog(tmp_path / "log.csv").pipeline_map(rs_id) == {2: 1}
+    assert len(fake.writes) == 1 and len(fake.rs[rs_id].versions) == 2
+    rows = log._read(rs_id)
+    assert rows["status"].tolist() == ["created", "pending", "written", "done", "verified"]
+    assert rows["baseVersion"].tolist() == [1, 1, 1, 1, 1]
+    assert rows["version"].dropna().astype(int).tolist() == [1, 2, 2]  # created v1, written v2, verified v2
+    assert log.pipeline_map(rs_id) == {2: 1}
     assert status_of(rep) == "migrated"
     assert (rep / "CA1" / "synapse_validation.csv").exists()
     assert "RecordSet union vs legacy union" in (rep / "comparison.txt").read_text()
@@ -471,7 +439,7 @@ def test_execute_verifies_the_read_back_and_reports_a_mismatch(tmp_path):
 
     def corrupting(syn, rs_id, csv_path, on_version=None, **kw):
         out = real_write(syn, rs_id, csv_path, on_version=on_version, **kw)
-        fake.rs[rs_id][-1].loc[0, "PublicationTitle"] = "Changed by Grid"
+        fake.rs[rs_id].versions[-1].loc[0, "PublicationTitle"] = "Changed by Grid"
         return out
 
     fake.write = corrupting
@@ -484,43 +452,42 @@ def test_execute_read_back_accepts_grids_json_array_lists(tmp_path):
     fake = FakeSynapse()
     code, rep = run(tmp_path, fake, execute=True)
     rs_id = next(iter(fake.rs))
-    stored = fake.rs[rs_id][-1].set_index(KEY)
+    stored = fake.rs[rs_id].versions[-1].set_index(KEY)
     assert stored.loc["p1", "Assay"] == ["RNA Sequencing", "Mass Spectrometry"]
     assert not (rep / "CA1" / "verification.txt").exists()
 
 
-def seed_existing(fake, rs_id="synRSX", logged=False, verified=False, log_path=None):
+def seed_existing(fake, rs_id="synRSX", logged=False, verified=False, log=None):
     folder = "synFX"
     fake.folders[("synP1", "publications")] = folder
     fake.rs_folder[folder] = rs_id
-    fake.rs[rs_id] = [pd.DataFrame(columns=[KEY]), pd.DataFrame({KEY: ["p1"]})]
+    fake.add(rs_id, [pd.DataFrame(columns=[KEY]), pd.DataFrame({KEY: ["p1"]})])
     if logged:
-        log = rs.CsvWriteLog(log_path)
         log.start(rs_id, 1, "old", "42")
         log.record(rs_id, 2, "old", 1, base=1, principal="42")
         log.finish(rs_id, 1, "old", "42")
     if verified:
-        rs.CsvWriteLog(log_path).verified(rs_id, 2, 1, "old", "42")
+        log.verified(rs_id, 2, 1, "old", "42")
 
 
-def test_execute_skips_a_logged_and_verified_existing_recordset(tmp_path):
+def test_execute_skips_a_logged_and_verified_existing_recordset(tmp_path, log):
     fake = FakeSynapse()
-    seed_existing(fake, logged=True, verified=True, log_path=tmp_path / "log.csv")
+    seed_existing(fake, logged=True, verified=True, log=log)
     code, rep = run(tmp_path, fake, execute=True)
     assert status_of(rep) == "already_migrated" and fake.writes == [] and fake.created == []
-    assert len(fake.rs["synRSX"]) == 2
+    assert len(fake.rs["synRSX"].versions) == 2
 
 
-def test_execute_verifies_a_logged_but_unverified_load_instead_of_skipping(tmp_path):
+def test_execute_verifies_a_logged_but_unverified_load_instead_of_skipping(tmp_path, log):
     fake = FakeSynapse()
-    seed_existing(fake, logged=True, log_path=tmp_path / "log.csv")  # content p1 only: not what converted holds
+    seed_existing(fake, logged=True, log=log)  # content p1 only: not what converted holds
     code, rep = run(tmp_path, fake, execute=True)
     assert status_of(rep) == "verification_mismatch" and code == 1 and fake.writes == []
     assert (rep / "CA1" / "verification.txt").exists()
-    assert rs.CsvWriteLog(tmp_path / "log.csv").verified_versions("synRSX") == set()
+    assert log.verified_versions("synRSX") == set()
 
 
-def test_a_run_that_failed_after_the_export_is_verified_not_skipped_on_rerun(tmp_path):
+def test_a_run_that_failed_after_the_export_is_verified_not_skipped_on_rerun(tmp_path, log):
     fake = FakeSynapse()
     real_read = fake.read
     state = {"fail": True}
@@ -534,7 +501,6 @@ def test_a_run_that_failed_after_the_export_is_verified_not_skipped_on_rerun(tmp
     code, rep = run(tmp_path, fake, execute=True, run_id="r1")
     assert status_of(rep) == "failed" and len(fake.writes) == 1
     rs_id = next(iter(fake.rs))
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log.pipeline_map(rs_id) == {2: 1} and log.verified_versions(rs_id) == set()
     state["fail"] = False
     code, rep = run(tmp_path, fake, execute=True, run_id="r2")
@@ -545,8 +511,136 @@ def test_a_run_that_failed_after_the_export_is_verified_not_skipped_on_rerun(tmp
     assert status_of(rep) == "already_migrated"
 
 
-def test_verified_and_created_rows_are_neither_versions_nor_pending_closers(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+OLD_URI, NEW_URI = "MC2Center-PublicationView-14.1.1", "MC2Center-PublicationView-14.1.2"
+
+
+def migrated_but_bound_to_the_old_schema(tmp_path, fake, log, verified=True):
+    run(tmp_path, fake, execute=True, run_id="r1")
+    rs_id = next(iter(fake.rs))
+    if not verified:  # as after a run that died before logging ``verified``
+        log.rows = [r for r in log.rows if r["status"] != "verified"]
+    fake.bound[rs_id] = OLD_URI
+    return rs_id
+
+
+@pytest.mark.parametrize("verified", [True, False])
+def test_execute_rebinds_and_re_exports_a_recordset_bound_to_another_schema_version(tmp_path, verified, log):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log, verified)
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "migrated"
+    assert fake.binds == [(rs_id, NEW_URI)] and fake.exports == 1 and len(fake.writes) == 1
+    assert f"re-bound from {OLD_URI} to {NEW_URI}, re-exported as v3" in (rep / "CA1" / "summary.txt").read_text()
+    assert log.pipeline_map(rs_id) == {2: 1, 3: 2} and 3 in log.verified_versions(rs_id)
+    assert not log.unresolved_pending(rs_id)
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")  # now bound to the new version
+    assert status_of(rep) == "already_migrated" and fake.exports == 1
+
+
+def test_a_rebind_is_refused_when_the_recordset_was_edited_since_the_last_pipeline_version(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log)
+    fake.rs[rs_id].versions.append(pd.DataFrame({KEY: ["someone else"]}))  # a contributor wrote v3
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "failed" and fake.binds == [] and fake.exports == 0
+    assert "v3 is newer than the last pipeline version v2" in (rep / "CA1" / "summary.txt").read_text()
+
+
+def test_a_failed_re_export_restores_the_old_binding_so_a_rerun_rebinds(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log)
+    fake.export_fails = True
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "failed" and fake.binds == [(rs_id, NEW_URI), (rs_id, OLD_URI)]
+    assert not log.unresolved_pending(rs_id)
+    fake.export_fails = False
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")
+    assert status_of(rep) == "migrated" and fake.exports == 1 and fake.bound[rs_id] == NEW_URI
+
+
+def test_dry_run_reports_a_rebind_and_writes_nothing(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log)
+    code, rep = run(tmp_path, fake, out="out2", run_id="r2")
+    text = (rep / "CA1" / "summary.txt").read_text()
+    assert status_of(rep) == "dryrun" and f"would re-bind {rs_id} from {OLD_URI} to {NEW_URI}" in text
+    assert fake.binds == [] and fake.exports == 0
+
+
+def bound_after_the_last_version(tmp_path, fake, log, verified=True):
+    """Migrated and bound to the target, but the binding is newer than v2 (a run killed after the bind)."""
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log, verified)
+    fake.bound[rs_id] = NEW_URI
+    fake.bound_on[rs_id] = pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=1)
+    return rs_id
+
+
+def test_a_binding_newer_than_the_verified_version_is_re_exported_without_a_rebind(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = bound_after_the_last_version(tmp_path, fake, log)
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "migrated" and fake.binds == [] and fake.exports == 1
+    assert f"re-exported as v3 to re-validate against {NEW_URI} (bound after v2)" in (rep / "CA1" / "summary.txt").read_text()
+    assert log.pipeline_map(rs_id) == {2: 1, 3: 2} and 3 in log.verified_versions(rs_id)
+
+
+def test_a_failed_export_after_a_bound_but_unvalidated_state_does_not_touch_the_binding(tmp_path, log):
+    fake = FakeSynapse()
+    bound_after_the_last_version(tmp_path, fake, log)
+    fake.export_fails = True
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "failed" and fake.binds == []
+
+
+def test_a_verified_version_newer_than_the_binding_is_already_migrated(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log)
+    fake.bound[rs_id] = NEW_URI
+    fake.bound_on[rs_id] = pd.Timestamp("2000-01-01", tz="UTC")
+    code, rep = run(tmp_path, fake, execute=True, run_id="r2", out="out2")
+    assert status_of(rep) == "already_migrated" and fake.binds == [] and fake.exports == 0 and len(fake.writes) == 1
+
+
+def test_an_unbound_recordset_is_bound_and_re_exported(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = migrated_but_bound_to_the_old_schema(tmp_path, fake, log)
+    fake.bound[rs_id] = None
+    code, rep = run(tmp_path, fake, "--write-log-table", "synLOG", out="out2", run_id="r2")  # dry run
+    text = (rep / "CA1" / "summary.txt").read_text()
+    assert status_of(rep) == "dryrun" and f"would bind {rs_id} (no schema bound) to {NEW_URI}" in text
+    assert fake.binds == [] and fake.exports == 0
+    code, rep = run(tmp_path, fake, execute=True, run_id="r3", out="out3")
+    assert status_of(rep) == "migrated" and fake.binds == [(rs_id, NEW_URI)] and fake.exports == 1
+
+
+def test_dry_run_reports_a_binding_newer_than_the_last_version(tmp_path, log):
+    fake = FakeSynapse()
+    rs_id = bound_after_the_last_version(tmp_path, fake, log)
+    code, rep = run(tmp_path, fake, "--write-log-table", "synLOG", out="out2", run_id="r2")
+    assert f"would re-export {rs_id} to re-validate against {NEW_URI}" in (rep / "CA1" / "summary.txt").read_text()
+    assert fake.exports == 0
+
+
+def _http_error(status):
+    err = rs.SynapseHTTPError("x")
+    err.response = SimpleNamespace(status_code=status)
+    return err
+
+
+def test_schema_binding_is_none_for_an_unbound_recordset_and_reraises_other_errors():
+    def raising(status):
+        def get_schema(self, synapse_client=None):
+            raise _http_error(status)
+        return mock.patch.object(rs.RecordSet, "get_schema", get_schema)
+
+    with raising(404):
+        uri, on = rs.schema_binding(object(), "synR")
+        assert uri is None and pd.isna(on) and rs.bound_schema_uri(object(), "synR") is None
+    with raising(403), pytest.raises(rs.SynapseHTTPError):
+        rs.schema_binding(object(), "synR")
+
+
+def test_verified_and_created_rows_are_neither_versions_nor_pending_closers(log):
     log.created("synR", 1, "r1", "42")
     log.start("synR", 1, "r1", "42")
     log.verified("synR", 2, 1, "r1", "42")
@@ -556,7 +650,7 @@ def test_verified_and_created_rows_are_neither_versions_nor_pending_closers(tmp_
     assert log.created_version("synR") == 1 and log.verified_versions("synR") == {2}
 
 
-def test_an_empty_recordset_left_after_a_failed_load_is_loaded_on_rerun(tmp_path):
+def test_an_empty_recordset_left_after_a_failed_load_is_loaded_on_rerun(tmp_path, log):
     fake = FakeSynapse()
     real_write = fake.write
 
@@ -571,7 +665,7 @@ def test_an_empty_recordset_left_after_a_failed_load_is_loaded_on_rerun(tmp_path
     assert status_of(rep) == "migrated" and len(fake.created) == 1 and len(fake.writes) == 1
     assert "left empty at v1" in (rep / "CA1" / "summary.txt").read_text()
     rs_id = next(iter(fake.rs))
-    assert rs.CsvWriteLog(tmp_path / "log.csv").verified_versions(rs_id) == {2}
+    assert log.verified_versions(rs_id) == {2}
 
 
 def test_a_newer_unlogged_version_after_creation_is_not_loaded_over(tmp_path):
@@ -584,15 +678,14 @@ def test_a_newer_unlogged_version_after_creation_is_not_loaded_over(tmp_path):
     fake.write = boom
     run(tmp_path, fake, execute=True, run_id="r1")
     rs_id = next(iter(fake.rs))
-    fake.rs[rs_id].append(pd.DataFrame({KEY: ["someone else"]}))  # a contributor wrote v2
+    fake.rs[rs_id].versions.append(pd.DataFrame({KEY: ["someone else"]}))  # a contributor wrote v2
     fake.write = real_write
     code, rep = run(tmp_path, fake, execute=True, run_id="r2")
     assert status_of(rep) == "failed" and fake.writes == []
     assert "exists but not migrated; investigate" in (rep / "CA1" / "summary.txt").read_text()
 
 
-def test_retry_message_on_the_migration_path_says_rerun_the_migration(tmp_path):
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
+def test_retry_message_on_the_migration_path_says_rerun_the_migration(tmp_path, log):
     csv = tmp_path / "c.csv"
     csv.write_text("a\n1\n")
     with mock.patch.object(rs, "recordset_info", lambda syn, rs_id: (3, [KEY])):
@@ -611,7 +704,7 @@ def test_execute_fails_an_unlogged_existing_recordset_and_never_overwrites(tmp_p
     assert fake.writes == [] and fake.created == []
 
 
-def test_execute_aborts_the_pending_row_when_the_write_fails(tmp_path):
+def test_execute_aborts_the_pending_row_when_the_write_fails(tmp_path, log):
     fake = FakeSynapse()
 
     def boom(syn, rs_id, csv_path, on_version=None, **kw):
@@ -621,7 +714,6 @@ def test_execute_aborts_the_pending_row_when_the_write_fails(tmp_path):
     code, rep = run(tmp_path, fake, execute=True)
     assert status_of(rep) == "failed" and "grid down" in (rep / "CA1" / "summary.txt").read_text()
     rs_id = next(iter(fake.rs))
-    log = rs.CsvWriteLog(tmp_path / "log.csv")
     assert log._read(rs_id)["status"].tolist() == ["created", "pending", "aborted"]
     assert log.unresolved_pending(rs_id) == []
 
@@ -1267,7 +1359,7 @@ def test_an_empty_recordset_with_the_wrong_upsert_key_is_not_loaded_on_resume(tm
     fake.write = boom
     run(tmp_path, fake, execute=True, run_id="r1")
     fake.write = real_write
-    fake.info = lambda syn, rs_id: (len(fake.rs[rs_id]), ["Wrong"])
+    fake.info = lambda syn, rs_id: (len(fake.rs[rs_id].versions), ["Wrong"])
     code, rep = run(tmp_path, fake, execute=True, run_id="r2")
     assert status_of(rep) == "failed" and code == 1 and fake.writes == []
     assert "upsert key ['Wrong'], expected ['PublicationViewId']" in (rep / "CA1" / "summary.txt").read_text()
@@ -1738,3 +1830,48 @@ def test_an_unmatched_key_override_is_reported_with_the_unused_row_overrides(tmp
     assert converted[MS_KEY].tolist() == ["syn_chosen", "syn_same"]
     text = (rep / "run_summary.txt").read_text()
     assert "row overrides that matched no row: 1" in text and f"{MS_KEY} / syn_typo" in text
+
+
+# --- per-project folder name (merge_tables.FOLDER_OVERRIDES) -------------------------
+
+
+class _Stop(Exception):
+    pass
+
+
+@pytest.mark.parametrize("entry, expected", [
+    ({"project": "syn9772917"}, "tool_curation"),
+    ({"project": "syn9772917", "folder_name": "admin_choice"}, "admin_choice"),  # admin name wins
+    ({"project": "synP1"}, "tools"),
+])
+def test_migration_resolves_the_folder_name_per_project(entry, expected):
+    args = SimpleNamespace(component="ToolView", schema_version="14.1.2", run_id="r")
+    seen = []
+
+    def stop(syn, project, name):
+        seen.append(name)
+        raise _Stop
+
+    with mock.patch.object(mig, "find_or_create_folder", stop), pytest.raises(_Stop):
+        mig.migrate_recordset(object(), entry, args, None, None, None, None, {}, set(), set())
+    finds = []
+
+    def find(name, parent, synapse_client=None):
+        finds.append(name)
+
+    with mock.patch.object(mig.operations, "find_entity_id", find):
+        assert mig._would_rebind(object(), entry, args) is None
+    assert seen == [expected] and finds == [expected]
+
+
+def test_summary_line_text():
+    s = {"grant": "CA1", "status": "migrated", "message": "done", "table": "syn1", "recordset": "synRS", "version": 2,
+         "source_rows": 2, "rows": 2, "changes": 3, "unmapped": 1, "validation_failures": 0, "duplicates_resolved": 1,
+         "manifest_id_remapped": 1, "manifest_id_ambiguous": 2, "manifest_id_unmatched": 3, "manifest_id_collision": 4,
+         "manifest_id_other_grant": 5, "manifest_differences": 6, "not_in_manifest": 7, "authors_recovered": 8,
+         "truncated": 9, "invalid_rows": 10, "recovered": [3], "state": "ignored"}
+    assert rs.summary_line(s, "grant", mig.SUMMARY_FIELDS) == (
+        "CA1: migrated table=syn1 recordset=synRS version=2 source_rows=2 rows=2 changes=3 unmapped=1 "
+        "validation_failures=0 duplicates_resolved=1 manifest_id_remapped=1 manifest_id_ambiguous=2 "
+        "manifest_id_unmatched=3 manifest_id_collision=4 manifest_id_other_grant=5 manifest_differences=6 "
+        "not_in_manifest=7 authors_recovered=8 truncated=9 invalid_rows=10 recovered=[3] done")

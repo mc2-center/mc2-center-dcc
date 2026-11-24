@@ -37,7 +37,7 @@ author: orion.banks
 """
 
 from synapseclient import Synapse, operations
-from synapseclient.models import File, Table
+from synapseclient.models import File
 import argparse
 import logging
 import os
@@ -45,6 +45,7 @@ import pandas as pd
 from pathlib import Path
 import re
 import build_tag_lists
+from cells import parse_list
 import comma_terms
 import manifest_cleanup
 import merge_tables
@@ -67,19 +68,21 @@ DEFAULT_CARRY = ("iconTags",)
 # Components whose iconTags are computed from their Assay terms (data-models term -> icon label map).
 ICON_TAGGED = ("PublicationView", "DatasetView")
 ICON_TAG_MAP = "modules/shared/mc2_iconTag_map_3-4-25.csv"
-# The live publication and dataset manifests hold one row per alias (grants merged);
-# the live tool manifest repeats a tool name once per grant, so tools stay unmerged.
-DEFAULT_MERGE = ("PublicationView", "DatasetView")
+# The live publication, dataset and tool manifests hold one row per alias (grants merged;
+# a tool is merged by Tool Name, each tool having one shared entity).
+DEFAULT_MERGE = ("PublicationView", "DatasetView", "ToolView")
 # Manifest columns that are not schema properties (not validated).
 NON_SCHEMA = ("Component", "entityId", "iconTags")
 ID_CONFLICT_COLUMNS = ["alias", "ids", "grants", "rows"]
+KEY_CONFLICT_COLUMNS = ["key", "grants", "names", "rows", "reason"]
 CORRECTION_COLUMNS = ["key", "column", "current_value", "proposed_value", "status"]
 
 
 def get_args(argv=None):
 
     parser = argparse.ArgumentParser(
-        description="Regenerate and validate the merged manifests the sync scripts read"
+        description="Regenerate and validate the merged manifests the sync scripts read",
+        allow_abbrev=False,  # a removed flag such as -t must not be read as an abbreviation of -tp
     )
     parser.add_argument(
         "--regenerate",
@@ -133,7 +136,7 @@ def get_args(argv=None):
         nargs="*",
         choices=COMPONENTS,
         default=list(DEFAULT_MERGE),
-        help="Regenerate mode: components whose rows are merged by alias key (default: publications and datasets).",
+        help="Regenerate mode: components whose rows are merged by alias key (default: publications, datasets and tools).",
     )
     parser.add_argument(
         "--no-fill",
@@ -145,15 +148,12 @@ def get_args(argv=None):
         "--upload",
         action="store_true",
         help="Regenerate mode: LIVE WRITE. Store each manifest as a new version of the current manifest file. "
-        "Refused while any merged alias holds different ids in different grants (id_conflicts.csv).",
+        "Refused while any merged alias holds different ids in different grants (id_conflicts.csv), "
+        "or while an unmerged manifest holds an id twice in one grant or on different names (key_conflicts.csv).",
     )
     # legacy mode
     parser.add_argument("-l", nargs="+", help="Legacy mode: Synapse table IDs to query.")
     parser.add_argument("-p", help="Legacy mode: path to mapping CSV")
-    # Deprecated legacy flags: accepted so existing SOP commands keep running, otherwise ignored.
-    parser.add_argument("-c", default=None, help="Deprecated, ignored: schematic config (validation is now jsonschema).")
-    parser.add_argument("-t", action="store_true", help="Deprecated, ignored: rows are never trimmed.")
-    parser.add_argument("-bl", default=None, help="Deprecated, ignored: row numbers to trim (rows are never trimmed).")
     parser.add_argument(
         "-tp", required=False, default=None, help="Legacy mode: path to a manifest CSV to validate (and merge with -m)."
     )
@@ -179,10 +179,6 @@ def get_args(argv=None):
         column labels will be added to updated output to indicate table source.""",
     )
     args = parser.parse_args(argv)
-    for flag, given in (("-c", args.c), ("-t", args.t), ("-bl", args.bl)):
-        if given:
-            logger.warning("%s is deprecated and ignored: validation is now jsonschema (no schematic config) "
-                           "and rows are never trimmed", flag)
     return args
 
 
@@ -192,11 +188,7 @@ def get_tables(syn: Synapse, tableIdList: list[str], mergeFlag: bool) -> list[tu
     names = []
 
     for tableId in tableIdList:  # pull table from Synapse
-        table = Table(id=tableId).query(
-            query=f"SELECT * FROM {tableId}",
-            include_row_id_and_row_version=False,
-            synapse_client=syn,
-        )
+        table = utils.read_table(syn, tableId)
         table = utils.fill_blank(table)
         name = table["Component"].iat[1]  # grab name of data type from table (second row, as before)
         manifestPath = Path(f"output/{name}/{name}.csv")  # build path to store table as CSV
@@ -377,6 +369,29 @@ def load_mapping(path=None, ref: str | None = None) -> pd.DataFrame:
     return mapping
 
 
+def key_conflicts(manifest: pd.DataFrame, component: str, alias: str | None) -> pd.DataFrame:
+    """Repeated ids of an unmerged manifest that are not one record listed under several grants.
+
+    An id may repeat across grants on rows with the same name (``alias``): a record split per grant at
+    ingress. It is a conflict when it repeats within one grant (e.g. a project read twice) or when its
+    rows carry different names (unrelated records sharing an id).
+    """
+    key, grant = f"{component}_id", "GrantView Key"
+    if key not in manifest.columns:
+        return pd.DataFrame(columns=KEY_CONFLICT_COLUMNS)
+    out = []
+    keyed = manifest[manifest[key] != ""]
+    for value, rows in keyed[keyed[key].duplicated(keep=False)].groupby(key, sort=True):
+        grants = rows[grant].str.strip().tolist() if grant in rows.columns else []
+        names = rows[alias].str.strip().tolist() if alias in rows.columns else []
+        reasons = (["same grant twice"] if len(set(grants)) < len(grants) else []) + (
+            ["different names"] if len(set(names)) > 1 else [])
+        if reasons:
+            out.append({"key": value, "grants": ",".join(grants), "names": " | ".join(dict.fromkeys(names)),
+                        "rows": str(len(rows)), "reason": "; ".join(reasons)})
+    return pd.DataFrame(out, columns=KEY_CONFLICT_COLUMNS)
+
+
 def alias_column(mapping: pd.DataFrame, component: str) -> str | None:
     rows = mapping[(mapping["component"] == component) & (mapping["tag"] == "aliasColumn")]
     return rows["attribute"].iat[0] if len(rows) else None
@@ -392,7 +407,7 @@ def _cell_items(column: str, value) -> list[str]:
         return [value.strip()]  # a spreadsheet-mangled PMID key (D-Q35): one item, for apply_key_corrections
     if comma_terms.is_keyword_column(column.replace(" ", "")):  # a display name or a class label
         return comma_terms.split_keyword_cell(value)
-    return utils.split_cell(value)
+    return parse_list(value)
 
 
 def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
@@ -426,9 +441,9 @@ def merge_by_alias(union: pd.DataFrame, component: str, mapping: pd.DataFrame):
             row[col] = ", ".join(dict.fromkeys(i for v in group[col] for i in _cell_items(col, v)))
         stats["merged_groups"] += int(len(group) > 1)
         if id_col in union.columns and len(group) > 1:
-            ids = list(dict.fromkeys(i for v in group[id_col] for i in utils.split_cell(v)))
+            ids = list(dict.fromkeys(i for v in group[id_col] for i in parse_list(v)))
             if len(ids) > 1:
-                grants = list(dict.fromkeys(i for v in group[grant_col] for i in utils.split_cell(v))) if grant_col in union.columns else []
+                grants = list(dict.fromkeys(i for v in group[grant_col] for i in parse_list(v))) if grant_col in union.columns else []
                 stats["id_conflicts"].append({"alias": row[alias], "ids": ",".join(ids), "grants": ",".join(grants),
                                               "rows": len(group)})
         merged.append(row)
@@ -457,13 +472,13 @@ def apply_key_corrections(manifest: pd.DataFrame, component: str, path) -> tuple
     manifest = manifest.copy()
     for fix in fixes.to_dict("records"):
         column = to_display.get(fix["column"], fix["column"])
-        wanted = set(utils.split_cell(fix["row_key"]))
+        wanted = set(parse_list(fix["row_key"]))
         record = {"key": fix["row_key"], "column": column, "current_value": fix["current_value"],
                   "proposed_value": fix["proposed_value"]}
         if column not in manifest.columns or key_col not in manifest.columns:
             report.append({**record, "status": "no_column"})
             continue
-        hits = [i for i, v in manifest[key_col].items() if set(utils.split_cell(v)) == wanted]
+        hits = [i for i, v in manifest[key_col].items() if set(parse_list(v)) == wanted]
         if not hits:
             report.append({**record, "status": "not_found"})
         for i in hits:
@@ -532,6 +547,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     corrections.to_csv(out_dir / "key_corrections.csv", index=False)
     conflicts = pd.DataFrame(merge_stats["id_conflicts"], columns=ID_CONFLICT_COLUMNS)
     conflicts.to_csv(out_dir / "id_conflicts.csv", index=False)
+    duplicates = pd.DataFrame(columns=KEY_CONFLICT_COLUMNS) if merge else key_conflicts(manifest, component, merge_stats["alias"])
+    duplicates.to_csv(out_dir / "key_conflicts.csv", index=False)
     lines = [
         f"{component}: union rows={merge_stats['rows_in']}, manifest rows={merge_stats['rows_out']} "
         f"(alias {merge_stats['alias']!r}, {'merged' if merge else 'not merged'}: {merge_stats['merged_groups']} merged groups, {merge_stats['blank_alias']} blank-alias rows kept)",
@@ -539,6 +556,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
         f"{validation['key'].nunique()} rows; all rows kept (D-Q39)",
         f"id conflicts (same alias, different ids; --upload is refused while any): {len(conflicts)}"
         + (f", see {out_dir / 'id_conflicts.csv'}" if len(conflicts) else ""),
+        f"key conflicts (unmerged: one id twice in a grant, or on different names; --upload is refused while any): "
+        f"{len(duplicates)}" + (f", see {out_dir / 'key_conflicts.csv'}" if len(duplicates) else ""),
         f"key corrections: {corrections['status'].value_counts().to_dict() if len(corrections) else 'none'}",
         f"carried columns, rows left blank: {carried or 'none'}",
         f"iconTags from Assay: {tagged}",
@@ -546,7 +565,8 @@ def regenerate_component(component, union, mapping, out_root, ref=None, pmid_key
     ]
     (out_dir / "report.txt").write_text("\n".join(lines) + "\n")
     return {"component": component, "path": path, "manifest": manifest, "validation": validation,
-            "corrections": corrections, "id_conflicts": conflicts, "lines": lines, "union_stats": union_stats}
+            "corrections": corrections, "id_conflicts": conflicts, "key_conflicts": duplicates, "lines": lines,
+            "union_stats": union_stats}
 
 
 def upload_manifest(syn, component: str, path, comment: str) -> str:
@@ -599,6 +619,10 @@ def regenerate_main(args, syn=None) -> int:
     if args.upload and conflicted:
         raise SystemExit(f"--upload refused: {', '.join(conflicted)} has rows with the same alias but different ids "
                          f"(id_conflicts.csv under {args.output_dir}); resolve them in the grant tables and regenerate")
+    duplicated = [r["component"] for r in results if len(r["key_conflicts"])]
+    if args.upload and duplicated:
+        raise SystemExit(f"--upload refused: {', '.join(duplicated)} has an id twice in one grant or on different names "
+                         f"(key_conflicts.csv under {args.output_dir}); fix the grant RecordSets and regenerate")
     for result in results:
         if args.upload:
             syn = syn or utils.syn_login()

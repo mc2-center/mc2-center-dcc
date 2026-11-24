@@ -27,7 +27,7 @@ def test_every_source_is_a_valid_label_for_its_component(component):
     template = mc.normalize_headers(pd.DataFrame(columns=mc.template_headers(component)))
     allowed = set(template.columns)
     for source, portal_col, kind in cw.CROSSWALK[component]:
-        assert kind in ("string", "list", "int"), (source, kind)
+        assert kind in ("string", "list", "int", "bool"), (source, kind)
         if source.startswith("derived:"):
             assert source[len("derived:"):], source
             continue
@@ -118,6 +118,14 @@ def test_list_column_becomes_list_against_string_list():
     assert out.loc[0, "theme"] == ["a", "b"]
 
 
+def test_string_list_cells_drop_empty_pieces_and_read_a_json_array():
+    live = _live("GrantView", {"theme": "STRING_LIST"})
+    out = cw.to_portal(_grant_df(GrantThemeName=["a,,b"]), "GrantView", live)
+    assert out.loc[0, "theme"] == ["a", "b"]
+    out = cw.to_portal(_grant_df(GrantThemeName=['["c", "d, e"]']), "GrantView", live)
+    assert out.loc[0, "theme"] == ["c", "d, e"]
+
+
 def test_existing_lists_pass_through_untouched():
     live = _live("GrantView", {"theme": "STRING_LIST"})
     original = ["a", "b"]
@@ -161,6 +169,44 @@ def test_int_kind_follows_live_type():
         _grant_df(DurationofFunding=["60"]), "GrantView", _live("GrantView")
     )
     assert out.loc[0, "durationOfFunding"] == "60"
+
+
+def _person_df(display):
+    cols = [cw.source_column(s) for s, _, _ in cw.CROSSWALK["PersonView"]]
+    df = pd.DataFrame({c: [""] * len(display) for c in cols})
+    df["PortalDisplay"] = display
+    return df
+
+
+@pytest.mark.parametrize(
+    "cell, expected",
+    [("true", True), ("True", True), ("TRUE", True), (" true ", True), (True, True),
+     ("false", False), ("False", False), ("FALSE", False), (False, False)],
+)
+def test_bool_kind_converts_true_and_false_forms_when_live_is_boolean(cell, expected):
+    live = _live("PersonView", {"portalDisplay": "BOOLEAN"})
+    out = cw.to_portal(_person_df([cell]), "PersonView", live)
+    assert out["portalDisplay"].dtype == "boolean"
+    assert out.loc[0, "portalDisplay"] is expected or out.loc[0, "portalDisplay"] == expected
+
+
+@pytest.mark.parametrize("cell", ["", "  ", None, float("nan"), pd.NA])
+def test_bool_kind_blank_is_missing(cell):
+    live = _live("PersonView", {"portalDisplay": "BOOLEAN"})
+    out = cw.to_portal(_person_df([cell]), "PersonView", live)
+    assert out["portalDisplay"].dtype == "boolean"
+    assert pd.isna(out.loc[0, "portalDisplay"])
+
+
+def test_bool_kind_bad_value_raises_naming_component_column_and_value():
+    live = _live("PersonView", {"portalDisplay": "BOOLEAN"})
+    with pytest.raises(ValueError, match="PersonView.portalDisplay.*'yes'"):
+        cw.to_portal(_person_df(["yes"]), "PersonView", live)
+
+
+def test_bool_kind_leaves_values_unchanged_when_live_is_string():
+    out = cw.to_portal(_person_df(["TRUE", "yes", ""]), "PersonView", _live("PersonView"))
+    assert out["portalDisplay"].tolist() == ["TRUE", "yes", ""]
 
 
 def test_missing_source_column_raises():
@@ -364,3 +410,16 @@ def test_update_table_without_component_refuses_live_names_missing_a_column(monk
     with pytest.raises(ValueError, match="refusing to truncate"):
         utils.update_table(None, "synX", pd.DataFrame({"totalCount": [3], "theme": ["t"]}))
     table.snapshot.assert_not_called()
+
+
+def test_blank_consortium_rows_are_dropped_and_the_table_is_read_once(monkeypatch, caplog):
+    table = _consortium_rows(monkeypatch, {
+        "consortiumDisplayName": ["CSBC", "PS-ON", None, "Ghost", ""],
+        "consortiumId": ["program.csbc", float("nan"), "program.none", "", "program.blank"],
+    })
+    with caplog.at_level("WARNING"):
+        assert utils.load_consortium_keys(None) == {"CSBC": "program.csbc"}
+    assert utils.known_consortium_names(None) == {"CSBC"}
+    assert utils.consortium_display_names(None, ["program.csbc"]) == ["CSBC"]
+    assert table.query.call_count == 1
+    assert "PS-ON" in caplog.text and "Ghost" in caplog.text

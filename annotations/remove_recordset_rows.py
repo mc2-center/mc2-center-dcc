@@ -8,7 +8,7 @@ table, this stores a new version without those rows directly, then opens a
 fresh Grid session with no import and one export, so Synapse re-validates it.
 The binding, upsert key and CurationTask are kept.
 
-Per RecordSet: take the write-log lock as ``write_logged`` does (a ``pending``
+Per RecordSet: take the write-log lock with ``recordsets.locked_write`` (a ``pending``
 row, settled with ``earlier_pending``); refuse, writing nothing, while a Grid
 session is open on it that the runner can see (``Grid.list`` may list only the
 runner's own sessions: best effort, so a contributor's stale session can still
@@ -43,8 +43,8 @@ upsert key column, joined with the key separator); dry run unless ``--execute``.
 
 Dry run is the default: it prints, per RecordSet, the keys that would be
 removed, the keys not found and any blocking session or lock; nothing is
-written. Use ``--execute`` to write; it needs ``--write-log-table`` and
-``--removals-table`` (CSV versions are for dry runs and tests).
+written (``--write-log-table`` and ``--removals-table``, which default to the
+production tables, are only read). Use ``--execute`` to write.
 
 The exit status is 1 if any RecordSet needs attention (failed, locked, blocked
 or retry).
@@ -56,7 +56,6 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -74,12 +73,7 @@ PROCESS_START = pd.Timestamp.now(tz="UTC")  # a pending row of our runId older t
 
 def get_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.strip().split("\n")[0])
-    removals = parser.add_mutually_exclusive_group(required=True)
-    removals.add_argument("--removals-table", help="Synapse ID of the removals table")
-    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
-    log = parser.add_mutually_exclusive_group(required=True)
-    log.add_argument("--write-log-table", help="Synapse ID of the write-log table")
-    log.add_argument("--write-log-csv", help="local CSV write log (dry runs and tests only)")
+    recordsets.add_log_args(parser)
     parser.add_argument("--recordset", help="only this RecordSet ID")
     parser.add_argument("--report-dir", required=True, help="directory for the stored CSVs and summary")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
@@ -89,14 +83,12 @@ def get_args(argv=None):
         help="on-disk cache of downloaded RecordSet versions (immutable); default: %(default)s",
     )
     parser.add_argument(
-        "--run-id", default=recordsets.REMOVAL_RUN_PREFIX + datetime.now().strftime("%Y%m%dT%H%M%S"),
+        "--run-id", default=recordsets.new_run_id(recordsets.REMOVAL_RUN_PREFIX),
         help=f"must start with {recordsets.REMOVAL_RUN_PREFIX!r}, which recover_pending recognises; default: that plus a timestamp",
     )
     args = parser.parse_args(argv)
     if not args.run_id.startswith(recordsets.REMOVAL_RUN_PREFIX):
         parser.error(f"--run-id must start with {recordsets.REMOVAL_RUN_PREFIX!r}")
-    if args.execute and not (args.write_log_table and args.removals_table):
-        parser.error("--execute needs --write-log-table and --removals-table; CSVs are for dry runs and tests only")
     return args
 
 
@@ -113,11 +105,12 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
     """
     claimed: dict[str, int] = {}
     entries = []
+    latest, _ = recordsets.recordset_info(syn, rs_id)  # only a version below the latest is cached
     for v in sorted(versions):
         if v < 2:
             continue
         before = set(_keys_of(recordsets.read_recordset(syn, rs_id, v - 1, cache_dir), key_cols))
-        after = set(_keys_of(recordsets.read_recordset(syn, rs_id, v, cache_dir), key_cols))
+        after = set(_keys_of(recordsets.read_recordset(syn, rs_id, v, cache_dir if v < latest else None), key_cols))
         for k in sorted(set(requested) & before - after - set(claimed)):
             claimed[k] = v
             info = requested[k]
@@ -129,6 +122,7 @@ def claim_removed(syn, rs_id, removals, versions, requested, key_cols, cache_dir
 
 def claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_cols, cache_dir, run_id, principal):
     """:func:`claim_removed` over ``removed`` versions (logged, or just recovered) that have no removals rows."""
+    removals.refresh(rs_id)  # a claim writes rows: decide from fresh removals rows, not a cached read
     unclaimed = set(getattr(recovered, "removal", ())) | (
         write_log.removal_versions(rs_id) - set(removals.removal_events(rs_id)))
     if not unclaimed:
@@ -136,22 +130,11 @@ def claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_c
     return claim_removed(syn, rs_id, removals, unclaimed, requested, key_cols, cache_dir, run_id, principal)
 
 
-def _under_lock_checks(syn, rs_id, write_log, run_id, principal, base):
-    """After ``start``: ``(status, message)`` of a refusal (pending row aborted), or None to go ahead."""
-    refusal = None
-    winner = write_log.earlier_pending(rs_id, run_id)
-    if winner:
-        refusal = ("locked", f"run {winner} started its write first; skipped")
-    elif recordsets.open_grid_sessions(syn, rs_id):  # one may have opened since the first check
-        refusal = ("blocked", "a Grid session was opened meanwhile (visible to the runner; best effort); nothing written")
-    else:
-        now_latest, _ = recordsets.recordset_info(syn, rs_id)
-        if now_latest != base:
-            refusal = ("retry", (f"{rs_id} moved from v{base} to v{now_latest} before the write; "
-                                 "nothing written, the next run retries"))
-    if refusal:
-        write_log.abort(rs_id, base, run_id, principal)
-    return refusal
+def _open_session_refusal(syn, rs_id):
+    """``("blocked", message)`` when a Grid session opened since the first check (best effort), else None."""
+    if recordsets.open_grid_sessions(syn, rs_id):
+        return ("blocked", "a Grid session was opened meanwhile (visible to the runner; best effort); nothing written")
+    return None
 
 
 def _revalidate(syn, rs_id, write_log, run_id, principal, latest, owed):
@@ -160,21 +143,14 @@ def _revalidate(syn, rs_id, write_log, run_id, principal, latest, owed):
     Returns a refusal ``(status, message)`` or None when done.
     """
     run_id += recordsets.REVALIDATE_RUN_SUFFIX  # marks the pending row as export-only for recover_pending
-    write_log.start(rs_id, latest, run_id, principal)
     try:
-        refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
-        if refusal:
-            return refusal
-        recordsets.export_via_grid(
-            syn, rs_id, on_version=lambda v: write_log.record(rs_id, v, run_id, None, base=max(owed), principal=principal))
-        write_log.finish(rs_id, latest, run_id, principal)
-    except BaseException:
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
+        with recordsets.locked_write(syn, rs_id, write_log, run_id, principal, latest, retry_note="the next run retries",
+                                     extra_refusal=lambda: _open_session_refusal(syn, rs_id)):
+            recordsets.export_via_grid(
+                syn, rs_id,
+                on_version=lambda v: write_log.record(rs_id, v, run_id, None, base=max(owed), principal=principal))
+    except recordsets.WriteRefused as refused:
+        return refused.status, refused.message
     return None
 
 
@@ -186,10 +162,9 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         summary.update(status="nothing_to_remove", message="no requested keys")
         return summary
 
-    locker = write_log.locked_by(rs_id, args.run_id, since=PROCESS_START)
-    if locker:
-        summary.update(status="locked", message=(
-            f"run {locker} has an unfinished write (pending row under {recordsets.LOCK_HOURS} h old); skipped"))
+    locked = recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
+    if locked:
+        summary.update(status="locked", message=f"{locked}; skipped")
         return summary
     latest, key_cols = recordsets.recordset_info(syn, rs_id)
     if not key_cols:
@@ -238,7 +213,8 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
             summary.update(status="dryrun", message=summary["message"] + "nothing written")
             return summary
 
-    current = recordsets.read_recordset(syn, rs_id, latest, args.cache_dir)  # JSON-array cells stay text, lossless
+    # JSON-array cells stay text, lossless; the latest version can be replaced in place: no cache
+    current = recordsets.read_recordset(syn, rs_id, latest)
     if any(c not in current.columns for c in key_cols):
         summary.update(status="failed", message=f"v{latest} lacks key column(s) {key_cols}")
         return summary
@@ -252,58 +228,52 @@ def process_recordset(syn, rs_id, removals, write_log, args, report_dir: Path, p
         return summary
 
     run_id = args.run_id
-    write_log.start(rs_id, latest, run_id, principal)
     created: list[int] = []
     try:
-        refusal = _under_lock_checks(syn, rs_id, write_log, run_id, principal, latest)
-        if refusal:
-            summary.update(status=refusal[0], message=refusal[1])
-            return summary
-        removals.append_many(rs_id, [
-            {"key": k, "status": "not_found", "reason": requested[k]["reason"],
-             "requested_by": requested[k]["requestedBy"]} for k in not_found], run_id, principal)
-        if not to_remove:
-            write_log.abort(rs_id, latest, run_id, principal)
-            summary.update(status="nothing_to_remove", message=f"none of the requested keys is in v{latest}")
-            return summary
+        with recordsets.locked_write(
+                syn, rs_id, write_log, run_id, principal, latest, retry_note="the next run retries",
+                extra_refusal=lambda: _open_session_refusal(syn, rs_id),
+                after_recover=lambda recovered: claim_unclaimed(
+                    syn, rs_id, removals, write_log, recovered, requested, key_cols, args.cache_dir,
+                    run_id, principal)):
+            removals.append_many(rs_id, [
+                {"key": k, "status": "not_found", "reason": requested[k]["reason"],
+                 "requested_by": requested[k]["requestedBy"]} for k in not_found], run_id, principal)
+            if not to_remove:
+                write_log.abort(rs_id, latest, run_id, principal)
+                raise recordsets.WriteRefused("nothing_to_remove", f"none of the requested keys is in v{latest}")
 
-        drop = set(to_remove)
-        remaining = current[[k not in drop for k in _keys_of(current, key_cols)]]
-        report_dir.mkdir(parents=True, exist_ok=True)
-        path = report_dir / "removal.csv"
-        recordsets.to_csv(remaining, path)
-        version = recordsets.store_new_version(syn, rs_id, path)
-        created.append(version)
-        raced = version != latest + 1
-        if raced:
-            logger.warning(
-                "%s: v%s landed between the version check and the store, so the removal is v%s: a concurrent export "
-                "raced it and the next upload will restore its changes", rs_id, latest + 1, version)
-            summary["raced"] = True
-        write_log.removed(rs_id, version, latest, run_id, principal, len(remaining))
-        removals.append_many(rs_id, [
-            {"key": k, "status": "removed", "reason": requested[k]["reason"],
-             "requested_by": requested[k]["requestedBy"], "removed_in_version": version}
-            for k in to_remove], run_id, principal)  # one write: all keys or none
-        summary["version"] = version
+            drop = set(to_remove)
+            remaining = current[[k not in drop for k in _keys_of(current, key_cols)]]
+            report_dir.mkdir(parents=True, exist_ok=True)
+            path = report_dir / "removal.csv"
+            recordsets.to_csv(remaining, path)
+            version = recordsets.store_new_version(syn, rs_id, path)
+            created.append(version)
+            raced = version != latest + 1
+            if raced:
+                logger.warning(
+                    "%s: v%s landed between the version check and the store, so the removal is v%s: a concurrent "
+                    "export raced it and the next upload will restore its changes", rs_id, latest + 1, version)
+                summary["raced"] = True
+            write_log.removed(rs_id, version, latest, run_id, principal, len(remaining))
+            removals.append_many(rs_id, [
+                {"key": k, "status": "removed", "reason": requested[k]["reason"],
+                 "requested_by": requested[k]["requestedBy"], "removed_in_version": version}
+                for k in to_remove], run_id, principal)  # one write: all keys or none
+            summary["version"] = version
 
-        def on_version(v):
-            # base = the removal version; if a foreign version raced the store, the removal's own base,
-            # so replay keeps that version's edits (kept_unseen_edit) instead of treating them as seen
-            write_log.record(rs_id, v, run_id, len(remaining), base=latest if raced else version, principal=principal)
-            created.append(v)
+            def on_version(v):
+                # base = the removal version; if a foreign version raced the store, the removal's own base,
+                # so replay keeps that version's edits (kept_unseen_edit) instead of treating them as seen
+                write_log.record(rs_id, v, run_id, len(remaining), base=latest if raced else version,
+                                 principal=principal)
+                created.append(v)
 
-        recordsets.export_via_grid(syn, rs_id, on_version=on_version)
-        write_log.finish(rs_id, latest, run_id, principal)
-    except BaseException:
-        try:
-            newest, _ = recordsets.recordset_info(syn, rs_id)
-            recovered = recordsets.recover_pending(syn, rs_id, write_log, newest, run_id=run_id)
-            claim_unclaimed(syn, rs_id, removals, write_log, recovered, requested, key_cols, args.cache_dir,
-                            run_id, principal)
-        except Exception:
-            logger.exception("%s: could not resolve the pending write-log row", rs_id)
-        raise
+            recordsets.export_via_grid(syn, rs_id, on_version=on_version)
+    except recordsets.WriteRefused as refused:
+        summary.update(status=refused.status, message=refused.message)
+        return summary
     summary.update(status="removed", message=(
         f"removed {to_remove} in v{version} (re-validated in v{created[-1]}); not found {not_found}"))
     return summary
@@ -322,22 +292,13 @@ class _ReadOnly:
         pass
 
 
-def summary_line(s: dict) -> str:
-    parts = [f"{s['recordset']}: {s['status']}"]
-    for field in ("base", "version", "remove", "not_found", "claimed"):
-        if field in s:
-            parts.append(f"{field}={s[field]}")
-    if s["message"]:
-        parts.append(s["message"])
-    return " ".join(parts)
+SUMMARY_FIELDS = ("base", "version", "remove", "not_found", "claimed")
 
 
 def get_request_args(argv):
     parser = argparse.ArgumentParser(
         prog="remove_recordset_rows.py request", description="Request row removals: append `requested` rows")
-    removals = parser.add_mutually_exclusive_group(required=True)
-    removals.add_argument("--removals-table", help="Synapse ID of the removals table")
-    removals.add_argument("--removals-csv", help="local CSV removals table (dry runs and tests only)")
+    recordsets.add_log_args(parser, write_log=False)
     parser.add_argument("--recordset", required=True, help="RecordSet ID")
     parser.add_argument(
         "--key", nargs="+", action="append", required=True, metavar="VALUE",
@@ -345,21 +306,14 @@ def get_request_args(argv):
     parser.add_argument("--reason", required=True)
     parser.add_argument("--requested-by", default="", help="default: the runner's Synapse user ID (--execute)")
     parser.add_argument("--execute", action="store_true", help="write to Synapse; the default is a dry run")
-    args = parser.parse_args(argv)
-    if args.execute and not args.removals_table:
-        parser.error("--execute needs --removals-table; a CSV is for dry runs and tests only")
-    return args
+    return parser.parse_args(argv)
 
 
 def request_main(argv, syn=None):
     """``request``: append ``requested`` rows (one write) for the given keys; dry run by default."""
     args = get_request_args(argv)
     syn = syn or utils.syn_login()
-    removals = (
-        recordsets.SynapseTableRemovals(syn, args.removals_table)
-        if args.removals_table
-        else recordsets.CsvRemovals(args.removals_csv)
-    )
+    _, removals = recordsets.open_logs(syn, args)
     _, key_cols = recordsets.recordset_info(syn, args.recordset)
     if not key_cols:
         print(f"{args.recordset} has no upsert key")
@@ -393,16 +347,7 @@ def main(argv=None, syn=None):
         return request_main(argv[1:], syn)
     args = get_args(argv)
     syn = syn or utils.syn_login()
-    write_log = (
-        recordsets.SynapseTableWriteLog(syn, args.write_log_table)
-        if args.write_log_table
-        else recordsets.CsvWriteLog(args.write_log_csv)
-    )
-    removals = (
-        recordsets.SynapseTableRemovals(syn, args.removals_table)
-        if args.removals_table
-        else recordsets.CsvRemovals(args.removals_csv)
-    )
+    write_log, removals = recordsets.open_logs(syn, args)
     ids = [args.recordset] if args.recordset else removals.recordset_ids()
     principal = recordsets.principal_id(syn) if args.execute else ""
     run_dir = Path(args.report_dir) / args.run_id
@@ -419,7 +364,7 @@ def main(argv=None, syn=None):
             continue  # only resolved keys: not worth a line
         if summary["status"] in NEEDS_ATTENTION:
             failed += 1
-        print(summary_line(summary))
+        print(recordsets.summary_line(summary, "recordset", SUMMARY_FIELDS))
         summaries.append(summary)
 
     if summaries:

@@ -1,35 +1,88 @@
 """Shared functions used by syncing scripts"""
 
 import csv
-import json
+import logging
 import os
 import argparse
+import uuid
 from getpass import getpass
 from datetime import datetime
+from pathlib import Path
 
 from synapseclient import Synapse, operations
 from synapseclient.core.exceptions import SynapseNoCredentialsError
 from synapseclient.models import Dataset, Table
 import pandas as pd
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+from cells import first_item, is_placeholder, parse_list
+
+logger = logging.getLogger(__name__)
 
 
 # Manifest and portal table synIDs of each resource type.
 CONFIG = {
-    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591"},
-    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968"},
-    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427"},
-    "people": {"manifest": "syn38301033", "portal_table": "syn28073190"},
-    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972"},
-    "education": {"manifest": "syn53651540", "portal_table": "syn51497305"},
-    "project": {"manifest": "syn59074382", "portal_table": "syn21868602"},
+    "publication": {"manifest": "syn53478776", "portal_table": "syn21868591", "staging_table": "syn78748028"},
+    "dataset": {"manifest": "syn53478774", "portal_table": "syn21897968", "staging_table": "syn78748031"},
+    "tool": {"manifest": "syn53479671", "portal_table": "syn26127427", "staging_table": "syn78748036"},
+    "people": {"manifest": "syn38301033", "portal_table": "syn28073190", "staging_table": "syn78748040"},
+    "grant": {"manifest": "syn53259587", "portal_table": "syn21918972", "staging_table": "syn78748038"},
+    "education": {"manifest": "syn53651540", "portal_table": "syn51497305", "staging_table": "syn78748037"},
+    "project": {"manifest": "syn59074382", "portal_table": "syn21868602", "staging_table": "syn78748039"},
     # Consortium table ("Consortium", in CCKP - MC2 Admin). Used by
     # consortium_display_names(); not a synced resource.
     "consortium": {"table": "syn36345930"},
+    # Theme count tables written by utils/tally_themes.py (no manifest).
+    "consortium_counts": {"portal_table": "syn21641485", "staging_table": "syn78754152"},
+    "consortium_theme_counts": {"portal_table": "syn21649281", "staging_table": "syn78754154"},
+    "theme_counts": {"portal_table": "syn21639584", "staging_table": "syn78754168"},
+    # Tables read by the grant sync and annotations/gen-mp-csv.py: the project
+    # tables whose scope the sync updates, and "All Files V2" from the CCKP database.
+    "grant_files": {"project_tables": "syn52750482", "all_files_table": "syn27210848"},
+    # Croissant table read by sync_datasets.py for dataset versions.
+    "croissant": {"table": "syn65903895"},
 }
 
+# Production portal tables. Only portal_tables/promote_staging.py writes them.
+PRODUCTION_TABLES = frozenset(c["portal_table"] for c in CONFIG.values() if "staging_table" in c)
+
+
+def refuse_production(table_id: str) -> None:
+    """Raise ``ValueError`` if ``table_id`` is a production portal table."""
+    if table_id in PRODUCTION_TABLES:
+        raise ValueError(
+            f"{table_id} is a production portal table; only promote_staging.py writes production. "
+            "Use the staging table."
+        )
+
+
+def read_table(syn, table_id: str, include_row_id_and_row_version: bool = False) -> pd.DataFrame:
+    """Every row of a Synapse table (``SELECT *``)."""
+    return Table(id=table_id).query(
+        query=f"SELECT * FROM {table_id}",
+        include_row_id_and_row_version=include_row_id_and_row_version,
+        synapse_client=syn,
+    )
+
+
+def write_atomic(path, write) -> None:
+    """Make ``path`` by calling ``write(tmp)`` on a temp file beside it, then replacing ``path`` with the temp
+    file, so no reader (or second process) sees a half-written file."""
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
+    write(tmp)
+    tmp.replace(path)
+
+
+def portal_table(resource: str, production: bool = False) -> str:
+    """Synapse ID of the portal table of ``resource``: staging unless ``production``."""
+    return CONFIG[resource]["portal_table" if production else "staging_table"]
+
+
 # Admin manifests (Grant, Project, PersonView) live in CCKP - MC2 Admin. The
-# migration (annotations/migrate_admin_manifests_14.py) copies each table into a
+# migration (migration/migrate_admin_manifests_14.py) copies each table into a
 # shared RecordSet named MC2Center_<Component>_RecordSet in this folder of the
 # admin project, one per component.
 ADMIN_PROJECT = "syn28742843"
@@ -37,21 +90,53 @@ ADMIN_RECORDSET_FOLDER = "admin_recordsets"
 ADMIN_COMPONENTS = {"grant": "GrantView", "project": "ProjectView", "people": "PersonView"}
 
 # Where the grant, project and people syncs read their manifest: "table" (the
-# legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above).
-# Keep "table" until annotations/migrate_admin_manifests_14.py --execute has
-# run, then change the default here (or pass --manifest-source recordset).
-MANIFEST_SOURCE = "table"
+# legacy manifest tables in CONFIG) or "recordset" (the admin RecordSets above,
+# filled by migration/migrate_admin_manifests_14.py --execute).
+MANIFEST_SOURCE = "recordset"
 MANIFEST_SOURCES = ("table", "recordset")
+
+# Central public project ("CCKP Indexed Datasets") where annotations/create_entity_links.py
+# creates GEO Dataset entities, and the DatasetCollection in it that they join.
+CENTRAL_PROJECT = "syn76986881"
+DATASET_COLLECTION = "syn77025587"
+
+# Folder where annotations/upload_validation.py stores its monthly upload report.
+VALIDATION_REPORT_FOLDER = "syn53461903"
+
+# Default tables of the write log and the removals log (recordsets.py).
+WRITE_LOG_TABLE = "syn78404341"
+REMOVALS_TABLE = "syn78404342"
+
+
+_CONSORTIUM_ROWS: dict[str, pd.DataFrame] = {}  # table ID -> usable Consortium rows, one read per process
+
+
+def _blank(value) -> bool:
+    return not isinstance(value, str) or not value.strip()
+
+
+def _consortium_rows(syn: Synapse) -> pd.DataFrame:
+    """Usable rows of the Consortium table, read once per process (read-only).
+
+    Rows with a blank ``consortiumDisplayName`` (or, when the table has the
+    column, a blank ``consortiumId``) are dropped with a warning.
+    """
+    table_id = CONFIG["consortium"]["table"]
+    if table_id not in _CONSORTIUM_ROWS:
+        rows = read_table(syn, table_id)
+        required = [c for c in ("consortiumDisplayName", "consortiumId") if c in rows.columns]
+        bad = rows[required].map(_blank).any(axis=1)
+        for _, row in rows[bad].iterrows():
+            logger.warning(
+                "Dropping Consortium row with a blank name or ID: %s", row[required].to_dict()
+            )
+        _CONSORTIUM_ROWS[table_id] = rows[~bad].reset_index(drop=True)
+    return _CONSORTIUM_ROWS[table_id]
 
 
 def load_consortium_keys(syn: Synapse) -> dict[str, str]:
     """``{display name: consortiumId}`` from the Consortium table (read-only)."""
-    table_id = CONFIG["consortium"]["table"]
-    rows = Table(id=table_id).query(
-        query=f"SELECT consortiumDisplayName, consortiumId FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    rows = _consortium_rows(syn)
     return dict(zip(rows["consortiumDisplayName"], rows["consortiumId"]))
 
 
@@ -77,7 +162,7 @@ def find_admin_recordset(syn, resource: str) -> str:
     if found is None:
         raise LookupError(
             f"{admin_recordset_name(component)} not found in {ADMIN_RECORDSET_FOLDER} of {ADMIN_PROJECT}; "
-            "run annotations/migrate_admin_manifests_14.py --execute first, or use --manifest-source table"
+            "run migration/migrate_admin_manifests_14.py --execute first, or use --manifest-source table"
         )
     return found
 
@@ -205,11 +290,8 @@ def get_args(resource: str) -> argparse.Namespace:
         "-t",
         "--portal_table_id",
         type=str,
-        default=CONFIG.get(resource).get("portal_table"),
-        help=(
-            f"Sync to this specified table. (Default: "
-            f"{CONFIG.get(resource).get('portal_table')})"
-        ),
+        default=None,
+        help="Sync to this specified table. (Default: the staging table)",
     )
     parser.add_argument(
         "-o",
@@ -226,7 +308,7 @@ def get_args(resource: str) -> argparse.Namespace:
             default=MANIFEST_SOURCE,
             help=(
                 "Read the legacy manifest table or the admin RecordSet "
-                f"(default: {MANIFEST_SOURCE}). Use recordset only after the admin migration has run. "
+                f"(default: {MANIFEST_SOURCE}). "
                 "-m overrides both."
             ),
         )
@@ -242,13 +324,15 @@ def get_args(resource: str) -> argparse.Namespace:
         action="store_true",
         help="Do not output CSV file.",
     )
-    return parser.parse_args()
-
-
-# TODO: check if we still need this function?
-def convert_to_stringlist(col: pd.Series) -> pd.Series:
-    """Convert a string column to a list."""
-    return col.str.replace(", ", ",").str.split(",")
+    args = parser.parse_args()
+    if args.portal_table_id is None:
+        args.portal_table_id = portal_table(resource)
+    else:
+        try:
+            refuse_production(args.portal_table_id)
+        except ValueError as e:
+            parser.error(str(e))
+    return args
 
 
 # Live portal-table columns that sync scripts intentionally don't populate.
@@ -309,11 +393,7 @@ def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
     know raises ``ValueError``. Order follows ``ids``.
     """
     table_id = CONFIG["consortium"]["table"]
-    rows = Table(id=table_id).query(
-        query=f"SELECT * FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    rows = _consortium_rows(syn)
     if "consortiumId" in rows.columns:
         lookup = dict(zip(rows["consortiumId"], rows["consortiumDisplayName"]))
     else:
@@ -329,40 +409,9 @@ def consortium_display_names(syn: Synapse, ids: list[str]) -> list[str]:
     return [lookup[i] for i in wanted]
 
 
-def parse_json_list(text: str) -> list | None:
-    """The list a JSON-array cell holds, or ``None`` if ``text`` is not one."""
-    stripped = text.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        try:
-            parsed = json.loads(stripped)
-        except ValueError:
-            return None
-        if isinstance(parsed, list):
-            return parsed
-    return None
-
-
-def split_cell(value) -> list[str]:
-    """A manifest cell (JSON array, comma-separated string or list) as a list of strings."""
-    if isinstance(value, (list, tuple)):
-        items = [str(v) for v in value]
-    elif value is None or (not isinstance(value, str) and pd.isna(value)):
-        items = []
-    else:
-        parsed = parse_json_list(str(value))
-        items = [str(v) for v in parsed] if parsed is not None else str(value).split(",")
-    return [i.strip() for i in items if i and i.strip()]
-
-
 def known_consortium_names(syn: Synapse) -> set[str]:
     """Display names in the Consortium table (read-only)."""
-    table_id = CONFIG["consortium"]["table"]
-    rows = Table(id=table_id).query(
-        query=f"SELECT consortiumDisplayName FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
-    return set(rows["consortiumDisplayName"])
+    return set(_consortium_rows(syn)["consortiumDisplayName"])
 
 
 def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[str]]:
@@ -379,7 +428,7 @@ def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[
     resolved: dict[str, str] = {}
     unknown = []
     for cell in cells:
-        for token in split_cell(cell):
+        for token in parse_list(cell):
             if token in resolved or token in unknown:
                 continue
             if token in known_names:
@@ -400,7 +449,7 @@ def resolve_consortium_keys(syn: Synapse, cells, known_names=None) -> list[list[
     out = []
     for cell in cells:
         names = []
-        for token in split_cell(cell):
+        for token in parse_list(cell):
             if resolved[token] not in names:
                 names.append(resolved[token])
         out.append(names)
@@ -448,9 +497,15 @@ def check_cell_sizes(table_id: str, columns: dict, df: pd.DataFrame) -> None:
 
 
 def update_table(
-    syn: Synapse, table_id: str, df: pd.DataFrame, component: str | None = None
+    syn: Synapse,
+    table_id: str,
+    df: pd.DataFrame,
+    component: str | None = None,
+    allow_production: bool = False,
 ) -> None:
     """Update the portal table.
+
+    A production table is refused unless ``allow_production`` (only promote_staging.py sets it).
 
     With ``component``, ``df`` must already be in portal shape (see
     ``crosswalk.to_portal``): the live table is checked against the
@@ -466,6 +521,8 @@ def update_table(
         - sync over rows from the latest manifest, restoring the previous
           rows if the upload fails
     """
+    if not allow_production:
+        refuse_production(table_id)
     # An empty frame would snapshot, delete every live row and store none,
     # without any error to trigger the restore.
     if df.empty:
@@ -525,11 +582,7 @@ def update_table(
     print(f"Creating new table version with label: {today}...")
     table.snapshot(label=today, synapse_client=syn)
 
-    current_rows = table.query(
-        query=f"SELECT * FROM {table_id}",
-        include_row_id_and_row_version=False,
-        synapse_client=syn,
-    )
+    current_rows = read_table(syn, table_id)
     print(f"Syncing table with latest data (new_rows={len(df) - len(current_rows)})...\n")
     table.delete_rows(query=f"SELECT * FROM {table_id}", synapse_client=syn)
 
@@ -554,7 +607,7 @@ def translate_duo(code: str, dict: dict[str, str] = DUO_DICT) -> str:
 
 def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DICT, regex: str = REPO_REGEX):
     """Extract distinctive link elements and map to a repository name."""
-    extracted_link = re.fullmatch(regex, link) if link != "Pending Annotation" else None
+    extracted_link = re.fullmatch(regex, link) if not is_placeholder(link) else None
     core_link = "".join([g for g in extracted_link.groups()[3:] if g is not None]) if extracted_link is not None else "No extracted content"
     source_repo_link_list, source_repo_alias_list, source_repo = [], [], None
     
@@ -595,7 +648,7 @@ def extract_map_repository(link: str, alias: str, dict: dict[str, str] = REPO_DI
     
     return source_repo
 
-def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
+def identify_download_type(row: pd.Series, source_repo: str, entity):
     """Determine download type and return download id if Synapse hosted or indexed.
 
     When DatasetViewId (the 14.0.0 key; the 13.1.0 ``DatasetView_id`` is still
@@ -606,26 +659,14 @@ def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
 
     The id may contain a comma-separated list of synIDs from legacy
     manifest entries; only the first is used.
+
+    ``entity`` is the already fetched entity of that first id (None when the
+    fetch failed). No Synapse call is made.
     """
     key = "DatasetViewId" if "DatasetViewId" in row else "DatasetView_id"
-    entity_id = row[key].split(",")[0].strip()
+    entity_id = first_item(row[key])
 
-    is_dataset = False
-    if entity_id:
-        try:
-            # operations.get() looks up the entity's actual type on Synapse
-            # first, then dispatches to the matching model (File, Folder,
-            # Dataset, ...) -- so, unlike calling the Dataset model's
-            # .get() directly, it handles any entity type without erroring
-            # out on DatasetView_ids that reference non-Dataset entities.
-            entity = operations.get(
-                entity_id,
-                file_options=operations.FileOptions(download_file=False),
-                synapse_client=syn,
-            )
-            is_dataset = isinstance(entity, Dataset)
-        except Exception:
-            is_dataset = False
+    is_dataset = bool(entity_id) and isinstance(entity, Dataset)
 
     if is_dataset:
         indexed = True
@@ -643,3 +684,32 @@ def identify_download_type(syn: Synapse, row: pd.Series, source_repo: str):
 
     return download_type, download_id
     
+
+
+MAX_READERS = 4  # Synapse reads that run at the same time
+
+
+def parallel_map(fn, items, workers=MAX_READERS) -> list:
+    """``[fn(i) for i in items]``, run in up to ``workers`` threads; results keep the input order.
+    An error in ``fn`` is raised here."""
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(fn, items))
+
+
+def retry(call, tries, retry_if, waits=(), sleep=time.sleep, on_retry=None):
+    """Run ``call()`` up to ``tries`` times and return its first result.
+
+    When ``call`` raises an error, ``retry_if(err)`` decides: true means another try follows, false raises
+    the error at once. ``on_retry(err)`` runs before each retry, then ``sleep(waits[i])`` for retry ``i``
+    (when ``waits`` has one). After the last try, the last error is raised.
+    """
+    for attempt in range(tries):
+        try:
+            return call()
+        except Exception as err:
+            if attempt == tries - 1 or not retry_if(err):
+                raise
+            if on_retry:
+                on_retry(err)
+            if attempt < len(waits):
+                sleep(waits[attempt])

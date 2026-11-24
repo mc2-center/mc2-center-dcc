@@ -9,6 +9,7 @@ from typing import List
 
 import pandas as pd
 from synapseclient.models import Table
+from cells import parse_list
 import crosswalk
 import model_contract
 import utils
@@ -38,13 +39,13 @@ def add_missing_info(
 
     for _, row in pubs.iterrows():
         datasets = row["PublicationDatasetAlias"]
-        final_datasets = [d for d in datasets.split(", ") if d.startswith("SRX") is False]
+        final_datasets = [d for d in parse_list(datasets) if d.startswith("SRX") is False]
         pubs.at[_, "PublicationDatasetAlias"] = ", ".join(final_datasets)
 
     for col in new_cols:
         pubs[col] = ""
         for i, row in pubs.iterrows():
-            n = row["GrantViewKey"].split(",")
+            n = parse_list(row["GrantViewKey"])
             extracted = []
             for g in n:
                 if len(grants[grants.grantNumber == g][col].values) > 0:
@@ -103,8 +104,8 @@ def main():
         print()
 
     print("\nProcessing publications staging database...")
-    grants = Table(id="syn21918972").query(
-        query=f"SELECT grantNumber, {','.join(new_cols)} FROM syn21918972",
+    grants = Table(id=utils.portal_table("grant")).query(
+        query=f"SELECT grantNumber, {','.join(new_cols)} FROM {utils.portal_table('grant')}",
         synapse_client=syn,
     )
 
