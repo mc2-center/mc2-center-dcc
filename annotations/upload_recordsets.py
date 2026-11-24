@@ -162,31 +162,35 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     project_id = row["grantId"]
     rs_id = recordsets.find_recordset(syn, folder_id, component)
     notes = []  # what this run created, or would create; added to the final message
-    new_rs = rs_id is None
-    if new_rs and args.execute:
+    if rs_id is None and args.execute:
+        # the new RecordSet holds the empty template: the normal path below treats it as a first write
         rs_id = recordsets.create_grant_recordset(
             syn, project_id, folder_id, component, write_log, args.run_id, recordsets.principal_id(syn))
         summary["created_recordset"] = rs_id
         notes.append(f"created {rs_id} and its curation task")
-        new_rs = False  # it exists now: continue as a first write into it
-    elif new_rs:
+    elif rs_id is None:
         summary["create_recordset"] = True
         notes.append(f"the RecordSet and its curation task would be created in {folder_id}")
-    elif args.execute:
-        task = recordsets.ensure_curation_task(syn, project_id, rs_id, component)
-        if task is not None:
-            summary["created_task"] = task
-            notes.append(f"created curation task {task}")
-    elif not recordsets.has_curation_task(syn, project_id, rs_id):
-        summary["create_task"] = True
-        notes.append("the curation task would be created")
+    else:
+        if recordsets.bound_schema_uri(syn, rs_id) is None:
+            if args.execute:
+                summary["bound_schema"] = recordsets.bind_schema_if_unbound(syn, rs_id, component)
+                notes.append(f"bound {summary['bound_schema']} to the RecordSet")
+            else:
+                summary["bind_schema"] = True
+                notes.append("the schema would be bound to the RecordSet")
+        if not recordsets.has_curation_task(syn, project_id, rs_id):
+            if args.execute:
+                summary["created_task"] = recordsets.create_curation_task(syn, project_id, rs_id, component)
+                notes.append(f"created curation task {summary['created_task']}")
+            else:
+                summary["create_task"] = True
+                notes.append("the curation task would be created")
     if rs_id:
         summary["recordset"] = rs_id
 
-    if new_rs:  # dry run: treat the missing RecordSet as an empty first write; nothing is read or written
-        latest, key = 1, [recordsets.record_key(component)]
-    else:
-        latest, key = recordsets.recordset_info(syn, rs_id)
+    # a dry run with no RecordSet has nothing to read: its key is the component's upsert key
+    latest, key = (recordsets.recordset_info(syn, rs_id) if rs_id else (0, [recordsets.record_key(component)]))
     if not key:
         summary.update(status="failed", message=f"{rs_id} has no upsert key")
         return summary
@@ -200,18 +204,21 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
         summary.update(status="failed", message=f"bad upload keys: {err}")
         return summary
 
-    locked = None if new_rs else recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
+    if rs_id is None:
+        return _dry_run_first_write(upload, component, key, set_like, report_dir, summary, notes)
+
+    locked = recordsets.lock_message(write_log, rs_id, args.run_id, PROCESS_START)
     if locked:
         summary.update(status="locked", message=f"{locked}; skipped")
         return summary
 
     # A run that died after exporting leaves a pending row; claim its versions.
-    recovered = {} if new_rs else recordsets.recover_pending(
+    recovered = recordsets.recover_pending(
         syn, rs_id, write_log, latest, record=args.execute, skip_younger_than=recordsets.LOCK_HOURS
     )
     if recovered:
         summary["recovered"] = sorted(recovered)
-    log_map = {} if new_rs else {**write_log.pipeline_map(rs_id), **recovered}
+    log_map = {**write_log.pipeline_map(rs_id), **recovered}
     if log_map and latest < max(log_map):
         summary.update(status="failed", message=f"write log has v{max(log_map)} but {rs_id} is at v{latest}")
         return summary
@@ -224,13 +231,9 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
             logger.warning("%s v%s has duplicate keys (the last row of each wins): %s", rs_id, v, dupes)
         return df
 
-    if new_rs:
-        empty = pd.DataFrame(columns=sorted(recordsets.schema_columns(component) | set(key)))
-        versions = [(1, empty)]
-    else:
-        versions = [(v, read(v)) for v in range(1, latest + 1)]
+    versions = [(v, read(v)) for v in range(1, latest + 1)]
     current = versions[-1][1]
-    removal_versions = set() if new_rs else write_log.removal_versions(rs_id) | set(recovered.removal)
+    removal_versions = write_log.removal_versions(rs_id) | set(recovered.removal)
     removed = recordsets.removed_keys(versions, {v: log_map[v] for v in removal_versions if v in log_map}, key)
     # a restore lifts only the removal it follows: not a later one whose removals rows are missing
     restored = removals.restored(rs_id, removed) if removals is not None else set()
@@ -266,12 +269,12 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
 
     summary.update(rows=len(merged), decisions=len(decisions), conflicts=len(conflicts), mode=mode)
     # Nothing to write: every version adds to the history later runs read.
-    if not new_rs and not recordsets.differences(merged, _only(current, stored), key, set_like):
+    if not recordsets.differences(merged, _only(current, stored), key, set_like):
         summary.update(status="unchanged", message="; ".join(
             [f"{mode}; RecordSet already matches; nothing written", *notes]))
         return summary
     # An export from a curator's older Grid session would overwrite this upload (it writes the session's snapshot).
-    sessions = [] if new_rs else recordsets.open_grid_sessions(syn, rs_id)
+    sessions = recordsets.open_grid_sessions(syn, rs_id)
     if sessions:
         ids = [getattr(s, "session_id", "?") for s in sessions]
         summary.update(status="blocked", message=(
@@ -333,6 +336,24 @@ def process_grant(syn, row, args, write_log, report_dir: Path, list_cols, set_li
     return summary
 
 
+def _dry_run_first_write(upload, component, key, set_like, report_dir, summary, notes) -> dict:
+    """Dry run for a grant with no RecordSet: merge the upload into an empty frame, write the reports, read and
+    write nothing in Synapse (no lock, log, removals or Grid-session check: there is no RecordSet to ask about)."""
+    stored = recordsets.schema_columns(component) | set(key)
+    empty = pd.DataFrame(columns=sorted(stored))
+    base, owned, decisions = recordsets.replay([(1, empty)], {}, key, set_like)
+    merged, conflicts = recordsets.merge_upload(base, upload, key, owned, set_like)
+    merged = merged[[c for c in merged.columns if c in stored]]
+    report_dir.mkdir(parents=True, exist_ok=True)
+    recordsets.to_csv(merged, report_dir / "merged.csv")
+    recordsets.to_csv(decisions, report_dir / "decisions.csv")
+    recordsets.to_csv(conflicts, report_dir / "conflicts.csv")
+    mode = "first write (no replay)"
+    summary.update(rows=len(merged), decisions=len(decisions), conflicts=len(conflicts), mode=mode,
+                   status="dryrun", message="; ".join([f"dry run: {mode}; nothing written", *notes]))
+    return summary
+
+
 def _only(df: pd.DataFrame, columns) -> pd.DataFrame:
     return df[[c for c in df.columns if c in columns]]
 
@@ -341,7 +362,25 @@ def folder_column_name(row) -> str:
     return next(c for c in row.index if c.startswith("folderId"))
 
 
-SUMMARY_FIELDS = ("recordset", "created_recordset", "create_recordset", "created_task", "create_task","version", "rows", "decisions", "conflicts", "overwritten", "invalid_rows", "recovered", "foreign_midwrite", "removal_skipped", "unsafe_rows")
+SUMMARY_FIELDS = (
+    "recordset",
+    "created_recordset",
+    "create_recordset",
+    "bound_schema",
+    "bind_schema",
+    "created_task",
+    "create_task",
+    "version",
+    "rows",
+    "decisions",
+    "conflicts",
+    "overwritten",
+    "invalid_rows",
+    "recovered",
+    "foreign_midwrite",
+    "removal_skipped",
+    "unsafe_rows",
+)
 
 
 def main(argv=None, syn=None):

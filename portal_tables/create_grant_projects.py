@@ -20,7 +20,7 @@ import pandas as pd
 import synapseclient
 from synapseclient import Project, Wiki, Folder, Team
 from synapseclient.models import Table, Team as TeamModel
-from synapseclient.core.exceptions import SynapseError
+from synapseclient.core.exceptions import SynapseHTTPError
 from synapseclient.operations import find_entity_id
 
 from cells import is_null, parse_list
@@ -181,17 +181,19 @@ def create_folders(syn, project_id):
 def create_recordsets(syn, project_id, write_log, run_id, principal):
     """Give each data-type folder its RecordSet and curation task; add only what is missing."""
     for component in crosswalk.COMPONENT_FOLDERS:
-        name = merge_tables.folder_name(project_id, component)
-        folder_id = find_entity_id(name=name, parent=project_id, synapse_client=syn)
+        folder_id, rs_id = merge_tables.find_component_recordset(syn, project_id, component)
         if folder_id is None:
-            raise ValueError(f"folder {name!r} not found in {project_id}")
-        rs_id = recordsets.find_recordset(syn, folder_id, component)
+            raise ValueError(f"folder {merge_tables.folder_name(project_id, component)!r} not found in {project_id}")
         if rs_id is None:
             rs_id = recordsets.create_grant_recordset(
                 syn, project_id, folder_id, component, write_log, run_id, principal)
             print(f"Created {component} RecordSet and curation task: {rs_id}")
-        elif recordsets.ensure_curation_task(syn, project_id, rs_id, component) is not None:
-            print(f"Created the missing {component} curation task for {rs_id}")
+        else:
+            if recordsets.bind_schema_if_unbound(syn, rs_id, component):
+                print(f"Bound the schema to the {component} RecordSet {rs_id}")
+            if not recordsets.has_curation_task(syn, project_id, rs_id):
+                recordsets.create_curation_task(syn, project_id, rs_id, component)
+                print(f"Created the missing {component} curation task for {rs_id}")
 
 
 def find_team(syn, team_name):
@@ -289,7 +291,7 @@ def create_grant_projects(syn, grants):
                     f"No team for {name}"
                 )
             grant_info_dict[row["GrantNumber"]] = (project_id, team_id)
-        except (SynapseError, ValueError) as err:
+        except (SynapseHTTPError, ValueError) as err:
             logger.error("Grant creation failed, skipping: %s (%s)", name, err)
             print(f"Skipping: {name}")
             grant_info_dict[row["GrantNumber"]] = ("None", "None")

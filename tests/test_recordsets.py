@@ -998,7 +998,8 @@ def _curator_mock():
 
 def test_create_grant_recordset_creates_names_key_schema_and_logs():
     log = MemoryWriteLog()
-    with _curator_mock() as create, mock.patch.object(rs, "recordset_info", return_value=(1, ["ToolViewId"])):
+    with _curator_mock() as create, mock.patch.object(rs, "find_recordset", return_value=None), \
+            mock.patch.object(rs, "recordset_info", return_value=(1, ["ToolViewId"])):
         out = rs.create_grant_recordset("syn", "syn1", "syn2", "ToolView", log, "run1", "42")
     assert out == "synRS"
     kw = create.call_args.kwargs
@@ -1017,15 +1018,36 @@ def _tasks(*record_set_ids):
     return [SimpleNamespace(task_properties=SimpleNamespace(record_set_id=i)) for i in record_set_ids]
 
 
-def test_ensure_curation_task_creates_only_when_missing():
+def test_create_grant_recordset_returns_a_recordset_that_appeared_meanwhile():
+    log = MemoryWriteLog()
+    with _curator_mock() as create, mock.patch.object(rs, "find_recordset", return_value="synRACE"):
+        assert rs.create_grant_recordset("syn", "syn1", "syn2", "ToolView", log, "run1", "42") == "synRACE"
+    create.assert_not_called()
+    assert log.rows == []
+
+
+def test_has_curation_task_matches_the_recordset():
     with mock.patch.object(rs, "CurationTask") as task:
         task.list.return_value = _tasks("synOther")
+        assert rs.has_curation_task("syn", "syn1", "synRS") is False
+        task.list.return_value = _tasks("synOther", "synRS")
+        assert rs.has_curation_task("syn", "syn1", "synRS") is True
+
+
+def test_create_curation_task_builds_the_task():
+    with mock.patch.object(rs, "CurationTask") as task:
         task.return_value.store.return_value = SimpleNamespace(task_id=77)
-        assert rs.ensure_curation_task("syn", "syn1", "synRS", "DatasetView") == 77
+        assert rs.create_curation_task("syn", "syn1", "synRS", "DatasetView") == 77
     kw = task.call_args.kwargs
     assert kw["data_type"] == "MC2Center_DatasetView_CurationTask" and kw["project_id"] == "syn1"
     assert kw["task_properties"].record_set_id == "synRS"
-    with mock.patch.object(rs, "CurationTask") as task:
-        task.list.return_value = _tasks("synOther", "synRS")
-        assert rs.ensure_curation_task("syn", "syn1", "synRS", "DatasetView") is None
-        task.return_value.store.assert_not_called()
+
+
+def test_bind_schema_if_unbound_binds_only_an_unbound_recordset():
+    with mock.patch.object(rs, "bound_schema_uri", return_value=None), mock.patch.object(rs, "bind_schema") as bind:
+        assert rs.bind_schema_if_unbound("syn", "synRS", "ToolView") == "MC2Center-ToolView-14.1.2"
+    bind.assert_called_once_with("syn", "synRS", "MC2Center-ToolView-14.1.2")
+    with mock.patch.object(rs, "bound_schema_uri", return_value="MC2Center-ToolView-13.0.0"), \
+            mock.patch.object(rs, "bind_schema") as bind:
+        assert rs.bind_schema_if_unbound("syn", "synRS", "ToolView") is None
+    bind.assert_not_called()

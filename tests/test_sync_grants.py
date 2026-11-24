@@ -323,7 +323,7 @@ def test_creation_failure_maps_to_none_pair():
 def _recordset_run(existing, create_error=None):
     """Run ``create_grant_projects`` with RecordSets in ``existing`` ({component: RecordSet ID}) already there.
 
-    Returns ``(result, create mock, ensure mock)``; the folder IDs are ``fold-<folder name>``.
+    Returns ``(result, create mock, create-task mock)``; the folder IDs are ``fold-<folder name>``.
     """
     syn = _syn_mock(wiki_exists=True)
     folders = {c["folder"]: f"fold-{c['folder']}" for c in cw.COMPONENT_FOLDERS.values()}
@@ -332,43 +332,57 @@ def _recordset_run(existing, create_error=None):
     def find_entity(name, parent, synapse_client):
         return "syn123" if parent is None else folders.get(name)
 
+    def find_component(syn, project, component):
+        folder = f"fold-{cw.COMPONENT_FOLDERS[component]['folder']}"
+        return folder, by_folder.get(folder)
+
+    bind = MagicMock(return_value=None)
     create = MagicMock(side_effect=create_error, return_value="synNEW")
-    ensure = MagicMock(return_value=None)
+    make_task = MagicMock()
     with patch.object(cgp, "find_entity_id", side_effect=find_entity), \
             patch.object(cgp.recordsets, "find_recordset", side_effect=lambda syn, folder, c: by_folder.get(folder)), \
             patch.object(cgp.recordsets, "create_grant_recordset", create), \
-            patch.object(cgp.recordsets, "ensure_curation_task", ensure), \
+            patch.object(cgp.recordsets, "create_curation_task", make_task), \
+            patch.object(cgp.recordsets, "has_curation_task", return_value=False), \
+            patch.object(cgp.recordsets, "bind_schema_if_unbound", bind), \
+            patch.object(cgp.merge_tables, "find_component_recordset", side_effect=find_component), \
             patch.object(cgp, "find_team", return_value=MagicMock(id="999")), \
             patch.object(cgp, "dcc_owns_team", return_value=True):
         out = cgp.create_grant_projects(syn, _grant_row())
-    return out, create, ensure
+    return out, create, make_task
 
 
 def test_new_project_gets_the_four_recordsets(real_recordsets):
-    out, create, ensure = _recordset_run({})
+    out, create, make_task = _recordset_run({})
     assert out == {"N1": ("syn123", "999")}
     made = [(c.args[2], c.args[3]) for c in create.call_args_list]
     assert made == [("fold-publications", "PublicationView"), ("fold-datasets", "DatasetView"),
                     ("fold-tools", "ToolView"), ("fold-education", "EducationalResource")]
     assert len({c.args[5] for c in create.call_args_list}) == 1  # one run ID for the call
     assert all(c.args[1] == "syn123" for c in create.call_args_list)
-    ensure.assert_not_called()
+    make_task.assert_not_called()
 
 
 def test_reused_project_gets_only_the_missing_recordsets(real_recordsets):
-    out, create, ensure = _recordset_run({"PublicationView": "synP", "ToolView": "synT"})
+    out, create, make_task = _recordset_run({"PublicationView": "synP", "ToolView": "synT"})
     assert out == {"N1": ("syn123", "999")}
     assert [c.args[3] for c in create.call_args_list] == ["DatasetView", "EducationalResource"]
-    assert [(c.args[2], c.args[3]) for c in ensure.call_args_list] == [
+    assert [(c.args[2], c.args[3]) for c in make_task.call_args_list] == [
         ("synP", "PublicationView"), ("synT", "ToolView")]
 
 
 @pytest.mark.parametrize("error", [
-    cgp.SynapseError("boom"), ValueError("schema_uri is required")])
+    cgp.SynapseHTTPError("boom", response=MagicMock(status_code=500)), ValueError("schema_uri is required")])
 def test_a_recordset_creation_error_fails_the_grant(real_recordsets, error):
     out, create, _ = _recordset_run({}, create_error=error)
     assert out == {"N1": ("None", "None")}
     assert create.call_count == 1
+
+
+def test_an_authentication_error_stops_the_run(real_recordsets):
+    error = cgp.synapseclient.core.exceptions.SynapseAuthenticationError("login expired")
+    with pytest.raises(type(error)):
+        _recordset_run({}, create_error=error)
 
 
 def test_nan_abstract_and_none_investigator_are_safe():

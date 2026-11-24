@@ -488,7 +488,11 @@ def create_grant_recordset(syn, project_id: str, folder_id: str, component: str,
     """Create the grant's RecordSet and curation task in ``folder_id``, log ``created``, return the RecordSet ID.
 
     The schema is bound to the RecordSet, not to the folder. No Grid session is created.
+    If a RecordSet exists in the folder just before the call (another run made it), return it and create nothing.
     """
+    existing = find_recordset(syn, folder_id, component)
+    if existing is not None:
+        return existing
     record_set, _task = create_record_based_metadata_task(
         synapse_client=syn,
         project_id=project_id,
@@ -515,10 +519,20 @@ def has_curation_task(syn, project_id: str, rs_id: str) -> bool:
     )
 
 
-def ensure_curation_task(syn, project_id: str, rs_id: str, component: str) -> int | None:
-    """Create the curation task of an existing RecordSet if it has none. Return its ID, or None if it exists."""
-    if has_curation_task(syn, project_id, rs_id):
+def bind_schema_if_unbound(syn, rs_id: str, component: str) -> str | None:
+    """Bind the current schema to a RecordSet that has no schema bound; return the URI bound, else None.
+
+    A RecordSet with any schema bound (even another version) is left alone.
+    """
+    if bound_schema_uri(syn, rs_id) is not None:
         return None
+    uri = schema_uri_for(component)
+    bind_schema(syn, rs_id, uri)
+    return uri
+
+
+def create_curation_task(syn, project_id: str, rs_id: str, component: str) -> int:
+    """Create the curation task of an existing RecordSet and return its ID."""
     task = CurationTask(
         data_type=f"MC2Center_{component}_CurationTask",
         project_id=project_id,

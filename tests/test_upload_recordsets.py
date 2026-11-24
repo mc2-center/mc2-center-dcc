@@ -46,6 +46,8 @@ class FakeSynapse(FakeRS):
         self.created = []  # (project, folder, component) of each RecordSet the upload created
         self.task_calls = []  # RecordSet IDs for which ensure_curation_task ran
         self.has_task = True
+        self.bound = "MC2Center-PublicationView-14.1.2"  # the schema URI bound to the RecordSet, or None
+        self.bind_calls = []
 
     def create(self, syn, project_id, folder_id, component, write_log, run_id, principal):
         self.created.append((project_id, folder_id, component))
@@ -53,9 +55,15 @@ class FakeSynapse(FakeRS):
         write_log.created("synNEW", 1, run_id, principal)
         return "synNEW"
 
-    def ensure_task(self, syn, project_id, rs_id, component):
+    def create_task(self, syn, project_id, rs_id, component):
         self.task_calls.append(rs_id)
-        return None if self.has_task else 77
+        return 77
+
+    def bound_uri(self, syn, rs_id):
+        return self.bound
+
+    def bind(self, syn, rs_id, uri):
+        self.bind_calls.append((rs_id, uri))
 
     def task_exists(self, syn, project_id, rs_id):
         return self.has_task
@@ -94,7 +102,9 @@ def run(tmp_path, fake, *extra, execute=True, grants=("syn100",), run_id="r1", p
          mock.patch.object(ur.recordsets, "get_validation", fake.validation), \
          mock.patch.object(ur.recordsets, "open_grid_sessions", fake.open_sessions), \
          mock.patch.object(ur.recordsets, "create_grant_recordset", fake.create), \
-         mock.patch.object(ur.recordsets, "ensure_curation_task", fake.ensure_task), \
+         mock.patch.object(ur.recordsets, "create_curation_task", fake.create_task), \
+         mock.patch.object(ur.recordsets, "bound_schema_uri", fake.bound_uri), \
+         mock.patch.object(ur.recordsets, "bind_schema", fake.bind), \
          mock.patch.object(ur.recordsets, "has_curation_task", fake.task_exists), \
          mock.patch.object(ur.recordsets, "principal_id", lambda syn: "42"):
         code = ur.main(argv, syn=object())
@@ -556,3 +566,35 @@ def test_an_open_session_does_not_block_an_unchanged_grant(tmp_path, log):
                               ["p2", "Second", ""])], sessions=[object()])
     code, rep = run(tmp_path, fake)
     assert code == 0 and status_of(rep) == "unchanged"
+
+
+def test_execute_binds_the_schema_of_an_unbound_recordset(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    fake.bound = None
+    code, rep = run(tmp_path, fake)
+    assert code == 0
+    assert fake.bind_calls == [("synRS", "MC2Center-PublicationView-14.1.2")]
+    assert "bound_schema=MC2Center-PublicationView-14.1.2" in (rep / "syn100" / "summary.txt").read_text()
+
+
+def test_dry_run_reports_an_unbound_recordset_without_binding(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    fake.bound = None
+    code, rep = run(tmp_path, fake, execute=False)
+    assert fake.bind_calls == [] and "schema would be bound" in (rep / "syn100" / "summary.txt").read_text()
+
+
+def test_a_recordset_bound_to_another_version_is_left_alone(tmp_path):
+    fake = FakeSynapse([stored(["p1", "Old", ""])])
+    fake.bound = "MC2Center-PublicationView-13.0.0"
+    run(tmp_path, fake)
+    assert fake.bind_calls == []
+
+
+def test_dry_run_on_a_missing_recordset_makes_no_log_or_removals_calls(tmp_path, log, removals):
+    fake = FakeSynapse([stored()], find=lambda folder: None)
+    reads = []
+    with mock.patch.object(type(log), "_read", lambda self, rs_id: reads.append(rs_id)), \
+         mock.patch.object(type(removals), "_read", lambda self, rs_id: reads.append(rs_id)):
+        code, rep = run(tmp_path, fake, execute=False)
+    assert code == 0 and status_of(rep) == "dryrun" and reads == []

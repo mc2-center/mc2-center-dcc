@@ -45,6 +45,7 @@ read `decisions.csv` and `merged.csv`. Run the dry run first and proceed to `--e
 Also check `04_links/dropped_rows.csv` and `04_links/reused_entities.csv`.
 The upload can also be run alone: `annotations/upload_recordsets.py` (`--paths-csv`, `--component`, `--report-dir`,
 `--write-log-table`, `--removals-table`, `--execute`).
+Do not run two uploads of the same component at the same time: both could create the same missing RecordSet.
 
 **3. Curation in Curator.** Grant metadata is curated in each grant project's `MC2Center_<Component>_RecordSet`
 (in its data-type folder), through the curation tasks / Grid. To fix records, see [Fixing records](#fixing-records). Admin metadata (grants, projects, people) is curated
@@ -377,7 +378,9 @@ export; the data does not change. The admin RecordSets (grants, projects, people
 `missing_recordset`: the grant has no data-type folder. Create the folder first. If only the RecordSet is missing,
 a dry run reports `dryrun` (`create_recordset` in the summary) and `--execute` creates the RecordSet and its
 curation task, then writes the rows as a first write (`created_recordset` in the summary). If the RecordSet exists
-but has no curation task, `--execute` creates the task (`created_task`); a dry run only reports it.
+but has no curation task, `--execute` creates the task (`created_task`). If it has no schema bound, `--execute`
+binds the current schema (`bound_schema`). A dry run only reports both. A RecordSet with another schema version
+bound is not changed.
 `migration/migrate_grant_tables_14.py` and `migration/migrate_admin_manifests_14.py` (one-time cutover tools, not part of the cycle;
 `--execute` needs `--write-log-table` in both) use
 0 ok, 1 a grant failed or the comparison differs, 2 unmapped values or validation failures.
